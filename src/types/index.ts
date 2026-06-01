@@ -68,6 +68,17 @@ export interface MenuImage {
   display_order: number;
 }
 
+export interface MenuItemVariant {
+  name: string;
+  price: string;
+  offer_price?: string | null;
+}
+
+export interface MenuItemAddon {
+  name: string;
+  price: string;
+}
+
 export interface MenuItem {
   id: string;
   category_id: string;
@@ -75,14 +86,17 @@ export interface MenuItem {
   description: string | null;
   price: string;
   offer_price: string | null;
-  food_type: 'veg' | 'non-veg';
+  food_type: 'veg' | 'non-veg' | 'egg' | 'drink';
+  allow_ice_preference: boolean;
   is_bestseller: boolean;
   is_highlighted: boolean;
   is_available: boolean;
   display_order: number;
   image_url: string | null;
   thumbnail_url: string | null;
-  images?: MenuImage[];
+  images: MenuImage[];
+  variants?: MenuItemVariant[];
+  addons?: MenuItemAddon[];
   created_at: string;
 }
 

@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Outlet } from 'react-router';
-import { UtensilsCrossed, Languages } from 'lucide-react';
+import { Languages } from 'lucide-react';
 import { GoogleTranslate } from '@/components/GoogleTranslate';
 import { LanguageSelectorModal } from '@/components/LanguageSelectorModal';
+import logo from "../assets/menukit-logo.svg";
 
 export function AuthLayout() {
   const [isLanguageModalOpen, setIsLanguageModalOpen] = useState(false);
@@ -29,8 +30,10 @@ export function AuthLayout() {
 
       <div className="w-full max-w-md z-10">
         <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center text-white mb-4 shadow-lg shadow-primary/30">
-            <UtensilsCrossed size={32} strokeWidth={2.5} />
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-white mb-4 shadow-lg shadow-primary/30">
+            <div className="w-12 h-12 flex items-center justify-center scale-180">
+              <img src={logo} alt="MenuKit-Logo" className="w-full h-full" />
+            </div>
           </div>
           <h1 className="text-3xl font-heading font-bold text-slate-900 dark:text-white tracking-tight">Menukit</h1>
           <p className="text-slate-500 dark:text-slate-400 mt-2 text-center">Digital menus for modern restaurants</p>

@@ -74,7 +74,7 @@ export function DashboardPage() {
   if (!shop?.id) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
-        <div className="w-24 h-24 bg-primary-100 dark:bg-primary-900/30 rounded-full flex items-center justify-center mb-6">
+        <div className="w-24 h-24 bg-primary-400 dark:bg-primary-900/30 rounded-full flex items-center justify-center mb-6">
           <Store className="w-12 h-12 text-primary" />
         </div>
         <h2 className="text-3xl font-heading font-bold mb-4">Welcome to Menukit!</h2>
@@ -99,33 +99,33 @@ export function DashboardPage() {
   return (
   <>
     {/* Dashboard Content */}
-    <div className="space-y-8 animate-slide-up">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+    <div className="space-y-6 sm:space-y-8 animate-slide-up pb-20">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 sm:gap-4">
         <div>
-          <h2 className="text-2xl font-bold font-heading">Overview</h2>
-          <p className="text-slate-500">
+          <h2 className="text-xl sm:text-2xl font-bold font-heading">Overview</h2>
+          <p className="text-sm sm:text-base text-slate-500">
             Welcome back! Here's what's happening at {shop.name}.
           </p>
         </div>
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
         {statCards.map((stat, i) => (
           <Card key={i} className="hover:shadow-md transition-shadow">
-            <CardContent className="p-6">
-              <div className="flex justify-between items-start">
+            <CardContent className="p-4 sm:p-6">
+              <div className="flex flex-col-reverse sm:flex-row sm:justify-between sm:items-start gap-2">
                 <div>
-                  <p className="text-sm font-medium text-slate-500 mb-1">
+                  <p className="text-xs sm:text-sm font-medium text-slate-500 mb-0.5 sm:mb-1 truncate">
                     {stat.title}
                   </p>
-                  <h3 className="text-3xl font-bold text-slate-900 dark:text-white">
+                  <h3 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white">
                     {stat.value}
                   </h3>
                 </div>
 
-                <div className={`p-3 rounded-xl ${stat.bg} ${stat.color}`}>
-                  <stat.icon size={20} />
+                <div className={`p-2 sm:p-3 rounded-xl self-start ${stat.bg} ${stat.color}`}>
+                  <stat.icon className="w-5 h-5 sm:w-6 sm:h-6" />
                 </div>
               </div>
             </CardContent>
@@ -134,10 +134,10 @@ export function DashboardPage() {
       </div>
 
       {/* Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         {/* Recent Activity */}
-        <Card className="lg:col-span-2 flex flex-col h-[450px]">
-          <CardHeader className="shrink-0 pb-4">
+        <Card className="lg:col-span-2 flex flex-col h-[350px] sm:h-[450px]">
+          <CardHeader className="shrink-0 pb-3 sm:pb-4">
             <CardTitle>Recent Activity</CardTitle>
             <CardDescription>
               Your latest actions on the platform
@@ -175,8 +175,8 @@ export function DashboardPage() {
         </Card>
 
         {/* Top Searches */}
-        <Card className="flex flex-col h-[450px]">
-          <CardHeader className="shrink-0 pb-4">
+        <Card className="flex flex-col h-[300px] sm:h-[450px]">
+          <CardHeader className="shrink-0 pb-3 sm:pb-4">
             <CardTitle>Top Customer Searches</CardTitle>
             <CardDescription>
               What people are looking for

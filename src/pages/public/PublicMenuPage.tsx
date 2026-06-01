@@ -30,12 +30,13 @@ export function PublicMenuPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategoryId, setActiveCategoryId] = useState<string>('all');
-  const [foodFilter, setFoodFilter] = useState<'all' | 'veg' | 'non-veg'>('all');
+  const [foodFilter, setFoodFilter] = useState<'all' | 'veg' | 'non-veg' | 'egg' | 'drink'>('all');
   const [sortOrder, setSortOrder] = useState<'default' | 'price_asc' | 'price_desc'>('default');
   const [extraFilters, setExtraFilters] = useState<string[]>([]);
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [userViewMode, setUserViewMode] = useState<'grid' | 'list' | null>(null);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const categoriesRef = useRef<HTMLDivElement>(null);
 
   // Handle Scroll
@@ -54,6 +55,9 @@ export function PublicMenuPage() {
   
   // Details Modal
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
+  const [selectedVariantIdx, setSelectedVariantIdx] = useState<number>(0);
+  const [selectedIcePreference, setSelectedIcePreference] = useState<'with' | 'without' | null>(null);
+  const [selectedAddons, setSelectedAddons] = useState<number[]>([]);
   const [isShopInfoOpen, setIsShopInfoOpen] = useState(false);
   const [isLanguageModalOpen, setIsLanguageModalOpen] = useState(false);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
@@ -196,6 +200,9 @@ export function PublicMenuPage() {
 
   const handleItemClick = (item: MenuItem, categoryId: string) => {
     setSelectedItem(item);
+    setSelectedVariantIdx(0);
+    setSelectedIcePreference(item.allow_ice_preference ? 'with' : null);
+    setSelectedAddons([]);
     if (id) {
       api.post(`/public/shop/${id}/view`, { item_id: item.id, category_id: categoryId }).catch(console.error);
     }
@@ -356,30 +363,44 @@ export function PublicMenuPage() {
       <div className={`fixed top-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-md shadow-sm border-b border-slate-200 transition-all duration-300 transform ${
         isScrolled ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 pointer-events-none'
       }`}>
-        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">
+        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3 transition-all">
           {/* Small Logo */}
-          <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 border border-slate-200 bg-white flex items-center justify-center shadow-sm">
-            {shop.logo_url ? (
-              <img src={shop.logo_url} alt="Logo" className="w-full h-full object-cover" />
-            ) : (
-              <UtensilsCrossed size={20} className="text-slate-400" />
-            )}
-          </div>
+          {!isSearchFocused && (
+            <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 border border-slate-200 bg-white flex items-center justify-center shadow-sm transition-all">
+              {shop.logo_url ? (
+                <img src={shop.logo_url} alt="Logo" className="w-full h-full object-cover" />
+              ) : (
+                <UtensilsCrossed size={20} className="text-slate-400" />
+              )}
+            </div>
+          )}
           
           {/* Small Search */}
-          <div className="relative flex-1">
+          <div className="relative flex-1 transition-all duration-300">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
             <input
               type="text"
               placeholder="Search..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onFocus={() => setIsSearchFocused(true)}
+              onBlur={() => {
+                // Delay hiding slightly to allow clicks on search results/clear button
+                setTimeout(() => {
+                  if (!searchQuery) {
+                    setIsSearchFocused(false);
+                  }
+                }, 200);
+              }}
               className="w-full h-10 pl-9 pr-8 rounded-lg bg-white border border-slate-200 shadow-sm focus:outline-none focus:ring-2 transition-all text-sm"
               style={{ '--tw-ring-color': primaryColor } as any}
             />
             {searchQuery && (
               <button 
-                onClick={() => setSearchQuery('')}
+                onClick={() => {
+                  setSearchQuery('');
+                  setIsSearchFocused(false);
+                }}
                 className="absolute right-3 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100"
               >
                 <X size={14} />
@@ -387,45 +408,67 @@ export function PublicMenuPage() {
             )}
           </div>
 
-          {/* Veg/Non-veg Toggle */}
-          <div className="flex bg-slate-100 rounded-lg p-1 shrink-0 items-center">
-            <button
-              onClick={() => setFoodFilter(foodFilter === 'veg' ? 'all' : 'veg')}
-              className={`p-1.5 rounded-md transition-colors ${foodFilter === 'veg' ? 'bg-white shadow-sm' : 'opacity-50 hover:opacity-80'}`}
-              title="Veg Only"
-            >
-              <span className="w-4 h-4 border-2 border-green-600 rounded-[3px] flex items-center justify-center">
-                <span className="w-2 h-2 bg-green-600 rounded-full"></span>
-              </span>
-            </button>
-            <button
-              onClick={() => setFoodFilter(foodFilter === 'non-veg' ? 'all' : 'non-veg')}
-              className={`p-1.5 rounded-md transition-colors ${foodFilter === 'non-veg' ? 'bg-white shadow-sm' : 'opacity-50 hover:opacity-80'}`}
-              title="Non-veg Only"
-            >
-              <span className="w-4 h-4 border-2 border-red-600 rounded-[3px] flex items-center justify-center">
-                <span className="w-0 h-0 border-l-[4px] border-r-[4px] border-b-[6px] border-transparent border-b-red-600"></span>
-              </span>
-            </button>
-          </div>
+          {!isSearchFocused && (
+            <>
+              {/* Veg/Non-veg/Egg/Drink Toggle */}
+              <div className="flex bg-slate-100 rounded-lg p-1 shrink-0 items-center overflow-x-auto scrollbar-hide no-scrollbar">
+                <button
+                  onClick={() => setFoodFilter(foodFilter === 'veg' ? 'all' : 'veg')}
+                  className={`p-1.5 rounded-md transition-colors ${foodFilter === 'veg' ? 'bg-white shadow-sm' : 'opacity-50 hover:opacity-80'}`}
+                  title="Veg Only"
+                >
+                  <span className="w-4 h-4 border-2 border-green-600 rounded-[3px] flex items-center justify-center shrink-0">
+                    <span className="w-2 h-2 bg-green-600 rounded-full"></span>
+                  </span>
+                </button>
+                <button
+                  onClick={() => setFoodFilter(foodFilter === 'non-veg' ? 'all' : 'non-veg')}
+                  className={`p-1.5 rounded-md transition-colors ${foodFilter === 'non-veg' ? 'bg-white shadow-sm' : 'opacity-50 hover:opacity-80'}`}
+                  title="Non-veg Only"
+                >
+                  <span className="w-4 h-4 border-2 border-red-600 rounded-[3px] flex items-center justify-center shrink-0">
+                    <span className="w-0 h-0 border-l-[4px] border-r-[4px] border-b-[6px] border-transparent border-b-red-600"></span>
+                  </span>
+                </button>
+                <button
+                  onClick={() => setFoodFilter(foodFilter === 'egg' ? 'all' : 'egg')}
+                  className={`p-1.5 rounded-md transition-colors ${foodFilter === 'egg' ? 'bg-white shadow-sm' : 'opacity-50 hover:opacity-80'}`}
+                  title="Egg Only"
+                >
+                  <span className="w-4 h-4 border-2 border-yellow-600 rounded-[3px] flex items-center justify-center shrink-0">
+                    <span className="w-2 h-2 bg-yellow-600 rounded-full"></span>
+                  </span>
+                </button>
+                <button
+                  onClick={() => setFoodFilter(foodFilter === 'drink' ? 'all' : 'drink')}
+                  className={`p-1.5 rounded-md transition-colors ${foodFilter === 'drink' ? 'bg-white shadow-sm' : 'opacity-50 hover:opacity-80'}`}
+                  title="Drinks Only"
+                >
+                  <span className="w-4 h-4 border-2 border-blue-600 rounded-[3px] flex items-center justify-center shrink-0">
+                    <span className="w-2 h-2 bg-blue-600 rounded-full"></span>
+                  </span>
+                </button>
+              </div>
 
-          {/* View Toggle */}
-          <div className="flex bg-slate-100 rounded-lg p-1 shrink-0 items-center">
-            <button
-              onClick={() => setUserViewMode('grid')}
-              className={`p-1.5 rounded-md transition-colors ${layoutStyle === 'grid' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
-              title="Grid View"
-            >
-              <LayoutGrid size={16} />
-            </button>
-            <button
-              onClick={() => setUserViewMode('list')}
-              className={`p-1.5 rounded-md transition-colors ${layoutStyle === 'list' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
-              title="List View"
-            >
-              <ListIcon size={16} />
-            </button>
-          </div>
+              {/* View Toggle */}
+              <div className="flex bg-slate-100 rounded-lg p-1 shrink-0 items-center">
+                <button
+                  onClick={() => setUserViewMode('grid')}
+                  className={`p-1.5 rounded-md transition-colors ${layoutStyle === 'grid' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
+                  title="Grid View"
+                >
+                  <LayoutGrid size={16} />
+                </button>
+                <button
+                  onClick={() => setUserViewMode('list')}
+                  className={`p-1.5 rounded-md transition-colors ${layoutStyle === 'list' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
+                  title="List View"
+                >
+                  <ListIcon size={16} />
+                </button>
+              </div>
+            </>
+          )}
         </div>
         
         {/* Sticky Categories */}
@@ -507,20 +550,31 @@ export function PublicMenuPage() {
         </div>
 
         {/* Search & View Toggle */}
-        <div className="flex items-center gap-2 sm:gap-3 mb-3">
-          <div className="relative flex-1">
+        <div className="flex items-center gap-2 sm:gap-3 mb-3 transition-all">
+          <div className="relative flex-1 transition-all duration-300">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 opacity-40" />
             <input
               type="text"
               placeholder="Search for a dish..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onFocus={() => setIsSearchFocused(true)}
+              onBlur={() => {
+                setTimeout(() => {
+                  if (!searchQuery) {
+                    setIsSearchFocused(false);
+                  }
+                }, 200);
+              }}
               className="w-full h-12 pl-12 pr-10 rounded-full border shadow-sm focus:outline-none focus:ring-2 transition-all bg-white border-slate-200 text-slate-900 placeholder-slate-400 text-sm sm:text-base"
               style={{ '--tw-ring-color': primaryColor } as any}
             />
             {searchQuery && (
               <button 
-                onClick={() => setSearchQuery('')}
+                onClick={() => {
+                  setSearchQuery('');
+                  setIsSearchFocused(false);
+                }}
                 className="absolute right-4 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100"
               >
                 <X size={16} />
@@ -528,54 +582,85 @@ export function PublicMenuPage() {
             )}
           </div>
 
-          {/* Veg/Non-veg Toggle */}
-          <div className="flex bg-white shadow-sm border border-slate-200 rounded-full p-1 shrink-0 items-center">
-            <button
-              onClick={() => setFoodFilter(foodFilter === 'veg' ? 'all' : 'veg')}
-              className={`p-2 rounded-full transition-all ${foodFilter === 'veg' ? 'bg-green-50 shadow-sm ring-1 ring-green-200' : 'text-slate-400 hover:text-slate-600'}`}
-              title="Veg Only"
-            >
-              <span className="w-4 h-4 border-2 border-green-600 rounded-[3px] flex items-center justify-center">
-                <span className="w-2 h-2 bg-green-600 rounded-full"></span>
-              </span>
-            </button>
-            <button
-              onClick={() => setFoodFilter(foodFilter === 'non-veg' ? 'all' : 'non-veg')}
-              className={`p-2 rounded-full transition-all ${foodFilter === 'non-veg' ? 'bg-red-50 shadow-sm ring-1 ring-red-200' : 'text-slate-400 hover:text-slate-600'}`}
-              title="Non-veg Only"
-            >
-              <span className="w-4 h-4 border-2 border-red-600 rounded-[3px] flex items-center justify-center">
-                <span className="w-0 h-0 border-l-[4px] border-r-[4px] border-b-[6px] border-transparent border-b-red-600"></span>
-              </span>
-            </button>
-          </div>
+          {!isSearchFocused && (
+            <>
+              {/* Veg/Non-veg/Egg/Drink Toggle */}
+              <div className="flex bg-white shadow-sm border border-slate-200 rounded-full p-1 shrink-0 items-center overflow-x-auto no-scrollbar scrollbar-hide">
+                <button
+                  onClick={() => setFoodFilter(foodFilter === 'veg' ? 'all' : 'veg')}
+                  className={`p-2 rounded-full transition-all shrink-0 ${foodFilter === 'veg' ? 'bg-green-50 shadow-sm ring-1 ring-green-200' : 'text-slate-400 hover:text-slate-600'}`}
+                  title="Veg Only"
+                >
+                  <span className="w-4 h-4 border-2 border-green-600 rounded-[3px] flex items-center justify-center">
+                    <span className="w-2 h-2 bg-green-600 rounded-full"></span>
+                  </span>
+                </button>
+                <button
+                  onClick={() => setFoodFilter(foodFilter === 'non-veg' ? 'all' : 'non-veg')}
+                  className={`p-2 rounded-full transition-all shrink-0 ${foodFilter === 'non-veg' ? 'bg-red-50 shadow-sm ring-1 ring-red-200' : 'text-slate-400 hover:text-slate-600'}`}
+                  title="Non-veg Only"
+                >
+                  <span className="w-4 h-4 border-2 border-red-600 rounded-[3px] flex items-center justify-center">
+                    <span className="w-0 h-0 border-l-[4px] border-r-[4px] border-b-[6px] border-transparent border-b-red-600"></span>
+                  </span>
+                </button>
+                <button
+                  onClick={() => setFoodFilter(foodFilter === 'egg' ? 'all' : 'egg')}
+                  className={`p-2 rounded-full transition-all shrink-0 ${foodFilter === 'egg' ? 'bg-yellow-50 shadow-sm ring-1 ring-yellow-200' : 'text-slate-400 hover:text-slate-600'}`}
+                  title="Contains Egg"
+                >
+                  <span className="w-4 h-4 border-2 border-yellow-500 rounded-[3px] flex items-center justify-center">
+                    <span className="w-2 h-2 bg-yellow-500 rounded-full"></span>
+                  </span>
+                </button>
+                <button
+                  onClick={() => setFoodFilter(foodFilter === 'drink' ? 'all' : 'drink')}
+                  className={`p-2 rounded-full transition-all shrink-0 ${foodFilter === 'drink' ? 'bg-blue-50 shadow-sm ring-1 ring-blue-200' : 'text-slate-400 hover:text-slate-600'}`}
+                  title="Drinks Only"
+                >
+                  <span className="w-4 h-4 border-2 border-blue-500 rounded-full flex items-center justify-center">
+                    <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                  </span>
+                </button>
+              </div>
 
-          {/* View Toggle */}
-          <div className="flex bg-white shadow-sm border border-slate-200 rounded-full p-1 shrink-0 items-center">
-            <button
-              onClick={() => setUserViewMode('grid')}
-              className={`p-2 rounded-full transition-colors ${layoutStyle === 'grid' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
-              title="Grid View"
-            >
-              <LayoutGrid size={18} />
-            </button>
-            <button
-              onClick={() => setUserViewMode('list')}
-              className={`p-2 rounded-full transition-colors ${layoutStyle === 'list' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
-              title="List View"
-            >
-              <ListIcon size={18} />
-            </button>
-          </div>
+              {/* View Toggle */}
+              <div className="flex bg-white shadow-sm border border-slate-200 rounded-full p-1 shrink-0 items-center">
+                <button
+                  onClick={() => setUserViewMode('grid')}
+                  className={`p-2 rounded-full transition-colors ${layoutStyle === 'grid' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
+                  title="Grid View"
+                >
+                  <LayoutGrid size={18} />
+                </button>
+                <button
+                  onClick={() => setUserViewMode('list')}
+                  className={`p-2 rounded-full transition-colors ${layoutStyle === 'list' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
+                  title="List View"
+                >
+                  <ListIcon size={18} />
+                </button>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Active filter indicators */}
         {(foodFilter !== 'all' || sortOrder !== 'default' || extraFilters.length > 0) && (
           <div className="flex flex-wrap items-center gap-2 mb-4">
             {foodFilter !== 'all' && (
-              <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full ${foodFilter === 'veg' ? 'bg-green-50 text-green-700 ring-1 ring-green-200' : 'bg-red-50 text-red-700 ring-1 ring-red-200'}`}>
+              <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full ${
+                foodFilter === 'veg' ? 'bg-green-50 text-green-700 ring-1 ring-green-200' : 
+                foodFilter === 'egg' ? 'bg-yellow-50 text-yellow-700 ring-1 ring-yellow-200' :
+                foodFilter === 'drink' ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-200' :
+                'bg-red-50 text-red-700 ring-1 ring-red-200'
+              }`}>
                 {foodFilter === 'veg' ? (
                   <><span className="w-3 h-3 border-[1.5px] border-green-600 rounded-[2px] flex items-center justify-center"><span className="w-1.5 h-1.5 bg-green-600 rounded-full"></span></span> Showing Veg Only</>
+                ) : foodFilter === 'egg' ? (
+                  <><span className="w-3 h-3 border-[1.5px] border-yellow-500 rounded-[2px] flex items-center justify-center"><span className="w-1.5 h-1.5 bg-yellow-500 rounded-full"></span></span> Showing Contains Egg</>
+                ) : foodFilter === 'drink' ? (
+                  <><span className="w-3 h-3 border-[1.5px] border-blue-500 rounded-full flex items-center justify-center"><span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span></span> Showing Drinks Only</>
                 ) : (
                   <><span className="w-3 h-3 border-[1.5px] border-red-600 rounded-[2px] flex items-center justify-center"><span className="w-0 h-0 border-l-[3px] border-r-[3px] border-b-[5px] border-transparent border-b-red-600"></span></span> Showing Non-veg Only</>
                 )}
@@ -711,11 +796,19 @@ export function PublicMenuPage() {
                             </div>
                           )}
                           
-                          {/* Veg/Non-veg mark */}
+                          {/* Food Type mark */}
                           <div className="absolute top-2 right-2 bg-white/90 backdrop-blur-sm p-0.5 rounded shadow-sm">
                             {item.food_type === 'veg' ? (
                               <span className="w-3 h-3 border border-green-600 rounded-[2px] flex items-center justify-center">
                                 <span className="w-1.5 h-1.5 bg-green-600 rounded-full"></span>
+                              </span>
+                            ) : item.food_type === 'egg' ? (
+                              <span className="w-3 h-3 border border-yellow-500 rounded-[2px] flex items-center justify-center">
+                                <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full"></span>
+                              </span>
+                            ) : item.food_type === 'drink' ? (
+                              <span className="w-3 h-3 border border-blue-500 rounded-full flex items-center justify-center">
+                                <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
                               </span>
                             ) : (
                               <span className="w-3 h-3 border border-red-600 rounded-[2px] flex items-center justify-center">
@@ -732,10 +825,27 @@ export function PublicMenuPage() {
                             {item.description && layoutStyle === 'list' && (
                               <p className="text-xs opacity-60 mt-1 line-clamp-2">{item.description}</p>
                             )}
+                            
+                            {/* Variants and Addons indicators */}
+                            {((item.variants && item.variants.length > 0) || (item.addons && item.addons.length > 0)) && (
+                              <div className="flex gap-1.5 mt-1.5 flex-wrap">
+                                {item.variants && item.variants.length > 0 && (
+                                  <span className="text-[9px] sm:text-[10px] font-medium px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded border border-slate-200 dark:border-slate-700">
+                                    +{item.variants.length} {item.variants.length === 1 ? 'variant' : 'variants'}
+                                  </span>
+                                )}
+                                {item.addons && item.addons.length > 0 && (
+                                  <span className="text-[9px] sm:text-[10px] font-medium px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded border border-slate-200 dark:border-slate-700">
+                                    +{item.addons.length} {item.addons.length === 1 ? 'add-on' : 'add-ons'}
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </div>
                           
                           <div className={`mt-2 flex flex-wrap items-center gap-2 ${layoutStyle === 'grid' ? 'justify-between' : ''}`}>
                             <span className="font-bold whitespace-nowrap" style={{ color: primaryColor }}>
+                              {item.variants && item.variants.length > 0 && <span className="text-[10px] sm:text-xs font-normal opacity-80 mr-1 text-slate-500">Starts from</span>}
                               {settings?.currency || '₹'}{item.offer_price || item.price}
                             </span>
                             {settings?.show_offers && item.offer_price && (
@@ -796,6 +906,14 @@ export function PublicMenuPage() {
                     <span className="w-5 h-5 border border-green-600 rounded flex items-center justify-center" title="Vegetarian">
                       <span className="w-2.5 h-2.5 bg-green-600 rounded-full"></span>
                     </span>
+                  ) : selectedItem.food_type === 'egg' ? (
+                    <span className="w-5 h-5 border border-yellow-500 rounded flex items-center justify-center" title="Contains Egg">
+                      <span className="w-2.5 h-2.5 bg-yellow-500 rounded-full"></span>
+                    </span>
+                  ) : selectedItem.food_type === 'drink' ? (
+                    <span className="w-5 h-5 border border-blue-500 rounded-full flex items-center justify-center" title="Beverage">
+                      <span className="w-2.5 h-2.5 bg-blue-500 rounded-full"></span>
+                    </span>
                   ) : (
                     <span className="w-5 h-5 border border-red-600 rounded flex items-center justify-center" title="Non-Vegetarian">
                       <span className="w-0 h-0 border-l-[4px] border-r-[4px] border-b-[6px] border-transparent border-b-red-600"></span>
@@ -806,11 +924,33 @@ export function PublicMenuPage() {
               
               <div className="flex items-center gap-2 mb-4">
                 <span className="text-xl font-bold" style={{ color: primaryColor }}>
-                  {settings?.currency || '₹'}{selectedItem.offer_price || selectedItem.price}
+                  {settings?.currency || '₹'}
+                  {(() => {
+                    let basePrice = (selectedItem.variants && selectedItem.variants.length > 0) 
+                      ? Number(selectedItem.variants[selectedVariantIdx]?.offer_price || selectedItem.variants[selectedVariantIdx]?.price) 
+                      : Number(selectedItem.offer_price || selectedItem.price);
+                    
+                    let addonsPrice = (selectedItem.addons && selectedItem.addons.length > 0)
+                      ? selectedAddons.reduce((sum, idx) => sum + Number(selectedItem.addons![idx].price), 0)
+                      : 0;
+                      
+                    return (basePrice + addonsPrice).toFixed(2).replace(/\.00$/, '');
+                  })()}
                 </span>
-                {settings?.show_offers && selectedItem.offer_price && (
+                {settings?.show_offers && ((selectedItem.variants && selectedItem.variants.length > 0) ? selectedItem.variants[selectedVariantIdx]?.offer_price : selectedItem.offer_price) && (
                   <span className="text-sm opacity-50 line-through">
-                    {settings?.currency || '₹'}{selectedItem.price}
+                    {settings?.currency || '₹'}
+                    {(() => {
+                      let basePrice = (selectedItem.variants && selectedItem.variants.length > 0) 
+                        ? Number(selectedItem.variants[selectedVariantIdx]?.price) 
+                        : Number(selectedItem.price);
+                      
+                      let addonsPrice = (selectedItem.addons && selectedItem.addons.length > 0)
+                        ? selectedAddons.reduce((sum, idx) => sum + Number(selectedItem.addons![idx].price), 0)
+                        : 0;
+                        
+                      return (basePrice + addonsPrice).toFixed(2).replace(/\.00$/, '');
+                    })()}
                   </span>
                 )}
                 {selectedItem.is_bestseller && (
@@ -819,6 +959,86 @@ export function PublicMenuPage() {
                   </span>
                 )}
               </div>
+              
+              {selectedItem.variants && selectedItem.variants.length > 0 && (
+                <div className="mb-4">
+                  <h3 className="font-semibold text-sm mb-2 opacity-90">Select Option</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedItem.variants.map((v, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => setSelectedVariantIdx(idx)}
+                        className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${selectedVariantIdx === idx ? 'border-primary bg-primary/10' : 'border-slate-200 text-slate-600 hover:border-primary/50'}`}
+                        style={selectedVariantIdx === idx ? { borderColor: primaryColor, color: primaryColor } : {}}
+                      >
+                        {v.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {selectedItem.allow_ice_preference && (
+                <div className="mb-4">
+                  <h3 className="font-semibold text-sm mb-2 opacity-90">Ice Preference</h3>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => setSelectedIcePreference('with')}
+                      className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${selectedIcePreference === 'with' ? 'border-primary bg-primary/10' : 'border-slate-200 text-slate-600 hover:border-primary/50'}`}
+                      style={selectedIcePreference === 'with' ? { borderColor: primaryColor, color: primaryColor } : {}}
+                    >
+                      With Ice
+                    </button>
+                    <button
+                      onClick={() => setSelectedIcePreference('without')}
+                      className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${selectedIcePreference === 'without' ? 'border-primary bg-primary/10' : 'border-slate-200 text-slate-600 hover:border-primary/50'}`}
+                      style={selectedIcePreference === 'without' ? { borderColor: primaryColor, color: primaryColor } : {}}
+                    >
+                      Without Ice
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {selectedItem.addons && selectedItem.addons.length > 0 && (
+                <div className="mb-4">
+                  <h3 className="font-semibold text-sm mb-2 opacity-90">Optional Add-ons</h3>
+                  <div className="flex flex-col gap-2">
+                    {selectedItem.addons.map((addon, idx) => (
+                      <label 
+                        key={idx} 
+                        className={`flex items-center justify-between p-3 rounded-xl border transition-colors cursor-pointer ${selectedAddons.includes(idx) ? 'border-primary bg-primary/5' : 'border-slate-100 hover:border-primary/30'}`}
+                        style={selectedAddons.includes(idx) ? { borderColor: primaryColor } : {}}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div 
+                            className={`w-5 h-5 rounded flex items-center justify-center border transition-colors ${selectedAddons.includes(idx) ? 'bg-primary border-primary' : 'border-slate-300'}`}
+                            style={selectedAddons.includes(idx) ? { backgroundColor: primaryColor, borderColor: primaryColor } : {}}
+                          >
+                            {selectedAddons.includes(idx) && <Check size={14} className="text-white" />}
+                          </div>
+                          <span className="text-sm font-medium">{addon.name}</span>
+                        </div>
+                        <span className="text-sm font-medium opacity-70">
+                          +{settings?.currency || '₹'}{addon.price}
+                        </span>
+                        <input 
+                          type="checkbox"
+                          className="hidden"
+                          checked={selectedAddons.includes(idx)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedAddons([...selectedAddons, idx]);
+                            } else {
+                              setSelectedAddons(selectedAddons.filter(id => id !== idx));
+                            }
+                          }}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
               
               {selectedItem.description ? (
                 <div className="mt-4">

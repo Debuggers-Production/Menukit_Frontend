@@ -4,7 +4,7 @@ import { toast } from 'react-hot-toast';
 import { Plus, Edit2, Trash2, Search, Filter, Image as ImageIcon, Star, Flame, LayoutGrid, List } from 'lucide-react';
 import { api } from '@/services/api';
 import { useShopStore } from '@/store/shopStore';
-import { MenuItem } from '@/types';
+import { MenuItem, MenuItemVariant, MenuItemAddon } from '@/types';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -46,7 +46,10 @@ export function MenuItemsPage() {
     food_type: 'veg',
     is_bestseller: false,
     is_highlighted: false,
-    is_available: true
+    is_available: true,
+    variants: [] as MenuItemVariant[],
+    addons: [] as MenuItemAddon[],
+    allow_ice_preference: false
   };
   const [formData, setFormData] = useState(defaultForm);
 
@@ -97,7 +100,10 @@ export function MenuItemsPage() {
         food_type: item.food_type,
         is_bestseller: item.is_bestseller,
         is_highlighted: item.is_highlighted,
-        is_available: item.is_available
+        is_available: item.is_available,
+        variants: item.variants || [],
+        addons: item.addons || [],
+        allow_ice_preference: item.allow_ice_preference || false
       });
     } else {
       setEditingItem(null);
@@ -114,20 +120,24 @@ export function MenuItemsPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    const hasVariants = formData.variants && formData.variants.length > 0;
+    const basePrice = hasVariants ? formData.variants[0].price : formData.price;
+    const baseOfferPrice = hasVariants ? formData.variants[0].offer_price : formData.offer_price;
+    
     if (currentStep < 3) {
       if (currentStep === 1 && (!formData.name.trim() || !formData.category_id)) {
         toast.error('Please fill required fields');
         return;
       }
-      if (currentStep === 2 && !formData.price) {
-        toast.error('Please provide a regular price');
+      if (currentStep === 2 && !basePrice) {
+        toast.error('Please provide a regular price or add variants');
         return;
       }
       setCurrentStep(prev => prev + 1);
       return;
     }
 
-    if (!formData.name.trim() || !formData.price || !formData.category_id) {
+    if (!formData.name.trim() || !basePrice || !formData.category_id) {
       toast.error('Please fill required fields');
       return;
     }
@@ -136,8 +146,8 @@ export function MenuItemsPage() {
     try {
       const payload = {
         ...formData,
-        price: parseFloat(formData.price),
-        offer_price: formData.offer_price ? parseFloat(formData.offer_price) : null
+        price: parseFloat(basePrice),
+        offer_price: baseOfferPrice ? parseFloat(baseOfferPrice) : null
       };
 
       if (editingItem) {
@@ -332,6 +342,14 @@ export function MenuItemsPage() {
                       <span className="w-3 h-3 border border-green-600 rounded-[2px] flex items-center justify-center">
                         <span className="w-1.5 h-1.5 bg-green-600 rounded-full"></span>
                       </span>
+                    ) : item.food_type === 'egg' ? (
+                      <span className="w-3 h-3 border border-yellow-600 rounded-[2px] flex items-center justify-center">
+                        <span className="w-1.5 h-1.5 bg-yellow-600 rounded-full"></span>
+                      </span>
+                    ) : item.food_type === 'drink' ? (
+                      <span className="w-3 h-3 border border-blue-600 rounded-[2px] flex items-center justify-center">
+                        <span className="w-1.5 h-1.5 bg-blue-600 rounded-full"></span>
+                      </span>
                     ) : (
                       <span className="w-3 h-3 border border-red-600 rounded-[2px] flex items-center justify-center">
                         <span className="w-0 h-0 border-l-[3px] border-r-[3px] border-b-[5px] border-transparent border-b-red-600"></span>
@@ -476,44 +494,207 @@ export function MenuItemsPage() {
 
             {currentStep === 2 && (
               <div className="space-y-4 animate-fade-in">
-                <div className="grid grid-cols-2 gap-4">
-                  <Input
-                    label="Regular Price *"
-                    type="number"
-                    step="0.01"
-                    value={formData.price}
-                    onChange={(e) => setFormData({...formData, price: e.target.value})}
-                    placeholder="0.00"
-                    required
-                  />
-                  <Input
-                    label="Offer Price (Opt)"
-                    type="number"
-                    step="0.01"
-                    value={formData.offer_price}
-                    onChange={(e) => setFormData({...formData, offer_price: e.target.value})}
-                    placeholder="0.00"
-                  />
-                </div>
+                {formData.variants.length === 0 && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <Input
+                      label="Regular Price *"
+                      type="number"
+                      step="0.01"
+                      value={formData.price}
+                      onChange={(e) => setFormData({...formData, price: e.target.value})}
+                      placeholder="0.00"
+                      required
+                    />
+                    <Input
+                      label="Offer Price (Opt)"
+                      type="number"
+                      step="0.01"
+                      value={formData.offer_price}
+                      onChange={(e) => setFormData({...formData, offer_price: e.target.value})}
+                      placeholder="0.00"
+                    />
+                  </div>
+                )}
                 
+                <div className="space-y-3 pt-2">
+                  <div className="flex justify-between items-center">
+                    <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Variants (e.g. Sizes)</label>
+                    <button 
+                      type="button" 
+                      onClick={() => setFormData({...formData, variants: [...formData.variants, { name: '', price: '', offer_price: '' }]})}
+                      className="text-xs text-primary hover:text-primary-600 font-medium flex items-center"
+                    >
+                      <Plus size={14} className="mr-1"/> Add Variant
+                    </button>
+                  </div>
+                  {formData.variants.map((v, idx) => (
+                    <div key={idx} className="flex gap-2 items-start bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-200 dark:border-slate-700">
+                      <div className="flex-1 space-y-3">
+                        <Input 
+                          label="Variant Name" 
+                          placeholder="e.g. 500ml" 
+                          value={v.name} 
+                          onChange={(e) => {
+                            const newV = [...formData.variants];
+                            newV[idx].name = e.target.value;
+                            setFormData({...formData, variants: newV});
+                          }} 
+                          required 
+                        />
+                        <div className="grid grid-cols-2 gap-2">
+                          <Input 
+                            label="Price" 
+                            type="number" 
+                            step="0.01" 
+                            placeholder="0.00" 
+                            value={v.price} 
+                            onChange={(e) => {
+                              const newV = [...formData.variants];
+                              newV[idx].price = e.target.value;
+                              setFormData({...formData, variants: newV});
+                            }} 
+                            required 
+                          />
+                          <Input 
+                            label="Offer Price" 
+                            type="number" 
+                            step="0.01" 
+                            placeholder="0.00" 
+                            value={v.offer_price || ''} 
+                            onChange={(e) => {
+                              const newV = [...formData.variants];
+                              newV[idx].offer_price = e.target.value || null;
+                              setFormData({...formData, variants: newV});
+                            }} 
+                          />
+                        </div>
+                      </div>
+                      <button 
+                        type="button" 
+                        onClick={() => {
+                          const newV = [...formData.variants];
+                          newV.splice(idx, 1);
+                          setFormData({...formData, variants: newV});
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-red-500 mt-6"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+
+                <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
+                  <div className="flex justify-between items-center mb-3">
+                    <div>
+                      <h4 className="text-sm font-medium text-slate-700 dark:text-slate-300">Add-ons (Optional)</h4>
+                      <p className="text-xs text-slate-500">Optional extras that increase the price (e.g. Extra Cheese +20)</p>
+                    </div>
+                    <Button 
+                      type="button" 
+                      variant="secondary" 
+                      size="sm"
+                      onClick={() => setFormData({
+                        ...formData, 
+                        addons: [...formData.addons, { name: '', price: '' }]
+                      })}
+                    >
+                      <Plus size={16} className="mr-1.5" /> Add Option
+                    </Button>
+                  </div>
+                  
+                  {formData.addons.map((addon, idx) => (
+                    <div key={`addon-${idx}`} className="flex gap-3 items-start mb-3 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
+                      <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 mb-1 block">Add-on Name</label>
+                          <Input 
+                            placeholder="e.g. With Ice" 
+                            value={addon.name} 
+                            onChange={(e) => {
+                              const newA = [...formData.addons];
+                              newA[idx].name = e.target.value;
+                              setFormData({...formData, addons: newA});
+                            }} 
+                            required 
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 mb-1 block">Additional Price</label>
+                          <Input 
+                            type="number" 
+                            step="0.01" 
+                            placeholder="0.00" 
+                            value={addon.price} 
+                            onChange={(e) => {
+                              const newA = [...formData.addons];
+                              newA[idx].price = e.target.value;
+                              setFormData({...formData, addons: newA});
+                            }} 
+                            required 
+                          />
+                        </div>
+                      </div>
+                      <button 
+                        type="button" 
+                        onClick={() => {
+                          const newA = [...formData.addons];
+                          newA.splice(idx, 1);
+                          setFormData({...formData, addons: newA});
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-red-500 mt-6"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
                 <div className="space-y-1.5 text-left pt-2">
                   <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Dietary Type</label>
-                  <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl h-11">
+                  <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl h-auto flex-wrap gap-1">
                     <button
                       type="button"
                       onClick={() => setFormData({...formData, food_type: 'veg'})}
-                      className={`flex-1 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${formData.food_type === 'veg' ? 'bg-white text-green-700 shadow-sm dark:bg-slate-700 dark:text-green-400' : 'text-slate-500 hover:text-slate-900'}`}
+                      className={`flex-1 min-w-[80px] p-2 rounded-lg text-sm font-medium transition-colors flex flex-col sm:flex-row items-center justify-center gap-1.5 ${formData.food_type === 'veg' ? 'bg-white text-green-700 shadow-sm dark:bg-slate-700 dark:text-green-400' : 'text-slate-500 hover:text-slate-900'}`}
                     >
-                      <span className="w-3 h-3 border border-green-600 rounded-sm flex items-center justify-center"><span className="w-1.5 h-1.5 bg-green-600 rounded-full"></span></span> Veg
+                      <span className="w-3 h-3 border border-green-600 rounded-[2px] flex items-center justify-center shrink-0"><span className="w-1.5 h-1.5 bg-green-600 rounded-full"></span></span> Veg
                     </button>
                     <button
                       type="button"
                       onClick={() => setFormData({...formData, food_type: 'non-veg'})}
-                      className={`flex-1 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${formData.food_type === 'non-veg' ? 'bg-white text-red-700 shadow-sm dark:bg-slate-700 dark:text-red-400' : 'text-slate-500 hover:text-slate-900'}`}
+                      className={`flex-1 min-w-[80px] p-2 rounded-lg text-sm font-medium transition-colors flex flex-col sm:flex-row items-center justify-center gap-1.5 ${formData.food_type === 'non-veg' ? 'bg-white text-red-700 shadow-sm dark:bg-slate-700 dark:text-red-400' : 'text-slate-500 hover:text-slate-900'}`}
                     >
-                      <span className="w-3 h-3 border border-red-600 rounded-sm flex items-center justify-center"><span className="w-0 h-0 border-l-[3px] border-r-[3px] border-b-[5px] border-transparent border-b-red-600"></span></span> Non-Veg
+                      <span className="w-3 h-3 border border-red-600 rounded-[2px] flex items-center justify-center shrink-0"><span className="w-0 h-0 border-l-[3px] border-r-[3px] border-b-[5px] border-transparent border-b-red-600"></span></span> Non-Veg
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormData({...formData, food_type: 'egg'})}
+                      className={`flex-1 min-w-[80px] p-2 rounded-lg text-sm font-medium transition-colors flex flex-col sm:flex-row items-center justify-center gap-1.5 ${formData.food_type === 'egg' ? 'bg-white text-yellow-600 shadow-sm dark:bg-slate-700 dark:text-yellow-400' : 'text-slate-500 hover:text-slate-900'}`}
+                    >
+                      <span className="w-3 h-3 border border-yellow-500 rounded-[2px] flex items-center justify-center shrink-0"><span className="w-1.5 h-1.5 bg-yellow-500 rounded-full"></span></span> Egg
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormData({...formData, food_type: 'drink'})}
+                      className={`flex-1 min-w-[80px] p-2 rounded-lg text-sm font-medium transition-colors flex flex-col sm:flex-row items-center justify-center gap-1.5 ${formData.food_type === 'drink' ? 'bg-white text-blue-600 shadow-sm dark:bg-slate-700 dark:text-blue-400' : 'text-slate-500 hover:text-slate-900'}`}
+                    >
+                      <span className="w-3 h-3 border border-blue-500 rounded-full flex items-center justify-center shrink-0"><span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span></span> Drink
                     </button>
                   </div>
+                  
+                  {formData.food_type === 'drink' && (
+                    <div className="pt-3">
+                      <Switch
+                        checked={formData.allow_ice_preference}
+                        onChange={(c) => setFormData({...formData, allow_ice_preference: c})}
+                        label="Allow Ice Preference"
+                        description="Ask customer for With/Without Ice"
+                        className="p-3 border border-slate-200 dark:border-slate-800 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -718,7 +899,7 @@ export function MenuItemsPage() {
       </Modal>
       
       {/* FAB for Add Dish */}
-      {createPortal(
+      {!isModalOpen && createPortal(
         <button
           onClick={() => openModal()}
           className="fixed bottom-20 lg:bottom-8 right-4 lg:right-8 z-50 w-14 h-14 rounded-full bg-primary hover:bg-primary-600 hover:scale-105 shadow-[0_8px_30px_rgb(0,0,0,0.12)] flex items-center justify-center text-white transition-all duration-200"

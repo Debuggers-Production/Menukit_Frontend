@@ -8,8 +8,9 @@ import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { QRCodeInfo } from '@/types';
 
+
 export function QRCodePage() {
-  const { shop } = useShopStore();
+  const { shop, setShop } = useShopStore();
   const [qrCode, setQrCode] = useState<QRCodeInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -20,6 +21,18 @@ export function QRCodePage() {
 
   const fetchQRCode = async () => {
     try {
+      // Fetch shop data if user refreshed the page and store is empty
+      if (!shop) {
+        try {
+          const shopRes = await api.get('/shops/me');
+          if (shopRes.data?.id) {
+            setShop(shopRes.data);
+          }
+        } catch (e) {
+          console.error('Failed to fetch shop', e);
+        }
+      }
+
       const res = await api.get('/qr/info');
       setQrCode(res.data);
     } catch (error: any) {
@@ -173,6 +186,10 @@ export function QRCodePage() {
         qrBoxSize - (padding * 2), 
         qrBoxSize - (padding * 2)
       );
+
+      // Draw Logo in center of QR
+      // (Removed as per user request)
+
       currentY += qrBoxSize + 100;
 
       // 8. Draw Branding (Powered By)

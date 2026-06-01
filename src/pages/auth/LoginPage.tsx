@@ -67,6 +67,9 @@ export function LoginPage() {
       <p className="text-center text-sm text-slate-500 mt-6">
         No password required. We'll send you a secure login code.
       </p>
+      <p className="text-center text-xs text-slate-400 mt-4">
+        By continuing, you are accepting our <a href="/terms" className="text-primary hover:underline">Terms and Conditions</a>.
+      </p>
     </div>
   );
 }

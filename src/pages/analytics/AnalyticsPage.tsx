@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { QrCode, Eye, Search, CalendarDays, Filter } from 'lucide-react';
 import { api } from '@/services/api';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { SearchableSelect } from '@/components/ui/SearchableSelect';
 import { Modal } from '@/components/ui/Modal';
@@ -49,42 +49,48 @@ export function AnalyticsPage() {
     : 10;
 
   return (
-    <div className="space-y-6 max-w-6xl animate-fade-in">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+    <div className="space-y-6 sm:space-y-8 max-w-6xl animate-fade-in pb-20">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 sm:gap-4">
         <div>
-          <h2 className="text-2xl font-bold font-heading">Analytics & Reports</h2>
-          <p className="text-slate-500">Track your menu's performance and customer behavior.</p>
+          <h2 className="text-xl sm:text-2xl font-bold font-heading">Analytics & Reports</h2>
+          <p className="text-sm sm:text-base text-slate-500">Track your menu's performance and customer behavior.</p>
         </div>
       </div>
 
       {/* Main Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg flex items-center">
-              <QrCode size={18} className="mr-2 text-purple-500" />
-              Total Scans
-            </CardTitle>
-            <CardDescription>All time QR scans</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="text-4xl font-bold text-slate-900 dark:text-white">
-              {data?.overview?.total_qr_scans || 0}
+      <div className="grid grid-cols-2 gap-3 sm:gap-6">
+        <Card className="hover:shadow-md transition-shadow">
+          <CardContent className="p-4 sm:p-6">
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-between sm:items-start gap-2">
+              <div>
+                <p className="text-xs sm:text-sm font-medium text-slate-500 mb-0.5 sm:mb-1 truncate">
+                  Total Scans
+                </p>
+                <h3 className="text-2xl sm:text-4xl font-bold text-slate-900 dark:text-white">
+                  {data?.overview?.total_qr_scans || 0}
+                </h3>
+              </div>
+              <div className="p-2 sm:p-3 rounded-xl self-start bg-purple-100 dark:bg-purple-900/30 text-purple-500">
+                <QrCode className="w-5 h-5 sm:w-6 sm:h-6" />
+              </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg flex items-center">
-              <Eye size={18} className="mr-2 text-orange-500" />
-              Menu Views
-            </CardTitle>
-            <CardDescription>Total page and item views</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="text-4xl font-bold text-slate-900 dark:text-white">
-              {data?.overview?.total_menu_views || 0}
+        <Card className="hover:shadow-md transition-shadow">
+          <CardContent className="p-4 sm:p-6">
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-between sm:items-start gap-2">
+              <div>
+                <p className="text-xs sm:text-sm font-medium text-slate-500 mb-0.5 sm:mb-1 truncate">
+                  Menu Views
+                </p>
+                <h3 className="text-2xl sm:text-4xl font-bold text-slate-900 dark:text-white">
+                  {data?.overview?.total_menu_views || 0}
+                </h3>
+              </div>
+              <div className="p-2 sm:p-3 rounded-xl self-start bg-orange-100 dark:bg-orange-900/30 text-orange-500">
+                <Eye className="w-5 h-5 sm:w-6 sm:h-6" />
+              </div>
             </div>
           </CardContent>
         </Card>

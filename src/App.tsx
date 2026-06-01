@@ -22,6 +22,7 @@ import { AnalyticsPage } from '@/pages/analytics/AnalyticsPage';
 
 // Public Pages
 import { PublicMenuPage } from '@/pages/public/PublicMenuPage';
+import { TermsPage } from '@/pages/public/TermsPage';
 
 const AdminPlaceholder = () => (
   <div className="flex items-center justify-center min-h-[60vh]">
@@ -71,6 +72,7 @@ function App() {
 
       {/* Public Menu Route */}
       <Route path="/shop/:id" element={<PublicMenuPage />} />
+      <Route path="/terms" element={<TermsPage />} />
 
       {/* Fallback routes */}
       <Route path="/" element={<Navigate to="/dashboard" replace />} />

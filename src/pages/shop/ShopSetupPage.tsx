@@ -211,10 +211,10 @@ export function ShopSetupPage() {
         {viewMode === 'summary' && (
           <button 
             onClick={() => setViewMode('edit')} 
-            className="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 transition-colors shrink-0"
+            className="w-10 h-10 rounded-full bg-green-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 transition-colors shrink-0"
             title="Edit Shop Details"
           >
-            <Edit2 size={18} />
+            <Edit2 size={18} color='green'/>
           </button>
         )}
       </div>

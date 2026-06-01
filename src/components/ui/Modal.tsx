@@ -41,7 +41,7 @@ export function Modal({ isOpen, onClose, title, description, children, className
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             transition={{ type: "spring", duration: 0.5, bounce: 0.3 }}
             className={cn(
-              "glass-panel relative w-full max-w-lg rounded-2xl p-6 shadow-2xl z-10 max-h-[90vh] overflow-y-auto",
+              "glass-panel relative w-full max-w-lg rounded-2xl p-6 shadow-2xl z-10 max-h-[70vh] overflow-y-auto mb-8 sm:mb-0",
               className
             )}
           >

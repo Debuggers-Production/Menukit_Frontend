@@ -19,6 +19,7 @@ import { cn } from '@/utils/cn';
 import { Modal } from '@/components/ui/Modal';
 import { GoogleTranslate } from '@/components/GoogleTranslate';
 import { LanguageSelectorModal } from '@/components/LanguageSelectorModal';
+import logo from "../assets/menukit-logo.svg";
 
 export function DashboardLayout() {
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
@@ -37,7 +38,7 @@ export function DashboardLayout() {
   const mainNavItems: NavItem[] = [
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
     { name: 'Categories', path: '/categories', icon: MenuSquare },
-    { name: 'Dishes', path: '/menu-items', icon: Coffee },
+    { name: 'Menus', path: '/menu-items', icon: Coffee },
     { name: 'Shop', path: '/shop-setup', icon: Store },
   ];
 
@@ -55,7 +56,13 @@ export function DashboardLayout() {
       {/* Desktop Sidebar */}
       <aside className="hidden lg:flex inset-y-0 left-0 z-50 w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex-col h-full">
         <div className="h-16 flex items-center justify-between px-6 border-b border-slate-200 dark:border-slate-800 shrink-0">
-          <h1 className="text-xl font-heading font-bold text-primary">Menukit</h1>
+          <div className='flex items-center'>
+            <div className="w-12 h-12 flex items-center justify-center">
+                <img src={logo} alt="MenuKit-Logo" className="w-full h-full" />
+            </div>
+            <h1 className="text-xl font-heading font-bold text-primary">Menukit</h1>
+          </div>
+          
           <button 
             onClick={() => setIsLanguageModalOpen(true)}
             className="w-8 h-8 rounded-full bg-white/20 backdrop-blur-md border border-primary-400 flex items-center justify-center text-white shadow-sm hover:bg-white/30 transition-colors"
@@ -129,12 +136,15 @@ export function DashboardLayout() {
         <div className="lg:hidden flex items-center justify-between px-4 h-14 bg-white/20 dark:bg-slate-900/80 backdrop-blur-lg border-b border-slate-200/50 dark:border-slate-800/50 shrink-0 z-30 shadow-sm">
           <div className="w-8"></div> {/* Spacer for centering */}
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center shadow-sm">
-              <QrCode size={14} className="text-white" />
+            <div className='flex items-center'>
+            <div className="w-10 h-10 flex items-center justify-center">
+                <img src={logo} alt="MenuKit-Logo" className="w-full h-full" />
             </div>
             <span className="text-base font-bold bg-gradient-to-r from-orange-600 to-amber-500 bg-clip-text text-transparent">
               Menukit
             </span>
+          </div>
+            
           </div>
           <button 
             onClick={() => setIsLanguageModalOpen(true)}
