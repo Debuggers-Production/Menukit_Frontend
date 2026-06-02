@@ -97,7 +97,25 @@ export interface MenuItem {
   images: MenuImage[];
   variants?: MenuItemVariant[];
   addons?: MenuItemAddon[];
+  average_rating?: number | null;
+  review_count?: number;
   created_at: string;
+}
+
+export interface Review {
+  id: string;
+  menu_item_id: string;
+  reviewer_name: string;
+  rating: number;
+  comment: string | null;
+  created_at: string;
+}
+
+export interface ReviewSummary {
+  average_rating: number;
+  total_reviews: number;
+  rating_distribution: Record<number, number>;
+  reviews: Review[];
 }
 
 export interface QRCodeInfo {
@@ -107,4 +125,20 @@ export interface QRCodeInfo {
   qr_image_url: string | null;
   qr_svg_data: string | null;
   created_at: string;
+}
+
+export interface Discount {
+  id: string;
+  shop_id: string;
+  title: string;
+  description: string | null;
+  discount_type: 'percentage' | 'flat';
+  discount_value: string;
+  applies_to: 'all' | 'category' | 'items';
+  target_ids: string[] | null;
+  start_date: string | null;
+  end_date: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }

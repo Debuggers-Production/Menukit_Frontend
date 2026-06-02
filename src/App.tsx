@@ -16,12 +16,15 @@ import { DashboardPage } from '@/pages/dashboard/DashboardPage';
 import { ShopSetupPage } from '@/pages/shop/ShopSetupPage';
 import { CategoriesPage } from '@/pages/menu/CategoriesPage';
 import { MenuItemsPage } from '@/pages/menu/MenuItemsPage';
+import { BulkUploadPage } from '@/pages/menu/BulkUploadPage';
 import { ThemeCustomizePage } from '@/pages/customize/ThemeCustomizePage';
 import { QRCodePage } from '@/pages/qr/QRCodePage';
 import { AnalyticsPage } from '@/pages/analytics/AnalyticsPage';
+import { DiscountsPage } from '@/pages/discounts/DiscountsPage';
 
 // Public Pages
 import { PublicMenuPage } from '@/pages/public/PublicMenuPage';
+import { PublicItemPage } from '@/pages/public/PublicItemPage';
 import { TermsPage } from '@/pages/public/TermsPage';
 
 const AdminPlaceholder = () => (
@@ -63,15 +66,18 @@ function App() {
           <Route path="/shop-setup" element={<ShopSetupPage />} />
           <Route path="/categories" element={<CategoriesPage />} />
           <Route path="/menu-items" element={<MenuItemsPage />} />
+          <Route path="/bulk-upload" element={<BulkUploadPage />} />
           <Route path="/customize" element={<ThemeCustomizePage />} />
           <Route path="/qr-code" element={<QRCodePage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
+          <Route path="/discounts" element={<DiscountsPage />} />
           <Route path="/admin" element={<AdminPlaceholder />} />
         </Route>
       </Route>
 
       {/* Public Menu Route */}
       <Route path="/shop/:id" element={<PublicMenuPage />} />
+      <Route path="/shop/:id/item/:itemId" element={<PublicItemPage />} />
       <Route path="/terms" element={<TermsPage />} />
 
       {/* Fallback routes */}

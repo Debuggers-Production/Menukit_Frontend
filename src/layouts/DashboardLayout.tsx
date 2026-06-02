@@ -12,7 +12,8 @@ import {
   User as UserIcon,
   MoreHorizontal,
   ChevronRight,
-  Languages
+  Languages,
+  Tag
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { cn } from '@/utils/cn';
@@ -39,6 +40,7 @@ export function DashboardLayout() {
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
     { name: 'Categories', path: '/categories', icon: MenuSquare },
     { name: 'Menus', path: '/menu-items', icon: Coffee },
+    { name: 'Discounts', path: '/discounts', icon: Tag },
     { name: 'Shop', path: '/shop-setup', icon: Store },
   ];
 

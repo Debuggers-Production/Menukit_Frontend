@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'react-hot-toast';
-import { Plus, Edit2, Trash2, Search, Filter, Image as ImageIcon, Star, Flame, LayoutGrid, List } from 'lucide-react';
+import { Plus, Edit2, Trash2, Search, Filter, Image as ImageIcon, Star, Flame, LayoutGrid, List, Sparkles, Wand2, Loader2, MessageSquare } from 'lucide-react';
 import { api } from '@/services/api';
 import { useShopStore } from '@/store/shopStore';
 import { MenuItem, MenuItemVariant, MenuItemAddon } from '@/types';
+import { ReviewSummary } from '@/types';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -34,6 +35,9 @@ export function MenuItemsPage() {
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
   const [imageToDelete, setImageToDelete] = useState<{itemId: string, imageId: string} | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [autoImageLoadingId, setAutoImageLoadingId] = useState<string | null>(null);
+  const [reviewsModal, setReviewsModal] = useState<{ item: MenuItem; summary: ReviewSummary | null } | null>(null);
+  const [isLoadingReviews, setIsLoadingReviews] = useState(false);
   
   const [pendingImages, setPendingImages] = useState<File[]>([]);
   
@@ -69,6 +73,41 @@ export function MenuItemsPage() {
       toast.error('Failed to load menu items');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleViewReviews = async (item: MenuItem) => {
+    setReviewsModal({ item, summary: null });
+    setIsLoadingReviews(true);
+    try {
+      const res = await api.get(`/menu-items/${item.id}/reviews`);
+      setReviewsModal({ item, summary: res.data });
+    } catch {
+      toast.error('Failed to load reviews');
+      setReviewsModal(null);
+    } finally {
+      setIsLoadingReviews(false);
+    }
+  };
+
+  const handleAutoImage = async (item: MenuItem) => {
+    if (autoImageLoadingId) return;
+    setAutoImageLoadingId(item.id);
+    try {
+      const res = await api.post(`/menu-items/${item.id}/auto-image`);
+      const newImage = res.data;
+      // Update local state so the image appears immediately
+      setMenuItems(menuItems.map(m =>
+        m.id === item.id
+          ? { ...m, image_url: newImage.image_url, thumbnail_url: newImage.thumbnail_url }
+          : m
+      ));
+      toast.success('Image found and saved!');
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || 'Could not find an image. Try again.';
+      toast.error(msg);
+    } finally {
+      setAutoImageLoadingId(null);
     }
   };
 
@@ -222,6 +261,20 @@ export function MenuItemsPage() {
           <h2 className="text-2xl font-bold font-heading">Menu Items</h2>
           <p className="text-slate-500">Add and manage your menus.</p>
         </div>
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <Button 
+            variant="outline" 
+            className="flex-1 sm:flex-none border-primary text-primary hover:bg-primary-50 dark:hover:bg-primary-900/30"
+            onClick={() => window.location.href = '/bulk-upload'}
+          >
+            <Sparkles size={18} className="mr-2 text-amber-500" />
+            AI Bulk Upload
+          </Button>
+          <Button onClick={() => openModal()} className="flex-1 sm:flex-none shadow-md shadow-primary/25">
+            <Plus size={18} className="mr-2" />
+            Add Menu
+          </Button>
+        </div>
       </div>
 
       {/* Filters & Tabs */}
@@ -318,8 +371,26 @@ export function MenuItemsPage() {
                       onClick={() => setLightboxImage(item.image_url!)}
                     />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-slate-300">
-                      <ImageIcon size={32} />
+                    <div className="w-full h-full flex flex-col items-center justify-center gap-2 bg-slate-50 dark:bg-slate-900 text-slate-300 group">
+                      <ImageIcon size={24} className="group-hover:opacity-0 transition-opacity duration-200" />
+                      <button
+                        onClick={() => handleAutoImage(item)}
+                        disabled={autoImageLoadingId === item.id}
+                        className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 opacity-0 group-hover:opacity-100 transition-all duration-200 bg-gradient-to-br from-primary/90 to-primary/70 text-white rounded-sm"
+                        title="Auto-find an image for this item"
+                      >
+                        {autoImageLoadingId === item.id ? (
+                          <>
+                            <Loader2 size={20} className="animate-spin" />
+                            <span className="text-[10px] font-semibold">Searching...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Wand2 size={20} />
+                            <span className="text-[10px] font-semibold">Find Image</span>
+                          </>
+                        )}
+                      </button>
                     </div>
                   )}
                   {/* Tags */}
@@ -412,6 +483,26 @@ export function MenuItemsPage() {
                     </div>
                     
                     <div className="flex gap-1">
+                      {/* Rating badge */}
+                      {item.average_rating && item.average_rating > 0 ? (
+                        <button
+                          onClick={() => handleViewReviews(item)}
+                          className="p-1.5 flex items-center gap-0.5 text-amber-600 bg-amber-50 hover:bg-amber-100 rounded transition-colors text-xs font-semibold"
+                          title="View Reviews"
+                        >
+                          <Star size={12} className="fill-amber-500" />
+                          {item.average_rating.toFixed(1)}
+                          <span className="opacity-60 text-[10px]">({item.review_count})</span>
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleViewReviews(item)}
+                          className="p-1.5 text-slate-400 hover:bg-slate-100 rounded transition-colors"
+                          title="View Reviews"
+                        >
+                          <MessageSquare size={14} />
+                        </button>
+                      )}
                       <button 
                         onClick={() => openModal(item)}
                         className="p-1.5 text-slate-500 hover:bg-slate-100 hover:text-primary rounded transition-colors dark:hover:bg-slate-800"
@@ -949,6 +1040,93 @@ export function MenuItemsPage() {
         onClose={() => setLightboxImage(null)}
         imageUrl={lightboxImage || ''}
       />
+
+      {/* Reviews Modal */}
+      <Modal
+        isOpen={!!reviewsModal}
+        onClose={() => setReviewsModal(null)}
+        title={reviewsModal?.item ? `Reviews for ${reviewsModal.item.name}` : "Reviews"}
+        className="max-w-md"
+      >
+        <div className="mt-4">
+          {isLoadingReviews ? (
+            <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+              <Loader2 size={32} className="animate-spin mb-4" />
+              <p>Loading reviews...</p>
+            </div>
+          ) : reviewsModal?.summary ? (
+            <div className="space-y-6">
+              {reviewsModal.summary.total_reviews === 0 ? (
+                <div className="text-center py-12 bg-slate-50 dark:bg-slate-900 rounded-xl border border-dashed border-slate-200 dark:border-slate-800">
+                  <MessageSquare size={32} className="mx-auto text-slate-300 dark:text-slate-600 mb-3" />
+                  <p className="text-slate-500 dark:text-slate-400 font-medium">No reviews yet</p>
+                  <p className="text-sm text-slate-400 mt-1">Customers haven't reviewed this item yet.</p>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-6 p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800">
+                    <div className="flex flex-col items-center">
+                      <span className="text-4xl font-bold text-slate-900 dark:text-white">
+                        {reviewsModal.summary.average_rating.toFixed(1)}
+                      </span>
+                      <div className="flex mt-1">
+                        {[1, 2, 3, 4, 5].map(s => (
+                          <Star key={s} size={14} className={s <= Math.round(reviewsModal.summary!.average_rating) ? 'fill-amber-400 text-amber-400' : 'text-slate-200 dark:text-slate-700 fill-slate-200 dark:fill-slate-700'} />
+                        ))}
+                      </div>
+                      <span className="text-xs text-slate-500 mt-1">{reviewsModal.summary.total_reviews} reviews</span>
+                    </div>
+
+                    <div className="flex-1 space-y-1.5">
+                      {[5, 4, 3, 2, 1].map(star => {
+                        const count = reviewsModal.summary!.rating_distribution[star] || 0;
+                        const pct = reviewsModal.summary!.total_reviews ? Math.round((count / reviewsModal.summary!.total_reviews) * 100) : 0;
+                        return (
+                          <div key={star} className="flex items-center gap-2">
+                            <span className="text-xs w-3 text-slate-500 shrink-0">{star}</span>
+                            <Star size={10} className="fill-amber-400 text-amber-400 shrink-0" />
+                            <div className="flex-1 h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-amber-400 rounded-full transition-all duration-500"
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                            <span className="text-xs text-slate-500 w-6 text-right shrink-0">{count}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-2 no-scrollbar">
+                    <h3 className="font-semibold text-sm text-slate-900 dark:text-white sticky top-0 bg-white/90 dark:bg-slate-950/90 backdrop-blur pb-2">Recent Reviews</h3>
+                    {reviewsModal.summary.reviews.map(rev => (
+                      <div key={rev.id} className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-3 border border-slate-100 dark:border-slate-800">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                            {rev.reviewer_name}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <div className="flex">
+                              {[1, 2, 3, 4, 5].map(s => (
+                                <Star key={s} size={12} className={s <= rev.rating ? 'fill-amber-400 text-amber-400' : 'text-slate-200 dark:text-slate-700 fill-slate-200 dark:fill-slate-700'} />
+                              ))}
+                            </div>
+                            <span className="text-xs text-slate-400">{rev.created_at}</span>
+                          </div>
+                        </div>
+                        {rev.comment && (
+                          <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed whitespace-pre-line">{rev.comment}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          ) : null}
+        </div>
+      </Modal>
     </div>
   );
 }

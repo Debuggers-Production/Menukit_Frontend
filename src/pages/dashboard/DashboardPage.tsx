@@ -9,7 +9,8 @@ import {
   Clock,
   Search,
   ExternalLink,
-  Plus
+  Plus,
+  Star
 } from 'lucide-react';
 import { api } from '@/services/api';
 import { useShopStore } from '@/store/shopStore';
@@ -21,6 +22,7 @@ export function DashboardPage() {
   const [stats, setStats] = useState<any>(null);
   const [activities, setActivities] = useState<any[]>([]);
   const [topSearches, setTopSearches] = useState<any[]>([]);
+  const [topReviews, setTopReviews] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isFabOpen, setIsFabOpen] = useState(false);
   const { shop, setShop } = useShopStore();
@@ -42,6 +44,7 @@ export function DashboardPage() {
         setStats(analyticsRes.data.overview);
         setActivities(analyticsRes.data.recent_activities);
         setTopSearches(analyticsRes.data.top_searches);
+        setTopReviews(analyticsRes.data.top_reviews || []);
       } catch (error) {
         console.error('Failed to load dashboard data', error);
       } finally {
@@ -136,7 +139,7 @@ export function DashboardPage() {
       {/* Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         {/* Recent Activity */}
-        <Card className="lg:col-span-2 flex flex-col h-[350px] sm:h-[450px]">
+        <Card className="flex flex-col h-[350px] sm:h-[450px]">
           <CardHeader className="shrink-0 pb-3 sm:pb-4">
             <CardTitle>Recent Activity</CardTitle>
             <CardDescription>
@@ -170,6 +173,50 @@ export function DashboardPage() {
               <p className="text-sm text-slate-500 italic">
                 No recent activity found.
               </p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Top Reviews */}
+        <Card className="flex flex-col h-[300px] sm:h-[450px]">
+          <CardHeader className="shrink-0 pb-3 sm:pb-4">
+            <CardTitle>Top Product Reviews</CardTitle>
+            <CardDescription>
+              Highest rated recent feedback
+            </CardDescription>
+          </CardHeader>
+
+          <CardContent className="flex-1 overflow-y-auto pr-4 custom-scrollbar">
+            {topReviews.length > 0 ? (
+              <div className="space-y-4">
+                {topReviews.map((review: any) => (
+                  <div key={review.id} className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800">
+                    <div className="flex justify-between items-start mb-1">
+                      <span className="text-sm font-semibold text-slate-900 dark:text-white truncate pr-2">
+                        {review.item_name}
+                      </span>
+                      <div className="flex items-center gap-0.5 shrink-0 bg-orange-100 dark:bg-orange-900/30 px-1.5 py-0.5 rounded text-orange-600 dark:text-orange-400">
+                        <Star size={12} className="fill-current" />
+                        <span className="text-xs font-bold">{review.rating}</span>
+                      </div>
+                    </div>
+                    {review.comment && (
+                      <p className="text-xs text-slate-600 dark:text-slate-400 italic line-clamp-2 mb-2">
+                        "{review.comment}"
+                      </p>
+                    )}
+                    <div className="flex justify-between items-center text-[10px] text-slate-400">
+                      <span className="font-medium">{review.reviewer_name}</span>
+                      <span>{review.created_at}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-6 text-slate-500">
+                <Star size={32} className="mx-auto mb-3 text-slate-300" />
+                <p className="text-sm">No reviews yet.</p>
+              </div>
             )}
           </CardContent>
         </Card>

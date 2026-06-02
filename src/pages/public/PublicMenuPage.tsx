@@ -1,11 +1,10 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { useParams, useSearchParams } from 'react-router';
+import { useParams, useSearchParams, useNavigate } from 'react-router';
 import { Search, Flame, MapPin, Phone, Info, UtensilsCrossed, X, Star, LayoutGrid, List as ListIcon, Clock, Sparkles, ExternalLink, SlidersHorizontal, Check, Languages } from 'lucide-react';
 import { api } from '@/services/api';
-import { Shop, Category, MenuItem } from '@/types';
+import { Shop, Category, MenuItem, Discount } from '@/types';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Modal } from '@/components/ui/Modal';
-import { Lightbox } from '@/components/ui/Lightbox';
 import { GoogleTranslate } from '@/components/GoogleTranslate';
 import { LanguageSelectorModal } from '@/components/LanguageSelectorModal';
 
@@ -25,6 +24,7 @@ export function PublicMenuPage() {
   };
   const { id } = useParams();
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [shop, setShop] = useState<Shop | null>(null);
   const [categories, setCategories] = useState<PublicCategory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -53,16 +53,11 @@ export function PublicMenuPage() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
   
-  // Details Modal
-  const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
-  const [selectedVariantIdx, setSelectedVariantIdx] = useState<number>(0);
-  const [selectedIcePreference, setSelectedIcePreference] = useState<'with' | 'without' | null>(null);
-  const [selectedAddons, setSelectedAddons] = useState<number[]>([]);
   const [isShopInfoOpen, setIsShopInfoOpen] = useState(false);
   const [isLanguageModalOpen, setIsLanguageModalOpen] = useState(false);
-  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
   const [welcomePhase, setWelcomePhase] = useState<'entering' | 'visible' | 'exiting' | 'hidden'>('hidden');
+  const [activeDiscounts, setActiveDiscounts] = useState<Discount[]>([]);
 
   // Track scan if referrer is present
   useEffect(() => {
@@ -83,6 +78,14 @@ export function PublicMenuPage() {
         
         setShop(shopRes.data);
         setCategories(menuRes.data);
+
+        // Fetch active discounts for the banner
+        try {
+          const discountRes = await api.get(`/public/shop/${id}/discounts`);
+          setActiveDiscounts(discountRes.data || []);
+        } catch {
+          // Non-critical — silently ignore
+        }
 
         // Show welcome popup once per session if shop has a welcome message
         const shopData = shopRes.data as Shop;
@@ -199,10 +202,7 @@ export function PublicMenuPage() {
   };
 
   const handleItemClick = (item: MenuItem, categoryId: string) => {
-    setSelectedItem(item);
-    setSelectedVariantIdx(0);
-    setSelectedIcePreference(item.allow_ice_preference ? 'with' : null);
-    setSelectedAddons([]);
+    navigate(`/shop/${id}/item/${item.id}`);
     if (id) {
       api.post(`/public/shop/${id}/view`, { item_id: item.id, category_id: categoryId }).catch(console.error);
     }
@@ -523,7 +523,7 @@ export function PublicMenuPage() {
             onClick={() => setIsLanguageModalOpen(true)}
             className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md border border-white/30 flex items-center justify-center text-white shadow-sm hover:bg-white/30 transition-colors"
           >
-            <Languages size={20}className='text-primary-400' />
+            <Languages size={20} className='text-primary-400' />
           </button>
           <button 
             onClick={() => setIsShopInfoOpen(true)}
@@ -700,6 +700,74 @@ export function PublicMenuPage() {
           </div>
         )}
 
+        {/* 🎉 Active Offers Banner */}
+        {activeDiscounts.length > 0 && (
+          <div className="mb-6 w-full -mx-4 px-4 sm:mx-0 sm:px-0">
+            <div className="flex gap-4 overflow-x-auto pb-4 pt-1 snap-x snap-mandatory scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+              {activeDiscounts.map(disc => (
+                <div
+                  key={disc.id}
+                  className="relative shrink-0 w-[85%] sm:w-[380px] overflow-hidden rounded-2xl px-4 py-3.5 flex items-center gap-4 shadow-sm snap-center transition-transform hover:scale-[1.02]"
+                  style={{
+                    backgroundColor: `${primaryColor}10`,
+                    borderLeft: `4px solid ${primaryColor}`,
+                    borderTop: `1px solid ${primaryColor}20`,
+                    borderRight: `1px solid ${primaryColor}20`,
+                    borderBottom: `1px solid ${primaryColor}20`,
+                  }}
+                >
+                  {/* Subtle Shimmer/Glow effect */}
+                  <div className="absolute top-0 left-1/2 w-full h-full bg-gradient-to-r from-transparent via-white/40 to-transparent -translate-x-1/2 skew-x-12 opacity-0 hover:opacity-100 hover:animate-shimmer pointer-events-none transition-opacity duration-300" />
+                  
+                  {/* Badge */}
+                  <div
+                    className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 text-white font-bold shadow-md z-10"
+                    style={{ 
+                      backgroundColor: primaryColor,
+                      boxShadow: `0 4px 12px ${primaryColor}40`
+                    }}
+                  >
+                    {disc.discount_type === 'percentage' ? (
+                      <span className="text-sm sm:text-base tracking-tight">{Number(disc.discount_value)}%</span>
+                    ) : (
+                      <span className="text-sm sm:text-base tracking-tight">₹{Number(disc.discount_value)}</span>
+                    )}
+                  </div>
+                  
+                  {/* Content */}
+                  <div className="flex-1 min-w-0 z-10 py-1">
+                    <p className="font-bold text-sm sm:text-base mb-1 truncate" style={{ color: primaryColor }}>
+                      {disc.title}
+                    </p>
+                    {disc.description && (
+                      <p className="text-xs text-slate-600 line-clamp-1">{disc.description}</p>
+                    )}
+                  </div>
+                  
+                  {/* Button */}
+                  <div className="shrink-0 z-10">
+                    <span
+                      className="inline-block text-[10px] sm:text-xs font-bold uppercase tracking-wider px-3 py-1.5 rounded-full text-white shadow-sm"
+                      style={{ backgroundColor: primaryColor }}
+                    >
+                      Limited Offer
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <style>{`
+          @keyframes shimmer {
+            0% { transform: translateX(-150%) skewX(-12deg); }
+            100% { transform: translateX(150%) skewX(-12deg); }
+          }
+          .scrollbar-hide::-webkit-scrollbar {
+            display: none;
+          }
+        `}</style>
+
         {/* Categories Tab */}
         <div ref={categoriesRef} className="flex gap-2 overflow-x-auto pb-4 scrollbar-hide no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
           <button
@@ -825,34 +893,30 @@ export function PublicMenuPage() {
                             {item.description && layoutStyle === 'list' && (
                               <p className="text-xs opacity-60 mt-1 line-clamp-2">{item.description}</p>
                             )}
-                            
-                            {/* Variants and Addons indicators */}
-                            {((item.variants && item.variants.length > 0) || (item.addons && item.addons.length > 0)) && (
-                              <div className="flex gap-1.5 mt-1.5 flex-wrap">
-                                {item.variants && item.variants.length > 0 && (
-                                  <span className="text-[9px] sm:text-[10px] font-medium px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded border border-slate-200 dark:border-slate-700">
-                                    +{item.variants.length} {item.variants.length === 1 ? 'variant' : 'variants'}
-                                  </span>
-                                )}
-                                {item.addons && item.addons.length > 0 && (
-                                  <span className="text-[9px] sm:text-[10px] font-medium px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded border border-slate-200 dark:border-slate-700">
-                                    +{item.addons.length} {item.addons.length === 1 ? 'add-on' : 'add-ons'}
-                                  </span>
-                                )}
-                              </div>
-                            )}
                           </div>
                           
                           <div className={`mt-2 flex flex-wrap items-center gap-2 ${layoutStyle === 'grid' ? 'justify-between' : ''}`}>
                             <span className="font-bold whitespace-nowrap" style={{ color: primaryColor }}>
-                              {item.variants && item.variants.length > 0 && <span className="text-[10px] sm:text-xs font-normal opacity-80 mr-1 text-slate-500">Starts from</span>}
-                              {settings?.currency || '₹'}{item.offer_price || item.price}
+                              {(() => {
+                                const basePrice = Number(item.offer_price || item.price);
+                                if (!item.offer_price && activeDiscounts.length > 0) {
+                                  const disc = activeDiscounts.find(d => {
+                                    if (d.applies_to === 'all') return true;
+                                    if (d.applies_to === 'category' && d.target_ids?.includes(item.category_id)) return true;
+                                    if (d.applies_to === 'items' && d.target_ids?.includes(item.id)) return true;
+                                    return false;
+                                  });
+                                  if (disc) {
+                                    const v = Number(disc.discount_value);
+                                    const discounted = disc.discount_type === 'percentage'
+                                      ? basePrice * (1 - v / 100)
+                                      : Math.max(0, basePrice - v);
+                                    return <>{settings?.currency || '₹'}{discounted.toFixed(2).replace(/\.00$/, '')}</>;
+                                  }
+                                }
+                                return <>{settings?.currency || '₹'}{basePrice}</>;
+                              })()}
                             </span>
-                            {settings?.show_offers && item.offer_price && (
-                              <span className="text-xs opacity-50 line-through whitespace-nowrap">
-                                {settings?.currency || '₹'}{item.price}
-                              </span>
-                            )}
                           </div>
                         </div>
                       </div>
@@ -864,192 +928,6 @@ export function PublicMenuPage() {
           )}
         </div>
       </div>
-
-      {/* Item Details Modal */}
-      <Modal 
-        isOpen={!!selectedItem} 
-        onClose={() => setSelectedItem(null)}
-        className="max-w-md p-0 overflow-hidden bg-white text-slate-900"
-      >
-        {selectedItem && (
-          <div className="flex flex-col max-h-[85vh]">
-            <div className="h-48 sm:h-64 bg-slate-100 relative shrink-0">
-              {selectedItem.images && selectedItem.images.length > 0 ? (
-                <div className="w-full h-full flex overflow-x-auto snap-x snap-mandatory scrollbar-hide no-scrollbar">
-                  {selectedItem.images.map(img => (
-                    <div key={img.id} className="w-full h-full shrink-0 snap-center relative cursor-pointer" onClick={() => setLightboxImage(img.image_url)}>
-                      <img src={img.image_url} alt={selectedItem.name} className="w-full h-full object-cover" />
-                    </div>
-                  ))}
-                </div>
-              ) : selectedItem.image_url ? (
-                <img src={selectedItem.image_url} alt={selectedItem.name} className="w-full h-full object-cover cursor-pointer" onClick={() => setLightboxImage(selectedItem.image_url!)} />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center opacity-20">
-                  <UtensilsCrossed size={48} />
-                </div>
-              )}
-              {selectedItem.images && selectedItem.images.length > 1 && (
-                <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-1.5 z-10 pointer-events-none">
-                  <div className="bg-black/40 text-white text-[10px] px-2 py-0.5 rounded-full backdrop-blur-sm">
-                    Swipe for more
-                  </div>
-                </div>
-              )}
-            </div>
-            
-            <div className="p-5 overflow-y-auto">
-              <div className="flex justify-between items-start gap-4 mb-2">
-                <h2 className="text-2xl font-bold font-heading">{selectedItem.name}</h2>
-                <div className="shrink-0 mt-1">
-                  {selectedItem.food_type === 'veg' ? (
-                    <span className="w-5 h-5 border border-green-600 rounded flex items-center justify-center" title="Vegetarian">
-                      <span className="w-2.5 h-2.5 bg-green-600 rounded-full"></span>
-                    </span>
-                  ) : selectedItem.food_type === 'egg' ? (
-                    <span className="w-5 h-5 border border-yellow-500 rounded flex items-center justify-center" title="Contains Egg">
-                      <span className="w-2.5 h-2.5 bg-yellow-500 rounded-full"></span>
-                    </span>
-                  ) : selectedItem.food_type === 'drink' ? (
-                    <span className="w-5 h-5 border border-blue-500 rounded-full flex items-center justify-center" title="Beverage">
-                      <span className="w-2.5 h-2.5 bg-blue-500 rounded-full"></span>
-                    </span>
-                  ) : (
-                    <span className="w-5 h-5 border border-red-600 rounded flex items-center justify-center" title="Non-Vegetarian">
-                      <span className="w-0 h-0 border-l-[4px] border-r-[4px] border-b-[6px] border-transparent border-b-red-600"></span>
-                    </span>
-                  )}
-                </div>
-              </div>
-              
-              <div className="flex items-center gap-2 mb-4">
-                <span className="text-xl font-bold" style={{ color: primaryColor }}>
-                  {settings?.currency || '₹'}
-                  {(() => {
-                    let basePrice = (selectedItem.variants && selectedItem.variants.length > 0) 
-                      ? Number(selectedItem.variants[selectedVariantIdx]?.offer_price || selectedItem.variants[selectedVariantIdx]?.price) 
-                      : Number(selectedItem.offer_price || selectedItem.price);
-                    
-                    let addonsPrice = (selectedItem.addons && selectedItem.addons.length > 0)
-                      ? selectedAddons.reduce((sum, idx) => sum + Number(selectedItem.addons![idx].price), 0)
-                      : 0;
-                      
-                    return (basePrice + addonsPrice).toFixed(2).replace(/\.00$/, '');
-                  })()}
-                </span>
-                {settings?.show_offers && ((selectedItem.variants && selectedItem.variants.length > 0) ? selectedItem.variants[selectedVariantIdx]?.offer_price : selectedItem.offer_price) && (
-                  <span className="text-sm opacity-50 line-through">
-                    {settings?.currency || '₹'}
-                    {(() => {
-                      let basePrice = (selectedItem.variants && selectedItem.variants.length > 0) 
-                        ? Number(selectedItem.variants[selectedVariantIdx]?.price) 
-                        : Number(selectedItem.price);
-                      
-                      let addonsPrice = (selectedItem.addons && selectedItem.addons.length > 0)
-                        ? selectedAddons.reduce((sum, idx) => sum + Number(selectedItem.addons![idx].price), 0)
-                        : 0;
-                        
-                      return (basePrice + addonsPrice).toFixed(2).replace(/\.00$/, '');
-                    })()}
-                  </span>
-                )}
-                {selectedItem.is_bestseller && (
-                  <span className="ml-auto text-xs font-bold text-amber-500 bg-amber-50 px-2 py-1 rounded flex items-center">
-                    <Flame size={12} className="mr-1" /> Bestseller
-                  </span>
-                )}
-              </div>
-              
-              {selectedItem.variants && selectedItem.variants.length > 0 && (
-                <div className="mb-4">
-                  <h3 className="font-semibold text-sm mb-2 opacity-90">Select Option</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {selectedItem.variants.map((v, idx) => (
-                      <button
-                        key={idx}
-                        onClick={() => setSelectedVariantIdx(idx)}
-                        className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${selectedVariantIdx === idx ? 'border-primary bg-primary/10' : 'border-slate-200 text-slate-600 hover:border-primary/50'}`}
-                        style={selectedVariantIdx === idx ? { borderColor: primaryColor, color: primaryColor } : {}}
-                      >
-                        {v.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {selectedItem.allow_ice_preference && (
-                <div className="mb-4">
-                  <h3 className="font-semibold text-sm mb-2 opacity-90">Ice Preference</h3>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={() => setSelectedIcePreference('with')}
-                      className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${selectedIcePreference === 'with' ? 'border-primary bg-primary/10' : 'border-slate-200 text-slate-600 hover:border-primary/50'}`}
-                      style={selectedIcePreference === 'with' ? { borderColor: primaryColor, color: primaryColor } : {}}
-                    >
-                      With Ice
-                    </button>
-                    <button
-                      onClick={() => setSelectedIcePreference('without')}
-                      className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${selectedIcePreference === 'without' ? 'border-primary bg-primary/10' : 'border-slate-200 text-slate-600 hover:border-primary/50'}`}
-                      style={selectedIcePreference === 'without' ? { borderColor: primaryColor, color: primaryColor } : {}}
-                    >
-                      Without Ice
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {selectedItem.addons && selectedItem.addons.length > 0 && (
-                <div className="mb-4">
-                  <h3 className="font-semibold text-sm mb-2 opacity-90">Optional Add-ons</h3>
-                  <div className="flex flex-col gap-2">
-                    {selectedItem.addons.map((addon, idx) => (
-                      <label 
-                        key={idx} 
-                        className={`flex items-center justify-between p-3 rounded-xl border transition-colors cursor-pointer ${selectedAddons.includes(idx) ? 'border-primary bg-primary/5' : 'border-slate-100 hover:border-primary/30'}`}
-                        style={selectedAddons.includes(idx) ? { borderColor: primaryColor } : {}}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div 
-                            className={`w-5 h-5 rounded flex items-center justify-center border transition-colors ${selectedAddons.includes(idx) ? 'bg-primary border-primary' : 'border-slate-300'}`}
-                            style={selectedAddons.includes(idx) ? { backgroundColor: primaryColor, borderColor: primaryColor } : {}}
-                          >
-                            {selectedAddons.includes(idx) && <Check size={14} className="text-white" />}
-                          </div>
-                          <span className="text-sm font-medium">{addon.name}</span>
-                        </div>
-                        <span className="text-sm font-medium opacity-70">
-                          +{settings?.currency || '₹'}{addon.price}
-                        </span>
-                        <input 
-                          type="checkbox"
-                          className="hidden"
-                          checked={selectedAddons.includes(idx)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedAddons([...selectedAddons, idx]);
-                            } else {
-                              setSelectedAddons(selectedAddons.filter(id => id !== idx));
-                            }
-                          }}
-                        />
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
-              
-              {selectedItem.description ? (
-                <div className="mt-4">
-                  <h3 className="font-semibold text-sm mb-1 opacity-90">About this dish</h3>
-                  <p className="text-sm opacity-70 leading-relaxed">{selectedItem.description}</p>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        )}
-      </Modal>
 
       {/* Shop Info Modal */}
       <Modal
@@ -1144,11 +1022,6 @@ export function PublicMenuPage() {
         </div>
       </Modal>
 
-      <Lightbox 
-        isOpen={!!lightboxImage}
-        onClose={() => setLightboxImage(null)}
-        imageUrl={lightboxImage || ''}
-      />
 
       {/* Filter FAB */}
       <button
