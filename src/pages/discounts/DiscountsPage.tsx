@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
 import {
   Plus, Tag, Trash2, Edit2, ToggleLeft, ToggleRight, Calendar, Percent,
-  ShoppingBag, Layers, Clock, CheckCircle2, AlertCircle, Timer, Sparkles, X, Search
+  ShoppingBag, Layers, Clock, CheckCircle2, AlertCircle, Timer, Sparkles, X, Search, Crown
 } from 'lucide-react';
 import { api } from '@/services/api';
 import { Discount, Category, MenuItem } from '@/types';
@@ -72,6 +72,7 @@ const defaultForm = {
   start_date: '',
   end_date: '',
   is_active: true,
+  members_only: false,
 };
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -151,6 +152,7 @@ export function DiscountsPage() {
           ? new Date(targetDiscount.end_date).toISOString().slice(0, 16)
           : '',
         is_active: targetDiscount.is_active,
+        members_only: targetDiscount.members_only || false,
       });
     } else {
       const type = typeof defaultType === 'string' ? defaultType : 'percentage';
@@ -358,6 +360,11 @@ export function DiscountsPage() {
                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold uppercase tracking-wider ${statusCfg.color}`}>
                         {statusCfg.icon} {statusCfg.label}
                       </span>
+                      {d.members_only && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold uppercase tracking-wider bg-purple-50 text-purple-700 ring-1 ring-purple-200">
+                          <Crown size={12} /> Members Only
+                        </span>
+                      )}
                     </div>
 
                     {d.description && (
@@ -724,6 +731,22 @@ export function DiscountsPage() {
               className={`w-12 h-6 rounded-full relative transition-colors duration-200 ${formData.is_active ? 'bg-primary' : 'bg-slate-300 dark:bg-slate-600'}`}
             >
               <div className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${formData.is_active ? 'translate-x-6' : ''}`} />
+            </div>
+          </label>
+
+          {/* Members Only toggle */}
+          <label className="flex items-center justify-between p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+            <div>
+              <p className="text-sm font-medium text-slate-900 dark:text-white flex items-center gap-1.5">
+                <Crown size={16} className="text-purple-500" /> Members Only
+              </p>
+              <p className="text-xs text-slate-500">Only visible to registered and logged-in members</p>
+            </div>
+            <div
+              onClick={() => setFormData({ ...formData, members_only: !formData.members_only })}
+              className={`w-12 h-6 rounded-full relative transition-colors duration-200 ${formData.members_only ? 'bg-purple-500' : 'bg-slate-300 dark:bg-slate-600'}`}
+            >
+              <div className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${formData.members_only ? 'translate-x-6' : ''}`} />
             </div>
           </label>
 

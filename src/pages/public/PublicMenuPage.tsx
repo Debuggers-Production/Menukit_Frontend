@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router';
-import { Search, Flame, MapPin, Phone, Info, UtensilsCrossed, X, Star, LayoutGrid, List as ListIcon, Clock, Sparkles, ExternalLink, SlidersHorizontal, Check, Languages, Tag } from 'lucide-react';
+import { Search, Flame, MapPin, Phone, Info, UtensilsCrossed, X, Star, LayoutGrid, List as ListIcon, Clock, Sparkles, ExternalLink, SlidersHorizontal, Check, Languages, Tag, Crown } from 'lucide-react';
 import { api } from '@/services/api';
 import { Shop, Category, MenuItem, Discount } from '@/types';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -789,14 +789,23 @@ export function PublicMenuPage() {
                       </p>
                     )}
                     
-                    <div className="mt-auto flex items-center justify-between">
-                      <span 
-                        className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md shadow-sm shrink-0"
-                        style={{ color: primaryColor, backgroundColor: `${primaryColor}15` }}
-                      >
-                        Limited Offer
-                      </span>
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 group-hover:text-slate-600 transition-colors flex items-center gap-1 shrink-0 ml-2">
+                    <div className="mt-auto flex items-center justify-between gap-2 min-w-0">
+                      <div className="flex gap-1.5 min-w-0 shrink">
+                        {disc.members_only ? (
+                          <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md shadow-sm flex items-center gap-1 bg-purple-100 text-purple-700 min-w-0">
+                            <Crown size={10} className="shrink-0" /> 
+                            <span className="truncate">Members Only</span>
+                          </span>
+                        ) : (
+                          <span 
+                            className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md shadow-sm truncate min-w-0"
+                            style={{ color: primaryColor, backgroundColor: `${primaryColor}15` }}
+                          >
+                            Limited Offer
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 group-hover:text-slate-600 transition-colors flex items-center gap-1 shrink-0 whitespace-nowrap">
                         Tap to use
                       </span>
                     </div>

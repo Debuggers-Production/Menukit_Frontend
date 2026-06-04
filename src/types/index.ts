@@ -142,6 +142,7 @@ export interface Discount {
   start_date: string | null;
   end_date: string | null;
   is_active: boolean;
+  members_only: boolean;
   created_at: string;
   updated_at: string;
 }
