@@ -58,10 +58,10 @@ const SortableCategoryItem = ({
   };
 
   return (
-    <div ref={setNodeRef} style={style} className="touch-none pb-3">
+    <div ref={setNodeRef} style={style} className="pb-3">
       <Card className={`transition-all ${!cat.is_active ? 'opacity-60' : ''} ${isDragging ? 'shadow-lg border-primary' : ''}`}>
         <CardContent className="p-4 flex items-center gap-4">
-          <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600 p-2 -ml-2">
+          <div {...attributes} {...listeners} className="touch-none cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600 p-2 -ml-2">
             <GripVertical size={20} />
           </div>
 

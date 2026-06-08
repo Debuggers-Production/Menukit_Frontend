@@ -1401,9 +1401,9 @@ export function MenuItemsPage() {
         className="max-w-2xl"
       >
         <div className="mt-4">
-          <p className="text-sm text-slate-500 mb-4 flex justify-between">
-            <span>Select the best images for <strong className="text-slate-900 dark:text-white">{searchImagesModal?.name}</strong>. (Max 4 total)</span>
-            <span className="font-semibold text-primary">{(editingItem ? (editingItem.images?.length || 0) : (pendingImages.length + pendingImageUrls.length)) + selectedImageUrls.length}/4</span>
+          <p className="text-sm text-slate-500 mb-4 flex flex-wrap justify-between gap-2">
+            <span className="flex-1 min-w-[200px]">Select the best images for <strong className="text-slate-900 dark:text-white">{searchImagesModal?.name}</strong>. (Max 4 total)</span>
+            <span className="font-semibold text-primary whitespace-nowrap">{(editingItem ? (editingItem.images?.length || 0) : (pendingImages.length + pendingImageUrls.length)) + selectedImageUrls.length}/4</span>
           </p>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 max-h-[60vh] overflow-y-auto p-1 custom-scrollbar">
@@ -1456,9 +1456,10 @@ export function MenuItemsPage() {
             })}
           </div>
           
-          <div className="mt-6 flex justify-between gap-3">
+          <div className="mt-6 flex flex-wrap-reverse items-center justify-end gap-3">
             <Button 
               variant="secondary" 
+              className="w-full sm:w-auto mr-auto"
               onClick={async () => {
                 try {
                   setIsSavingVariant(true);
@@ -1474,15 +1475,13 @@ export function MenuItemsPage() {
             >
               <RefreshCw size={16} className="mr-2" /> Regenerate
             </Button>
-            <div className="flex gap-3">
-              <Button variant="secondary" onClick={() => setSearchImagesModal(null)} disabled={isSavingVariant}>
-                Cancel
-              </Button>
-              <Button onClick={handleConfirmImageSelection} disabled={isSavingVariant || selectedImageUrls.length === 0}>
-                {isSavingVariant ? <Loader2 size={16} className="animate-spin mr-2" /> : <Check size={16} className="mr-2" />}
-                {selectedImageUrls.length > 0 ? `Add ${selectedImageUrls.length} Image(s)` : 'Select Images'}
-              </Button>
-            </div>
+            <Button variant="secondary" className="w-full sm:w-auto flex-1" onClick={() => setSearchImagesModal(null)} disabled={isSavingVariant}>
+              Cancel
+            </Button>
+            <Button className="w-full sm:w-auto flex-[2]" onClick={handleConfirmImageSelection} disabled={isSavingVariant || selectedImageUrls.length === 0}>
+              {isSavingVariant ? <Loader2 size={16} className="animate-spin mr-2" /> : <Check size={16} className="mr-2" />}
+              {selectedImageUrls.length > 0 ? `Add ${selectedImageUrls.length} Image(s)` : 'Select Images'}
+            </Button>
           </div>
           
           {isSavingVariant && (
