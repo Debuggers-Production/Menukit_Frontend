@@ -625,9 +625,9 @@ export function StoreDiscoveryPage() {
       </div>
 
       {/* ── Main split: Map + List ── */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', flexDirection: 'column' }}>
+      <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
         {/* Leaflet Map */}
-        <div style={{ height: '42%', minHeight: 220, position: 'relative', zIndex: 0 }}>
+        <div className="relative z-0 h-[42%] min-h-[220px] md:h-full md:w-[60%] lg:w-[65%]">
           <MapContainer
             center={INDIA_CENTER}
             zoom={5}
@@ -675,17 +675,11 @@ export function StoreDiscoveryPage() {
           </MapContainer>
         </div>
 
-        {/* ── Shop list panel ── */}
-        <div style={{
-          flex: 1, background: 'white', display: 'flex', flexDirection: 'column',
-          borderTop: '1px solid #e2e8f0', overflow: 'hidden',
-          boxShadow: '0 -4px 16px rgba(0,0,0,.06)',
-        }}>
-          {/* Sort tabs */}
-          <div style={{
-            display: 'flex', gap: 6, padding: '10px 12px',
-            borderBottom: '1px solid #f1f5f9', flexShrink: 0,
-          }}>
+        {/* List Panel */}
+        <div className="flex flex-col flex-1 bg-white z-10 overflow-hidden md:w-[40%] lg:w-[35%] md:border-l md:border-slate-200 md:shadow-[-4px_0_20px_rgba(0,0,0,0.05)]">
+          {/* Draggable handle (mobile only, visual) */}
+          {/* Sort Tabs */}
+          <div className="flex items-center gap-2 px-3.5 py-2 shrink-0 bg-white border-b border-slate-100 sticky top-0 z-10">
             {([
               { id: 'deals',   label: '🔥 Best Deals' },
               { id: 'rating',  label: '⭐ Top Rated'  },
