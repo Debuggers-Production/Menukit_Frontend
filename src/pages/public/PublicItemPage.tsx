@@ -6,6 +6,15 @@ import { Shop, MenuItem, ReviewSummary, Discount } from '@/types';
 import { Lightbox } from '@/components/ui/Lightbox';
 import { Skeleton } from '@/components/ui/Skeleton';
 
+const PRESET_TIMINGS: Record<string, string> = {
+  'Early Morning': '(04:00 - 08:00)',
+  'Morning': '(08:00 - 12:00)',
+  'Afternoon': '(12:00 - 16:00)',
+  'Evening': '(16:00 - 20:00)',
+  'Night': '(20:00 - 00:00)',
+  'Mid-night': '(00:00 - 04:00)'
+};
+
 export function PublicItemPage() {
   const { id, itemId } = useParams();
   const navigate = useNavigate();
@@ -17,6 +26,7 @@ export function PublicItemPage() {
 
   // Interaction state
   const [selectedVariantIdx, setSelectedVariantIdx] = useState(0);
+  const [selectedAddons, setSelectedAddons] = useState<number[]>([]);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
 
   // Reviews state
@@ -30,6 +40,8 @@ export function PublicItemPage() {
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
 
   useEffect(() => {
+    setSelectedVariantIdx(0);
+    setSelectedAddons([]);
     const fetchData = async () => {
       try {
         const [shopRes, itemRes, discountsRes] = await Promise.all([
@@ -168,13 +180,20 @@ export function PublicItemPage() {
         <div className="mb-6">
           <div className="flex items-start justify-between gap-4 mb-2">
             <h2 className="text-2xl font-bold font-heading leading-tight">{item.name}</h2>
-            {item.food_type && item.food_type !== 'drink' && (
-              <div 
-                className={`w-5 h-5 rounded-sm border-2 flex items-center justify-center shrink-0 ${item.food_type === 'veg' ? 'border-green-600' : item.food_type === 'non-veg' ? 'border-red-600' : 'border-yellow-600'}`}
+            {item.food_types && item.food_types.filter(t => t !== 'drink' && t !== 'none').map((type) => (
+              <div key={type}
+                className={`w-5 h-5 rounded-sm border-2 flex items-center justify-center shrink-0 ${type === 'veg' ? 'border-green-600' : type === 'non-veg' ? 'border-red-600' : type === 'dessert' ? 'border-pink-500' : 'border-yellow-600'}`}
+                title={type.charAt(0).toUpperCase() + type.slice(1)}
               >
-                <div className={`w-2.5 h-2.5 rounded-full ${item.food_type === 'veg' ? 'bg-green-600' : item.food_type === 'non-veg' ? 'bg-red-600' : 'bg-yellow-600'}`} />
+                {type === 'non-veg' ? (
+                  <div className="w-0 h-0 border-l-[4px] border-r-[4px] border-b-[7px] border-transparent border-b-red-600" />
+                ) : type === 'dessert' ? (
+                  <div className="w-2 h-2 bg-pink-500 rounded-[2px]" />
+                ) : (
+                  <div className={`w-2.5 h-2.5 rounded-full ${type === 'veg' ? 'bg-green-600' : 'bg-yellow-600'}`} />
+                )}
               </div>
-            )}
+            ))}
           </div>
           
           <div className="flex items-center gap-3">
@@ -209,6 +228,15 @@ export function PublicItemPage() {
                   isDiscounted = true;
                 }
 
+                let addonsTotal = 0;
+                if (item.addons) {
+                  selectedAddons.forEach(idx => {
+                    addonsTotal += Number(item.addons![idx].price);
+                  });
+                }
+                basePrice += addonsTotal;
+                originalPrice += addonsTotal;
+
                 return (
                   <div className="flex items-center gap-2">
                     {settings?.currency || '₹'}{basePrice.toFixed(2).replace(/\.00$/, '')}
@@ -223,6 +251,26 @@ export function PublicItemPage() {
             </span>
           </div>
         </div>
+
+        {((item.available_days && item.available_days.length > 0) || (item.available_time_presets && item.available_time_presets.length > 0) || (item.custom_time_from && item.custom_time_to)) && (
+          <div className="mb-6 flex flex-wrap gap-2">
+            {item.available_days && item.available_days.length > 0 && (
+              <span className="text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-md shadow-sm">
+                Available: {item.available_days.length === 7 ? 'Everyday' : item.available_days.join(', ')}
+              </span>
+            )}
+            {item.available_time_presets && item.available_time_presets.length > 0 && (
+              <span className="text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-md shadow-sm">
+                Timing: {item.available_time_presets.map(p => `${p} ${PRESET_TIMINGS[p] || ''}`).join(', ')}
+              </span>
+            )}
+            {(item.custom_time_from && item.custom_time_to) && (
+              <span className="text-xs font-bold text-purple-600 bg-purple-50 border border-purple-200 px-2.5 py-1 rounded-md shadow-sm">
+                Hours: {item.custom_time_from} - {item.custom_time_to}
+              </span>
+            )}
+          </div>
+        )}
 
         {item.variants && item.variants.length > 0 && (
           <div className="mb-6">
@@ -241,6 +289,30 @@ export function PublicItemPage() {
                   </span>
                 </button>
               ))}
+            </div>
+          </div>
+        )}
+
+        {item.addons && item.addons.length > 0 && (
+          <div className="mb-6">
+            <h3 className="font-semibold text-sm mb-3 text-slate-700 dark:text-slate-300">Add-ons</h3>
+            <div className="grid grid-cols-2 gap-2">
+              {item.addons.map((addon, idx) => {
+                const isSelected = selectedAddons.includes(idx);
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => setSelectedAddons(prev => prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx])}
+                    className={`p-3 rounded-xl border text-sm font-medium flex justify-between items-center transition-all ${isSelected ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-slate-200 dark:border-slate-800 hover:border-primary/50 bg-slate-50 dark:bg-slate-900/50'}`}
+                    style={isSelected ? { borderColor: primaryColor, backgroundColor: `${primaryColor}10` } : {}}
+                  >
+                    <span className={isSelected ? 'font-semibold' : 'text-slate-700 dark:text-slate-300'}>{addon.name}</span>
+                    <span className="text-xs font-bold" style={{ color: primaryColor }}>
+                      +{settings?.currency || '₹'}{addon.price}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}

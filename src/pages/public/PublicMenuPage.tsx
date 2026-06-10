@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router';
-import { Search, Flame, MapPin, Phone, Info, UtensilsCrossed, X, Star, LayoutGrid, List as ListIcon, Clock, Sparkles, ExternalLink, SlidersHorizontal, Check, Languages, Tag, Crown } from 'lucide-react';
+import { Search, Flame, MapPin, Phone, Info, UtensilsCrossed, X, Star, LayoutGrid, List as ListIcon, Clock, Sparkles, ExternalLink, SlidersHorizontal, Check, Languages, Tag, Crown, Calendar } from 'lucide-react';
 import { api } from '@/services/api';
 import { Shop, Category, MenuItem, Discount } from '@/types';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -8,12 +8,33 @@ import { Modal } from '@/components/ui/Modal';
 import { GoogleTranslate } from '@/components/GoogleTranslate';
 import { LanguageSelectorModal } from '@/components/LanguageSelectorModal';
 
+const PRESET_TIMINGS: Record<string, string> = {
+  'Early Morning': '(04:00 - 08:00)',
+  'Morning': '(08:00 - 12:00)',
+  'Afternoon': '(12:00 - 16:00)',
+  'Evening': '(16:00 - 20:00)',
+  'Night': '(20:00 - 00:00)',
+  'Mid-night': '(00:00 - 04:00)'
+};
+
 // This is a special interface for the public menu structure returned by the backend
 interface PublicCategory extends Category {
   items: MenuItem[];
 }
 
 export function PublicMenuPage() {
+  const formatDays = (days: string[]) => {
+    if (!days || days.length === 0) return '';
+    const dayOrder = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const sortedDays = [...days].sort((a, b) => dayOrder.indexOf(a) - dayOrder.indexOf(b));
+    
+    if (sortedDays.length === 7) return 'Everyday';
+    if (sortedDays.length === 5 && sortedDays.join(',') === 'Mon,Tue,Wed,Thu,Fri') return 'Weekdays';
+    if (sortedDays.length === 2 && sortedDays.join(',') === 'Sat,Sun') return 'Weekends';
+    
+    return sortedDays.join(', ');
+  };
+
   const formatTime = (timeStr: string) => {
     if (!timeStr) return '';
     const [h, m] = timeStr.split(':');
@@ -30,7 +51,7 @@ export function PublicMenuPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategoryId, setActiveCategoryId] = useState<string>('all');
-  const [foodFilter, setFoodFilter] = useState<'all' | 'veg' | 'non-veg' | 'egg' | 'drink'>('all');
+  const [foodFilter, setFoodFilter] = useState<'all' | 'veg' | 'non-veg' | 'egg' | 'drink' | 'dessert'>('all');
   const [sortOrder, setSortOrder] = useState<'default' | 'price_asc' | 'price_desc'>('default');
   const [extraFilters, setExtraFilters] = useState<string[]>([]);
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
@@ -85,7 +106,29 @@ export function PublicMenuPage() {
         // Fetch active discounts for the banner
         try {
           const discountRes = await api.get(`/public/shop/${id}/discounts`);
-          setActiveDiscounts(discountRes.data || []);
+          const now = new Date();
+          const currentDay = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][now.getDay()];
+          const currentTime = now.getHours() * 60 + now.getMinutes();
+          
+          const filteredDiscounts = (discountRes.data || []).filter((d: Discount) => {
+            if (d.available_days && d.available_days.length > 0) {
+              if (!d.available_days.includes(currentDay)) return false;
+            }
+            if (d.available_time_presets && d.available_time_presets.length > 0) {
+              const timingFilters = [];
+              if (currentTime >= 240 && currentTime < 480) timingFilters.push('Early Morning');
+              if (currentTime >= 480 && currentTime < 720) timingFilters.push('Morning');
+              if (currentTime >= 720 && currentTime < 960) timingFilters.push('Afternoon');
+              if (currentTime >= 960 && currentTime < 1200) timingFilters.push('Evening');
+              if (currentTime >= 1200 && currentTime < 1440) timingFilters.push('Night');
+              if (currentTime >= 0 && currentTime < 240) timingFilters.push('Mid-night');
+              
+              if (!timingFilters.some(t => d.available_time_presets?.includes(t))) return false;
+            }
+            return true;
+          });
+          
+          setActiveDiscounts(filteredDiscounts);
         } catch {
           // Non-critical — silently ignore
         }
@@ -166,13 +209,22 @@ export function PublicMenuPage() {
         const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                               (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()));
         const matchesFood = foodFilter === 'all' || 
-          (item.food_type && item.food_type.toLowerCase().replace('_', '-') === foodFilter);
+          (item.food_types && item.food_types.map((t: string) => t.toLowerCase().replace('_', '-')).includes(foodFilter));
           
         let matchesExtra = true;
         if (extraFilters.includes('chef_special') && !item.is_highlighted) matchesExtra = false;
         if (extraFilters.includes('bestseller') && !item.is_bestseller) matchesExtra = false;
         if (extraFilters.includes('in_stock') && !item.is_available) matchesExtra = false;
         if (extraFilters.includes('out_of_stock') && item.is_available) matchesExtra = false;
+
+        const timingFilters = extraFilters.filter(f => f.startsWith('timing_')).map(f => f.replace('timing_', ''));
+        if (timingFilters.length > 0) {
+          const isAllDay = !item.available_time_presets || item.available_time_presets.length === 0;
+          if (!isAllDay) {
+            const hasMatch = timingFilters.some(t => item.available_time_presets?.includes(t));
+            if (!hasMatch) matchesExtra = false;
+          }
+        }
 
         let matchesDiscount = true;
         if (activeDiscountFilter) {
@@ -377,7 +429,7 @@ export function PublicMenuPage() {
       <div className={`fixed top-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-md shadow-sm border-b border-slate-200 transition-all duration-300 transform ${
         isScrolled ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 pointer-events-none'
       }`}>
-        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3 transition-all">
+        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-center gap-2 sm:gap-3 transition-all overflow-x-auto scrollbar-hide no-scrollbar w-full">
           {/* Small Logo */}
           {!isSearchFocused && (
             <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 border border-slate-200 bg-white flex items-center justify-center shadow-sm transition-all">
@@ -390,8 +442,10 @@ export function PublicMenuPage() {
           )}
           
           {/* Small Search */}
-          <div className="relative flex-1 transition-all duration-300">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+          <div className={`relative transition-all duration-300 overflow-hidden ${isSearchFocused || searchQuery ? 'flex-1' : 'w-10 sm:flex-1 shrink-0'}`}>
+            <Search className={`absolute top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none transition-all duration-300 z-10 ${
+              isSearchFocused || searchQuery ? 'left-3' : 'left-1/2 -translate-x-1/2 sm:left-3 sm:translate-x-0'
+            }`} />
             <input
               type="text"
               placeholder="Search..."
@@ -399,14 +453,17 @@ export function PublicMenuPage() {
               onChange={(e) => setSearchQuery(e.target.value)}
               onFocus={() => setIsSearchFocused(true)}
               onBlur={() => {
-                // Delay hiding slightly to allow clicks on search results/clear button
                 setTimeout(() => {
                   if (!searchQuery) {
                     setIsSearchFocused(false);
                   }
                 }, 200);
               }}
-              className="w-full h-10 pl-9 pr-8 rounded-lg bg-white border border-slate-200 shadow-sm focus:outline-none focus:ring-2 transition-all text-sm"
+              className={`w-full h-10 rounded-lg bg-white border border-slate-200 shadow-sm focus:outline-none focus:ring-2 transition-all duration-300 text-sm ${
+                isSearchFocused || searchQuery
+                  ? 'pl-9 pr-8 text-slate-900 placeholder-slate-400' 
+                  : 'p-0 sm:pl-9 sm:pr-8 text-transparent sm:text-slate-900 placeholder-transparent sm:placeholder-slate-400 cursor-pointer sm:cursor-text'
+              }`}
               style={{ '--tw-ring-color': primaryColor } as any}
             />
             {searchQuery && (
@@ -415,7 +472,7 @@ export function PublicMenuPage() {
                   setSearchQuery('');
                   setIsSearchFocused(false);
                 }}
-                className="absolute right-3 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100"
+                className="absolute right-3 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100 z-10"
               >
                 <X size={14} />
               </button>
@@ -579,9 +636,11 @@ export function PublicMenuPage() {
         </div>
 
         {/* Search & View Toggle */}
-        <div className="flex items-center gap-2 sm:gap-3 mb-3 transition-all">
-          <div className="relative flex-1 transition-all duration-300">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 opacity-40" />
+        <div className="flex items-center justify-center gap-2 sm:gap-3 mb-3 transition-all overflow-x-auto scrollbar-hide no-scrollbar w-full">
+          <div className={`relative transition-all duration-300 overflow-hidden ${isSearchFocused || searchQuery ? 'flex-1' : 'w-12 sm:flex-1 shrink-0'}`}>
+            <Search className={`absolute top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5 pointer-events-none transition-all duration-300 z-10 ${
+              isSearchFocused || searchQuery ? 'left-4' : 'left-1/2 -translate-x-1/2 sm:left-4 sm:translate-x-0'
+            }`} />
             <input
               type="text"
               placeholder="Search for a dish..."
@@ -595,7 +654,11 @@ export function PublicMenuPage() {
                   }
                 }, 200);
               }}
-              className="w-full h-12 pl-12 pr-10 rounded-full border shadow-sm focus:outline-none focus:ring-2 transition-all bg-white border-slate-200 text-slate-900 placeholder-slate-400 text-sm sm:text-base"
+              className={`w-full h-12 rounded-full border shadow-sm focus:outline-none focus:ring-2 transition-all duration-300 bg-white border-slate-200 text-sm sm:text-base ${
+                isSearchFocused || searchQuery
+                  ? 'pl-12 pr-10 text-slate-900 placeholder-slate-400' 
+                  : 'p-0 sm:pl-12 sm:pr-10 text-transparent sm:text-slate-900 placeholder-transparent sm:placeholder-slate-400 cursor-pointer sm:cursor-text'
+              }`}
               style={{ '--tw-ring-color': primaryColor } as any}
             />
             {searchQuery && (
@@ -604,7 +667,7 @@ export function PublicMenuPage() {
                   setSearchQuery('');
                   setIsSearchFocused(false);
                 }}
-                className="absolute right-4 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100"
+                className="absolute right-4 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100 z-10"
               >
                 <X size={16} />
               </button>
@@ -649,6 +712,15 @@ export function PublicMenuPage() {
                 >
                   <span className="w-4 h-4 border-2 border-blue-500 rounded-full flex items-center justify-center">
                     <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                  </span>
+                </button>
+                <button
+                  onClick={() => setFoodFilter(foodFilter === 'dessert' ? 'all' : 'dessert')}
+                  className={`p-2 rounded-full transition-all shrink-0 ${foodFilter === 'dessert' ? 'bg-pink-50 shadow-sm ring-1 ring-pink-200' : 'text-slate-400 hover:text-slate-600'}`}
+                  title="Desserts Only"
+                >
+                  <span className="w-4 h-4 border-2 border-pink-500 rounded-[3px] flex items-center justify-center">
+                    <span className="w-2 h-2 bg-pink-500 rounded-[2px]"></span>
                   </span>
                 </button>
               </div>
@@ -746,7 +818,7 @@ export function PublicMenuPage() {
                 <div
                   key={disc.id}
                   onClick={() => setSelectedDiscountForModal(disc)}
-                  className="relative shrink-0 w-[85%] sm:w-[350px] flex shadow-md rounded-2xl overflow-hidden cursor-pointer transition-all duration-300 hover:shadow-xl hover:-translate-y-1 active:scale-[0.98] snap-center group bg-white"
+                  className="relative shrink-0 min-h-[120px] w-[85%] sm:w-[350px] flex shadow-md rounded-2xl overflow-hidden cursor-pointer transition-all duration-300 hover:shadow-xl hover:-translate-y-1 active:scale-[0.98] snap-center group bg-white"
                   style={{ border: `1px solid ${primaryColor}30` }}
                 >
                   {/* Left Ticket Stub */}
@@ -784,30 +856,39 @@ export function PublicMenuPage() {
                     </div>
                     
                     {disc.description && (
-                      <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed mb-3 font-medium">
+                      <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed mb-2 font-medium">
                         {disc.description}
                       </p>
                     )}
                     
-                    <div className="mt-auto flex items-center justify-between gap-2 min-w-0">
-                      <div className="flex gap-1.5 min-w-0 shrink">
-                        {disc.members_only ? (
-                          <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md shadow-sm flex items-center gap-1 bg-purple-100 text-purple-700 min-w-0">
-                            <Crown size={10} className="shrink-0" /> 
-                            <span className="truncate">Members Only</span>
-                          </span>
-                        ) : (
-                          <span 
-                            className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md shadow-sm truncate min-w-0"
-                            style={{ color: primaryColor, backgroundColor: `${primaryColor}15` }}
-                          >
-                            Limited Offer
-                          </span>
-                        )}
+                    <div className="mt-auto flex flex-col gap-2">
+                      {disc.available_days && disc.available_days.length > 0 && (
+                        <div className="flex items-center gap-1.5 text-[10px] text-slate-500 font-semibold">
+                          <Calendar size={12} className="text-slate-400 shrink-0" />
+                          <span className="truncate">{formatDays(disc.available_days)}</span>
+                        </div>
+                      )}
+                      
+                      <div className="flex items-center justify-between gap-2 min-w-0">
+                        <div className="flex gap-1.5 min-w-0 shrink">
+                          {disc.members_only ? (
+                            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md shadow-sm flex items-center gap-1 bg-purple-100 text-purple-700 min-w-0">
+                              <Crown size={10} className="shrink-0" /> 
+                              <span className="truncate">Members Only</span>
+                            </span>
+                          ) : (
+                            <span 
+                              className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md shadow-sm truncate min-w-0"
+                              style={{ color: primaryColor, backgroundColor: `${primaryColor}15` }}
+                            >
+                              Limited Offer
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 group-hover:text-slate-600 transition-colors flex items-center gap-1 shrink-0 whitespace-nowrap">
+                          Tap to use
+                        </span>
                       </div>
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 group-hover:text-slate-600 transition-colors flex items-center gap-1 shrink-0 whitespace-nowrap">
-                        Tap to use
-                      </span>
                     </div>
                   </div>
                   
@@ -925,24 +1006,32 @@ export function PublicMenuPage() {
                           )}
                           
                           {/* Food Type mark */}
-                          <div className="absolute top-2 right-2 bg-white/90 backdrop-blur-sm p-0.5 rounded shadow-sm">
-                            {item.food_type === 'veg' ? (
-                              <span className="w-3 h-3 border border-green-600 rounded-[2px] flex items-center justify-center">
-                                <span className="w-1.5 h-1.5 bg-green-600 rounded-full"></span>
-                              </span>
-                            ) : item.food_type === 'egg' ? (
-                              <span className="w-3 h-3 border border-yellow-500 rounded-[2px] flex items-center justify-center">
-                                <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full"></span>
-                              </span>
-                            ) : item.food_type === 'drink' ? (
-                              <span className="w-3 h-3 border border-blue-500 rounded-full flex items-center justify-center">
-                                <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
-                              </span>
-                            ) : (
-                              <span className="w-3 h-3 border border-red-600 rounded-[2px] flex items-center justify-center">
-                                <span className="w-0 h-0 border-l-[3px] border-r-[3px] border-b-[5px] border-transparent border-b-red-600"></span>
-                              </span>
-                            )}
+                          <div className="absolute top-2 right-2 flex flex-col gap-1 z-20">
+                            {item.food_types?.map((type) => (
+                              <div key={type} className="bg-white/90 backdrop-blur-sm p-0.5 rounded shadow-sm">
+                                {type === 'veg' ? (
+                                  <span className="w-3 h-3 border border-green-600 rounded-[2px] flex items-center justify-center" title="Veg">
+                                    <span className="w-1.5 h-1.5 bg-green-600 rounded-full"></span>
+                                  </span>
+                                ) : type === 'egg' ? (
+                                  <span className="w-3 h-3 border border-yellow-500 rounded-[2px] flex items-center justify-center" title="Egg">
+                                    <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full"></span>
+                                  </span>
+                                ) : type === 'drink' ? (
+                                  <span className="w-3 h-3 border border-blue-500 rounded-[2px] flex items-center justify-center" title="Drink">
+                                    <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
+                                  </span>
+                                ) : type === 'dessert' ? (
+                                  <span className="w-3 h-3 border border-pink-500 rounded-[2px] flex items-center justify-center" title="Dessert">
+                                    <span className="w-1.5 h-1.5 bg-pink-500 rounded-[1px]"></span>
+                                  </span>
+                                ) : type === 'non-veg' ? (
+                                  <span className="w-3 h-3 border border-red-600 rounded-[2px] flex items-center justify-center" title="Non-Veg">
+                                    <span className="w-0 h-0 border-l-[3px] border-r-[3px] border-b-[5px] border-transparent border-b-red-600"></span>
+                                  </span>
+                                ) : null}
+                              </div>
+                            ))}
                           </div>
                         </div>
                         
@@ -955,29 +1044,103 @@ export function PublicMenuPage() {
                             )}
                           </div>
                           
-                          <div className={`mt-2 flex flex-wrap items-center gap-2 ${layoutStyle === 'grid' ? 'justify-between' : ''}`}>
-                            <span className="font-bold whitespace-nowrap" style={{ color: primaryColor }}>
-                              {(() => {
-                                const basePrice = Number(item.offer_price || item.price);
-                                if (!item.offer_price && activeDiscounts.length > 0) {
-                                  const disc = activeDiscounts.find(d => {
-                                    if (d.discount_type === 'bogo' || d.discount_type === 'combo') return false;
-                                    if (d.applies_to === 'all') return true;
-                                    if (d.applies_to === 'category' && d.target_ids?.includes(item.category_id)) return true;
-                                    if (d.applies_to === 'items' && d.target_ids?.includes(item.id)) return true;
-                                    return false;
-                                  });
-                                  if (disc) {
-                                    const v = Number(disc.discount_value);
-                                    const discounted = disc.discount_type === 'percentage'
-                                      ? basePrice * (1 - v / 100)
-                                      : Math.max(0, basePrice - v);
-                                    return <>{settings?.currency || '₹'}{discounted.toFixed(2).replace(/\.00$/, '')}</>;
-                                  }
+                          <div className={`mt-2 flex flex-col gap-1.5 ${layoutStyle === 'grid' ? 'justify-between' : ''}`}>
+                            {(() => {
+                              let basePrice = Number(item.price);
+                              let offerPrice = item.offer_price ? Number(item.offer_price) : null;
+                              let isFrom = false;
+
+                              if (item.variants && item.variants.length > 0) {
+                                let minPrice = Infinity;
+                                let minOffer = Infinity;
+                                item.variants.forEach(v => {
+                                  const p = Number(v.price);
+                                  const op = v.offer_price ? Number(v.offer_price) : p;
+                                  if (p < minPrice) minPrice = p;
+                                  if (op < minOffer) minOffer = op;
+                                });
+                                if (minPrice !== Infinity) {
+                                  basePrice = minPrice;
+                                  offerPrice = minOffer < minPrice ? minOffer : null;
+                                  isFrom = true;
                                 }
-                                return <>{settings?.currency || '₹'}{basePrice}</>;
-                              })()}
-                            </span>
+                              }
+
+                              let finalPrice = offerPrice !== null ? offerPrice : basePrice;
+                              let hasDiscount = offerPrice !== null && offerPrice < basePrice;
+                              
+                              if (!offerPrice && activeDiscounts.length > 0) {
+                                const disc = activeDiscounts.find(d => {
+                                  if (d.discount_type === 'bogo' || d.discount_type === 'combo') return false;
+                                  if (d.applies_to === 'all') return true;
+                                  if (d.applies_to === 'category' && d.target_ids?.includes(item.category_id)) return true;
+                                  if (d.applies_to === 'items' && d.target_ids?.includes(item.id)) return true;
+                                  return false;
+                                });
+                                if (disc) {
+                                  const v = Number(disc.discount_value);
+                                  const discounted = disc.discount_type === 'percentage'
+                                    ? basePrice * (1 - v / 100)
+                                    : Math.max(0, basePrice - v);
+                                  finalPrice = discounted;
+                                  hasDiscount = true;
+                                }
+                              }
+
+                              return (
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  {isFrom && <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Starts from</span>}
+                                  {hasDiscount && (
+                                    <span className="text-[11px] text-slate-400 line-through decoration-slate-300 font-medium">
+                                      {settings?.currency || '₹'}{basePrice.toFixed(2).replace(/\.00$/, '')}
+                                    </span>
+                                  )}
+                                  <span className="font-bold whitespace-nowrap text-base" style={{ color: primaryColor }}>
+                                    {settings?.currency || '₹'}{finalPrice.toFixed(2).replace(/\.00$/, '')}
+                                  </span>
+                                  {hasDiscount && basePrice > 0 && (
+                                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded ml-1" style={{ backgroundColor: `${primaryColor}15`, color: primaryColor }}>
+                                      {Math.round(((basePrice - finalPrice) / basePrice) * 100)}% OFF
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })()}
+
+                            {((item.variants && item.variants.length > 0) || (item.addons && item.addons.length > 0)) && (
+                              <div className="flex flex-wrap gap-1.5 mt-0.5">
+                                {item.variants && item.variants.length > 0 && (
+                                  <span className="text-[9px] font-bold text-slate-600 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded shadow-sm">
+                                    +{item.variants.length} Variants
+                                  </span>
+                                )}
+                                {item.addons && item.addons.length > 0 && (
+                                  <span className="text-[9px] font-bold text-slate-600 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded shadow-sm">
+                                    +{item.addons.length} Add-ons
+                                  </span>
+                                )}
+                              </div>
+                            )}
+
+                            {((item.available_days && item.available_days.length > 0) || (item.available_time_presets && item.available_time_presets.length > 0) || (item.custom_time_from && item.custom_time_to)) && (
+                              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                {item.available_days && item.available_days.length > 0 && (
+                                  <span className="text-[9px] font-bold text-blue-600 bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded shadow-sm max-w-[120px] truncate" title={item.available_days.join(', ')}>
+                                    {item.available_days.length === 7 ? 'Everyday' : item.available_days.join(', ')}
+                                  </span>
+                                )}
+                                {item.available_time_presets && item.available_time_presets.length > 0 && (
+                                  <span className="text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md shadow-sm truncate max-w-full" title={item.available_time_presets.map(p => `${p} ${PRESET_TIMINGS[p] || ''}`).join(', ')}>
+                                    {item.available_time_presets.map(p => `${p} ${PRESET_TIMINGS[p] || ''}`).join(', ')}
+                                  </span>
+                                )}
+                                {(item.custom_time_from && item.custom_time_to) && (
+                                  <span className="text-[9px] font-bold text-purple-600 bg-purple-50 border border-purple-100 px-1.5 py-0.5 rounded shadow-sm max-w-[120px] truncate" title={`${item.custom_time_from} - ${item.custom_time_to}`}>
+                                    {item.custom_time_from} - {item.custom_time_to}
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -992,7 +1155,7 @@ export function PublicMenuPage() {
         {/* --- Google Reviews Section --- */}
         {(shop.google_review_link || shop.review_widget_code) && (
           <div className="px-4 sm:px-6 md:px-8 max-w-4xl mx-auto pb-12 mt-8 border-t pt-8" style={{ borderColor: 'rgba(100, 116, 139, 0.1)' }}>
-            <h2 className="text-xl font-bold mb-4 flex items-center gap-2" style={{ color: theme === 'dark' ? 'white' : 'inherit' }}>
+            <h2 className="text-xl font-bold mb-4 flex items-center gap-2" style={{ color: theme?.theme === 'dark' ? 'white' : 'inherit' }}>
               <Star size={20} className="text-amber-500 fill-amber-500" />
               Customer Reviews
             </h2>
@@ -1003,7 +1166,7 @@ export function PublicMenuPage() {
                 target="_blank"
                 rel="noopener noreferrer"
                 className="block w-full py-3 px-4 rounded-xl font-bold text-center mb-6 transition-transform active:scale-[0.98] shadow-sm flex items-center justify-center gap-2"
-                style={{ backgroundColor: theme === 'dark' ? '#1e293b' : 'white', color: primaryColor, border: `1px solid ${primaryColor}40` }}
+                style={{ backgroundColor: theme?.theme === 'dark' ? '#1e293b' : 'white', color: primaryColor, border: `1px solid ${primaryColor}40` }}
               >
                 Rate us on Google Maps <ExternalLink size={16} />
               </a>
@@ -1247,6 +1410,46 @@ export function PublicMenuPage() {
             </div>
           </div>
 
+          {/* Availability Section */}
+          <div>
+            <h3 className="text-xs font-bold mb-3 opacity-70 uppercase tracking-wider">Availability</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {[
+                { id: 'timing_Early Morning', label: 'Early Morning' },
+                { id: 'timing_Morning', label: 'Morning' },
+                { id: 'timing_Afternoon', label: 'Afternoon' },
+                { id: 'timing_Evening', label: 'Evening' },
+                { id: 'timing_Night', label: 'Night' },
+                { id: 'timing_Mid-night', label: 'Mid-night' }
+              ].map(filter => (
+                <label 
+                  key={filter.id}
+                  className={`relative flex items-center justify-center py-2.5 px-2 rounded-xl border cursor-pointer transition-all text-center ${
+                    extraFilters.includes(filter.id) 
+                      ? 'border-primary bg-primary/5 shadow-sm' 
+                      : 'border-slate-200 bg-white hover:bg-slate-50'
+                  }`}
+                  style={extraFilters.includes(filter.id) ? { borderColor: primaryColor, backgroundColor: `${primaryColor}10` } : {}}
+                >
+                  <input 
+                    type="checkbox" 
+                    className="hidden" 
+                    checked={extraFilters.includes(filter.id)}
+                    onChange={() => toggleExtraFilter(filter.id)}
+                  />
+                  <span className={`text-xs font-medium ${extraFilters.includes(filter.id) ? 'text-slate-900' : 'text-slate-600'}`}>
+                    {filter.label}
+                  </span>
+                  {extraFilters.includes(filter.id) && (
+                    <div className="absolute top-1.5 right-1.5">
+                      <Check size={12} style={{ color: primaryColor }} />
+                    </div>
+                  )}
+                </label>
+              ))}
+            </div>
+          </div>
+
           <div className="pt-2 flex gap-3">
             <button
               onClick={() => {
@@ -1294,26 +1497,91 @@ export function PublicMenuPage() {
         {selectedDiscountForModal && (
           <div className="space-y-5 mt-2">
             <div className="flex flex-col items-center text-center pb-5 border-b border-slate-100">
-              <div 
-                className="min-w-[6rem] w-auto h-24 px-6 rounded-[2rem] flex items-center justify-center shrink-0 text-white font-bold mb-4 transform hover:scale-105 transition-transform duration-300 relative overflow-hidden"
-                style={{ 
-                  backgroundColor: primaryColor,
-                  boxShadow: `0 12px 32px ${primaryColor}60`
-                }}
-              >
-                <div className="absolute inset-0 bg-white/20 rounded-[2rem] -skew-x-12 opacity-50" />
-                {/* Auto-shining effect */}
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent -translate-x-full animate-[shimmer_2.5s_infinite] pointer-events-none" />
-                {selectedDiscountForModal.discount_type === 'percentage' && <span className="text-3xl tracking-tight z-10">{Number(selectedDiscountForModal.discount_value)}%</span>}
-                {selectedDiscountForModal.discount_type === 'flat' && <span className="text-3xl tracking-tight z-10">{settings?.currency || '₹'}{Number(selectedDiscountForModal.discount_value)}</span>}
-                {selectedDiscountForModal.discount_type === 'bogo' && <span className="text-3xl tracking-tight z-10 text-center text-2xl px-2">Buy {selectedDiscountForModal.buy_quantity} Get {selectedDiscountForModal.get_quantity}</span>}
-                {selectedDiscountForModal.discount_type === 'combo' && <span className="text-3xl tracking-tight z-10">{settings?.currency || '₹'}{Number(selectedDiscountForModal.discount_value)}</span>}
-              </div>
+              {(() => {
+                const isCashLook = selectedDiscountForModal.discount_type === 'flat' || selectedDiscountForModal.discount_type === 'combo';
+                return isCashLook ? (
+                  <div 
+                    className="min-w-[8rem] w-auto h-20 px-8 flex items-center justify-center shrink-0 text-white font-bold mb-4 transform hover:scale-105 transition-transform duration-300 relative overflow-hidden"
+                    style={{ 
+                      backgroundColor: '#16a34a',
+                      borderRadius: '8px',
+                      boxShadow: '0 12px 32px #16a34a60'
+                    }}
+                  >
+                    <div className="absolute inset-1.5 border-2 border-white/30 border-dashed rounded-[4px]" />
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent -translate-x-full animate-[shimmer_2.5s_infinite] pointer-events-none" />
+                    <span className="text-3xl tracking-tight z-10 font-mono">
+                      {settings?.currency || '₹'}{Number(selectedDiscountForModal.discount_value)}
+                    </span>
+                  </div>
+                ) : (
+                  <div 
+                    className="min-w-[8rem] w-auto h-24 px-8 flex items-center justify-center shrink-0 text-white font-bold mb-4 transform hover:scale-105 transition-transform duration-300 relative overflow-hidden"
+                    style={{ 
+                      backgroundColor: primaryColor,
+                      borderRadius: '16px',
+                      boxShadow: `0 12px 32px ${primaryColor}60`
+                    }}
+                  >
+                    <div className="absolute -left-4 top-1/2 -translate-y-1/2 w-8 h-8 bg-white rounded-full shadow-[inset_0_0_10px_rgba(0,0,0,0.1)]" />
+                    <div className="absolute -right-4 top-1/2 -translate-y-1/2 w-8 h-8 bg-white rounded-full shadow-[inset_0_0_10px_rgba(0,0,0,0.1)]" />
+                    <div className="absolute inset-y-2 left-6 border-l-2 border-white/30 border-dashed" />
+                    <div className="absolute inset-y-2 right-6 border-r-2 border-white/30 border-dashed" />
+                    
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent -translate-x-full animate-[shimmer_2.5s_infinite] pointer-events-none" />
+                    <span className="text-3xl tracking-tight z-10 text-center px-2">
+                      {selectedDiscountForModal.discount_type === 'percentage' 
+                        ? `${Number(selectedDiscountForModal.discount_value)}%`
+                        : `Buy ${selectedDiscountForModal.buy_quantity}\nGet ${selectedDiscountForModal.get_quantity}`}
+                    </span>
+                  </div>
+                );
+              })()}
               <h3 className="text-2xl font-bold font-heading text-slate-900">{selectedDiscountForModal.title}</h3>
               {selectedDiscountForModal.description && (
                 <p className="text-sm text-slate-500 mt-2 max-w-[280px] leading-relaxed">{selectedDiscountForModal.description}</p>
               )}
+              {selectedDiscountForModal.members_only && (
+                <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-100 text-purple-700 text-xs font-bold uppercase tracking-wider">
+                  <Crown size={14} />
+                  Members Only
+                </div>
+              )}
             </div>
+
+            {(selectedDiscountForModal.start_date || selectedDiscountForModal.end_date || (selectedDiscountForModal.available_days && selectedDiscountForModal.available_days.length > 0) || (selectedDiscountForModal.available_time_presets && selectedDiscountForModal.available_time_presets.length > 0)) && (
+              <div className="pt-2">
+                <h4 className="text-xs font-bold text-slate-400 mb-2 uppercase tracking-wider flex items-center gap-2">
+                  <Clock size={14} className="text-blue-500" /> Availability
+                </h4>
+                <div className="bg-slate-50 rounded-2xl p-3 border border-slate-100 flex flex-col gap-2">
+                  {(selectedDiscountForModal.start_date || selectedDiscountForModal.end_date) && (
+                    <p className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                      <Calendar size={14} className="text-slate-400 shrink-0" />
+                      <span className="truncate">
+                        {selectedDiscountForModal.start_date ? new Date(selectedDiscountForModal.start_date).toLocaleDateString() : 'Now'} 
+                        {' → '} 
+                        {selectedDiscountForModal.end_date ? new Date(selectedDiscountForModal.end_date).toLocaleDateString() : 'No end'}
+                      </span>
+                    </p>
+                  )}
+                  {selectedDiscountForModal.available_days && selectedDiscountForModal.available_days.length > 0 && (
+                    <p className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                      <Calendar size={14} className="text-slate-400 shrink-0" />
+                      <span className="truncate">{formatDays(selectedDiscountForModal.available_days)}</span>
+                    </p>
+                  )}
+                  {selectedDiscountForModal.available_time_presets && selectedDiscountForModal.available_time_presets.length > 0 && (
+                    <p className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                      <Clock size={14} className="text-slate-400 shrink-0" />
+                      <span className="line-clamp-2">
+                        {selectedDiscountForModal.available_time_presets.map(p => PRESET_TIMINGS[p] ? `${p} ${PRESET_TIMINGS[p]}` : p).join(', ')}
+                      </span>
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="pt-2">
               <h4 className="text-xs font-bold text-slate-400 mb-3 uppercase tracking-wider flex items-center gap-2">
@@ -1438,12 +1706,19 @@ export function PublicMenuPage() {
                   )}
                   
                   <div className="mt-auto flex items-center justify-between">
-                    <span 
-                      className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded shadow-sm shrink-0"
-                      style={{ color: primaryColor, backgroundColor: `${primaryColor}15` }}
-                    >
-                      Limited Offer
-                    </span>
+                    {disc.members_only ? (
+                      <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded shadow-sm flex items-center gap-1 shrink-0 bg-purple-100 text-purple-700">
+                        <Crown size={10} className="shrink-0" />
+                        Members Only
+                      </span>
+                    ) : (
+                      <span 
+                        className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded shadow-sm shrink-0"
+                        style={{ color: primaryColor, backgroundColor: `${primaryColor}15` }}
+                      >
+                        Limited Offer
+                      </span>
+                    )}
                     <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 group-hover:text-slate-600 transition-colors ml-2 shrink-0">
                       View
                     </span>

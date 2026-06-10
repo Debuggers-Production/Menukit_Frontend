@@ -14,11 +14,13 @@ export interface AuthResponse {
 }
 
 export interface ShopSettings {
-  id: string;
+  id?: string;
   currency: string;
   language: string;
   show_prices: boolean;
   show_offers: boolean;
+  is_discoverable: boolean;
+  show_menus_in_discovery: boolean;
 }
 
 export interface ThemeSettings {
@@ -65,9 +67,10 @@ export interface PublicShopListing {
   opening_time: string | null;
   closing_time: string | null;
   active_discounts_count: number;
-  best_discount_label: string | null;
-  average_rating: number | null;
+  best_discount_label?: string | null;
+  average_rating?: number | null;
   total_reviews: number;
+  show_menus_in_discovery: boolean;
 }
 
 
@@ -107,7 +110,7 @@ export interface MenuItem {
   description: string | null;
   price: string;
   offer_price: string | null;
-  food_type: 'veg' | 'non-veg' | 'egg' | 'drink';
+  food_types: ('veg' | 'non-veg' | 'egg' | 'drink' | 'none' | 'dessert')[];
   allow_ice_preference: boolean;
   is_bestseller: boolean;
   is_highlighted: boolean;
@@ -118,6 +121,10 @@ export interface MenuItem {
   images: MenuImage[];
   variants?: MenuItemVariant[];
   addons?: MenuItemAddon[];
+  available_days?: string[];
+  available_time_presets?: string[];
+  custom_time_from?: string | null;
+  custom_time_to?: string | null;
   average_rating?: number | null;
   review_count?: number;
   created_at: string;
@@ -162,6 +169,8 @@ export interface Discount {
   target_ids: string[] | null;
   start_date: string | null;
   end_date: string | null;
+  available_days?: string[] | null;
+  available_time_presets?: string[] | null;
   is_active: boolean;
   members_only: boolean;
   created_at: string;

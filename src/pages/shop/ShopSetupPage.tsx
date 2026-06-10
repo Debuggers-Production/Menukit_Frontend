@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-hot-toast';
-import { Store, MapPin, Phone, UploadCloud, Save, Settings, ChevronRight, Check, Edit2, Clock, Star } from 'lucide-react';
+import { Store, MapPin, Phone, UploadCloud, Save, Settings, ChevronRight, Check, Edit2, Clock, Star, Navigation } from 'lucide-react';
 import { api } from '@/services/api';
 import { useShopStore } from '@/store/shopStore';
 
@@ -9,6 +9,80 @@ import { Input } from '@/components/ui/Input';
 import { Switch } from '@/components/ui/Switch';
 import { SearchableSelect } from '@/components/ui/SearchableSelect';
 import { TimePicker } from '@/components/ui/TimePicker';
+
+import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+});
+
+function MapLocationSelector({ 
+  latitude, 
+  longitude, 
+  onChange 
+}: { 
+  latitude: string, 
+  longitude: string, 
+  onChange: (lat: string, lng: string) => void 
+}) {
+  const [mapTarget, setMapTarget] = useState<[number, number]>(
+    latitude && longitude ? [parseFloat(latitude), parseFloat(longitude)] : [20.5937, 78.9629] // India center
+  );
+
+  const markerRef = useRef<L.Marker>(null);
+
+  const eventHandlers = {
+    dragend() {
+      const marker = markerRef.current;
+      if (marker != null) {
+        const pos = marker.getLatLng();
+        onChange(pos.lat.toFixed(6), pos.lng.toFixed(6));
+        setMapTarget([pos.lat, pos.lng]);
+      }
+    },
+  };
+
+  function MapClickEvent() {
+    useMapEvents({
+      click(e) {
+        onChange(e.latlng.lat.toFixed(6), e.latlng.lng.toFixed(6));
+        setMapTarget([e.latlng.lat, e.latlng.lng]);
+      },
+    });
+    return null;
+  }
+
+  function MapCenterUpdater({ center }: { center: [number, number] }) {
+    const map = useMap();
+    useEffect(() => {
+      map.flyTo(center, map.getZoom(), { duration: 0.5 });
+    }, [center, map]);
+    return null;
+  }
+
+  return (
+    <div className="relative h-64 w-full rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 z-10">
+      <MapContainer center={mapTarget} zoom={latitude && longitude ? 15 : 5} style={{ height: '100%', width: '100%' }} scrollWheelZoom={true} attributionControl={false}>
+        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+        <MapClickEvent />
+        <MapCenterUpdater center={mapTarget} />
+        {(latitude && longitude) ? (
+          <Marker
+            draggable={true}
+            eventHandlers={eventHandlers}
+            position={[parseFloat(latitude), parseFloat(longitude)]}
+            ref={markerRef}
+          />
+        ) : null}
+      </MapContainer>
+    </div>
+  );
+}
 
 export function ShopSetupPage() {
   const { shop, setShop } = useShopStore();
@@ -39,14 +113,15 @@ export function ShopSetupPage() {
     latitude: '',
     longitude: '',
     google_review_link: '',
-    review_widget_code: '',
   });
 
   const [settingsData, setSettingsData] = useState({
     currency: '₹',
     language: 'en',
     show_prices: true,
-    show_offers: true
+    show_offers: true,
+    is_discoverable: true,
+    show_menus_in_discovery: true,
   });
 
   const logoInputRef = useRef<HTMLInputElement>(null);
@@ -76,14 +151,15 @@ export function ShopSetupPage() {
             latitude: loadedShop.latitude?.toString() || '',
             longitude: loadedShop.longitude?.toString() || '',
             google_review_link: loadedShop.google_review_link || '',
-            review_widget_code: loadedShop.review_widget_code || '',
           });
           if (loadedShop.settings) {
             setSettingsData({
               currency: loadedShop.settings.currency || '₹',
               language: loadedShop.settings.language || 'en',
               show_prices: loadedShop.settings.show_prices !== false,
-              show_offers: loadedShop.settings.show_offers !== false
+              show_offers: loadedShop.settings.show_offers !== false,
+              is_discoverable: loadedShop.settings.is_discoverable !== false,
+              show_menus_in_discovery: loadedShop.settings.show_menus_in_discovery !== false,
             });
           }
           setViewMode('summary');
@@ -415,42 +491,70 @@ export function ShopSetupPage() {
 
             {/* Coordinates for Map Discovery */}
             <div className="space-y-1.5 mt-2">
-              <label className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                <MapPin size={15} className="text-orange-500" />
-                Map Coordinates
-                <span className="text-xs font-normal text-slate-400 ml-1">(for store discovery)</span>
-              </label>
-              <div className="grid grid-cols-2 gap-3 p-3 bg-orange-50 dark:bg-orange-900/10 rounded-xl border border-orange-100 dark:border-orange-800/20">
-                <Input
-                  label="Latitude"
-                  name="latitude"
-                  type="number"
-                  step="0.000001"
-                  value={formData.latitude}
-                  onChange={handleChange}
-                  placeholder="e.g. 12.9716"
-                />
-                <Input
-                  label="Longitude"
-                  name="longitude"
-                  type="number"
-                  step="0.000001"
-                  value={formData.longitude}
-                  onChange={handleChange}
-                  placeholder="e.g. 77.5946"
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <MapPin size={15} className="text-orange-500" />
+                  Store Location
+                  <span className="text-xs font-normal text-slate-400 ml-1">(for store discovery)</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (navigator.geolocation) {
+                      navigator.geolocation.getCurrentPosition((pos) => {
+                        setFormData(prev => ({
+                          ...prev,
+                          latitude: pos.coords.latitude.toFixed(6),
+                          longitude: pos.coords.longitude.toFixed(6)
+                        }));
+                        toast.success("Location updated from GPS");
+                      }, (_err) => {
+                        toast.error("Failed to get location. Please allow location access.");
+                      });
+                    }
+                  }}
+                  className="flex items-center gap-1 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 py-1.5 px-3 rounded-lg transition-colors"
+                >
+                  <Navigation size={14} />
+                  Locate Me
+                </button>
+              </div>
+
+              <div className="p-1 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-900/50">
+                <MapLocationSelector 
+                  latitude={formData.latitude} 
+                  longitude={formData.longitude} 
+                  onChange={(lat, lng) => setFormData(prev => ({ ...prev, latitude: lat, longitude: lng }))}
                 />
               </div>
-              <p className="text-xs text-slate-400 mt-1">
-                💡 Find on{' '}
-                <a
-                  href="https://maps.google.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-orange-500 hover:underline"
-                >
-                  Google Maps
-                </a>{' '}
-                → right-click your location → copy coordinates.
+              
+              <div className="flex flex-col sm:flex-row gap-3 px-1">
+                 <div className="flex-1 flex items-center bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden transition-colors focus-within:border-primary focus-within:ring-1 focus-within:ring-primary shadow-sm">
+                   <span className="text-xs font-semibold text-slate-500 px-3 bg-slate-100 dark:bg-slate-800 h-full flex items-center border-r border-slate-200 dark:border-slate-700">Lat:</span>
+                   <input
+                     type="number"
+                     step="any"
+                     value={formData.latitude}
+                     onChange={e => setFormData({ ...formData, latitude: e.target.value })}
+                     placeholder="Not set"
+                     className="w-full text-sm font-mono text-slate-700 dark:text-slate-300 bg-transparent px-3 py-2 outline-none"
+                   />
+                 </div>
+                 <div className="flex-1 flex items-center bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden transition-colors focus-within:border-primary focus-within:ring-1 focus-within:ring-primary shadow-sm">
+                   <span className="text-xs font-semibold text-slate-500 px-3 bg-slate-100 dark:bg-slate-800 h-full flex items-center border-r border-slate-200 dark:border-slate-700">Lng:</span>
+                   <input
+                     type="number"
+                     step="any"
+                     value={formData.longitude}
+                     onChange={e => setFormData({ ...formData, longitude: e.target.value })}
+                     placeholder="Not set"
+                     className="w-full text-sm font-mono text-slate-700 dark:text-slate-300 bg-transparent px-3 py-2 outline-none"
+                   />
+                 </div>
+              </div>
+              
+              <p className="text-xs text-slate-400 mt-1 px-1">
+                💡 Drag the marker or click on the map to set your exact store location.
               </p>
             </div>
 
@@ -469,25 +573,11 @@ export function ShopSetupPage() {
                   placeholder="e.g. https://g.page/r/Cdfg.../review"
                 />
                 <p className="text-xs text-slate-400 mt-1 mb-3">
-                  This will add a "Rate us on Google" button to your menu, redirecting customers to your Google review page.
+                  This will add a "Rate us on Google" button to your menu, redirecting customers to your Google review page.{' '}
+                  <a href="https://support.google.com/business/answer/7030623" target="_blank" rel="noopener noreferrer" className="text-orange-500 hover:underline font-medium">
+                    Learn how to find your link
+                  </a>
                 </p>
-                
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                    Review Widget Embed Code (Optional)
-                  </label>
-                  <textarea
-                    name="review_widget_code"
-                    value={formData.review_widget_code}
-                    onChange={e => setFormData(p => ({ ...p, review_widget_code: e.target.value }))}
-                    rows={4}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-                    placeholder={`<!-- Paste Elfsight or Trustpilot iframe code here -->`}
-                  />
-                  <p className="text-xs text-slate-400 mt-1">
-                    Want to show your existing reviews? Create a free widget at <a href="https://elfsight.com/google-reviews-widget/" target="_blank" rel="noreferrer" className="text-orange-500 hover:underline">Elfsight</a> and paste the embed code here.
-                  </p>
-                </div>
               </div>
             </div>
 
@@ -632,6 +722,22 @@ export function ShopSetupPage() {
                 onChange={(c) => setSettingsData({ ...settingsData, show_offers: c })}
                 disabled
               />
+
+              <Switch
+                label="Enable Store Discovery"
+                description="Allow customers to find your restaurant on the public discovery map."
+                checked={settingsData.is_discoverable}
+                onChange={(c) => setSettingsData({ ...settingsData, is_discoverable: c })}
+              />
+              
+              {settingsData.is_discoverable && (
+                <Switch
+                  label="Show Menu on Discovery Map"
+                  description="Display the 'Shop Menus' button on the discovery page."
+                  checked={settingsData.show_menus_in_discovery}
+                  onChange={(c) => setSettingsData({ ...settingsData, show_menus_in_discovery: c })}
+                />
+              )}
             </div>
           </div>
         )}
