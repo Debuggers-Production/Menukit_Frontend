@@ -43,7 +43,7 @@ export function MenuItemsPage() {
   
   const [pendingImages, setPendingImages] = useState<File[]>([]);
   const [pendingImageUrls, setPendingImageUrls] = useState<string[]>([]);
-  const [searchImagesModal, setSearchImagesModal] = useState<{ name: string, urls: string[] } | null>(null);
+  const [searchImagesModal, setSearchImagesModal] = useState<{ item?: MenuItem, name: string, urls: string[] } | null>(null);
   const [selectedImageUrls, setSelectedImageUrls] = useState<string[]>([]);
   const [isSavingVariant, setIsSavingVariant] = useState(false);
   
@@ -115,7 +115,7 @@ export function MenuItemsPage() {
       if (urls.length === 0) {
         toast.error('No images found for this item.');
       } else {
-        setSearchImagesModal({ name: itemName, urls });
+        setSearchImagesModal({ item, name: itemName, urls });
         setSelectedImageUrls([]);
       }
     } catch (err: any) {
@@ -130,14 +130,16 @@ export function MenuItemsPage() {
     
     setIsSavingVariant(true);
     try {
-      if (editingItem) {
+      const targetItem = searchImagesModal.item || editingItem;
+      
+      if (targetItem) {
         let newImages: any[] = [];
         let hasError = false;
         let errorMsg = '';
         
         for (const url of selectedImageUrls) {
            try {
-             const res = await api.post(`/menu-items/${editingItem.id}/save-image-url`, { url });
+             const res = await api.post(`/menu-items/${targetItem.id}/save-image-url`, { url });
              newImages.push(res.data);
            } catch (e: any) {
              hasError = true;
@@ -148,7 +150,7 @@ export function MenuItemsPage() {
         
         if (newImages.length > 0) {
           setMenuItems(menuItems.map(m => {
-            if (m.id === editingItem.id) {
+            if (m.id === targetItem.id) {
               const currentImages = m.images || [];
               return { 
                 ...m, 
@@ -159,10 +161,12 @@ export function MenuItemsPage() {
             }
             return m;
           }));
-          setEditingItem(prev => {
-            if (!prev) return prev;
-            return { ...prev, images: [...(prev.images || []), ...newImages] };
-          });
+          if (editingItem && editingItem.id === targetItem.id) {
+            setEditingItem(prev => {
+              if (!prev) return prev;
+              return { ...prev, images: [...(prev.images || []), ...newImages] };
+            });
+          }
         }
         
         if (hasError) {
@@ -1499,7 +1503,7 @@ export function MenuItemsPage() {
                 try {
                   setIsSavingVariant(true);
                   const res = await api.get(`/menu-items/search-images-by-name?q=${encodeURIComponent(searchImagesModal?.name || '')}`);
-                  setSearchImagesModal({ name: searchImagesModal?.name || '', urls: res.data.urls });
+                  setSearchImagesModal({ item: searchImagesModal?.item, name: searchImagesModal?.name || '', urls: res.data.urls });
                 } catch (error) {
                   toast.error('Failed to regenerate images');
                 } finally {
