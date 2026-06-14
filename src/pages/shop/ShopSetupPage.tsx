@@ -211,7 +211,11 @@ export function ShopSetupPage() {
       
       // Auto-save the new image URL if the shop exists
       if (shop?.id) {
-        const updateRes = await api.put('/shops/me', { ...formData, [`${type}_url`]: newUrl });
+        const payload: any = { ...formData, [`${type}_url`]: newUrl };
+        payload.latitude = payload.latitude ? parseFloat(payload.latitude) : null;
+        payload.longitude = payload.longitude ? parseFloat(payload.longitude) : null;
+        
+        const updateRes = await api.put('/shops/me', payload);
         setShop(updateRes.data);
       }
       

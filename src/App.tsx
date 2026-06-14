@@ -21,6 +21,7 @@ import { ThemeCustomizePage } from '@/pages/customize/ThemeCustomizePage';
 import { QRCodePage } from '@/pages/qr/QRCodePage';
 import { AnalyticsPage } from '@/pages/analytics/AnalyticsPage';
 import { DiscountsPage } from '@/pages/discounts/DiscountsPage';
+import { InternalBulkPage } from '@/pages/admin/InternalBulkPage';
 
 // Public Pages
 import { PublicMenuPage } from '@/pages/public/PublicMenuPage';
@@ -72,6 +73,7 @@ function App() {
           <Route path="/qr-code" element={<QRCodePage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/discounts" element={<DiscountsPage />} />
+          <Route path="/internal-bulk" element={<InternalBulkPage />} />
           <Route path="/admin" element={<AdminPlaceholder />} />
         </Route>
       </Route>

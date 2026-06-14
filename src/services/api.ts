@@ -1,11 +1,8 @@
 import axios from 'axios';
 
 // Create Axios instance with base URL
-// https://api.menukit.debuggers.co.in
-// http://127.0.0.1:8000
-
-// const BASE_URL="http://127.0.0.1:8000"
-const BASE_URL="https://api.menukit.debuggers.co.in"
+// Fallback to empty string in development to use the Vite proxy (fixes local CORS delays)
+const BASE_URL = import.meta.env.VITE_API_URL || "";
 
 export const api = axios.create({
   baseURL: `${BASE_URL}/api/v1`,

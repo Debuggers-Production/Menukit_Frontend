@@ -7,6 +7,8 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { Modal } from '@/components/ui/Modal';
 import { GoogleTranslate } from '@/components/GoogleTranslate';
 import { LanguageSelectorModal } from '@/components/LanguageSelectorModal';
+import { EntertainmentHub } from '@/components/games/EntertainmentHub';
+import { Gamepad2 } from 'lucide-react';
 
 const PRESET_TIMINGS: Record<string, string> = {
   'Early Morning': '(04:00 - 08:00)',
@@ -82,6 +84,7 @@ export function PublicMenuPage() {
   const [selectedDiscountForModal, setSelectedDiscountForModal] = useState<Discount | null>(null);
   const [activeDiscountFilter, setActiveDiscountFilter] = useState<string | null>(null);
   const [isDiscountsModalOpen, setIsDiscountsModalOpen] = useState(false);
+  const [isEntertainmentHubOpen, setIsEntertainmentHubOpen] = useState(false);
 
   // Track scan if referrer is present
   useEffect(() => {
@@ -1332,6 +1335,24 @@ export function PublicMenuPage() {
           <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 rounded-full border-2 border-white"></span>
         )}
       </button>
+
+      {/* Entertainment Hub FAB */}
+      <button
+        onClick={() => setIsEntertainmentHubOpen(true)}
+        className="fixed bottom-10 left-4 sm:left-6 h-14 px-5 rounded-full bg-slate-900 text-white shadow-xl flex items-center justify-center gap-2 hover:scale-105 transition-transform z-40 border-4 border-white/50 backdrop-blur-md animate-bounce hover:animate-none"
+        style={{ backgroundColor: primaryColor }}
+      >
+        <Gamepad2 size={24} className="animate-pulse" />
+        <span className="font-bold text-sm">Bored?</span>
+      </button>
+      
+      <EntertainmentHub 
+        isOpen={isEntertainmentHubOpen} 
+        onClose={() => setIsEntertainmentHubOpen(false)} 
+        primaryColor={primaryColor}
+        menuItems={categories.flatMap(c => c.items).filter(i => i.is_available && (i.image_url || i.thumbnail_url))}
+        currency={settings?.currency || '₹'}
+      />
 
       {/* Filter Options Modal */}
       <Modal
