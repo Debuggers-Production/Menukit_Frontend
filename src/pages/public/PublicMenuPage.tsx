@@ -20,7 +20,7 @@ const triggerWelcomeEffect = () => {
     gravity: 0.5,
     decay: 0.94,
     startVelocity: 30,
-    shapes: ['star'],
+    shapes: ['star'] as any,
     colors: ['#FFD700', '#FFA500', '#FF8C00', '#ffffff'],
     zIndex: 150,
     origin: { y: 0.4 }
@@ -36,7 +36,7 @@ const triggerWelcomeEffect = () => {
       ...defaults,
       particleCount: 15,
       scalar: 0.75,
-      shapes: ['circle']
+      shapes: ['circle'] as any
     });
   };
 
