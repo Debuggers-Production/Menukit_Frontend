@@ -91,6 +91,24 @@ function FlyTo({ position, zoom }: { position: [number, number]; zoom: number })
   return null;
 }
 
+// ─── Helper: invalidate size when layout changes ─────────────────────────────
+function MapSizeHandler({ isExpanded }: { isExpanded: boolean }) {
+  const map = useMap();
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      map.invalidateSize();
+    }, 200); // 200ms allows CSS transitions/layouts to settle
+    return () => clearTimeout(timer);
+  }, [isExpanded, map]);
+  
+  useEffect(() => {
+    const onResize = () => map.invalidateSize();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [map]);
+  return null;
+}
+
 // ─── Helper: haversine distance (km) ─────────────────────────────────────────
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number) {
   const R = 6371;
@@ -784,8 +802,6 @@ export function StoreDiscoveryPage() {
               <MapContainer
                 center={INDIA_CENTER}
                 zoom={5}
-                minZoom={4}
-                maxBounds={[[-90, -180], [90, 180]]}
                 style={{ width: '100%', height: '100%', background: '#f1f5f9' }}
                 zoomControl={false}
                 scrollWheelZoom={false}
@@ -797,6 +813,7 @@ export function StoreDiscoveryPage() {
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" 
                   noWrap={true}
                 />
+                <MapSizeHandler isExpanded={isMapExpanded} />
                 <FlyTo position={mapTarget.pos} zoom={mapTarget.zoom} />
                 {userLocation && (
                   <Marker position={userLocation} icon={L.divIcon({ html: `<div style="width:14px;height:14px;border-radius:50%;background:#3b82f6;border:3px solid white;box-shadow:0 0 0 3px rgba(59,130,246,.3)"></div>`, iconSize: [14, 14], iconAnchor: [7, 7], className: '' })} />
@@ -845,6 +862,8 @@ export function StoreDiscoveryPage() {
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               noWrap={true}
             />
+
+            <MapSizeHandler isExpanded={isMapExpanded} />
 
             {/* Fly to target when user clicks a shop or uses locate */}
             <FlyTo position={mapTarget.pos} zoom={mapTarget.zoom} />
@@ -976,6 +995,7 @@ export function StoreDiscoveryPage() {
                       if (shop.latitude && shop.longitude) {
                         setSelectedShop(shop);
                         setMapTarget({ pos: [shop.latitude, shop.longitude], zoom: 15 });
+                        setIsMapExpanded(true);
                       } else {
                         alert(`Coordinates not set for ${shop.name}. Ask the shop owner to add their location on the map in Shop Setup!`);
                       }

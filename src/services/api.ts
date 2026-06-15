@@ -14,9 +14,18 @@ export const api = axios.create({
 // Request interceptor to attach JWT token
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('access_token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+    // If it's a public endpoint, attach the customer token if available
+    if (config.url?.startsWith('/public') || config.url?.startsWith('/customers')) {
+      const customerToken = localStorage.getItem('customer_token');
+      if (customerToken) {
+        config.headers.Authorization = `Bearer ${customerToken}`;
+      }
+    } else {
+      // Otherwise, attach the admin access token
+      const token = localStorage.getItem('access_token');
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
     }
     return config;
   },

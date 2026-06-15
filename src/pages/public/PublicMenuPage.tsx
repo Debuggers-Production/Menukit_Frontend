@@ -11,6 +11,39 @@ import { LanguageSelectorModal } from '@/components/LanguageSelectorModal';
 import { EntertainmentHub } from '@/components/games/EntertainmentHub';
 import { Gamepad2 } from 'lucide-react';
 import { DiscountUnlockPopup } from '@/components/public/DiscountUnlockPopup';
+import confetti from 'canvas-confetti';
+
+const triggerWelcomeEffect = () => {
+  const defaults = {
+    spread: 360,
+    ticks: 80,
+    gravity: 0.5,
+    decay: 0.94,
+    startVelocity: 30,
+    shapes: ['star'],
+    colors: ['#FFD700', '#FFA500', '#FF8C00', '#ffffff'],
+    zIndex: 150,
+    origin: { y: 0.4 }
+  };
+
+  const shoot = () => {
+    confetti({
+      ...defaults,
+      particleCount: 40,
+      scalar: 1.2,
+    });
+    confetti({
+      ...defaults,
+      particleCount: 15,
+      scalar: 0.75,
+      shapes: ['circle']
+    });
+  };
+
+  setTimeout(shoot, 0);
+  setTimeout(shoot, 250);
+  setTimeout(shoot, 500);
+};
 
 const PRESET_TIMINGS: Record<string, string> = {
   'Early Morning': '(04:00 - 08:00)',
@@ -104,9 +137,9 @@ export function PublicMenuPage() {
     return sessionStorage.getItem('member_status') as 'unlocked' | 'verified-member' | null;
   });
 
-  // Trigger popup after 10 seconds if not already verified and haven't seen it
+  // Trigger popup after 10 seconds if not already verified, haven't seen it, AND there are active discounts
   useEffect(() => {
-    if (!id || memberStatus === 'verified-member' || sessionStorage.getItem(`discount_popup_seen_${id}`)) return;
+    if (!id || memberStatus === 'verified-member' || sessionStorage.getItem(`discount_popup_seen_${id}`) || activeDiscounts.length === 0) return;
 
     const timer = setTimeout(() => {
       setIsDiscountPopupOpen(true);
@@ -114,7 +147,7 @@ export function PublicMenuPage() {
     }, 10000);
 
     return () => clearTimeout(timer);
-  }, [id, memberStatus]);
+  }, [id, memberStatus, activeDiscounts.length]);
 
   // Track scan if referrer is present
   useEffect(() => {
@@ -136,35 +169,7 @@ export function PublicMenuPage() {
         setShop(shopRes.data);
         setCategories(menuRes.data);
 
-        // Fetch active discounts for the banner
-        try {
-          const discountRes = await api.get(`/public/shop/${id}/discounts`);
-          const now = new Date();
-          const currentDay = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][now.getDay()];
-          const currentTime = now.getHours() * 60 + now.getMinutes();
-
-          const filteredDiscounts = (discountRes.data || []).filter((d: Discount) => {
-            if (d.available_days && d.available_days.length > 0) {
-              if (!d.available_days.includes(currentDay)) return false;
-            }
-            if (d.available_time_presets && d.available_time_presets.length > 0) {
-              const timingFilters = [];
-              if (currentTime >= 240 && currentTime < 480) timingFilters.push('Early Morning');
-              if (currentTime >= 480 && currentTime < 720) timingFilters.push('Morning');
-              if (currentTime >= 720 && currentTime < 960) timingFilters.push('Afternoon');
-              if (currentTime >= 960 && currentTime < 1200) timingFilters.push('Evening');
-              if (currentTime >= 1200 && currentTime < 1440) timingFilters.push('Night');
-              if (currentTime >= 0 && currentTime < 240) timingFilters.push('Mid-night');
-
-              if (!timingFilters.some(t => d.available_time_presets?.includes(t))) return false;
-            }
-            return true;
-          });
-
-          setActiveDiscounts(filteredDiscounts);
-        } catch {
-          // Non-critical — silently ignore
-        }
+        // (Discounts are now fetched in a separate useEffect so they update on auth)
 
         // Show welcome popup once per session if shop has a welcome message
         const shopData = shopRes.data as Shop;
@@ -173,7 +178,10 @@ export function PublicMenuPage() {
           setShowWelcome(true);
           setWelcomePhase('entering');
           // Transition to fully visible after entrance animation
-          setTimeout(() => setWelcomePhase('visible'), 600);
+          setTimeout(() => {
+            setWelcomePhase('visible');
+            triggerWelcomeEffect();
+          }, 600);
         }
 
         // Track view
@@ -188,6 +196,44 @@ export function PublicMenuPage() {
 
     if (id) fetchMenu();
   }, [id]);
+
+  // Fetch Discounts (Re-runs when memberStatus changes)
+  useEffect(() => {
+    if (!id) return;
+    
+    const fetchDiscounts = async () => {
+      try {
+        const discountRes = await api.get(`/public/shop/${id}/discounts`);
+        const now = new Date();
+        const currentDay = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][now.getDay()];
+        const currentTime = now.getHours() * 60 + now.getMinutes();
+
+        const filteredDiscounts = (discountRes.data || []).filter((d: Discount) => {
+          if (d.available_days && d.available_days.length > 0) {
+            if (!d.available_days.includes(currentDay)) return false;
+          }
+          if (d.available_time_presets && d.available_time_presets.length > 0) {
+            const timingFilters = [];
+            if (currentTime >= 240 && currentTime < 480) timingFilters.push('Early Morning');
+            if (currentTime >= 480 && currentTime < 720) timingFilters.push('Morning');
+            if (currentTime >= 720 && currentTime < 960) timingFilters.push('Afternoon');
+            if (currentTime >= 960 && currentTime < 1200) timingFilters.push('Evening');
+            if (currentTime >= 1200 && currentTime < 1440) timingFilters.push('Night');
+            if (currentTime >= 0 && currentTime < 240) timingFilters.push('Mid-night');
+
+            if (!timingFilters.some(t => d.available_time_presets?.includes(t))) return false;
+          }
+          return true;
+        });
+
+        setActiveDiscounts(filteredDiscounts);
+      } catch {
+        // Non-critical — silently ignore
+      }
+    };
+    
+    fetchDiscounts();
+  }, [id, memberStatus]);
 
   // Handle Search Tracking with Debounce
   useEffect(() => {
@@ -373,19 +419,30 @@ export function PublicMenuPage() {
             ))}
           </div>
 
-          {/* Popup Card */}
+          {/* Popup Card - Outer Wrapper for Animated Border */}
           <div
             onClick={(e) => e.stopPropagation()}
-            className={`relative w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl transition-all duration-500 ${welcomePhase === 'entering'
+            className={`relative w-full max-w-sm rounded-3xl p-[3px] overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.3)] transition-all duration-500 ${welcomePhase === 'entering'
                 ? 'translate-y-8 scale-95 opacity-0'
                 : welcomePhase === 'exiting'
                   ? 'translate-y-4 scale-95 opacity-0'
                   : 'translate-y-0 scale-100 opacity-100'
               }`}
-            style={{ background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(20px)' }}
           >
-            {/* Gradient accent bar */}
-            <div className="h-1.5 w-full" style={{ background: `linear-gradient(90deg, ${primaryColor}, ${primaryColor}99, ${primaryColor}44)` }} />
+            {/* Spinning Glowing Border Background */}
+            <div className="absolute inset-0 z-0" style={{ backgroundColor: `${primaryColor}15` }} />
+            <div 
+              className="absolute inset-[-100%] z-0 animate-[spin_4s_linear_infinite]" 
+              style={{
+                background: `conic-gradient(from 0deg, transparent 0%, transparent 40%, white 49%, ${primaryColor} 50%, transparent 52%, transparent 90%, white 99%, ${primaryColor} 100%)`,
+                opacity: 0.9
+              }} 
+            />
+            
+            {/* Inner Card Content */}
+            <div className="relative z-10 w-full h-full bg-white/95 backdrop-blur-2xl rounded-[21px] flex flex-col overflow-hidden">
+              {/* Gradient accent bar */}
+              <div className="h-1.5 w-full shrink-0 relative z-20" style={{ background: `linear-gradient(90deg, ${primaryColor}, ${primaryColor}99, ${primaryColor}44)` }} />
 
             <div className="p-6 sm:p-8 text-center">
               {/* Logo with glow */}
@@ -440,6 +497,7 @@ export function PublicMenuPage() {
               >
                 Explore Menu
               </button>
+            </div>
             </div>
           </div>
         </div>
@@ -834,10 +892,10 @@ export function PublicMenuPage() {
         )}
 
         {/* 🎉 Active Offers Banner */}
-        {activeDiscounts.filter(d => d.visibility_type !== 'members_only_hidden' || memberStatus === 'verified-member').length > 0 && (
+        {activeDiscounts.filter(d => d.visibility_type !== 'members_only_hidden' || memberStatus !== null).length > 0 && (
           <div className="mb-6 w-full -mx-4 px-4 sm:mx-0 sm:px-0">
             <div className="flex gap-4 overflow-x-auto pb-4 pt-1 snap-x snap-mandatory scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-              {activeDiscounts.filter(d => d.visibility_type !== 'members_only_hidden' || memberStatus === 'verified-member').map(disc => (
+              {activeDiscounts.filter(d => d.visibility_type !== 'members_only_hidden' || memberStatus !== null).map(disc => (
                 <div
                   key={disc.id}
                   onClick={() => setSelectedDiscountForModal(disc)}
@@ -1088,8 +1146,8 @@ export function PublicMenuPage() {
 
                               if (!offerPrice && activeDiscounts.length > 0) {
                                 const disc = activeDiscounts.find(d => {
-                                  if (d.visibility_type === 'members_only_hidden' && memberStatus !== 'verified-member') return false;
-                                  if (d.visibility_type === 'members_only_visible' && memberStatus !== 'verified-member') return false;
+                                  if (d.visibility_type === 'members_only_hidden' && memberStatus === null) return false;
+                                  if (d.visibility_type === 'members_only_visible' && memberStatus === null) return false;
                                   if (d.visibility_type === 'unlock_required' && memberStatus === null) return false;
                                   if (d.discount_type === 'bogo' || d.discount_type === 'combo') return false;
                                   if (d.applies_to === 'all') return true;
@@ -1341,7 +1399,7 @@ export function PublicMenuPage() {
 
 
       {/* Member Verify FAB */}
-      {memberStatus !== 'verified-member' && activeDiscounts.some(d => d.visibility_type === 'members_only_hidden' || d.visibility_type === 'members_only_visible' || (d.visibility_type === 'unlock_required' && memberStatus === null)) && (
+      {memberStatus === null && activeDiscounts.some(d => d.visibility_type === 'members_only_hidden' || d.visibility_type === 'members_only_visible' || d.visibility_type === 'unlock_required') && (
         <button
           onClick={() => setIsDiscountPopupOpen(true)}
           className={`fixed bottom-28 left-4 sm:left-6 h-14 px-5 rounded-full bg-slate-900 text-white shadow-xl flex items-center justify-center gap-2 hover:scale-105 transition-all duration-300 z-[45] border-4 border-slate-700/50 backdrop-blur-md animate-bounce hover:animate-none ${isScrollingDown ? 'translate-y-48 opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}
@@ -1694,7 +1752,7 @@ export function PublicMenuPage() {
 
             <div className="pt-4">
               {((memberStatus === null && selectedDiscountForModal.visibility_type === 'unlock_required') || 
-                (memberStatus !== 'verified-member' && (selectedDiscountForModal.visibility_type === 'members_only_hidden'))) ? (
+                (memberStatus === null && (selectedDiscountForModal.visibility_type === 'members_only_hidden'))) ? (
                 <button
                   onClick={() => {
                     setSelectedDiscountForModal(null);

@@ -111,49 +111,49 @@ export function MembersPage() {
       </div>
 
       {/* Analytics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
         <Card className="bg-gradient-to-br from-indigo-50 to-white border-indigo-100">
-          <CardHeader className="pb-2 flex flex-row items-center justify-between">
-            <CardTitle className="text-sm font-semibold text-slate-600">Total Members</CardTitle>
-            <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center">
+          <CardHeader className="p-3 sm:p-6 pb-0 sm:pb-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0">
+            <CardTitle className="text-[10px] sm:text-sm font-semibold text-slate-600 leading-tight">Total Members</CardTitle>
+            <div className="hidden sm:flex w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 items-center justify-center">
               <Users size={16} />
             </div>
           </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-slate-800">
+          <CardContent className="p-3 sm:p-6 pt-2 sm:pt-4">
+            <div className="text-xl sm:text-3xl font-bold text-slate-800">
               {isLoading ? '...' : analytics?.total_members || 0}
             </div>
-            <p className="text-xs text-slate-500 mt-1">Total registered customers</p>
+            <p className="text-[9px] sm:text-xs text-slate-500 mt-1 leading-tight line-clamp-2 hidden sm:block">Total registered customers</p>
           </CardContent>
         </Card>
 
         <Card className="bg-gradient-to-br from-emerald-50 to-white border-emerald-100">
-          <CardHeader className="pb-2 flex flex-row items-center justify-between">
-            <CardTitle className="text-sm font-semibold text-slate-600">Manually Verified</CardTitle>
-            <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
+          <CardHeader className="p-3 sm:p-6 pb-0 sm:pb-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0">
+            <CardTitle className="text-[10px] sm:text-sm font-semibold text-slate-600 leading-tight">Manually Verified</CardTitle>
+            <div className="hidden sm:flex w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 items-center justify-center">
               <ShieldCheck size={16} />
             </div>
           </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-slate-800">
+          <CardContent className="p-3 sm:p-6 pt-2 sm:pt-4">
+            <div className="text-xl sm:text-3xl font-bold text-slate-800">
               {isLoading ? '...' : analytics?.manually_added || 0}
             </div>
-            <p className="text-xs text-slate-500 mt-1">Added by you</p>
+            <p className="text-[9px] sm:text-xs text-slate-500 mt-1 leading-tight line-clamp-2 hidden sm:block">Added by you</p>
           </CardContent>
         </Card>
 
         <Card className="bg-gradient-to-br from-amber-50 to-white border-amber-100">
-          <CardHeader className="pb-2 flex flex-row items-center justify-between">
-            <CardTitle className="text-sm font-semibold text-slate-600">Auto Registered</CardTitle>
-            <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center">
+          <CardHeader className="p-3 sm:p-6 pb-0 sm:pb-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0">
+            <CardTitle className="text-[10px] sm:text-sm font-semibold text-slate-600 leading-tight">Auto Registered</CardTitle>
+            <div className="hidden sm:flex w-8 h-8 rounded-full bg-amber-100 text-amber-600 items-center justify-center">
               <Smartphone size={16} />
             </div>
           </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-slate-800">
+          <CardContent className="p-3 sm:p-6 pt-2 sm:pt-4">
+            <div className="text-xl sm:text-3xl font-bold text-slate-800">
               {isLoading ? '...' : analytics?.auto_registered || 0}
             </div>
-            <p className="text-xs text-slate-500 mt-1">New interested customers</p>
+            <p className="text-[9px] sm:text-xs text-slate-500 mt-1 leading-tight line-clamp-2 hidden sm:block">New interested customers</p>
           </CardContent>
         </Card>
       </div>
@@ -324,7 +324,7 @@ export function MembersPage() {
 
       <button 
         onClick={() => setIsAddModalOpen(true)} 
-        className="fixed bottom-8 right-8 w-14 h-14 bg-primary text-white rounded-full shadow-xl flex items-center justify-center hover:bg-primary/90 hover:scale-105 transition-all z-50 hover:shadow-2xl active:scale-95"
+        className="fixed bottom-20 right-4 w-14 h-14 bg-primary text-white rounded-full shadow-xl flex items-center justify-center hover:bg-primary/90 hover:scale-105 transition-all z-50 hover:shadow-2xl active:scale-95"
         title="Add Member Manually"
       >
         <Plus size={28} />

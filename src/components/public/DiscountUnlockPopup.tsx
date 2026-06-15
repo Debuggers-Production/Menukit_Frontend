@@ -67,8 +67,20 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
     setError('');
     setLoading(true);
     try {
-      await customerService.verifyMobile(mobileNumber);
-      setStep('otp');
+      const res = await customerService.verifyMobile(mobileNumber, shopId);
+      if (res.otp_required === false) {
+        // Token was valid and matched!
+        if (!res.is_global_customer) {
+          setStep('name');
+        } else {
+          setIsStrictMember(res.is_strict_member || false);
+          triggerConfetti();
+          setIsVerified(true);
+          setStep('success');
+        }
+      } else {
+        setStep('otp');
+      }
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to send OTP');
     } finally {
