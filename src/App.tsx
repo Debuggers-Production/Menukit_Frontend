@@ -84,6 +84,8 @@ function App() {
 
       {/* Public Routes */}
       <Route path="/discover" element={<StoreDiscoveryPage />} />
+      <Route path="/discover/stores" element={<StoreDiscoveryPage />} />
+      <Route path="/discover/scan" element={<StoreDiscoveryPage />} />
       <Route path="/shop/:id" element={<PublicMenuPage />} />
       <Route path="/shop/:id/item/:itemId" element={<PublicItemPage />} />
       <Route path="/terms" element={<TermsPage />} />

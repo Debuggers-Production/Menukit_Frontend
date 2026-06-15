@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useNavigate } from 'react-router';
+import { useNavigate, useLocation } from 'react-router';
 import {
   QrCode, MapPin, Star, ArrowRight,
   Navigation, Tag, X, Search, Store, Gift, Phone, Clock, ExternalLink, Flame, Crown, Sparkles
@@ -80,7 +80,12 @@ function FlyTo({ position, zoom }: { position: [number, number]; zoom: number })
     const lat = Number(position[0]);
     const lng = Number(position[1]);
     if (!isNaN(lat) && !isNaN(lng)) {
-      map.flyTo([lat, lng], zoom, { duration: 1 });
+      const size = map.getSize();
+      if (size.x > 0 && size.y > 0) {
+        map.flyTo([lat, lng], zoom, { duration: 1 });
+      } else {
+        map.setView([lat, lng], zoom);
+      }
     }
   }, [position, zoom, map]);
   return null;
@@ -226,7 +231,8 @@ const INDIA_CENTER: [number, number] = [20.5937, 78.9629];
 
 export function StoreDiscoveryPage() {
   const navigate = useNavigate();
-  const [mode, setMode] = useState<Mode>('landing');
+  const location = useLocation();
+  const mode: Mode = location.pathname.endsWith('/scan') ? 'scanner' : location.pathname.endsWith('/stores') ? 'map' : 'landing';
 
   // ── Shops state ──────────────────────────────────────────────────────────
   const [shops, setShops] = useState<PublicShopListing[]>([]);
@@ -510,7 +516,7 @@ export function StoreDiscoveryPage() {
           {/* Browse Stores (Primary) */}
           <button
             id="btn-choose-store"
-            onClick={() => setMode('map')}
+            onClick={() => navigate('/discover/stores')}
             style={{
               display: 'flex', alignItems: 'center', gap: 16,
               padding: '20px 24px', borderRadius: 20, border: 'none', cursor: 'pointer',
@@ -542,7 +548,7 @@ export function StoreDiscoveryPage() {
           {/* Scan QR (Secondary) */}
           <button
             id="btn-scan-qr"
-            onClick={() => setMode('scanner')}
+            onClick={() => navigate('/discover/scan')}
             style={{
               display: 'flex', alignItems: 'center', gap: 16,
               padding: '16px 20px', borderRadius: 20, border: '1px solid rgba(255,255,255,.15)',
@@ -608,7 +614,7 @@ export function StoreDiscoveryPage() {
       }}>
         {/* Back button */}
         <button
-          onClick={() => setMode('landing')}
+          onClick={() => navigate('/discover')}
           style={{
             position: 'absolute', top: 20, left: 20, zIndex: 50,
             width: 40, height: 40, borderRadius: '50%',
@@ -717,7 +723,7 @@ export function StoreDiscoveryPage() {
         boxShadow: '0 1px 4px rgba(0,0,0,.06)', zIndex: 30, flexShrink: 0,
       }}>
         <button
-          onClick={() => setMode('landing')}
+          onClick={() => navigate('/discover')}
           style={{
             width: 36, height: 36, borderRadius: '50%', border: 'none',
             background: '#f1f5f9', cursor: 'pointer', display: 'flex',
@@ -778,14 +784,19 @@ export function StoreDiscoveryPage() {
               <MapContainer
                 center={INDIA_CENTER}
                 zoom={5}
-                style={{ width: '100%', height: '100%' }}
+                minZoom={4}
+                maxBounds={[[-90, -180], [90, 180]]}
+                style={{ width: '100%', height: '100%', background: '#f1f5f9' }}
                 zoomControl={false}
                 scrollWheelZoom={false}
                 attributionControl={false}
                 dragging={false}
                 touchZoom={false}
               >
-                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                <TileLayer 
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" 
+                  noWrap={true}
+                />
                 <FlyTo position={mapTarget.pos} zoom={mapTarget.zoom} />
                 {userLocation && (
                   <Marker position={userLocation} icon={L.divIcon({ html: `<div style="width:14px;height:14px;border-radius:50%;background:#3b82f6;border:3px solid white;box-shadow:0 0 0 3px rgba(59,130,246,.3)"></div>`, iconSize: [14, 14], iconAnchor: [7, 7], className: '' })} />
@@ -823,13 +834,16 @@ export function StoreDiscoveryPage() {
           <MapContainer
             center={INDIA_CENTER}
             zoom={5}
-            style={{ width: '100%', height: '100%' }}
+            minZoom={4}
+            maxBounds={[[-90, -180], [90, 180]]}
+            style={{ width: '100%', height: '100%', background: '#f1f5f9' }}
             zoomControl={true}
             scrollWheelZoom={true}
             attributionControl={false}
           >
             <TileLayer
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              noWrap={true}
             />
 
             {/* Fly to target when user clicks a shop or uses locate */}
