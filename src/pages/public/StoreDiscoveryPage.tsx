@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router';
 import {
   QrCode, MapPin, Star, ArrowRight,
@@ -75,8 +76,13 @@ function makeShopIcon(hasDeals: boolean) {
 function FlyTo({ position, zoom }: { position: [number, number]; zoom: number }) {
   const map = useMap();
   useEffect(() => {
-    map.flyTo(position, zoom, { duration: 1 });
-  }, [position, zoom]);
+    if (!position || !Array.isArray(position) || position.length !== 2) return;
+    const lat = Number(position[0]);
+    const lng = Number(position[1]);
+    if (!isNaN(lat) && !isNaN(lng)) {
+      map.flyTo([lat, lng], zoom, { duration: 1 });
+    }
+  }, [position, zoom, map]);
   return null;
 }
 
@@ -240,6 +246,17 @@ export function StoreDiscoveryPage() {
   const [infoShopData, setInfoShopData] = useState<any>(null);
   const [offersShopId, setOffersShopId] = useState<string | null>(null);
   const [offersData, setOffersData] = useState<any[]>([]);
+
+  // ── Mobile Map state ──────────────────────────────────────────────────────────
+  const [isMobile, setIsMobile] = useState(false);
+  const [isMapExpanded, setIsMapExpanded] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   useEffect(() => {
     const handleOpenShopInfo = (e: any) => {
@@ -742,9 +759,67 @@ export function StoreDiscoveryPage() {
       </div>
 
       {/* ── Main split: Map + List ── */}
-      <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
+      <div className="flex flex-col md:flex-row flex-1 overflow-hidden relative">
         {/* Leaflet Map */}
-        <div className="relative z-0 h-[42%] min-h-[220px] md:h-full md:w-[60%] lg:w-[65%]">
+        <AnimatePresence>
+          {isMobile && !isMapExpanded && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              drag
+              dragConstraints={{ left: -window.innerWidth + 140, right: 0, top: -window.innerHeight + 160, bottom: 0 }}
+              dragElastic={0.1}
+              dragMomentum={false}
+              onClick={() => setIsMapExpanded(true)}
+              className="fixed bottom-24 right-4 z-[100] w-28 h-32 rounded-xl shadow-2xl overflow-hidden border-2 border-white cursor-pointer"
+            >
+              <div className="absolute inset-0 z-[1000] bg-transparent" />
+              <MapContainer
+                center={INDIA_CENTER}
+                zoom={5}
+                style={{ width: '100%', height: '100%' }}
+                zoomControl={false}
+                scrollWheelZoom={false}
+                attributionControl={false}
+                dragging={false}
+                touchZoom={false}
+              >
+                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                <FlyTo position={mapTarget.pos} zoom={mapTarget.zoom} />
+                {userLocation && (
+                  <Marker position={userLocation} icon={L.divIcon({ html: `<div style="width:14px;height:14px;border-radius:50%;background:#3b82f6;border:3px solid white;box-shadow:0 0 0 3px rgba(59,130,246,.3)"></div>`, iconSize: [14, 14], iconAnchor: [7, 7], className: '' })} />
+                )}
+                {filteredShops.filter(s => s.latitude && s.longitude).map(shop => (
+                  <Marker key={shop.id} position={[shop.latitude!, shop.longitude!]} icon={makeShopIcon(shop.active_discounts_count > 0)} />
+                ))}
+              </MapContainer>
+              <div className="absolute top-2 right-2 z-[1100] bg-white/90 p-1 rounded-full shadow-md">
+                <MapPin size={14} color="#f97316" />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <motion.div 
+          className={`z-50 md:z-0 md:relative md:h-full md:w-[60%] lg:w-[65%] ${
+            isMobile
+              ? isMapExpanded
+                ? 'fixed inset-0 bg-white flex flex-col'
+                : 'hidden'
+              : 'relative h-[42%] min-h-[220px]'
+          }`}
+        >
+          {isMobile && isMapExpanded && (
+            <div className="absolute top-16 right-4 z-[1000]">
+              <button
+                onClick={() => setIsMapExpanded(false)}
+                className="w-12 h-12 bg-white rounded-full shadow-lg flex items-center justify-center text-slate-700 active:scale-95 transition-transform"
+              >
+                <X size={24} />
+              </button>
+            </div>
+          )}
           <MapContainer
             center={INDIA_CENTER}
             zoom={5}
@@ -790,7 +865,7 @@ export function StoreDiscoveryPage() {
                 />
               ))}
           </MapContainer>
-        </div>
+        </motion.div>
 
         {/* List Panel */}
         <div className="flex flex-col flex-1 bg-white z-10 overflow-hidden md:w-[40%] lg:w-[35%] md:border-l md:border-slate-200 md:shadow-[-4px_0_20px_rgba(0,0,0,0.05)]">
@@ -1138,7 +1213,7 @@ export function StoreDiscoveryPage() {
                       <div className="mt-auto flex items-center justify-between gap-2 min-w-0">
                         <div className="flex flex-col gap-1 min-w-0 shrink">
                           <div className="flex gap-1.5">
-                            {disc.members_only ? (
+                            {disc.visibility_type === 'members_only' || disc.visibility_type === 'everyone_unlock_members' ? (
                               <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md shadow-sm flex items-center gap-1 bg-purple-100 text-purple-700 min-w-0">
                                 <Crown size={10} className="shrink-0" />
                                 <span className="truncate">Members Only</span>

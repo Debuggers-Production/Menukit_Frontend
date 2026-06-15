@@ -74,7 +74,7 @@ const defaultForm = {
   available_days: [] as string[],
   available_time_presets: [] as string[],
   is_active: true,
-  members_only: false,
+  visibility_type: 'everyone' as 'everyone' | 'unlock_required' | 'members_only_hidden' | 'members_only_visible',
 };
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -171,7 +171,7 @@ export function DiscountsPage() {
         available_days: targetDiscount.available_days || [],
         available_time_presets: targetDiscount.available_time_presets || [],
         is_active: targetDiscount.is_active,
-        members_only: targetDiscount.members_only || false,
+        visibility_type: targetDiscount.visibility_type || 'everyone',
       });
     } else {
       const type = typeof defaultType === 'string' ? defaultType : 'percentage';
@@ -384,9 +384,14 @@ export function DiscountsPage() {
                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold uppercase tracking-wider ${statusCfg.color}`}>
                         {statusCfg.icon} {statusCfg.label}
                       </span>
-                      {d.members_only && (
+                      {(d.visibility_type === 'members_only_hidden' || d.visibility_type === 'members_only_visible') && (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold uppercase tracking-wider bg-purple-50 text-purple-700 ring-1 ring-purple-200">
                           <Crown size={12} /> Members Only
+                        </span>
+                      )}
+                      {d.visibility_type === 'unlock_required' && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold uppercase tracking-wider bg-blue-50 text-blue-700 ring-1 ring-blue-200">
+                          <Crown size={12} /> Unlock Required
                         </span>
                       )}
                     </div>
@@ -729,20 +734,70 @@ export function DiscountsPage() {
                   </div>
                 )}
 
-                <label className="flex items-center justify-between p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors mt-4">
-                  <div>
-                    <p className="text-sm font-medium text-slate-900 dark:text-white flex items-center gap-1.5">
-                      <Crown size={16} className="text-purple-500" /> Members Only
-                    </p>
-                    <p className="text-xs text-slate-500">Only visible to registered and logged-in members</p>
+                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 mt-4 transition-all">
+                  <div className="flex items-center gap-1.5 mb-4">
+                    <Crown size={16} className="text-purple-500" />
+                    <p className="text-sm font-medium text-slate-900 dark:text-white">Who can see and use this offer?</p>
                   </div>
-                  <div
-                    onClick={() => setFormData({ ...formData, members_only: !formData.members_only })}
-                    className={`w-12 h-6 rounded-full relative transition-colors duration-200 ${formData.members_only ? 'bg-purple-500' : 'bg-slate-300 dark:bg-slate-600'}`}
-                  >
-                    <div className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${formData.members_only ? 'translate-x-6' : ''}`} />
+
+                  <div className="flex flex-col gap-3">
+                    <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${formData.visibility_type === 'everyone' ? 'bg-purple-50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-800' : 'bg-white border-slate-200 dark:bg-slate-900 dark:border-slate-700'}`}>
+                      <input 
+                        type="radio" 
+                        name="visibility" 
+                        className="mt-1 w-4 h-4 text-purple-600 focus:ring-purple-500 border-slate-300"
+                        checked={formData.visibility_type === 'everyone'}
+                        onChange={() => setFormData({ ...formData, visibility_type: 'everyone' })}
+                      />
+                      <div>
+                        <p className="text-sm font-medium text-slate-900 dark:text-white">Show to Everyone (No verification required)</p>
+                        <p className="text-xs text-slate-500 mt-0.5">Visible to all visitors. They can apply this discount immediately without entering a phone number.</p>
+                      </div>
+                    </label>
+
+                    <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${formData.visibility_type === 'unlock_required' ? 'bg-purple-50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-800' : 'bg-white border-slate-200 dark:bg-slate-900 dark:border-slate-700'}`}>
+                      <input 
+                        type="radio" 
+                        name="visibility" 
+                        className="mt-1 w-4 h-4 text-purple-600 focus:ring-purple-500 border-slate-300"
+                        checked={formData.visibility_type === 'unlock_required'}
+                        onChange={() => setFormData({ ...formData, visibility_type: 'unlock_required' })}
+                      />
+                      <div>
+                        <p className="text-sm font-medium text-slate-900 dark:text-white">Offer Unlock Required</p>
+                        <p className="text-xs text-slate-500 mt-0.5">Visible to all visitors, but requires them to enter their mobile number (OTP) to unlock. Auto-registers them.</p>
+                      </div>
+                    </label>
+
+                    <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${formData.visibility_type === 'members_only_hidden' ? 'bg-purple-50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-800' : 'bg-white border-slate-200 dark:bg-slate-900 dark:border-slate-700'}`}>
+                      <input 
+                        type="radio" 
+                        name="visibility" 
+                        className="mt-1 w-4 h-4 text-purple-600 focus:ring-purple-500 border-slate-300"
+                        checked={formData.visibility_type === 'members_only_hidden'}
+                        onChange={() => setFormData({ ...formData, visibility_type: 'members_only_hidden' })}
+                      />
+                      <div>
+                        <p className="text-sm font-medium text-slate-900 dark:text-white">Strict Members Only (Hidden)</p>
+                        <p className="text-xs text-slate-500 mt-0.5">Hidden from the public. Only visible and unlockable if the customer is already on your shop's Member List.</p>
+                      </div>
+                    </label>
+
+                    <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${formData.visibility_type === 'members_only_visible' ? 'bg-purple-50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-800' : 'bg-white border-slate-200 dark:bg-slate-900 dark:border-slate-700'}`}>
+                      <input 
+                        type="radio" 
+                        name="visibility" 
+                        className="mt-1 w-4 h-4 text-purple-600 focus:ring-purple-500 border-slate-300"
+                        checked={formData.visibility_type === 'members_only_visible'}
+                        onChange={() => setFormData({ ...formData, visibility_type: 'members_only_visible' })}
+                      />
+                      <div>
+                        <p className="text-sm font-medium text-slate-900 dark:text-white">Strict Members Only (Visible)</p>
+                        <p className="text-xs text-slate-500 mt-0.5">Visible to the public as "Member Required". Instructs them to ask staff to become a member. Only unlockable by strict members.</p>
+                      </div>
+                    </label>
                   </div>
-                </label>
+                </div>
               </>
             )}
 

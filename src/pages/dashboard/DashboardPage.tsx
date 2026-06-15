@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { 
   Coffee, 
-  MenuSquare, 
   QrCode, 
   Eye, 
   ArrowRight,
@@ -10,9 +9,11 @@ import {
   Search,
   ExternalLink,
   Plus,
-  Star
+  Star,
+  Users
 } from 'lucide-react';
 import { api } from '@/services/api';
+import { membershipService } from '@/services/memberships';
 import { useShopStore } from '@/store/shopStore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -20,6 +21,7 @@ import { Button } from '@/components/ui/Button';
 
 export function DashboardPage() {
   const [stats, setStats] = useState<any>(null);
+  const [memberStats, setMemberStats] = useState<any>(null);
   const [activities, setActivities] = useState<any[]>([]);
   const [topSearches, setTopSearches] = useState<any[]>([]);
   const [topReviews, setTopReviews] = useState<any[]>([]);
@@ -31,11 +33,14 @@ export function DashboardPage() {
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
+        let currentShopId = shop?.id;
+        
         // Fetch shop if not loaded
         if (!shop) {
           const shopRes = await api.get('/shops/me');
           if (shopRes.data.id) {
             setShop(shopRes.data);
+            currentShopId = shopRes.data.id;
           }
         }
 
@@ -45,6 +50,11 @@ export function DashboardPage() {
         setActivities(analyticsRes.data.recent_activities);
         setTopSearches(analyticsRes.data.top_searches);
         setTopReviews(analyticsRes.data.top_reviews || []);
+
+        if (currentShopId) {
+          const mStats = await membershipService.getAnalytics(currentShopId);
+          setMemberStats(mStats);
+        }
       } catch (error) {
         console.error('Failed to load dashboard data', error);
       } finally {
@@ -94,7 +104,7 @@ export function DashboardPage() {
 
   const statCards = [
     { title: 'Total Menu Items', value: stats?.total_menu_items || 0, icon: Coffee, color: 'text-blue-500', bg: 'bg-blue-100 dark:bg-blue-900/30' },
-    { title: 'Categories', value: stats?.total_categories || 0, icon: MenuSquare, color: 'text-emerald-500', bg: 'bg-emerald-100 dark:bg-emerald-900/30' },
+    { title: 'Verified Members', value: memberStats?.verified_members || 0, icon: Users, color: 'text-emerald-500', bg: 'bg-emerald-100 dark:bg-emerald-900/30' },
     { title: 'QR Scans', value: stats?.total_qr_scans || 0, icon: QrCode, color: 'text-purple-500', bg: 'bg-purple-100 dark:bg-purple-900/30' },
     { title: 'Menu Views', value: stats?.total_menu_views || 0, icon: Eye, color: 'text-orange-500', bg: 'bg-orange-100 dark:bg-orange-900/30' },
   ];

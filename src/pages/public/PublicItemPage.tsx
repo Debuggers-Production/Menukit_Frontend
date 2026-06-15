@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { ChevronLeft, Star, Loader2, Send } from 'lucide-react';
+import { ChevronLeft, Star, Loader2, Send, Gift } from 'lucide-react';
 import { api } from '@/services/api';
 import { Shop, MenuItem, ReviewSummary, Discount } from '@/types';
 import { Lightbox } from '@/components/ui/Lightbox';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { DiscountUnlockPopup } from '@/components/public/DiscountUnlockPopup';
 
 const PRESET_TIMINGS: Record<string, string> = {
   'Early Morning': '(04:00 - 08:00)',
@@ -38,6 +39,38 @@ export function PublicItemPage() {
   const [reviewComment, setReviewComment] = useState('');
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
+
+  const [isDiscountPopupOpen, setIsDiscountPopupOpen] = useState(false);
+  const [memberStatus, setMemberStatus] = useState<'unlocked' | 'verified-member' | null>(() => sessionStorage.getItem('member_status') as any);
+
+  const [isScrollingDown, setIsScrollingDown] = useState(false);
+  const lastScrollY = useRef(0);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      if (currentScrollY > lastScrollY.current && currentScrollY > 100) {
+        setIsScrollingDown(true);
+      } else if (currentScrollY < lastScrollY.current) {
+        setIsScrollingDown(false);
+      }
+      lastScrollY.current = currentScrollY;
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Trigger popup after 10 seconds if not already verified and haven't seen it
+  useEffect(() => {
+    if (!id || memberStatus === 'verified-member' || sessionStorage.getItem(`discount_popup_seen_${id}`)) return;
+
+    const timer = setTimeout(() => {
+      setIsDiscountPopupOpen(true);
+      sessionStorage.setItem(`discount_popup_seen_${id}`, 'true');
+    }, 10000);
+
+    return () => clearTimeout(timer);
+  }, [id, memberStatus]);
 
   useEffect(() => {
     setSelectedVariantIdx(0);
@@ -212,6 +245,9 @@ export function PublicItemPage() {
 
                 if (!item.offer_price && (!item.variants || !item.variants.length || !item.variants[selectedVariantIdx].offer_price)) {
                   const disc = discounts.find(d => {
+                    if (d.visibility_type === 'members_only_hidden' && memberStatus !== 'verified-member') return false;
+                    if (d.visibility_type === 'members_only_visible' && memberStatus !== 'verified-member') return false;
+                    if (d.visibility_type === 'unlock_required' && memberStatus === null) return false;
                     if (d.applies_to === 'all') return true;
                     if (d.applies_to === 'category' && d.target_ids?.includes(item.category_id)) return true;
                     if (d.applies_to === 'items' && d.target_ids?.includes(item.id)) return true;
@@ -480,6 +516,38 @@ export function PublicItemPage() {
       </div>
 
       <Lightbox isOpen={!!lightboxImage} onClose={() => setLightboxImage(null)} imageUrl={lightboxImage || ''} />
+
+      {/* Discount Unlock Popup */}
+      {isDiscountPopupOpen && shop && (
+        <DiscountUnlockPopup
+          shopId={shop.id}
+          onClose={() => setIsDiscountPopupOpen(false)}
+          onUnlock={(customerId) => {
+            if (customerId) {
+              setMemberStatus(customerId as any);
+              sessionStorage.setItem('member_status', customerId);
+            }
+            setIsDiscountPopupOpen(false);
+          }}
+        />
+      )}
+
+      {/* Member Verify FAB */}
+      {memberStatus !== 'verified-member' && discounts.some(d => d.visibility_type === 'members_only_hidden' || d.visibility_type === 'members_only_visible' || (d.visibility_type === 'unlock_required' && memberStatus === null)) && (
+        <button
+          onClick={() => setIsDiscountPopupOpen(true)}
+          className={`fixed bottom-10 right-4 sm:right-6 h-14 px-5 rounded-full bg-slate-900 text-white shadow-xl flex items-center justify-center gap-2 hover:scale-105 transition-all duration-300 z-[45] border-4 border-slate-700/50 backdrop-blur-md animate-bounce hover:animate-none ${isScrollingDown ? 'translate-y-32 opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}
+          title="Unlock Member Offers"
+        >
+          <Gift size={24} className="animate-pulse text-yellow-400" />
+          <span className="font-bold text-sm">Offers!</span>
+          
+          <span className="absolute -top-1 -right-1 flex h-4 w-4">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-4 w-4 bg-red-500 border-2 border-slate-900"></span>
+          </span>
+        </button>
+      )}
     </div>
   );
 }

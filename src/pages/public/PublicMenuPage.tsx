@@ -1,12 +1,16 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router';
-import { Search, Flame, MapPin, Phone, Info, UtensilsCrossed, X, Star, LayoutGrid, List as ListIcon, Clock, Sparkles, ExternalLink, SlidersHorizontal, Check, Languages, Tag, Crown, Calendar } from 'lucide-react';
+import { toast } from 'react-hot-toast';
+import { Search, Flame, MapPin, Phone, Info, UtensilsCrossed, X, Star, LayoutGrid, List as ListIcon, Clock, Sparkles, ExternalLink, SlidersHorizontal, Check, Languages, Tag, Crown, Calendar, Gift } from 'lucide-react';
 import { api } from '@/services/api';
 import { Shop, Category, MenuItem, Discount } from '@/types';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Modal } from '@/components/ui/Modal';
 import { GoogleTranslate } from '@/components/GoogleTranslate';
 import { LanguageSelectorModal } from '@/components/LanguageSelectorModal';
+import { EntertainmentHub } from '@/components/games/EntertainmentHub';
+import { Gamepad2 } from 'lucide-react';
+import { DiscountUnlockPopup } from '@/components/public/DiscountUnlockPopup';
 
 const PRESET_TIMINGS: Record<string, string> = {
   'Early Morning': '(04:00 - 08:00)',
@@ -27,11 +31,11 @@ export function PublicMenuPage() {
     if (!days || days.length === 0) return '';
     const dayOrder = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     const sortedDays = [...days].sort((a, b) => dayOrder.indexOf(a) - dayOrder.indexOf(b));
-    
+
     if (sortedDays.length === 7) return 'Everyday';
     if (sortedDays.length === 5 && sortedDays.join(',') === 'Mon,Tue,Wed,Thu,Fri') return 'Weekdays';
     if (sortedDays.length === 2 && sortedDays.join(',') === 'Sat,Sun') return 'Weekends';
-    
+
     return sortedDays.join(', ');
   };
 
@@ -60,20 +64,32 @@ export function PublicMenuPage() {
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const categoriesRef = useRef<HTMLDivElement>(null);
 
+  const [isScrollingDown, setIsScrollingDown] = useState(false);
+  const lastScrollY = useRef(0);
+
   // Handle Scroll
   useEffect(() => {
     const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      
+      if (currentScrollY > lastScrollY.current && currentScrollY > 100) {
+        setIsScrollingDown(true);
+      } else if (currentScrollY < lastScrollY.current) {
+        setIsScrollingDown(false);
+      }
+      lastScrollY.current = currentScrollY;
+
       if (categoriesRef.current) {
         const rect = categoriesRef.current.getBoundingClientRect();
         setIsScrolled(rect.bottom <= 0);
       } else {
-        setIsScrolled(window.scrollY > 300);
+        setIsScrolled(currentScrollY > 300);
       }
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
-  
+
   const [isShopInfoOpen, setIsShopInfoOpen] = useState(false);
   const [isLanguageModalOpen, setIsLanguageModalOpen] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
@@ -82,6 +98,23 @@ export function PublicMenuPage() {
   const [selectedDiscountForModal, setSelectedDiscountForModal] = useState<Discount | null>(null);
   const [activeDiscountFilter, setActiveDiscountFilter] = useState<string | null>(null);
   const [isDiscountsModalOpen, setIsDiscountsModalOpen] = useState(false);
+  const [isEntertainmentHubOpen, setIsEntertainmentHubOpen] = useState(false);
+  const [isDiscountPopupOpen, setIsDiscountPopupOpen] = useState(false);
+  const [memberStatus, setMemberStatus] = useState<'unlocked' | 'verified-member' | null>(() => {
+    return sessionStorage.getItem('member_status') as 'unlocked' | 'verified-member' | null;
+  });
+
+  // Trigger popup after 10 seconds if not already verified and haven't seen it
+  useEffect(() => {
+    if (!id || memberStatus === 'verified-member' || sessionStorage.getItem(`discount_popup_seen_${id}`)) return;
+
+    const timer = setTimeout(() => {
+      setIsDiscountPopupOpen(true);
+      sessionStorage.setItem(`discount_popup_seen_${id}`, 'true');
+    }, 10000);
+
+    return () => clearTimeout(timer);
+  }, [id, memberStatus]);
 
   // Track scan if referrer is present
   useEffect(() => {
@@ -99,7 +132,7 @@ export function PublicMenuPage() {
           api.get(`/public/shop/${id}`),
           api.get(`/public/shop/${id}/menu`)
         ]);
-        
+
         setShop(shopRes.data);
         setCategories(menuRes.data);
 
@@ -109,7 +142,7 @@ export function PublicMenuPage() {
           const now = new Date();
           const currentDay = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][now.getDay()];
           const currentTime = now.getHours() * 60 + now.getMinutes();
-          
+
           const filteredDiscounts = (discountRes.data || []).filter((d: Discount) => {
             if (d.available_days && d.available_days.length > 0) {
               if (!d.available_days.includes(currentDay)) return false;
@@ -122,12 +155,12 @@ export function PublicMenuPage() {
               if (currentTime >= 960 && currentTime < 1200) timingFilters.push('Evening');
               if (currentTime >= 1200 && currentTime < 1440) timingFilters.push('Night');
               if (currentTime >= 0 && currentTime < 240) timingFilters.push('Mid-night');
-              
+
               if (!timingFilters.some(t => d.available_time_presets?.includes(t))) return false;
             }
             return true;
           });
-          
+
           setActiveDiscounts(filteredDiscounts);
         } catch {
           // Non-critical — silently ignore
@@ -142,43 +175,43 @@ export function PublicMenuPage() {
           // Transition to fully visible after entrance animation
           setTimeout(() => setWelcomePhase('visible'), 600);
         }
-        
+
         // Track view
         api.post(`/public/shop/${id}/view`).catch(console.error);
-        
+
       } catch (error) {
         console.error("Failed to load menu", error);
       } finally {
         setIsLoading(false);
       }
     };
-    
+
     if (id) fetchMenu();
   }, [id]);
 
   // Handle Search Tracking with Debounce
   useEffect(() => {
     if (!searchQuery || !id) return;
-    
+
     const timeoutId = setTimeout(() => {
       // Find result count
       let resultCount = 0;
       categories.forEach(cat => {
         cat.items.forEach(item => {
-          if (item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-              (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()))) {
+          if (item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()))) {
             resultCount++;
           }
         });
       });
-      
-      api.post(`/public/shop/${id}/search`, { 
-        term: searchQuery, 
-        result_count: resultCount 
+
+      api.post(`/public/shop/${id}/search`, {
+        term: searchQuery,
+        result_count: resultCount
       }).catch(console.error);
-      
+
     }, 1000); // 1s debounce
-    
+
     return () => clearTimeout(timeoutId);
   }, [searchQuery, id, categories]);
 
@@ -186,13 +219,13 @@ export function PublicMenuPage() {
   useEffect(() => {
     if (!shop?.theme) return;
     const { primary_color, font_family } = shop.theme;
-    
+
     document.documentElement.style.setProperty('--primary', primary_color);
     document.documentElement.classList.remove('dark');
-    
+
     // Add font family to body
     document.body.style.fontFamily = font_family;
-    
+
     return () => {
       document.documentElement.style.removeProperty('--primary');
       document.documentElement.classList.remove('dark');
@@ -203,14 +236,14 @@ export function PublicMenuPage() {
   // Filter Items
   const filteredCategories = useMemo(() => {
     if (!categories) return [];
-    
+
     return categories.map(cat => {
       const filteredItems = cat.items.filter(item => {
-        const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                              (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()));
-        const matchesFood = foodFilter === 'all' || 
+        const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()));
+        const matchesFood = foodFilter === 'all' ||
           (item.food_types && item.food_types.map((t: string) => t.toLowerCase().replace('_', '-')).includes(foodFilter));
-          
+
         let matchesExtra = true;
         if (extraFilters.includes('chef_special') && !item.is_highlighted) matchesExtra = false;
         if (extraFilters.includes('bestseller') && !item.is_bestseller) matchesExtra = false;
@@ -262,7 +295,7 @@ export function PublicMenuPage() {
   }, [categories, searchQuery, activeCategoryId, foodFilter, sortOrder, extraFilters, activeDiscountFilter, activeDiscounts]);
 
   const toggleExtraFilter = (filter: string) => {
-    setExtraFilters(prev => 
+    setExtraFilters(prev =>
       prev.includes(filter) ? prev.filter(f => f !== filter) : [...prev, filter]
     );
   };
@@ -313,9 +346,8 @@ export function PublicMenuPage() {
       {/* Welcome Popup Overlay */}
       {showWelcome && (
         <div
-          className={`fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-4 transition-all duration-500 ${
-            welcomePhase === 'exiting' ? 'opacity-0 pointer-events-none' : 'opacity-100'
-          }`}
+          className={`fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-4 transition-all duration-500 ${welcomePhase === 'exiting' ? 'opacity-0 pointer-events-none' : 'opacity-100'
+            }`}
           style={{ backgroundColor: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)' }}
           onClick={() => {
             setWelcomePhase('exiting');
@@ -344,13 +376,12 @@ export function PublicMenuPage() {
           {/* Popup Card */}
           <div
             onClick={(e) => e.stopPropagation()}
-            className={`relative w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl transition-all duration-500 ${
-              welcomePhase === 'entering'
+            className={`relative w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl transition-all duration-500 ${welcomePhase === 'entering'
                 ? 'translate-y-8 scale-95 opacity-0'
                 : welcomePhase === 'exiting'
-                ? 'translate-y-4 scale-95 opacity-0'
-                : 'translate-y-0 scale-100 opacity-100'
-            }`}
+                  ? 'translate-y-4 scale-95 opacity-0'
+                  : 'translate-y-0 scale-100 opacity-100'
+              }`}
             style={{ background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(20px)' }}
           >
             {/* Gradient accent bar */}
@@ -426,9 +457,8 @@ export function PublicMenuPage() {
         }
       `}</style>
       {/* Sticky Header */}
-      <div className={`fixed top-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-md shadow-sm border-b border-slate-200 transition-all duration-300 transform ${
-        isScrolled ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 pointer-events-none'
-      }`}>
+      <div className={`fixed top-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-md shadow-sm border-b border-slate-200 transition-all duration-300 transform ${isScrolled ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 pointer-events-none'
+        }`}>
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-center gap-2 sm:gap-3 transition-all overflow-x-auto scrollbar-hide no-scrollbar w-full">
           {/* Small Logo */}
           {!isSearchFocused && (
@@ -440,12 +470,11 @@ export function PublicMenuPage() {
               )}
             </div>
           )}
-          
+
           {/* Small Search */}
           <div className={`relative transition-all duration-300 overflow-hidden ${isSearchFocused || searchQuery ? 'flex-1' : 'w-10 sm:flex-1 shrink-0'}`}>
-            <Search className={`absolute top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none transition-all duration-300 z-10 ${
-              isSearchFocused || searchQuery ? 'left-3' : 'left-1/2 -translate-x-1/2 sm:left-3 sm:translate-x-0'
-            }`} />
+            <Search className={`absolute top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none transition-all duration-300 z-10 ${isSearchFocused || searchQuery ? 'left-3' : 'left-1/2 -translate-x-1/2 sm:left-3 sm:translate-x-0'
+              }`} />
             <input
               type="text"
               placeholder="Search..."
@@ -459,15 +488,14 @@ export function PublicMenuPage() {
                   }
                 }, 200);
               }}
-              className={`w-full h-10 rounded-lg bg-white border border-slate-200 shadow-sm focus:outline-none focus:ring-2 transition-all duration-300 text-sm ${
-                isSearchFocused || searchQuery
-                  ? 'pl-9 pr-8 text-slate-900 placeholder-slate-400' 
+              className={`w-full h-10 rounded-lg bg-white border border-slate-200 shadow-sm focus:outline-none focus:ring-2 transition-all duration-300 text-sm ${isSearchFocused || searchQuery
+                  ? 'pl-9 pr-8 text-slate-900 placeholder-slate-400'
                   : 'p-0 sm:pl-9 sm:pr-8 text-transparent sm:text-slate-900 placeholder-transparent sm:placeholder-slate-400 cursor-pointer sm:cursor-text'
-              }`}
+                }`}
               style={{ '--tw-ring-color': primaryColor } as any}
             />
             {searchQuery && (
-              <button 
+              <button
                 onClick={() => {
                   setSearchQuery('');
                   setIsSearchFocused(false);
@@ -556,7 +584,7 @@ export function PublicMenuPage() {
             </>
           )}
         </div>
-        
+
         {/* Sticky Categories */}
         <div className="px-4 pb-3 flex gap-2 overflow-x-auto scrollbar-hide no-scrollbar max-w-3xl mx-auto">
           <button
@@ -564,11 +592,10 @@ export function PublicMenuPage() {
               setActiveCategoryId('all');
               window.scrollTo({ top: 200, behavior: 'smooth' });
             }}
-            className={`px-4 py-1.5 rounded-full whitespace-nowrap text-xs font-medium transition-all ${
-              activeCategoryId === 'all' 
-                ? 'text-white shadow-sm' 
+            className={`px-4 py-1.5 rounded-full whitespace-nowrap text-xs font-medium transition-all ${activeCategoryId === 'all'
+                ? 'text-white shadow-sm'
                 : 'bg-slate-100 text-slate-600 border border-slate-200'
-            }`}
+              }`}
             style={activeCategoryId === 'all' ? { backgroundColor: primaryColor } : {}}
           >
             All Menu
@@ -580,11 +607,10 @@ export function PublicMenuPage() {
                 setActiveCategoryId(cat.id);
                 window.scrollTo({ top: 200, behavior: 'smooth' });
               }}
-              className={`px-4 py-1.5 rounded-full whitespace-nowrap text-xs font-medium transition-all ${
-                activeCategoryId === cat.id 
-                  ? 'text-white shadow-sm' 
+              className={`px-4 py-1.5 rounded-full whitespace-nowrap text-xs font-medium transition-all ${activeCategoryId === cat.id
+                  ? 'text-white shadow-sm'
                   : 'bg-slate-100 text-slate-600 border border-slate-200'
-              }`}
+                }`}
               style={activeCategoryId === cat.id ? { backgroundColor: primaryColor } : {}}
             >
               {cat.name}
@@ -600,22 +626,22 @@ export function PublicMenuPage() {
           <img src={shop.banner_url} alt="Restaurant Banner" className="w-full h-48 sm:h-64 object-cover" />
         ) : (
           <div className="w-full h-48 sm:h-64 bg-slate-200 flex items-center justify-center">
-             <UtensilsCrossed size={48} className="text-slate-400 opacity-20" />
+            <UtensilsCrossed size={48} className="text-slate-400 opacity-20" />
           </div>
         )}
-        
+
         <div className="absolute top-4 right-4 flex gap-2">
-          <button 
+          <button
             onClick={() => setIsLanguageModalOpen(true)}
             className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md border border-white/30 flex items-center justify-center text-white shadow-sm hover:bg-white/30 transition-colors"
           >
             <Languages size={20} className='text-primary-400' />
           </button>
-          <button 
+          <button
             onClick={() => setIsShopInfoOpen(true)}
             className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md border border-white/30 flex items-center justify-center text-white shadow-sm hover:bg-white/30 transition-colors"
           >
-            <Info size={20} color='orange'/>
+            <Info size={20} color='orange' />
           </button>
         </div>
 
@@ -638,9 +664,8 @@ export function PublicMenuPage() {
         {/* Search & View Toggle */}
         <div className="flex items-center justify-center gap-2 sm:gap-3 mb-3 transition-all overflow-x-auto scrollbar-hide no-scrollbar w-full">
           <div className={`relative transition-all duration-300 overflow-hidden ${isSearchFocused || searchQuery ? 'flex-1' : 'w-12 sm:flex-1 shrink-0'}`}>
-            <Search className={`absolute top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5 pointer-events-none transition-all duration-300 z-10 ${
-              isSearchFocused || searchQuery ? 'left-4' : 'left-1/2 -translate-x-1/2 sm:left-4 sm:translate-x-0'
-            }`} />
+            <Search className={`absolute top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5 pointer-events-none transition-all duration-300 z-10 ${isSearchFocused || searchQuery ? 'left-4' : 'left-1/2 -translate-x-1/2 sm:left-4 sm:translate-x-0'
+              }`} />
             <input
               type="text"
               placeholder="Search for a dish..."
@@ -654,15 +679,14 @@ export function PublicMenuPage() {
                   }
                 }, 200);
               }}
-              className={`w-full h-12 rounded-full border shadow-sm focus:outline-none focus:ring-2 transition-all duration-300 bg-white border-slate-200 text-sm sm:text-base ${
-                isSearchFocused || searchQuery
-                  ? 'pl-12 pr-10 text-slate-900 placeholder-slate-400' 
+              className={`w-full h-12 rounded-full border shadow-sm focus:outline-none focus:ring-2 transition-all duration-300 bg-white border-slate-200 text-sm sm:text-base ${isSearchFocused || searchQuery
+                  ? 'pl-12 pr-10 text-slate-900 placeholder-slate-400'
                   : 'p-0 sm:pl-12 sm:pr-10 text-transparent sm:text-slate-900 placeholder-transparent sm:placeholder-slate-400 cursor-pointer sm:cursor-text'
-              }`}
+                }`}
               style={{ '--tw-ring-color': primaryColor } as any}
             />
             {searchQuery && (
-              <button 
+              <button
                 onClick={() => {
                   setSearchQuery('');
                   setIsSearchFocused(false);
@@ -750,12 +774,11 @@ export function PublicMenuPage() {
         {(foodFilter !== 'all' || sortOrder !== 'default' || extraFilters.length > 0 || activeDiscountFilter) && (
           <div className="flex flex-wrap items-center gap-2 mb-4">
             {foodFilter !== 'all' && (
-              <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full ${
-                foodFilter === 'veg' ? 'bg-green-50 text-green-700 ring-1 ring-green-200' : 
-                foodFilter === 'egg' ? 'bg-yellow-50 text-yellow-700 ring-1 ring-yellow-200' :
-                foodFilter === 'drink' ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-200' :
-                'bg-red-50 text-red-700 ring-1 ring-red-200'
-              }`}>
+              <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full ${foodFilter === 'veg' ? 'bg-green-50 text-green-700 ring-1 ring-green-200' :
+                  foodFilter === 'egg' ? 'bg-yellow-50 text-yellow-700 ring-1 ring-yellow-200' :
+                    foodFilter === 'drink' ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-200' :
+                      'bg-red-50 text-red-700 ring-1 ring-red-200'
+                }`}>
                 {foodFilter === 'veg' ? (
                   <><span className="w-3 h-3 border-[1.5px] border-green-600 rounded-[2px] flex items-center justify-center"><span className="w-1.5 h-1.5 bg-green-600 rounded-full"></span></span> Showing Veg Only</>
                 ) : foodFilter === 'egg' ? (
@@ -795,7 +818,7 @@ export function PublicMenuPage() {
               </span>
             )}
             {(foodFilter !== 'all' || sortOrder !== 'default' || extraFilters.length > 0 || activeDiscountFilter) && (
-              <button 
+              <button
                 onClick={() => {
                   setFoodFilter('all');
                   setSortOrder('default');
@@ -811,10 +834,10 @@ export function PublicMenuPage() {
         )}
 
         {/* 🎉 Active Offers Banner */}
-        {activeDiscounts.length > 0 && (
+        {activeDiscounts.filter(d => d.visibility_type !== 'members_only_hidden' || memberStatus === 'verified-member').length > 0 && (
           <div className="mb-6 w-full -mx-4 px-4 sm:mx-0 sm:px-0">
             <div className="flex gap-4 overflow-x-auto pb-4 pt-1 snap-x snap-mandatory scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-              {activeDiscounts.map(disc => (
+              {activeDiscounts.filter(d => d.visibility_type !== 'members_only_hidden' || memberStatus === 'verified-member').map(disc => (
                 <div
                   key={disc.id}
                   onClick={() => setSelectedDiscountForModal(disc)}
@@ -822,14 +845,14 @@ export function PublicMenuPage() {
                   style={{ border: `1px solid ${primaryColor}30` }}
                 >
                   {/* Left Ticket Stub */}
-                  <div 
+                  <div
                     className="relative w-28 sm:w-32 flex flex-col items-center justify-center text-white p-4 shrink-0"
                     style={{ backgroundColor: primaryColor }}
                   >
                     {/* Cutouts for ticket effect */}
                     <div className="absolute -top-3 -right-3 w-6 h-6 bg-slate-50 rounded-full border-b border-l border-transparent" style={{ borderColor: `${primaryColor}30` }} />
                     <div className="absolute -bottom-3 -right-3 w-6 h-6 bg-slate-50 rounded-full border-t border-l border-transparent" style={{ borderColor: `${primaryColor}30` }} />
-                    
+
                     <div className="text-2xl sm:text-3xl font-black tracking-tight drop-shadow-md text-center">
                       {disc.discount_type === 'percentage' && `${Number(disc.discount_value)}%`}
                       {disc.discount_type === 'flat' && `${settings?.currency || '₹'}${Number(disc.discount_value)}`}
@@ -854,13 +877,13 @@ export function PublicMenuPage() {
                       </h3>
                       <Sparkles size={16} className="shrink-0 animate-pulse" style={{ color: primaryColor }} />
                     </div>
-                    
+
                     {disc.description && (
                       <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed mb-2 font-medium">
                         {disc.description}
                       </p>
                     )}
-                    
+
                     <div className="mt-auto flex flex-col gap-2">
                       {disc.available_days && disc.available_days.length > 0 && (
                         <div className="flex items-center gap-1.5 text-[10px] text-slate-500 font-semibold">
@@ -868,16 +891,16 @@ export function PublicMenuPage() {
                           <span className="truncate">{formatDays(disc.available_days)}</span>
                         </div>
                       )}
-                      
+
                       <div className="flex items-center justify-between gap-2 min-w-0">
                         <div className="flex gap-1.5 min-w-0 shrink">
-                          {disc.members_only ? (
+                          {disc.visibility_type === 'members_only_hidden' || disc.visibility_type === 'members_only_visible' ? (
                             <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md shadow-sm flex items-center gap-1 bg-purple-100 text-purple-700 min-w-0">
-                              <Crown size={10} className="shrink-0" /> 
+                              <Crown size={10} className="shrink-0" />
                               <span className="truncate">Members Only</span>
                             </span>
                           ) : (
-                            <span 
+                            <span
                               className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md shadow-sm truncate min-w-0"
                               style={{ color: primaryColor, backgroundColor: `${primaryColor}15` }}
                             >
@@ -891,7 +914,7 @@ export function PublicMenuPage() {
                       </div>
                     </div>
                   </div>
-                  
+
                   {/* Constant shimmer effect spanning the whole card */}
                   <div className="absolute inset-0 z-10 bg-gradient-to-r from-transparent via-white/60 to-transparent -translate-x-full animate-[shimmer_2.5s_infinite] pointer-events-none mix-blend-overlay" />
                 </div>
@@ -913,11 +936,10 @@ export function PublicMenuPage() {
         <div ref={categoriesRef} className="flex gap-2 overflow-x-auto pb-4 scrollbar-hide no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
           <button
             onClick={() => setActiveCategoryId('all')}
-            className={`px-5 py-2 rounded-full whitespace-nowrap text-sm font-medium transition-all ${
-              activeCategoryId === 'all' 
-                ? 'text-white shadow-md scale-105' 
+            className={`px-5 py-2 rounded-full whitespace-nowrap text-sm font-medium transition-all ${activeCategoryId === 'all'
+                ? 'text-white shadow-md scale-105'
                 : 'bg-white text-slate-600 border-slate-200 border opacity-80 hover:opacity-100'
-            }`}
+              }`}
             style={activeCategoryId === 'all' ? { backgroundColor: primaryColor } : {}}
           >
             All Menu
@@ -926,11 +948,10 @@ export function PublicMenuPage() {
             <button
               key={cat.id}
               onClick={() => setActiveCategoryId(cat.id)}
-              className={`px-5 py-2 rounded-full whitespace-nowrap text-sm font-medium transition-all ${
-                activeCategoryId === cat.id 
-                  ? 'text-white shadow-md scale-105' 
+              className={`px-5 py-2 rounded-full whitespace-nowrap text-sm font-medium transition-all ${activeCategoryId === cat.id
+                  ? 'text-white shadow-md scale-105'
                   : 'bg-white text-slate-600 border-slate-200 border opacity-80 hover:opacity-100'
-              }`}
+                }`}
               style={activeCategoryId === cat.id ? { backgroundColor: primaryColor } : {}}
             >
               {cat.name}
@@ -955,27 +976,23 @@ export function PublicMenuPage() {
                     {cat.items.length}
                   </span>
                 </h2>
-                
+
                 <div className={layoutStyle === 'grid' ? "grid grid-cols-2 gap-3 sm:gap-4" : "flex flex-col gap-3 sm:gap-4"}>
                   {cat.items.map(item => {
                     const primaryImage = item.thumbnail_url || item.image_url;
-                    
+
                     return (
-                      <div 
-                        key={item.id} 
+                      <div
+                        key={item.id}
                         onClick={() => item.is_available ? handleItemClick(item, cat.id) : null}
-                        className={`rounded-2xl overflow-hidden shadow-sm border transition-transform ${
-                          item.is_available ? 'active:scale-[0.98] cursor-pointer hover:shadow-md' : 'opacity-70 grayscale-[60%] cursor-not-allowed'
-                        } ${
-                          item.is_highlighted ? 'ring-2 ring-primary ring-offset-2 ring-offset-slate-50' : 'border-slate-100'
-                        } ${
-                          layoutStyle === 'list' ? 'flex h-28 sm:h-32' : 'flex flex-col'
-                        } bg-white relative`}
+                        className={`rounded-2xl overflow-hidden shadow-sm border transition-transform ${item.is_available ? 'active:scale-[0.98] cursor-pointer hover:shadow-md' : 'opacity-70 grayscale-[60%] cursor-not-allowed'
+                          } ${item.is_highlighted ? 'ring-2 ring-primary ring-offset-2 ring-offset-slate-50' : 'border-slate-100'
+                          } ${layoutStyle === 'list' ? 'flex h-28 sm:h-32' : 'flex flex-col'
+                          } bg-white relative`}
                       >
                         {/* Image */}
-                        <div className={`relative bg-slate-100 ${
-                          layoutStyle === 'list' ? 'w-28 sm:w-32 h-full shrink-0' : 'w-full h-32 sm:h-40'
-                        }`}>
+                        <div className={`relative bg-slate-100 ${layoutStyle === 'list' ? 'w-28 sm:w-32 h-full shrink-0' : 'w-full h-32 sm:h-40'
+                          }`}>
                           {primaryImage ? (
                             <img src={primaryImage} alt={item.name} className="w-full h-full object-cover" />
                           ) : (
@@ -983,7 +1000,7 @@ export function PublicMenuPage() {
                               <UtensilsCrossed size={32} />
                             </div>
                           )}
-                          
+
                           {/* Tags */}
                           <div className="absolute top-2 left-2 flex flex-col gap-1 z-20">
                             {item.is_highlighted && (
@@ -997,14 +1014,14 @@ export function PublicMenuPage() {
                               </div>
                             )}
                           </div>
-                          
+
                           {/* Out of Stock Overlay */}
                           {!item.is_available && (
                             <div className="absolute inset-0 bg-white/40 backdrop-blur-[1px] flex items-center justify-center z-10">
                               <span className="bg-slate-900 text-white text-[10px] sm:text-xs font-bold px-2 sm:px-3 py-1 rounded-full uppercase tracking-wider shadow-lg">Out of Stock</span>
                             </div>
                           )}
-                          
+
                           {/* Food Type mark */}
                           <div className="absolute top-2 right-2 flex flex-col gap-1 z-20">
                             {item.food_types?.map((type) => (
@@ -1034,7 +1051,7 @@ export function PublicMenuPage() {
                             ))}
                           </div>
                         </div>
-                        
+
                         {/* Content */}
                         <div className="p-3 sm:p-4 flex flex-col flex-1 justify-between min-w-0">
                           <div>
@@ -1043,7 +1060,7 @@ export function PublicMenuPage() {
                               <p className="text-xs opacity-60 mt-1 line-clamp-2">{item.description}</p>
                             )}
                           </div>
-                          
+
                           <div className={`mt-2 flex flex-col gap-1.5 ${layoutStyle === 'grid' ? 'justify-between' : ''}`}>
                             {(() => {
                               let basePrice = Number(item.price);
@@ -1068,9 +1085,12 @@ export function PublicMenuPage() {
 
                               let finalPrice = offerPrice !== null ? offerPrice : basePrice;
                               let hasDiscount = offerPrice !== null && offerPrice < basePrice;
-                              
+
                               if (!offerPrice && activeDiscounts.length > 0) {
                                 const disc = activeDiscounts.find(d => {
+                                  if (d.visibility_type === 'members_only_hidden' && memberStatus !== 'verified-member') return false;
+                                  if (d.visibility_type === 'members_only_visible' && memberStatus !== 'verified-member') return false;
+                                  if (d.visibility_type === 'unlock_required' && memberStatus === null) return false;
                                   if (d.discount_type === 'bogo' || d.discount_type === 'combo') return false;
                                   if (d.applies_to === 'all') return true;
                                   if (d.applies_to === 'category' && d.target_ids?.includes(item.category_id)) return true;
@@ -1159,9 +1179,9 @@ export function PublicMenuPage() {
               <Star size={20} className="text-amber-500 fill-amber-500" />
               Customer Reviews
             </h2>
-            
+
             {shop.google_review_link && (
-              <a 
+              <a
                 href={shop.google_review_link}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -1171,9 +1191,9 @@ export function PublicMenuPage() {
                 Rate us on Google Maps <ExternalLink size={16} />
               </a>
             )}
-            
+
             {shop.review_widget_code && (
-              <div 
+              <div
                 className="w-full overflow-hidden rounded-xl bg-white/5"
                 dangerouslySetInnerHTML={{ __html: shop.review_widget_code }}
               />
@@ -1202,7 +1222,7 @@ export function PublicMenuPage() {
               </div>
             </div>
           )}
-          
+
           {(shop.phone || shop.whatsapp) && (
             <div className="flex items-start gap-3 mt-4">
               <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: `${primaryColor}20`, color: primaryColor }}>
@@ -1215,7 +1235,7 @@ export function PublicMenuPage() {
               </div>
             </div>
           )}
-          
+
           {(shop.opening_time || shop.closing_time) && (() => {
             // Determine if currently open
             const now = new Date();
@@ -1242,11 +1262,10 @@ export function PublicMenuPage() {
                   <h4 className="font-medium text-sm flex items-center gap-2">
                     Hours
                     {shop.opening_time && shop.closing_time && (
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                        isOpen 
-                          ? 'bg-emerald-100 text-emerald-700' 
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isOpen
+                          ? 'bg-emerald-100 text-emerald-700'
                           : 'bg-red-100 text-red-600'
-                      }`}>
+                        }`}>
                         {isOpen ? 'Open Now' : 'Closed'}
                       </span>
                     )}
@@ -1321,10 +1340,27 @@ export function PublicMenuPage() {
 
 
 
+      {/* Member Verify FAB */}
+      {memberStatus !== 'verified-member' && activeDiscounts.some(d => d.visibility_type === 'members_only_hidden' || d.visibility_type === 'members_only_visible' || (d.visibility_type === 'unlock_required' && memberStatus === null)) && (
+        <button
+          onClick={() => setIsDiscountPopupOpen(true)}
+          className={`fixed bottom-28 left-4 sm:left-6 h-14 px-5 rounded-full bg-slate-900 text-white shadow-xl flex items-center justify-center gap-2 hover:scale-105 transition-all duration-300 z-[45] border-4 border-slate-700/50 backdrop-blur-md animate-bounce hover:animate-none ${isScrollingDown ? 'translate-y-48 opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}
+          title="Unlock Member Offers"
+        >
+          <Gift size={24} className="animate-pulse text-yellow-400" />
+          <span className="font-bold text-sm">Offers!</span>
+          
+          <span className="absolute -top-1 -right-1 flex h-4 w-4">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-4 w-4 bg-red-500 border-2 border-slate-900"></span>
+          </span>
+        </button>
+      )}
+
       {/* Filter FAB */}
       <button
         onClick={() => setIsFilterModalOpen(true)}
-        className="fixed bottom-10 right-4 sm:right-6 w-14 h-14 rounded-full bg-slate-900 text-white shadow-xl flex items-center justify-center hover:scale-105 transition-transform z-40 border-4 border-white/50 backdrop-blur-md"
+        className={`fixed bottom-10 right-4 sm:right-6 w-14 h-14 rounded-full bg-slate-900 text-white shadow-xl flex items-center justify-center hover:scale-105 transition-all duration-300 z-40 border-4 border-white/50 backdrop-blur-md ${isScrollingDown ? 'translate-y-32 opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}
         style={{ backgroundColor: primaryColor }}
       >
         <SlidersHorizontal size={24} />
@@ -1332,6 +1368,24 @@ export function PublicMenuPage() {
           <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 rounded-full border-2 border-white"></span>
         )}
       </button>
+
+      {/* Entertainment Hub FAB */}
+      <button
+        onClick={() => setIsEntertainmentHubOpen(true)}
+        className={`fixed bottom-10 left-4 sm:left-6 h-14 px-5 rounded-full bg-slate-900 text-white shadow-xl flex items-center justify-center gap-2 hover:scale-105 transition-all duration-300 z-40 border-4 border-white/50 backdrop-blur-md animate-bounce hover:animate-none ${isScrollingDown ? 'translate-y-32 opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}
+        style={{ backgroundColor: primaryColor }}
+      >
+        <Gamepad2 size={24} className="animate-pulse" />
+        <span className="font-bold text-sm">Bored?</span>
+      </button>
+
+      <EntertainmentHub
+        isOpen={isEntertainmentHubOpen}
+        onClose={() => setIsEntertainmentHubOpen(false)}
+        primaryColor={primaryColor}
+        menuItems={categories.flatMap(c => c.items).filter(i => i.is_available && (i.image_url || i.thumbnail_url))}
+        currency={settings?.currency || '₹'}
+      />
 
       {/* Filter Options Modal */}
       <Modal
@@ -1352,7 +1406,7 @@ export function PublicMenuPage() {
                 <input type="radio" className="hidden" checked={sortOrder === 'default'} onChange={() => setSortOrder('default')} />
                 <span className="text-sm font-medium">Default (Chef's Specials first)</span>
               </label>
-              
+
               <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/50 cursor-pointer hover:bg-slate-50 transition-colors">
                 <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${sortOrder === 'price_asc' ? 'border-primary' : 'border-slate-300'}`} style={sortOrder === 'price_asc' ? { borderColor: primaryColor } : {}}>
                   {sortOrder === 'price_asc' && <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: primaryColor }} />}
@@ -1381,18 +1435,17 @@ export function PublicMenuPage() {
                 { id: 'in_stock', label: "In Stock", icon: null },
                 { id: 'out_of_stock', label: "Out of Stock", icon: null }
               ].map(filter => (
-                <label 
+                <label
                   key={filter.id}
-                  className={`relative flex flex-col items-center justify-center gap-2 py-4 px-2 rounded-xl border cursor-pointer transition-all text-center ${
-                    extraFilters.includes(filter.id) 
-                      ? 'border-primary bg-primary/5 shadow-sm' 
+                  className={`relative flex flex-col items-center justify-center gap-2 py-4 px-2 rounded-xl border cursor-pointer transition-all text-center ${extraFilters.includes(filter.id)
+                      ? 'border-primary bg-primary/5 shadow-sm'
                       : 'border-slate-200 bg-white hover:bg-slate-50'
-                  }`}
+                    }`}
                   style={extraFilters.includes(filter.id) ? { borderColor: primaryColor, backgroundColor: `${primaryColor}10` } : {}}
                 >
-                  <input 
-                    type="checkbox" 
-                    className="hidden" 
+                  <input
+                    type="checkbox"
+                    className="hidden"
                     checked={extraFilters.includes(filter.id)}
                     onChange={() => toggleExtraFilter(filter.id)}
                   />
@@ -1422,18 +1475,17 @@ export function PublicMenuPage() {
                 { id: 'timing_Night', label: 'Night' },
                 { id: 'timing_Mid-night', label: 'Mid-night' }
               ].map(filter => (
-                <label 
+                <label
                   key={filter.id}
-                  className={`relative flex items-center justify-center py-2.5 px-2 rounded-xl border cursor-pointer transition-all text-center ${
-                    extraFilters.includes(filter.id) 
-                      ? 'border-primary bg-primary/5 shadow-sm' 
+                  className={`relative flex items-center justify-center py-2.5 px-2 rounded-xl border cursor-pointer transition-all text-center ${extraFilters.includes(filter.id)
+                      ? 'border-primary bg-primary/5 shadow-sm'
                       : 'border-slate-200 bg-white hover:bg-slate-50'
-                  }`}
+                    }`}
                   style={extraFilters.includes(filter.id) ? { borderColor: primaryColor, backgroundColor: `${primaryColor}10` } : {}}
                 >
-                  <input 
-                    type="checkbox" 
-                    className="hidden" 
+                  <input
+                    type="checkbox"
+                    className="hidden"
                     checked={extraFilters.includes(filter.id)}
                     onChange={() => toggleExtraFilter(filter.id)}
                   />
@@ -1471,6 +1523,21 @@ export function PublicMenuPage() {
         </div>
       </Modal>
 
+      {/* Discount Unlock Popup */}
+      {isDiscountPopupOpen && shop && (
+        <DiscountUnlockPopup
+          shopId={shop.id}
+          onClose={() => setIsDiscountPopupOpen(false)}
+          onUnlock={(customerId) => {
+            if (customerId) {
+              setMemberStatus(customerId as any);
+              sessionStorage.setItem('member_status', customerId);
+            }
+            setIsDiscountPopupOpen(false);
+          }}
+        />
+      )}
+
       {/* Bottom Branding Bar */}
       <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/90 backdrop-blur-md border-t border-slate-200 py-2 px-4">
         <div className="max-w-3xl mx-auto flex items-center justify-center gap-2">
@@ -1500,9 +1567,9 @@ export function PublicMenuPage() {
               {(() => {
                 const isCashLook = selectedDiscountForModal.discount_type === 'flat' || selectedDiscountForModal.discount_type === 'combo';
                 return isCashLook ? (
-                  <div 
+                  <div
                     className="min-w-[8rem] w-auto h-20 px-8 flex items-center justify-center shrink-0 text-white font-bold mb-4 transform hover:scale-105 transition-transform duration-300 relative overflow-hidden"
-                    style={{ 
+                    style={{
                       backgroundColor: '#16a34a',
                       borderRadius: '8px',
                       boxShadow: '0 12px 32px #16a34a60'
@@ -1515,9 +1582,9 @@ export function PublicMenuPage() {
                     </span>
                   </div>
                 ) : (
-                  <div 
+                  <div
                     className="min-w-[8rem] w-auto h-24 px-8 flex items-center justify-center shrink-0 text-white font-bold mb-4 transform hover:scale-105 transition-transform duration-300 relative overflow-hidden"
-                    style={{ 
+                    style={{
                       backgroundColor: primaryColor,
                       borderRadius: '16px',
                       boxShadow: `0 12px 32px ${primaryColor}60`
@@ -1527,10 +1594,10 @@ export function PublicMenuPage() {
                     <div className="absolute -right-4 top-1/2 -translate-y-1/2 w-8 h-8 bg-white rounded-full shadow-[inset_0_0_10px_rgba(0,0,0,0.1)]" />
                     <div className="absolute inset-y-2 left-6 border-l-2 border-white/30 border-dashed" />
                     <div className="absolute inset-y-2 right-6 border-r-2 border-white/30 border-dashed" />
-                    
+
                     <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent -translate-x-full animate-[shimmer_2.5s_infinite] pointer-events-none" />
                     <span className="text-3xl tracking-tight z-10 text-center px-2">
-                      {selectedDiscountForModal.discount_type === 'percentage' 
+                      {selectedDiscountForModal.discount_type === 'percentage'
                         ? `${Number(selectedDiscountForModal.discount_value)}%`
                         : `Buy ${selectedDiscountForModal.buy_quantity}\nGet ${selectedDiscountForModal.get_quantity}`}
                     </span>
@@ -1541,7 +1608,7 @@ export function PublicMenuPage() {
               {selectedDiscountForModal.description && (
                 <p className="text-sm text-slate-500 mt-2 max-w-[280px] leading-relaxed">{selectedDiscountForModal.description}</p>
               )}
-              {selectedDiscountForModal.members_only && (
+              {(selectedDiscountForModal.visibility_type === 'members_only_hidden' || selectedDiscountForModal.visibility_type === 'members_only_visible') && (
                 <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-100 text-purple-700 text-xs font-bold uppercase tracking-wider">
                   <Crown size={14} />
                   Members Only
@@ -1559,8 +1626,8 @@ export function PublicMenuPage() {
                     <p className="text-sm font-medium text-slate-700 flex items-center gap-2">
                       <Calendar size={14} className="text-slate-400 shrink-0" />
                       <span className="truncate">
-                        {selectedDiscountForModal.start_date ? new Date(selectedDiscountForModal.start_date).toLocaleDateString() : 'Now'} 
-                        {' → '} 
+                        {selectedDiscountForModal.start_date ? new Date(selectedDiscountForModal.start_date).toLocaleDateString() : 'Now'}
+                        {' → '}
                         {selectedDiscountForModal.end_date ? new Date(selectedDiscountForModal.end_date).toLocaleDateString() : 'No end'}
                       </span>
                     </p>
@@ -1626,20 +1693,42 @@ export function PublicMenuPage() {
             </div>
 
             <div className="pt-4">
-              <button
-                onClick={() => {
-                  setActiveDiscountFilter(selectedDiscountForModal.id);
-                  setSelectedDiscountForModal(null);
-                  window.scrollTo({ top: 300, behavior: 'smooth' });
-                }}
-                className="w-full py-4 px-4 rounded-2xl font-bold text-white transition-all transform hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2"
-                style={{ 
-                  backgroundColor: primaryColor,
-                  boxShadow: `0 8px 24px ${primaryColor}50`
-                }}
-              >
-                View Applicable Items
-              </button>
+              {((memberStatus === null && selectedDiscountForModal.visibility_type === 'unlock_required') || 
+                (memberStatus !== 'verified-member' && (selectedDiscountForModal.visibility_type === 'members_only_hidden'))) ? (
+                <button
+                  onClick={() => {
+                    setSelectedDiscountForModal(null);
+                    setIsDiscountPopupOpen(true);
+                  }}
+                  className="w-full py-4 px-4 rounded-2xl font-bold text-white transition-all transform hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2 bg-slate-900 shadow-xl border border-slate-700"
+                >
+                  <Gift size={18} className="text-yellow-400" /> Unlock Offer
+                </button>
+              ) : (memberStatus !== 'verified-member' && selectedDiscountForModal.visibility_type === 'members_only_visible') ? (
+                <button
+                  onClick={() => {
+                    toast.error("Member Required! Please ask the waiter or hotel staff to verify your membership.");
+                  }}
+                  className="w-full py-4 px-4 rounded-2xl font-bold text-slate-700 transition-all transform hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2 bg-slate-100 shadow-sm border border-slate-200"
+                >
+                  Ask Staff to Unlock
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    setActiveDiscountFilter(selectedDiscountForModal.id);
+                    setSelectedDiscountForModal(null);
+                    window.scrollTo({ top: 300, behavior: 'smooth' });
+                  }}
+                  className="w-full py-4 px-4 rounded-2xl font-bold text-white transition-all transform hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2"
+                  style={{
+                    backgroundColor: primaryColor,
+                    boxShadow: `0 8px 24px ${primaryColor}50`
+                  }}
+                >
+                  View Applicable Items
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -1653,10 +1742,10 @@ export function PublicMenuPage() {
         className="bg-white text-slate-900 max-w-md"
       >
         <div className="space-y-4 mt-4 max-h-[60vh] overflow-y-auto scrollbar-hide">
-          {activeDiscounts.length === 0 ? (
+          {activeDiscounts.filter(d => d.visibility_type !== 'members_only_hidden' || memberStatus === 'verified-member').length === 0 ? (
             <p className="text-slate-500 text-sm text-center py-8">No active offers at the moment.</p>
           ) : (
-            activeDiscounts.map(disc => (
+            activeDiscounts.filter(d => d.visibility_type !== 'members_only_hidden' || memberStatus === 'verified-member').map(disc => (
               <div
                 key={disc.id}
                 onClick={() => {
@@ -1667,14 +1756,14 @@ export function PublicMenuPage() {
                 style={{ border: `1px solid ${primaryColor}30` }}
               >
                 {/* Left Ticket Stub */}
-                <div 
+                <div
                   className="relative w-24 flex flex-col items-center justify-center text-white p-3 shrink-0"
                   style={{ backgroundColor: primaryColor }}
                 >
                   {/* Cutouts for ticket effect */}
                   <div className="absolute -top-3 -right-3 w-6 h-6 bg-white rounded-full border-b border-l border-transparent z-10" style={{ borderColor: `${primaryColor}30` }} />
                   <div className="absolute -bottom-3 -right-3 w-6 h-6 bg-white rounded-full border-t border-l border-transparent z-10" style={{ borderColor: `${primaryColor}30` }} />
-                  
+
                   <div className="text-xl font-black tracking-tight drop-shadow-sm text-center">
                     {disc.discount_type === 'percentage' && `${Number(disc.discount_value)}%`}
                     {disc.discount_type === 'flat' && `${settings?.currency || '₹'}${Number(disc.discount_value)}`}
@@ -1698,21 +1787,21 @@ export function PublicMenuPage() {
                       {disc.title}
                     </p>
                   </div>
-                  
+
                   {disc.description && (
                     <p className="text-[11px] text-slate-500 line-clamp-1 leading-relaxed mb-2 font-medium">
                       {disc.description}
                     </p>
                   )}
-                  
+
                   <div className="mt-auto flex items-center justify-between">
-                    {disc.members_only ? (
+                    {disc.visibility_type === 'members_only_hidden' || disc.visibility_type === 'members_only_visible' ? (
                       <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded shadow-sm flex items-center gap-1 shrink-0 bg-purple-100 text-purple-700">
                         <Crown size={10} className="shrink-0" />
                         Members Only
                       </span>
                     ) : (
-                      <span 
+                      <span
                         className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded shadow-sm shrink-0"
                         style={{ color: primaryColor, backgroundColor: `${primaryColor}15` }}
                       >
@@ -1724,7 +1813,7 @@ export function PublicMenuPage() {
                     </span>
                   </div>
                 </div>
-                
+
                 {/* Constant shimmer effect spanning the whole card */}
                 <div className="absolute inset-0 z-10 bg-gradient-to-r from-transparent via-white/60 to-transparent -translate-x-full animate-[shimmer_2.5s_infinite] pointer-events-none mix-blend-overlay" />
               </div>

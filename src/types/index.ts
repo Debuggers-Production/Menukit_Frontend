@@ -172,7 +172,7 @@ export interface Discount {
   available_days?: string[] | null;
   available_time_presets?: string[] | null;
   is_active: boolean;
-  members_only: boolean;
+  visibility_type: 'everyone' | 'unlock_required' | 'members_only_hidden' | 'members_only_visible';
   created_at: string;
   updated_at: string;
 }
