@@ -6,8 +6,10 @@ const BASE_URL = import.meta.env.VITE_API_URL || "";
 
 export const api = axios.create({
   baseURL: `${BASE_URL}/api/v1`,
+  timeout: 15_000,  // 15 second timeout — prevents requests from hanging indefinitely
   headers: {
     'Content-Type': 'application/json',
+    'Accept-Encoding': 'gzip, deflate, br',
   },
 });
 
