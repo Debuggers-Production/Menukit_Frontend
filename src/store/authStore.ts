@@ -10,6 +10,7 @@ interface AuthState {
   login: (email: string, code: string) => Promise<void>;
   logout: () => Promise<void>;
   fetchUser: () => Promise<void>;
+  changeEmail: (oldEmailOtp: string, newEmail: string, newEmailOtp: string) => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -62,6 +63,13 @@ export const useAuthStore = create<AuthState>()(
         } catch (error) {
           set({ isAuthenticated: false, user: null, isLoading: false });
         }
+      },
+
+      changeEmail: async (old_email_otp: string, new_email: string, new_email_otp: string) => {
+        await api.post('/auth/change-email', { old_email_otp, new_email, new_email_otp });
+        set((state) => ({
+          user: state.user ? { ...state.user, email: new_email } : null
+        }));
       },
     }),
     {

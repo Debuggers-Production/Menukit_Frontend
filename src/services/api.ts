@@ -9,7 +9,6 @@ export const api = axios.create({
   timeout: 15_000,  // 15 second timeout — prevents requests from hanging indefinitely
   headers: {
     'Content-Type': 'application/json',
-    'Accept-Encoding': 'gzip, deflate, br',
   },
 });
 

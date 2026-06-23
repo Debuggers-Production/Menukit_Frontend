@@ -1,11 +1,13 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { ChevronLeft, Star, Loader2, Send, Gift } from 'lucide-react';
+import { ChevronLeft, Star, Loader2, Send, Gift, ShoppingCart, Plus, Minus } from 'lucide-react';
 import { api } from '@/services/api';
 import { Shop, MenuItem, ReviewSummary, Discount } from '@/types';
 import { Lightbox } from '@/components/ui/Lightbox';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { DiscountUnlockPopup } from '@/components/public/DiscountUnlockPopup';
+import { useCartStore } from '@/store/cartStore';
+import toast from 'react-hot-toast';
 
 const PRESET_TIMINGS: Record<string, string> = {
   'Early Morning': '(04:00 - 08:00)',
@@ -28,7 +30,18 @@ export function PublicItemPage() {
   // Interaction state
   const [selectedVariantIdx, setSelectedVariantIdx] = useState(0);
   const [selectedAddons, setSelectedAddons] = useState<number[]>([]);
+    const { addToCart, items: cartItems, removeFromCart, updateQuantity } = useCartStore();
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+
+  const existingCartItem = useMemo(() => {
+    if (!item) return null;
+    return cartItems.find(
+      (i) =>
+        i.menuItem.id === item.id &&
+        i.selectedVariantIdx === selectedVariantIdx &&
+        JSON.stringify(i.selectedAddons.slice().sort()) === JSON.stringify(selectedAddons.slice().sort())
+    );
+  }, [cartItems, item, selectedVariantIdx, selectedAddons]);
 
   // Reviews state
   const [reviewsSummary, setReviewsSummary] = useState<ReviewSummary | null>(null);
@@ -128,12 +141,44 @@ export function PublicItemPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-white dark:bg-slate-950 flex flex-col p-4">
-        <Skeleton className="h-64 w-full rounded-2xl mb-4" />
-        <Skeleton className="h-8 w-2/3 mb-2" />
-        <Skeleton className="h-4 w-1/3 mb-6" />
-        <Skeleton className="h-12 w-full rounded-xl mb-4" />
-        <Skeleton className="h-12 w-full rounded-xl mb-4" />
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
+        {/* Sticky Header Skeleton */}
+        <div className="p-4 flex items-center gap-3 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950">
+          <Skeleton className="w-10 h-10 rounded-full" />
+          <Skeleton className="w-32 h-6 rounded-md" />
+        </div>
+
+        <div className="max-w-2xl mx-auto p-4 sm:p-6">
+          {/* Main Image Skeleton */}
+          <Skeleton className="w-full aspect-[4/3] rounded-2xl mb-6" />
+
+          {/* Title & Type Skeleton */}
+          <div className="flex items-start justify-between gap-4 mb-4">
+            <Skeleton className="w-3/4 h-8 rounded-lg" />
+            <Skeleton className="w-6 h-6 rounded-md shrink-0" />
+          </div>
+
+          {/* Price Skeleton */}
+          <Skeleton className="w-24 h-6 rounded-md mb-6" />
+
+          {/* Description Skeleton */}
+          <div className="space-y-2 mb-8">
+            <Skeleton className="w-full h-4 rounded-md" />
+            <Skeleton className="w-5/6 h-4 rounded-md" />
+            <Skeleton className="w-4/6 h-4 rounded-md" />
+          </div>
+
+          {/* Variants / Addons Skeleton */}
+          <div className="space-y-4 mb-8">
+            <Skeleton className="w-1/3 h-6 rounded-md mb-2" />
+            {[1, 2].map((i) => (
+              <div key={i} className="flex items-center justify-between p-4 border border-slate-100 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900">
+                <Skeleton className="w-1/2 h-5 rounded-md" />
+                <Skeleton className="w-6 h-6 rounded-full" />
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
@@ -143,7 +188,7 @@ export function PublicItemPage() {
       <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-4">
         <div className="text-center">
           <h2 className="text-xl font-bold mb-2 text-slate-800 dark:text-slate-100">Item not found</h2>
-          <button 
+          <button
             onClick={() => navigate(`/shop/${id}`)}
             className="text-primary hover:underline"
           >
@@ -159,10 +204,10 @@ export function PublicItemPage() {
   const primaryColor = theme?.primary_color || '#ea580c';
 
   return (
-    <div className={`min-h-screen pb-20 ${isDark ? 'dark bg-slate-950 text-slate-50' : 'bg-slate-50 text-slate-900'}`}>
+    <div className={`min-h-screen pb-36 ${isDark ? 'dark bg-slate-950 text-slate-50' : 'bg-slate-50 text-slate-900'}`} style={{ fontFamily: theme?.font_family || 'Inter' }}>
       {/* Sticky Header */}
       <div className="sticky top-0 z-40 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md border-b border-slate-100 dark:border-slate-800 p-4 flex items-center gap-3">
-        <button 
+        <button
           onClick={() => navigate(`/shop/${id}`)}
           className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
         >
@@ -176,8 +221,8 @@ export function PublicItemPage() {
         {item.images && item.images.length > 0 ? (
           <div className="mb-6">
             <div className="aspect-[4/3] rounded-2xl overflow-hidden bg-slate-100 relative group cursor-pointer" onClick={() => setLightboxImage(item.images[0].image_url)}>
-              <img 
-                src={item.images[0].image_url} 
+              <img
+                src={item.images[0].image_url}
                 alt={item.name}
                 className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
               />
@@ -185,13 +230,13 @@ export function PublicItemPage() {
             {item.images.length > 1 && (
               <div className="flex gap-2 mt-2 overflow-x-auto pb-2 snap-x hide-scrollbar">
                 {item.images.slice(1).map((img, idx) => (
-                  <div 
+                  <div
                     key={idx}
                     className="w-20 h-20 rounded-xl overflow-hidden bg-slate-100 shrink-0 snap-start cursor-pointer border border-slate-200"
                     onClick={() => setLightboxImage(img.image_url)}
                   >
-                    <img 
-                      src={img.thumbnail_url || img.image_url} 
+                    <img
+                      src={img.thumbnail_url || img.image_url}
                       alt=""
                       className="w-full h-full object-cover"
                     />
@@ -202,8 +247,8 @@ export function PublicItemPage() {
           </div>
         ) : item.image_url ? (
           <div className="mb-6 aspect-[4/3] rounded-2xl overflow-hidden bg-slate-100 relative group cursor-pointer" onClick={() => setLightboxImage(item.image_url)}>
-            <img 
-              src={item.image_url} 
+            <img
+              src={item.image_url}
               alt={item.name}
               className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
             />
@@ -228,7 +273,7 @@ export function PublicItemPage() {
               </div>
             ))}
           </div>
-          
+
           <div className="flex items-center gap-3">
             <span className="text-xl font-bold" style={{ color: primaryColor }}>
               {(() => {
@@ -239,7 +284,7 @@ export function PublicItemPage() {
                 } else {
                   basePrice = Number(item.offer_price || item.price);
                 }
-                
+
                 let isDiscounted = false;
                 let originalPrice = item.variants && item.variants.length > 0 ? Number(item.variants[selectedVariantIdx].price) : Number(item.price);
 
@@ -367,7 +412,7 @@ export function PublicItemPage() {
             {reviewsSummary && reviewsSummary.total_reviews > 0 && (
               <div className="flex items-center gap-1.5">
                 <div className="flex">
-                  {[1,2,3,4,5].map(s => (
+                  {[1, 2, 3, 4, 5].map(s => (
                     <Star key={s} size={16} className={s <= Math.round(reviewsSummary.average_rating) ? 'fill-amber-400 text-amber-400' : 'text-slate-200 dark:text-slate-700 fill-slate-200 dark:fill-slate-700'} />
                   ))}
                 </div>
@@ -386,7 +431,7 @@ export function PublicItemPage() {
               {/* Rating distribution */}
               {reviewsSummary.total_reviews > 0 && (
                 <div className="space-y-2 mb-8">
-                  {[5,4,3,2,1].map(star => {
+                  {[5, 4, 3, 2, 1].map(star => {
                     const count = reviewsSummary.rating_distribution[star] || 0;
                     const pct = reviewsSummary.total_reviews ? Math.round((count / reviewsSummary.total_reviews) * 100) : 0;
                     return (
@@ -412,7 +457,7 @@ export function PublicItemPage() {
                         <span className="text-sm font-bold text-slate-800 dark:text-slate-200">{rev.reviewer_name}</span>
                         <div className="flex items-center gap-2">
                           <div className="flex">
-                            {[1,2,3,4,5].map(s => (
+                            {[1, 2, 3, 4, 5].map(s => (
                               <Star key={s} size={12} className={s <= rev.rating ? 'fill-amber-400 text-amber-400' : 'text-slate-200 dark:text-slate-700 fill-slate-200 dark:fill-slate-700'} />
                             ))}
                           </div>
@@ -438,7 +483,7 @@ export function PublicItemPage() {
                   <p className="text-sm text-slate-500 dark:text-slate-400 mb-5">Share your experience to help others</p>
 
                   <div className="flex items-center gap-2 mb-6">
-                    {[1,2,3,4,5].map(star => (
+                    {[1, 2, 3, 4, 5].map(star => (
                       <button
                         key={star}
                         type="button"
@@ -449,17 +494,16 @@ export function PublicItemPage() {
                       >
                         <Star
                           size={36}
-                          className={`transition-all duration-200 ${
-                            star <= (reviewHover || reviewRating)
+                          className={`transition-all duration-200 ${star <= (reviewHover || reviewRating)
                               ? 'fill-amber-400 text-amber-400 drop-shadow-[0_2px_4px_rgba(251,191,36,0.3)]'
                               : 'text-slate-200 dark:text-slate-800 fill-slate-100 dark:fill-slate-800'
-                          }`}
+                            }`}
                         />
                       </button>
                     ))}
                     {reviewRating > 0 && (
                       <span className="ml-3 text-sm font-bold animate-in fade-in slide-in-from-left-2 text-amber-500">
-                        {['','Terrible','Poor','Okay','Good','Excellent!'][reviewRating]}
+                        {['', 'Terrible', 'Poor', 'Okay', 'Good', 'Excellent!'][reviewRating]}
                       </span>
                     )}
                   </div>
@@ -536,17 +580,83 @@ export function PublicItemPage() {
       {memberStatus !== 'verified-member' && discounts.some(d => d.visibility_type === 'members_only_hidden' || d.visibility_type === 'members_only_visible' || (d.visibility_type === 'unlock_required' && memberStatus === null)) && (
         <button
           onClick={() => setIsDiscountPopupOpen(true)}
-          className={`fixed bottom-10 right-4 sm:right-6 h-14 px-5 rounded-full bg-slate-900 text-white shadow-xl flex items-center justify-center gap-2 hover:scale-105 transition-all duration-300 z-[45] border-4 border-slate-700/50 backdrop-blur-md animate-bounce hover:animate-none ${isScrollingDown ? 'translate-y-32 opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}
+          className={`fixed bottom-24 right-4 sm:right-6 h-14 px-5 rounded-full bg-slate-900 text-white shadow-xl flex items-center justify-center gap-2 hover:scale-105 transition-all duration-300 z-[45] border-4 border-slate-700/50 backdrop-blur-md animate-bounce hover:animate-none ${isScrollingDown ? 'translate-y-32 opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}
           title="Unlock Member Offers"
         >
           <Gift size={24} className="animate-pulse text-yellow-400" />
           <span className="font-bold text-sm">Offers!</span>
-          
+
           <span className="absolute -top-1 -right-1 flex h-4 w-4">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-4 w-4 bg-red-500 border-2 border-slate-900"></span>
           </span>
         </button>
+      )}
+
+      {/* Cart Fixed Bottom Bar */}
+      {item && (
+        <div className="fixed bottom-0 left-0 right-0 p-3 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border-t border-slate-200 dark:border-slate-800 z-40 safe-area-bottom shadow-[0_-10px_30px_rgba(0,0,0,0.05)]">
+          <div className="max-w-md mx-auto flex items-center gap-3 transition-all duration-300">
+            {existingCartItem ? (
+              <>
+                {/* Cart Item Quantity Selector */}
+                <div className="flex items-center gap-2 px-2 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-xl animate-[fadeIn_0.3s_ease-out]">
+                  <button 
+                    onClick={() => {
+                      if (existingCartItem.quantity > 1) {
+                        updateQuantity(existingCartItem.id, -1);
+                      } else {
+                        removeFromCart(existingCartItem.id);
+                        toast.success(`Removed ${item.name} from cart`);
+                      }
+                    }}
+                    className="w-7 h-7 flex items-center justify-center rounded-lg bg-white dark:bg-slate-700 shadow-sm text-slate-700 dark:text-slate-200 active:scale-95 transition-transform"
+                  >
+                    <Minus size={14} />
+                  </button>
+                  <span className="font-bold w-4 text-center text-sm">{existingCartItem.quantity}</span>
+                  <button 
+                    onClick={() => updateQuantity(existingCartItem.id, 1)}
+                    className="w-7 h-7 flex items-center justify-center rounded-lg bg-white dark:bg-slate-700 shadow-sm text-slate-700 dark:text-slate-200 active:scale-95 transition-transform"
+                  >
+                    <Plus size={14} />
+                  </button>
+                </div>
+
+                {/* Remove from Cart Button */}
+                <button
+                  onClick={() => {
+                    removeFromCart(existingCartItem.id);
+                    toast.success(`Removed ${item.name} from cart`);
+                  }}
+                  className="flex-1 py-2.5 px-4 rounded-xl text-white text-sm font-bold flex items-center justify-center gap-2 shadow-lg hover:shadow-xl active:scale-[0.98] transition-all bg-red-500 hover:bg-red-600 animate-[fadeIn_0.3s_ease-out]"
+                >
+                  <ShoppingCart size={16} />
+                  Remove
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => {
+                  if (id && item) {
+                    addToCart(id, {
+                      menuItem: item,
+                      selectedVariantIdx,
+                      selectedAddons,
+                      quantity: 1 // Default add is 1
+                    });
+                    toast.success(`Added ${item.name} to cart`);
+                  }
+                }}
+                className="w-full py-3 px-5 rounded-xl text-white text-sm font-bold flex items-center justify-center gap-2 shadow-lg hover:shadow-xl active:scale-[0.98] transition-all animate-[fadeIn_0.3s_ease-out]"
+                style={{ backgroundColor: primaryColor }}
+              >
+                <ShoppingCart size={16} />
+                Add to Cart
+              </button>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

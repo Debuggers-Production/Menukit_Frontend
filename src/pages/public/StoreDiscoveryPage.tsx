@@ -13,6 +13,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { api } from '@/services/api';
 import { PublicShopListing } from '@/types';
+import { InfiniteScrollTrigger } from '@/components/ui/InfiniteScrollTrigger';
 
 const BrandFooter = ({ mode }: { mode: 'landing' | 'scanner' | 'map' }) => {
   if (mode === 'map') {
@@ -27,6 +28,19 @@ const BrandFooter = ({ mode }: { mode: 'landing' | 'scanner' | 'map' }) => {
           Menukit
           <ExternalLink size={10} color="#f97316" />
         </a>
+      </div>
+    );
+  }
+
+  if (mode === 'landing') {
+    return (
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
+        <div className="flex items-center gap-2.5 px-5 py-2 bg-white/60 backdrop-blur-xl border border-white/80 rounded-full shadow-[0_8px_30px_rgba(0,0,0,0.06)] hover:bg-white/80 transition-colors">
+          <a href="https://menukit.debuggers.co.in/landing" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-[15px] font-black no-underline hover:opacity-80 transition-opacity">
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-500 to-amber-500">Menukit</span>
+            <ExternalLink size={14} className="text-orange-500" />
+          </a>
+        </div>
       </div>
     );
   }
@@ -255,6 +269,11 @@ export function StoreDiscoveryPage() {
   // ── Shops state ──────────────────────────────────────────────────────────
   const [shops, setShops] = useState<PublicShopListing[]>([]);
   const [isLoadingShops, setIsLoadingShops] = useState(false);
+  const [isLoadingMoreShops, setIsLoadingMoreShops] = useState(false);
+  const [shopsOffset, setShopsOffset] = useState(0);
+  const [hasMoreShops, setHasMoreShops] = useState(true);
+  const SHOPS_LIMIT = 20;
+
   const [sortMode, setSortMode] = useState<SortMode>('deals');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedShop, setSelectedShop] = useState<PublicShopListing | null>(null);
@@ -306,21 +325,50 @@ export function StoreDiscoveryPage() {
 
   // ── Scanner state ─────────────────────────────────────────────────────────
   const [scanError, setScanError] = useState('');
-  const [isScannerStarted, setIsScannerStarted] = useState(false);
+    const [isScanningImage, setIsScanningImage] = useState(false);
   const scannerRef = useRef<Html5Qrcode | null>(null);
 
   // ── Load shops ────────────────────────────────────────────────────────────
-  const loadShops = useCallback(async () => {
-    setIsLoadingShops(true);
+  const loadShops = useCallback(async (currentOffset: number = 0, append = false) => {
+    if (append) setIsLoadingMoreShops(true);
+    else setIsLoadingShops(true);
+    
     try {
-      const res = await api.get('/public/shops');
-      setShops(res.data || []);
+      const res = await api.get(`/public/shops?limit=${SHOPS_LIMIT}&offset=${currentOffset}`);
+      const data = res.data || [];
+      
+      if (data.length < SHOPS_LIMIT) {
+        setHasMoreShops(false);
+      } else {
+        setHasMoreShops(true);
+      }
+
+      if (append) {
+        setShops(prev => {
+          const newShops = [...prev];
+          data.forEach((shop: any) => {
+            if (!newShops.find(s => s.id === shop.id)) {
+              newShops.push(shop);
+            }
+          });
+          return newShops;
+        });
+      } else {
+        setShops(data);
+      }
     } catch {
       /* silently ignore */
     } finally {
-      setIsLoadingShops(false);
+      if (append) setIsLoadingMoreShops(false);
+      else setIsLoadingShops(false);
     }
   }, []);
+
+  const handleLoadMoreShops = () => {
+    const newOffset = shopsOffset + SHOPS_LIMIT;
+    setShopsOffset(newOffset);
+    loadShops(newOffset, true);
+  };
 
   // ── Geolocation ───────────────────────────────────────────────────────────
   const getUserLocation = useCallback((flyToUser: boolean = true) => {
@@ -334,10 +382,45 @@ export function StoreDiscoveryPage() {
     });
   }, []);
 
+  // ── Handle Scanned QR Code ─────────────────────────────────────────────────
+  const handleScanResult = useCallback((text: string) => {
+    const match = text.match(/\/shop\/([a-f0-9-]{36})/);
+    if (match) {
+      if (scannerRef.current) { try { scannerRef.current.stop(); } catch {} }
+      navigate(`/shop/${match[1]}`);
+    } else if (text.startsWith('http')) {
+      if (scannerRef.current) { try { scannerRef.current.stop(); } catch {} }
+      window.location.href = text;
+    } else {
+      setScanError(`Not a MenuKit QR — scanned: ${text.substring(0, 50)}`);
+    }
+  }, [navigate]);
+
+  // ── Upload from gallery ────────────────────────────────────────────────────
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const file = e.target.files[0];
+      setScanError('');
+      setIsScanningImage(true);
+      try {
+        const fileScanner = new Html5Qrcode('file-scan-div');
+        const text = await fileScanner.scanFile(file, false);
+        fileScanner.clear();
+        handleScanResult(text);
+      } catch (err: any) {
+        console.error("File scan error:", err);
+        setScanError('Could not detect a valid MenuKit QR code in this image.');
+      } finally {
+        setIsScanningImage(false);
+      }
+    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   // ── Start/stop QR scanner ──────────────────────────────────────────────────
   const startScanner = useCallback(async () => {
     setScanError('');
-    setIsScannerStarted(false);
     if (scannerRef.current) {
       try { await scannerRef.current.stop(); } catch { }
       scannerRef.current = null;
@@ -347,33 +430,20 @@ export function StoreDiscoveryPage() {
     try {
       await scanner.start(
         { facingMode: 'environment' },
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        (text) => {
-          const match = text.match(/\/shop\/([a-f0-9-]{36})/);
-          if (match) {
-            stopScanner();
-            navigate(`/shop/${match[1]}`);
-          } else if (text.startsWith('http')) {
-            stopScanner();
-            window.location.href = text;
-          } else {
-            setScanError(`Not a MenuKit QR — scanned: ${text.substring(0, 50)}`);
-          }
-        },
+        { fps: 10 },
+        handleScanResult,
         () => { }
       );
-      setIsScannerStarted(true);
     } catch (err: any) {
       setScanError(err?.message || 'Camera access denied. Please allow camera permissions.');
     }
-  }, [navigate]);
+  }, [handleScanResult]);
 
   const stopScanner = useCallback(async () => {
     if (scannerRef.current) {
       try { await scannerRef.current.stop(); } catch { }
       scannerRef.current = null;
     }
-    setIsScannerStarted(false);
   }, []);
 
   useEffect(() => {
@@ -439,182 +509,121 @@ export function StoreDiscoveryPage() {
   // ════════════════════════════════════════════════════════════════════════════
   if (mode === 'landing') {
     return (
-      <div style={{
-        minHeight: '100vh',
-        background: 'linear-gradient(135deg, #0f0c29, #302b63, #24243e)',
-        display: 'flex', flexDirection: 'column', alignItems: 'center',
-        justifyContent: 'flex-start', paddingTop: '8vh', paddingLeft: 20, paddingRight: 20, paddingBottom: 24, position: 'relative', overflow: 'hidden',
-        fontFamily: "'Inter', system-ui, sans-serif",
-      }}>
-        {/* Radial glow blobs */}
-        <div style={{
-          position: 'absolute', inset: 0, pointerEvents: 'none',
-          background: 'radial-gradient(ellipse at 20% 50%, #f9731618 0%, transparent 60%), radial-gradient(ellipse at 80% 30%, #7c3aed18 0%, transparent 60%)',
+      <div className="min-h-[100dvh] bg-slate-50 flex flex-col items-center justify-center py-10 pb-28 px-5 relative overflow-y-auto overflow-x-hidden font-sans">
+        {/* Radial glow blobs for light theme */}
+        <div className="absolute inset-0 pointer-events-none" style={{
+          background: 'radial-gradient(ellipse at 20% -10%, rgba(249,115,22,0.12) 0%, transparent 50%), radial-gradient(ellipse at 80% 110%, rgba(124,58,237,0.1) 0%, transparent 50%)',
         }} />
 
-        <style>{`
-          @keyframes badge-pulse {
-            0%, 100% { transform: scale(1);    box-shadow: 0 16px 40px rgba(249,115,22,.4); }
-            50%       { transform: scale(1.06); box-shadow: 0 24px 60px rgba(249,115,22,.6); }
-          }
-          @keyframes scan-beam {
-            0%, 100% { top: 18%; }
-            50%       { top: 78%; }
-          }
-        `}</style>
+        {/* Intro Animations container */}
+        <motion.div 
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, ease: "easeOut" }}
+          className="w-full max-w-md flex flex-col items-center relative z-10 my-auto"
+        >
+          {/* Logo and Brand Name */}
+          <div className="flex flex-col items-center mb-6">
+            <img
+              src="/menukit-logo.svg"
+              alt="MenuKit Logo"
+              className="w-24 h-24 object-contain drop-shadow-[0_8px_24px_rgba(249,115,22,0.25)] relative z-10"
+              onError={(e) => { e.currentTarget.src = '/menukit.png'; }}
+            />
+            <h1 className="text-[40px] md:text-[48px] font-black text-slate-900 tracking-tight text-center leading-none -mt-4 relative z-0">
+              Menu<span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-500 to-amber-500">Kit</span>
+            </h1>
+          </div>
 
-        {/* Logo and Brand Name */}
-        <div style={{
-          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
-          marginBottom: 24, position: 'relative', zIndex: 1,
-        }}>
-          <img
-            src="/menukit-logo.svg"
-            alt="MenuKit Logo"
-            style={{
-              width: 80, height: 80, objectFit: 'contain',
-              filter: 'drop-shadow(0 12px 24px rgba(249,115,22,0.3))'
-            }}
-            onError={(e) => {
-              // Fallback if svg fails
-              e.currentTarget.src = '/menukit.png';
-            }}
-          />
-          <h1 style={{
-            fontSize: 'clamp(2rem, 6vw, 3.5rem)', fontWeight: 900,
-            color: 'white', textAlign: 'center', lineHeight: 1.1,
-            marginBottom: 14, letterSpacing: '-0.02em', position: 'relative', zIndex: 1,
-          }}>
-            Menu{' '}
-            <span style={{
-              background: 'linear-gradient(90deg, #f97316, #f59e0b)',
-              WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-            }}>Kit</span>
-          </h1>
-        </div>
+          {/* Headline */}
+          <h2 className="text-3xl md:text-4xl font-black text-slate-900 text-center leading-[1.1] mb-3 tracking-tight">
+            Find Your Perfect{' '}
+            <br />
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-500 to-amber-500">
+              Dining Spot
+            </span>
+          </h2>
+          <p className="text-slate-500 text-center text-[13px] sm:text-[15px] mb-8 max-w-[300px] leading-snug">
+            Discover restaurants near you with the best deals, offers, and reviews — completely free.
+          </p>
 
-        {/* Headline */}
-        <h1 style={{
-          fontSize: 'clamp(2rem, 6vw, 3.5rem)', fontWeight: 900,
-          color: 'white', textAlign: 'center', lineHeight: 1.1,
-          marginBottom: 14, letterSpacing: '-0.02em', position: 'relative', zIndex: 1,
-        }}>
-          Find Your Perfect{' '}
-          <span style={{
-            background: 'linear-gradient(90deg, #f97316, #f59e0b)',
-            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-          }}>Dining Spot</span>
-        </h1>
-        <p style={{
-          color: 'rgba(255,255,255,.6)', textAlign: 'center', maxWidth: 460,
-          fontSize: 'clamp(.875rem, 2vw, 1.1rem)', marginBottom: 48,
-          lineHeight: 1.6, position: 'relative', zIndex: 1,
-        }}>
-          Discover restaurants near you with the best deals, offers, and reviews — completely free.
-        </p>
-
-        {/* Main Action Card */}
-        <div style={{
-          background: 'rgba(255,255,255,.05)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-          border: '1px solid rgba(255,255,255,.1)',
-          borderRadius: 32,
-          padding: 24,
-          width: '100%',
-          maxWidth: 420,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 16,
-          marginBottom: 40,
-          position: 'relative',
-          zIndex: 1,
-          boxShadow: '0 24px 60px rgba(0,0,0,.2)',
-        }}>
-          {/* Browse Stores (Primary) */}
-          <button
-            id="btn-choose-store"
-            onClick={() => navigate('/discover/stores')}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 16,
-              padding: '20px 24px', borderRadius: 20, border: 'none', cursor: 'pointer',
-              background: 'linear-gradient(135deg, #f97316, #ea580c)',
-              boxShadow: '0 12px 30px rgba(249,115,22,.4)',
-              transition: 'transform .2s, box-shadow .2s',
-              width: '100%',
-            }}
-            onMouseEnter={e => (e.currentTarget.style.transform = 'translateY(-2px)')}
-            onMouseLeave={e => (e.currentTarget.style.transform = 'translateY(0)')}
+          {/* Action Cards */}
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.2, duration: 0.6, ease: "easeOut" }}
+            className="w-full flex flex-col gap-3 mb-8 relative z-10 px-2"
           >
-            <div style={{
-              width: 52, height: 52, borderRadius: 14,
-              background: 'rgba(255,255,255,.2)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0
-            }}>
-              <MapPin size={28} color="white" />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', flex: 1 }}>
-              <span style={{ color: 'white', fontSize: '1.2rem', fontWeight: 800 }}>Browse Stores</span>
-              <span style={{ color: 'rgba(255,255,255,.8)', fontSize: '.8rem', textAlign: 'left', fontWeight: 500 }}>
-                Explore map, filter by deals
-              </span>
-            </div>
-            <ArrowRight size={20} color="rgba(255,255,255,.9)" />
-          </button>
+            {/* Discover Shops (Primary) */}
+            <button
+              id="btn-choose-store"
+              onClick={() => navigate('/discover/stores')}
+              className="group relative w-full overflow-hidden flex flex-col items-start gap-3 p-5 sm:p-6 rounded-[28px] border-none cursor-pointer bg-gradient-to-br from-orange-500 to-orange-600 shadow-[0_16px_40px_-10px_rgba(249,115,22,0.4)] hover:shadow-[0_24px_60px_-10px_rgba(249,115,22,0.5)] hover:-translate-y-1 transition-all duration-300 active:scale-[0.98] text-left"
+            >
+              {/* Decorative Map Pattern inside the card */}
+              <div className="absolute top-0 right-0 bottom-0 w-2/3 pointer-events-none opacity-[0.15]" style={{
+                backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)',
+                backgroundSize: '20px 20px',
+                WebkitMaskImage: 'linear-gradient(to left, black, transparent)',
+                maskImage: 'linear-gradient(to left, black, transparent)'
+              }} />
+              <div className="absolute -right-6 -top-6 w-32 h-32 bg-white/20 rounded-full blur-3xl pointer-events-none" />
 
-          {/* Scan QR (Secondary) */}
-          <button
-            id="btn-scan-qr"
-            onClick={() => navigate('/discover/scan')}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 16,
-              padding: '16px 20px', borderRadius: 20, border: '1px solid rgba(255,255,255,.15)',
-              cursor: 'pointer', background: 'rgba(255,255,255,.05)',
-              transition: 'background .2s',
-              width: '100%',
-            }}
-            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,.1)')}
-            onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,.05)')}
+              <div className="relative z-10 w-12 h-12 rounded-[16px] bg-white/20 flex items-center justify-center backdrop-blur-md shadow-inner border border-white/30 mb-0.5">
+                <MapPin size={24} className="text-white drop-shadow-sm" />
+              </div>
+              <div className="relative z-10 flex flex-col items-start w-full pr-10">
+                <span className="text-white text-[22px] font-black tracking-tight drop-shadow-sm mb-0.5 leading-tight">Discover Shops</span>
+                <span className="text-white/90 text-[13px] font-medium leading-tight">
+                  Explore interactive map & filter by the best deals around you
+                </span>
+              </div>
+              
+              <div className="absolute right-5 bottom-5 w-10 h-10 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-md group-hover:bg-white/30 transition-colors shadow-[0_4px_12px_rgba(0,0,0,0.1)] border border-white/20">
+                <ArrowRight size={20} className="text-white group-hover:translate-x-1 transition-transform" />
+              </div>
+            </button>
+
+            {/* Scan QR (Secondary - Glassmorphism) */}
+            <button
+              id="btn-scan-qr"
+              onClick={() => navigate('/discover/scan')}
+              className="w-full group relative overflow-hidden flex items-center gap-4 p-4 rounded-[24px] border border-white/60 cursor-pointer bg-white/50 backdrop-blur-xl shadow-[0_8px_30px_-10px_rgba(0,0,0,0.05)] hover:bg-white/70 hover:shadow-[0_12px_40px_-10px_rgba(0,0,0,0.08)] hover:border-white transition-all duration-300 active:scale-[0.98]"
+            >
+               {/* Decorative subtle beam */}
+               <div className="absolute left-0 top-0 bottom-0 w-[5px] bg-gradient-to-b from-orange-400 to-orange-500 rounded-l-[24px]" />
+
+              <div className="w-12 h-12 rounded-2xl bg-white/80 border border-white flex items-center justify-center shrink-0 shadow-sm ml-1">
+                <QrCode size={22} className="text-slate-600 group-hover:text-orange-500 transition-colors" />
+              </div>
+              <div className="flex flex-col items-start flex-1 text-left">
+                <span className="text-slate-800 text-[16px] font-black tracking-tight drop-shadow-sm">Scan QR Code</span>
+                <span className="text-slate-500 text-[12px] font-semibold mt-0.5">
+                  At a restaurant? Scan to order
+                </span>
+              </div>
+            </button>
+          </motion.div>
+
+          {/* Feature pills (Glassmorphism) */}
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.4, duration: 0.6 }}
+            className="flex flex-wrap gap-2 justify-center max-w-[320px]"
           >
-            <div style={{
-              width: 44, height: 44, borderRadius: 12,
-              background: 'rgba(249,115,22,.15)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0
-            }}>
-              <QrCode size={22} color="#fb923c" />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', flex: 1 }}>
-              <span style={{ color: 'white', fontSize: '1.05rem', fontWeight: 700 }}>Scan QR Code</span>
-              <span style={{ color: 'rgba(255,255,255,.6)', fontSize: '.75rem', textAlign: 'left' }}>
-                At a restaurant? Scan to order
-              </span>
-            </div>
-          </button>
-        </div>
-
-        {/* Feature pills */}
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center', position: 'relative', zIndex: 1 }}>
-          {[
-            { icon: <Store size={13} color="#a855f7" />, text: 'Shop Menus' },
-            { icon: <Tag size={13} color="#fb923c" />, text: 'Best Discounts' },
-            { icon: <Star size={13} className="fill-amber-400 text-amber-400" />, text: 'Top Rated' },
-            { icon: <Navigation size={13} color="#60a5fa" />, text: 'Nearby Stores' },
-          ].map((f, i) => (
-            <div key={i} style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              background: 'rgba(255,255,255,.08)', border: '1px solid rgba(255,255,255,.12)',
-              padding: '7px 14px', borderRadius: 100,
-              color: 'rgba(255,255,255,.7)', fontSize: '.78rem', fontWeight: 600,
-              backdropFilter: 'blur(8px)',
-            }}>
-              {f.icon} {f.text}
-            </div>
-          ))}
-        </div>
-
-        <BrandFooter mode="landing" />
+            {[
+              { icon: <Store size={13} className="text-purple-500" />, text: 'Shop Menus' },
+              { icon: <Tag size={13} className="text-orange-500" />, text: 'Best Discounts' },
+              { icon: <Star size={13} className="text-amber-400 fill-amber-400" />, text: 'Top Rated' },
+              { icon: <Navigation size={13} className="text-blue-500" />, text: 'Nearby Stores' },
+            ].map((f, i) => (
+              <div key={i} className="flex items-center gap-1.5 px-3 py-1.5 bg-white/60 backdrop-blur-lg border border-white/80 rounded-full shadow-[0_2px_10px_rgba(0,0,0,0.03)] text-slate-700 text-[11px] font-bold hover:shadow-md hover:bg-white/80 transition-all cursor-default">
+                {f.icon} {f.text}
+              </div>
+            ))}
+          </motion.div>
+        </motion.div>
       </div>
     );
   }
@@ -625,103 +634,145 @@ export function StoreDiscoveryPage() {
   if (mode === 'scanner') {
     return (
       <div style={{
-        minHeight: '100vh', background: '#0b0f1a',
-        display: 'flex', flexDirection: 'column', alignItems: 'center',
-        justifyContent: 'center', position: 'relative', overflow: 'hidden',
-        fontFamily: "'Inter', system-ui, sans-serif",
+        position: 'fixed', inset: 0, background: '#000',
+        display: 'flex', flexDirection: 'column', overflow: 'hidden',
+        fontFamily: "'Inter', system-ui, sans-serif", zIndex: 100
       }}>
-        {/* Back button */}
-        <button
-          onClick={() => navigate('/discover')}
-          style={{
-            position: 'absolute', top: 20, left: 20, zIndex: 50,
-            width: 40, height: 40, borderRadius: '50%',
-            background: 'rgba(255,255,255,.1)', border: '1px solid rgba(255,255,255,.2)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer', color: 'white',
-          }}
+        {/* Camera feed as full background */}
+        <div
+          id="qr-reader-div"
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 1 }}
+        />
+        <div id="file-scan-div" style={{ display: 'none' }} />
+
+        {/* SVG Overlay for darkened background with transparent cutout */}
+        <svg
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 10, pointerEvents: 'none' }}
+          preserveAspectRatio="none"
         >
-          <X size={20} />
-        </button>
+          <defs>
+            <mask id="cutout-mask">
+              <rect width="100%" height="100%" fill="white" />
+              {/* The cutout: rx/ry controls corner rounding. x/y and width/height define the box */}
+              <rect x="50%" y="40%" width="300" height="300" rx="24" ry="24" fill="black" transform="translate(-150, -150)" />
+            </mask>
+          </defs>
+          <rect width="100%" height="100%" fill="rgba(0, 0, 0, 0.6)" mask="url(#cutout-mask)" />
+        </svg>
 
-        <div style={{ textAlign: 'center', marginBottom: 28, padding: '0 16px' }}>
-          <h2 style={{ color: 'white', fontSize: '1.5rem', fontWeight: 800, margin: 0 }}>Scan QR Code</h2>
-          <p style={{ color: '#94a3b8', fontSize: '.875rem', marginTop: 6 }}>
-            Point at a restaurant's MenuKit QR code
-          </p>
-        </div>
-
-        {/* Viewfinder frame */}
-        <div style={{ position: 'relative', width: 290, height: 290 }}>
-          {/* Corner brackets */}
-          {[
-            { top: 0, left: 0, borderTop: '3px solid rgba(249,115,22,.9)', borderLeft: '3px solid rgba(249,115,22,.9)', borderRadius: '8px 0 0 0' },
-            { top: 0, right: 0, borderTop: '3px solid rgba(249,115,22,.9)', borderRight: '3px solid rgba(249,115,22,.9)', borderRadius: '0 8px 0 0' },
-            { bottom: 0, left: 0, borderBottom: '3px solid rgba(249,115,22,.9)', borderLeft: '3px solid rgba(249,115,22,.9)', borderRadius: '0 0 0 8px' },
-            { bottom: 0, right: 0, borderBottom: '3px solid rgba(249,115,22,.9)', borderRight: '3px solid rgba(249,115,22,.9)', borderRadius: '0 0 8px 0' },
-          ].map((s, i) => (
-            <div key={i} style={{ position: 'absolute', width: 32, height: 32, ...s }} />
-          ))}
-
-          {/* Scanning beam */}
-          {isScannerStarted && (
-            <div style={{
-              position: 'absolute', left: 8, right: 8, height: 2,
-              background: 'linear-gradient(90deg, transparent, #f97316, transparent)',
-              boxShadow: '0 0 8px #f97316',
-              animation: 'scan-beam 2s ease-in-out infinite',
-              zIndex: 20,
-            }} />
-          )}
-
-          {/* Camera feed */}
-          <div
-            id="qr-reader-div"
-            style={{ width: '100%', height: '100%', borderRadius: 16, overflow: 'hidden' }}
-          />
-        </div>
-
-        {scanError && (
-          <div style={{
-            marginTop: 20, background: 'rgba(239,68,68,.15)',
-            border: '1px solid rgba(239,68,68,.3)', borderRadius: 12,
-            padding: '10px 18px', color: '#fca5a5', fontSize: '.85rem',
-            maxWidth: 280, textAlign: 'center',
-          }}>
-            {scanError}
-          </div>
-        )}
-
-        {!isScannerStarted && !scanError && (
-          <div style={{
-            marginTop: 20, display: 'flex', alignItems: 'center', gap: 8,
-            color: '#64748b', fontSize: '.875rem',
-          }}>
-            <div style={{
-              width: 16, height: 16, border: '2px solid #64748b',
-              borderTopColor: 'transparent', borderRadius: '50%',
-              animation: 'spin 0.7s linear infinite',
-            }} />
-            Starting camera…
-          </div>
-        )}
-
-        <p style={{
-          marginTop: 32, color: '#475569', fontSize: '.75rem',
-          textAlign: 'center', maxWidth: 280, padding: '0 16px',
+        {/* Overlay Content */}
+        <div style={{
+          position: 'absolute', inset: 0, zIndex: 20,
+          display: 'flex', flexDirection: 'column', pointerEvents: 'none',
         }}>
-          Allow camera access when prompted. Works with any MenuKit QR code.
-        </p>
+          {/* Top Header */}
+          <div style={{
+            width: '100%', padding: '24px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            pointerEvents: 'auto'
+          }}>
+            <button
+              onClick={() => navigate('/discover')}
+              style={{
+                width: 40, height: 40, borderRadius: '50%',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', color: 'white', background: 'transparent', border: 'none'
+              }}
+            >
+              <X size={26} />
+            </button>
+          </div>
+
+          {/* Corner brackets matching the cutout */}
+          <div style={{
+            position: 'absolute', top: '40%', left: '50%',
+            width: 300, height: 300, transform: 'translate(-50%, -50%)',
+            pointerEvents: 'none'
+          }}>
+            {/* Top-Left */}
+            <div style={{ position: 'absolute', top: 0, left: 0, width: 40, height: 40, borderTop: '4px solid #f97316', borderLeft: '4px solid #f97316', borderTopLeftRadius: 24 }} />
+            {/* Top-Right */}
+            <div style={{ position: 'absolute', top: 0, right: 0, width: 40, height: 40, borderTop: '4px solid #f97316', borderRight: '4px solid #f97316', borderTopRightRadius: 24 }} />
+            {/* Bottom-Left */}
+            <div style={{ position: 'absolute', bottom: 0, left: 0, width: 40, height: 40, borderBottom: '4px solid #f97316', borderLeft: '4px solid #f97316', borderBottomLeftRadius: 24 }} />
+            {/* Bottom-Right */}
+            <div style={{ position: 'absolute', bottom: 0, right: 0, width: 40, height: 40, borderBottom: '4px solid #f97316', borderRight: '4px solid #f97316', borderBottomRightRadius: 24 }} />
+          </div>
+
+          {/* Upload Button */}
+          <div style={{
+            position: 'absolute', top: 'calc(40% + 180px)', left: '50%', transform: 'translateX(-50%)',
+            pointerEvents: 'auto'
+          }}>
+            <input 
+              type="file" 
+              accept="image/*" 
+              ref={fileInputRef} 
+              style={{ display: 'none' }} 
+              onChange={handleImageUpload}
+            />
+            <button 
+              onClick={() => !isScanningImage && fileInputRef.current?.click()}
+              style={{
+              display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px',
+              background: '#f8f9fa', color: '#3c4043', border: 'none', borderRadius: 24,
+              fontSize: '14px', fontWeight: 500, cursor: isScanningImage ? 'not-allowed' : 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,0.2)',
+              opacity: isScanningImage ? 0.8 : 1
+            }}>
+              {isScanningImage ? (
+                <div style={{ width: 14, height: 14, border: '2px solid #3c4043', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+              ) : (
+                <span style={{ border: '1.5px solid #3c4043', borderRadius: 4, width: 14, height: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <span style={{ width: 6, height: 6, background: '#3c4043', borderRadius: '50%' }}></span>
+                </span>
+              )}
+              {isScanningImage ? 'Scanning image...' : 'Upload from gallery'}
+            </button>
+          </div>
+
+          <div style={{ flex: 1 }} />
+
+          {/* Bottom Sheet */}
+          <div style={{
+            width: '100%', padding: '24px 20px 36px',
+            background: 'rgba(255, 255, 255, 0.95)', borderTopLeftRadius: 32, borderTopRightRadius: 32,
+            boxShadow: '0 -8px 30px rgba(0,0,0,0.1)',
+            display: 'flex', flexDirection: 'column', alignItems: 'center',
+            pointerEvents: 'auto', backdropFilter: 'blur(16px)'
+          }}>
+            <div style={{ width: 40, height: 5, background: 'rgba(0,0,0,0.15)', borderRadius: 4, marginBottom: 24 }} />
+            
+            {scanError && (
+              <div style={{
+                marginBottom: 16, background: '#fee2e2',
+                border: '1px solid #fecaca', borderRadius: 12,
+                padding: '10px 18px', color: '#dc2626', fontSize: '.85rem',
+                maxWidth: 320, textAlign: 'center'
+              }}>
+                {scanError}
+              </div>
+            )}
+            
+            <h3 style={{ color: '#0f172a', fontSize: '1.25rem', fontWeight: 800, margin: '0 0 8px 0', letterSpacing: '-0.02em' }}>Scan any MenuKit QR code</h3>
+            <p style={{ color: '#64748b', fontSize: '.9rem', margin: 0, fontWeight: 500 }}>
+              to view menu
+            </p>
+          </div>
+        </div>
 
         <style>{`
-          @keyframes spin { to { transform: rotate(360deg); } }
-          @keyframes scan-beam {
-            0%, 100% { top: 18%; }
-            50%       { top: 78%; }
+          #qr-reader-div {
+            border: none !important;
+          }
+          #qr-reader-div > div {
+            width: 100% !important;
+            height: 100% !important;
+          }
+          #qr-reader-div video {
+            object-fit: cover !important;
+            width: 100% !important;
+            height: 100% !important;
           }
         `}</style>
-
-        <BrandFooter mode="scanner" />
       </div>
     );
   }
@@ -1115,6 +1166,17 @@ export function StoreDiscoveryPage() {
                   </div>
                 );
               })
+            )}
+
+            {/* Infinite Scroll Pagination */}
+            {hasMoreShops && filteredShops.length > 0 && (
+              <div style={{ padding: '20px', display: 'flex', justifyContent: 'center' }}>
+                <InfiniteScrollTrigger 
+                  onIntersect={handleLoadMoreShops} 
+                  isLoading={isLoadingMoreShops} 
+                  hasMore={hasMoreShops} 
+                />
+              </div>
             )}
           </div>
         </div>

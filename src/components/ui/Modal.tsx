@@ -48,25 +48,27 @@ export function Modal({ isOpen, onClose, title, description, children, className
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             transition={{ type: "spring", duration: 0.5, bounce: 0.3 }}
             className={cn(
-              "glass-panel relative w-full max-w-lg rounded-2xl p-4 sm:p-6 shadow-2xl z-10 max-h-[85dvh] sm:max-h-[85vh] overflow-y-auto overflow-x-hidden mb-8 sm:mb-0",
+              "glass-panel relative w-full max-w-lg rounded-2xl p-4 sm:p-6 shadow-2xl z-10 max-h-[75dvh] sm:max-h-[75vh] overflow-y-auto overflow-x-hidden mb-8 sm:mb-0",
               className
             )}
           >
-            <button
-              onClick={onClose}
-              className="absolute right-4 top-4 rounded-full p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            >
-              <X className="h-5 w-5" />
-              <span className="sr-only">Close</span>
-            </button>
-            
-            {(title || description) && (
-              <div className="mb-6 space-y-2 pr-8 text-left">
-                {title && <h2 className="text-2xl font-semibold tracking-tight font-heading">{title}</h2>}
-                {description && <p className="text-slate-500 dark:text-slate-400">{description}</p>}
-              </div>
-            )}
-            
+            <div className="sticky -top-4 sm:-top-6 z-30 bg-white dark:bg-slate-900 pt-6 sm:pt-8 pb-4 -mt-4 sm:-mt-6 -mx-4 sm:-mx-6 px-6 sm:px-8 border-b border-slate-100 dark:border-slate-800 rounded-t-2xl">
+              <button
+                onClick={onClose}
+                className="absolute right-4 top-4 sm:top-6 rounded-full p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                <X className="h-5 w-5" />
+                <span className="sr-only">Close</span>
+              </button>
+
+              {(title || description) && (
+                <div className="space-y-2 pr-8 text-left">
+                  {title && <h2 className="text-2xl font-semibold tracking-tight font-heading">{title}</h2>}
+                  {description && <p className="text-slate-500 dark:text-slate-400">{description}</p>}
+                </div>
+              )}
+            </div>
+
             {children}
           </motion.div>
         </div>

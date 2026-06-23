@@ -337,8 +337,13 @@ export const EntertainmentHub: React.FC<EntertainmentHubProps> = ({ isOpen, onCl
   }, [activeTab]);
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Entertainment Hub" className="bg-white max-w-lg w-full !p-0 overflow-hidden rounded-2xl">
+    <Modal isOpen={isOpen} onClose={onClose} className="bg-white max-w-lg w-full !p-0 overflow-hidden rounded-2xl">
       <div className="flex flex-col h-[80vh] max-h-[700px] bg-slate-50">
+        
+        {/* Custom Header */}
+        <div className="px-5 sm:px-6 pt-5 sm:pt-6 pb-2 bg-white shrink-0">
+          <h2 className="text-2xl font-semibold tracking-tight font-heading">Entertainment Hub</h2>
+        </div>
         
         {/* Main Tabs - Scrollable */}
         <div className="flex bg-white px-3 pt-3 pb-2 shrink-0 overflow-x-auto no-scrollbar gap-2 border-b border-slate-100 shadow-sm z-10">
@@ -402,7 +407,7 @@ export const EntertainmentHub: React.FC<EntertainmentHubProps> = ({ isOpen, onCl
           
           {/* ================= SWIPER TAB ================= */}
           {activeTab === 'swiper' && validMenuItems.length > 0 && (
-            <div className="flex flex-col h-full bg-slate-900">
+            <div className="flex flex-col h-full bg-slate-50">
               {showCravingsList ? (
                 <div className="flex-1 flex flex-col items-center justify-center p-6 bg-white animate-in zoom-in duration-300">
                   <Heart size={48} className="text-red-500 fill-red-500 mb-4 animate-bounce" />
@@ -444,14 +449,14 @@ export const EntertainmentHub: React.FC<EntertainmentHubProps> = ({ isOpen, onCl
               ) : (
                 <div className="flex-1 relative flex flex-col p-4 sm:p-6 overflow-hidden">
                   <div className="text-center mb-4 z-10">
-                    <h3 className="text-white font-black text-xl tracking-tight">Crave or Pass?</h3>
-                    <p className="text-slate-400 text-xs mt-1">{swiperIndex + 1} / {validMenuItems.length}</p>
+                    <h3 className="text-slate-800 font-black text-2xl tracking-tight">Crave or Pass?</h3>
+                    <p className="text-slate-500 font-bold text-xs mt-1 uppercase tracking-widest">{swiperIndex + 1} / {validMenuItems.length}</p>
                   </div>
                   
                   <div className="flex-1 relative w-full max-w-sm mx-auto">
                     {validMenuItems[swiperIndex] && (
                       <div 
-                        className="absolute inset-0 bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col transition-transform duration-300"
+                        className="absolute inset-0 bg-white rounded-[32px] shadow-[0_20px_50px_rgba(0,0,0,0.08)] overflow-hidden flex flex-col transition-transform duration-300 border border-slate-100"
                         style={{
                           transform: animateDirection === 'left' ? 'translateX(-100%) rotate(-10deg) scale(0.9)' : 
                                      animateDirection === 'right' ? 'translateX(100%) rotate(10deg) scale(0.9)' : 
@@ -459,39 +464,43 @@ export const EntertainmentHub: React.FC<EntertainmentHubProps> = ({ isOpen, onCl
                           opacity: animateDirection ? 0 : 1
                         }}
                       >
-                        <div className="flex-1 relative">
+                        <div className="h-[60%] relative bg-slate-100">
                           <img 
                             src={validMenuItems[swiperIndex].image_url || validMenuItems[swiperIndex].thumbnail_url!} 
                             alt={validMenuItems[swiperIndex].name}
                             className="absolute inset-0 w-full h-full object-cover"
                           />
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-                          <div className="absolute bottom-0 left-0 right-0 p-6 text-white">
-                            <h2 className="text-2xl font-black mb-1">{validMenuItems[swiperIndex].name}</h2>
-                            <p className="font-bold text-red-400 text-lg mb-2">{currency}{Number(validMenuItems[swiperIndex].price)}</p>
-                            {validMenuItems[swiperIndex].description && (
-                              <p className="text-sm text-slate-200 line-clamp-2">{validMenuItems[swiperIndex].description}</p>
-                            )}
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
+                        </div>
+                        <div className="h-[40%] bg-white p-5 sm:p-6 flex flex-col relative z-10 border-t border-slate-50">
+                          <div className="flex justify-between items-start gap-4 mb-2">
+                            <h2 className="text-xl sm:text-2xl font-black text-slate-800 leading-tight flex-1 line-clamp-2">{validMenuItems[swiperIndex].name}</h2>
+                            <span className="font-black text-base sm:text-lg bg-orange-50 text-orange-600 px-3 py-1 rounded-xl whitespace-nowrap shrink-0">{currency}{Number(validMenuItems[swiperIndex].price)}</span>
                           </div>
+                          {validMenuItems[swiperIndex].description ? (
+                            <p className="text-sm text-slate-500 line-clamp-3 font-medium leading-relaxed">{validMenuItems[swiperIndex].description}</p>
+                          ) : (
+                            <p className="text-sm text-slate-400 italic mt-1">A delicious choice.</p>
+                          )}
                         </div>
                       </div>
                     )}
                   </div>
                   
-                  <div className="flex justify-center gap-6 mt-8 mb-4 z-10">
+                  <div className="flex justify-center gap-8 mt-6 mb-2 z-10">
                     <button 
                       onClick={() => handleSwipe(false)}
                       disabled={!!animateDirection}
-                      className="w-16 h-16 rounded-full bg-white text-slate-400 flex items-center justify-center shadow-[0_8px_30px_rgb(0,0,0,0.12)] hover:scale-110 hover:text-slate-900 transition-all active:scale-95 disabled:opacity-50"
+                      className="w-16 h-16 rounded-full bg-white text-slate-400 flex items-center justify-center shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-slate-100 hover:scale-110 hover:text-slate-600 transition-all active:scale-95 disabled:opacity-50"
                     >
-                      <X size={32} strokeWidth={3} />
+                      <X size={28} strokeWidth={3} />
                     </button>
                     <button 
                       onClick={() => handleSwipe(true)}
                       disabled={!!animateDirection}
-                      className="w-16 h-16 rounded-full bg-white text-red-500 flex items-center justify-center shadow-[0_8px_30px_rgba(239,68,68,0.3)] hover:scale-110 transition-all active:scale-95 disabled:opacity-50"
+                      className="w-16 h-16 rounded-full bg-red-500 text-white flex items-center justify-center shadow-[0_8px_30px_rgba(239,68,68,0.3)] hover:scale-110 hover:bg-red-600 transition-all active:scale-95 disabled:opacity-50"
                     >
-                      <Heart size={32} strokeWidth={3} className="fill-red-500" />
+                      <Heart size={28} strokeWidth={3} className="fill-white" />
                     </button>
                   </div>
                 </div>

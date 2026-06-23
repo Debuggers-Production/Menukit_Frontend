@@ -12,8 +12,55 @@ import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { useShopStore } from '@/store/shopStore';
+import { GripVertical } from 'lucide-react';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
+const SortableDiscountItem = ({ children, id }: { children: React.ReactNode, id: string }) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 10 : 1,
+    position: 'relative' as const,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className={`flex items-stretch gap-2 ${isDragging ? 'opacity-50' : ''}`}>
+      <div className="flex items-center justify-center touch-none cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600 px-1 py-4 mt-2 mb-2 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-colors" {...attributes} {...listeners}>
+        <GripVertical size={20} />
+      </div>
+      <div className="flex-1 min-w-0">
+        {children}
+      </div>
+    </div>
+  );
+};
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 type DiscountStatus = 'active' | 'scheduled' | 'expired' | 'inactive';
@@ -107,11 +154,18 @@ export function DiscountsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState(defaultForm);
   const [discountToDelete, setDiscountToDelete] = useState<string | null>(null);
+  const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isFabOpen, setIsFabOpen] = useState(false);
   const [modalCategory, setModalCategory] = useState<'discount' | 'combo'>('discount');
   const [itemSearchQuery, setItemSearchQuery] = useState('');
   const [rewardSearchQuery, setRewardSearchQuery] = useState('');
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
 
   useEffect(() => {
     fetchAll();
@@ -252,6 +306,20 @@ export function DiscountsPage() {
     }
   };
 
+  const handleDeleteAll = async () => {
+    setIsDeletingAll(true);
+    try {
+      await api.delete('/discounts/all');
+      setDiscounts([]);
+      setShowDeleteAllConfirm(false);
+      toast.success('All discounts deleted successfully');
+    } catch {
+      toast.error('Failed to delete all discounts');
+    } finally {
+      setIsDeletingAll(false);
+    }
+  };
+
   const handleToggleActive = async (d: Discount) => {
     try {
       await api.put(`/discounts/${d.id}`, { is_active: !d.is_active });
@@ -279,7 +347,39 @@ export function DiscountsPage() {
   const filteredDiscounts = discounts.filter(d => 
     d.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
     (d.description && d.description.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  ).sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (active.id !== over?.id) {
+      const oldIndex = filteredDiscounts.findIndex((d) => d.id === active.id);
+      const newIndex = filteredDiscounts.findIndex((d) => d.id === over?.id);
+      
+      if (oldIndex !== -1 && newIndex !== -1) {
+        const newFilteredDiscounts = arrayMove(filteredDiscounts, oldIndex, newIndex);
+        
+        const newDiscounts = [...discounts];
+        newFilteredDiscounts.forEach((item, index) => {
+          const globalItem = newDiscounts.find(i => i.id === item.id);
+          if (globalItem) {
+            globalItem.display_order = index;
+          }
+        });
+        setDiscounts(newDiscounts);
+        
+        const order = newFilteredDiscounts.map((item, index) => ({
+          id: item.id,
+          display_order: index,
+        }));
+        
+        api.put('/discounts/reorder/batch', { order }).catch(() => {
+          toast.error('Failed to reorder discounts');
+          fetchAll();
+        });
+      }
+    }
+  };
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -287,13 +387,11 @@ export function DiscountsPage() {
     <div className="space-y-6 max-w-4xl animate-fade-in pb-24 lg:pb-12">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-bold font-heading flex items-center gap-2">
-            <Tag className="text-primary" size={24} />
-            Discounts & Offers
-          </h2>
-          <p className="text-slate-500 mt-1">Create promotions that appear as banners on your public menu.</p>
-        </div>
+        <PageHeader 
+          title="Discounts & Offers"
+          subtitle="Create promotions that appear as banners on your public menu."
+          className="mb-0"
+        />
       </div>
 
       {/* Stats Row */}
@@ -311,17 +409,27 @@ export function DiscountsPage() {
       </div>
 
       {/* Sticky Search Bar */}
-      <div className="sticky top-0 sm:top-2 z-30 py-2 bg-[#f8fafc]/90 backdrop-blur-md -mx-4 px-4 sm:mx-0 sm:px-0">
-        <div className="relative w-full max-w-md">
+      <div className="sticky top-[-16px] sm:top-[-24px] lg:top-[-32px] z-30 py-2 bg-[#f8fafc]/90 backdrop-blur-md -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 border-b border-slate-200 mb-6 flex gap-3">
+        <div className="relative w-full max-w-md flex-1">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
           <input
             type="text"
-            placeholder="Search discounts by title or description..."
+            placeholder="Search offers..."
             value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm font-medium"
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full h-10 pl-10 pr-4 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all dark:bg-slate-900 dark:border-slate-700"
           />
         </div>
+        {discounts.length > 0 && (
+          <button
+            onClick={() => setShowDeleteAllConfirm(true)}
+            className="flex items-center justify-center gap-2 px-4 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 font-medium text-sm transition-colors border border-red-200 dark:bg-red-900/20 dark:border-red-800 dark:hover:bg-red-900/40 shrink-0 h-10"
+            title="Delete All Discounts"
+          >
+            <Trash2 size={16} />
+            <span className="hidden sm:inline">Delete All</span>
+          </button>
+        )}
       </div>
 
       {/* Discount List */}
@@ -345,24 +453,33 @@ export function DiscountsPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-3">
-          {filteredDiscounts.length === 0 && searchQuery && (
-            <div className="py-12 text-center bg-white rounded-xl border border-dashed border-slate-200">
-              <Search className="mx-auto text-slate-300 mb-3" size={32} />
-              <p className="text-slate-500 font-medium text-sm">No discounts found matching "{searchQuery}"</p>
-            </div>
-          )}
-          {filteredDiscounts.map(d => {
-            const status = getDiscountStatus(d);
-            const statusCfg = STATUS_CONFIG[status];
+        <DndContext 
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext 
+            items={filteredDiscounts.map(d => d.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            <div className="space-y-3">
+              {filteredDiscounts.length === 0 && searchQuery && (
+                <div className="py-12 text-center bg-white rounded-xl border border-dashed border-slate-200">
+                  <Search className="mx-auto text-slate-300 mb-3" size={32} />
+                  <p className="text-slate-500 font-medium text-sm">No discounts found matching "{searchQuery}"</p>
+                </div>
+              )}
+              {filteredDiscounts.map(d => {
+                const status = getDiscountStatus(d);
+                const statusCfg = STATUS_CONFIG[status];
 
-            return (
-              <div
-                key={d.id}
-                className={`flex flex-col sm:flex-row p-3.5 sm:p-5 gap-3 sm:gap-4 bg-white rounded-2xl border transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 ${
-                  status === 'expired' || status === 'inactive' ? 'border-slate-200 opacity-75' : 'border-slate-100 shadow-[0_2px_10px_rgb(0,0,0,0.02)] hover:border-primary/20'
-                }`}
-              >
+                return (
+                  <SortableDiscountItem key={d.id} id={d.id}>
+                    <div
+                      className={`flex flex-col sm:flex-row p-3.5 sm:p-5 gap-3 sm:gap-4 bg-white rounded-2xl border transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 ${
+                        status === 'expired' || status === 'inactive' ? 'border-slate-200 opacity-75' : 'border-slate-100 shadow-[0_2px_10px_rgb(0,0,0,0.02)] hover:border-primary/20'
+                      }`}
+                    >
                 <div className="flex gap-3 sm:gap-4 flex-1 min-w-0">
                   {/* Icon */}
                   <div className={`w-12 h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0 shadow-sm ${
@@ -464,11 +581,14 @@ export function DiscountsPage() {
                     <Trash2 size={18} strokeWidth={2.5} />
                   </button>
                 </div>
-              </div>
+                </div>
+              </SortableDiscountItem>
             );
           })}
         </div>
-      )}
+      </SortableContext>
+    </DndContext>
+  )}
 
       {/* Create / Edit Modal */}
       <Modal
@@ -990,7 +1110,19 @@ export function DiscountsPage() {
         title="Delete Discount"
         message="This offer will be permanently removed and will no longer appear on your public menu."
         confirmText="Delete"
+        cancelText="Cancel"
         isLoading={isDeleting}
+      />
+      
+      <ConfirmModal
+        isOpen={showDeleteAllConfirm}
+        onClose={() => setShowDeleteAllConfirm(false)}
+        onConfirm={handleDeleteAll}
+        title="Delete All Discounts"
+        message="Are you sure you want to delete ALL discounts? This action cannot be undone."
+        confirmText="Delete All"
+        cancelText="Cancel"
+        isLoading={isDeletingAll}
       />
 
       {/* Floating Action Button with Menu */}

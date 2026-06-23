@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router';
 import { toast } from 'react-hot-toast';
-import { Search, Flame, MapPin, Phone, Info, UtensilsCrossed, X, Star, LayoutGrid, List as ListIcon, Clock, Sparkles, ExternalLink, SlidersHorizontal, Check, Languages, Tag, Crown, Calendar, Gift } from 'lucide-react';
+import { Search, Flame, MapPin, Phone, Info, UtensilsCrossed, X, Star, LayoutGrid, List as ListIcon, Clock, Sparkles, ExternalLink, SlidersHorizontal, Check, Languages, Tag, Crown, Calendar, Gift, ShoppingBag, ArrowUpRight, Eye, ChevronDown } from 'lucide-react';
 import { api } from '@/services/api';
 import { Shop, Category, MenuItem, Discount } from '@/types';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -11,6 +11,8 @@ import { LanguageSelectorModal } from '@/components/LanguageSelectorModal';
 import { EntertainmentHub } from '@/components/games/EntertainmentHub';
 import { Gamepad2 } from 'lucide-react';
 import { DiscountUnlockPopup } from '@/components/public/DiscountUnlockPopup';
+import { useCartStore } from '@/store/cartStore';
+import { InfiniteScrollTrigger } from '@/components/ui/InfiniteScrollTrigger';
 import confetti from 'canvas-confetti';
 
 const triggerWelcomeEffect = () => {
@@ -54,6 +56,8 @@ const PRESET_TIMINGS: Record<string, string> = {
   'Mid-night': '(00:00 - 04:00)'
 };
 
+const menuCache: Record<string, { shop: any, categories: any, timestamp: number }> = {};
+
 // This is a special interface for the public menu structure returned by the backend
 interface PublicCategory extends Category {
   items: MenuItem[];
@@ -85,6 +89,11 @@ export function PublicMenuPage() {
   const navigate = useNavigate();
   const [shop, setShop] = useState<Shop | null>(null);
   const [categories, setCategories] = useState<PublicCategory[]>([]);
+  const [categoriesOffset, setCategoriesOffset] = useState(0);
+  const [hasMoreCategories, setHasMoreCategories] = useState(true);
+  const [isLoadingMoreCategories, setIsLoadingMoreCategories] = useState(false);
+  const CATEGORIES_LIMIT = 5;
+
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategoryId, setActiveCategoryId] = useState<string>('all');
@@ -104,7 +113,7 @@ export function PublicMenuPage() {
   useEffect(() => {
     const handleScroll = () => {
       const currentScrollY = window.scrollY;
-      
+
       if (currentScrollY > lastScrollY.current && currentScrollY > 100) {
         setIsScrollingDown(true);
       } else if (currentScrollY < lastScrollY.current) {
@@ -128,11 +137,20 @@ export function PublicMenuPage() {
   const [showWelcome, setShowWelcome] = useState(false);
   const [welcomePhase, setWelcomePhase] = useState<'entering' | 'visible' | 'exiting' | 'hidden'>('hidden');
   const [activeDiscounts, setActiveDiscounts] = useState<Discount[]>([]);
+  const [discountsOffset, setDiscountsOffset] = useState(0);
+  const [hasMoreDiscounts, setHasMoreDiscounts] = useState(true);
+  const [isLoadingMoreDiscounts, setIsLoadingMoreDiscounts] = useState(false);
+  const DISCOUNTS_LIMIT = 20;
+
   const [selectedDiscountForModal, setSelectedDiscountForModal] = useState<Discount | null>(null);
   const [activeDiscountFilter, setActiveDiscountFilter] = useState<string | null>(null);
   const [isDiscountsModalOpen, setIsDiscountsModalOpen] = useState(false);
+  const [isCategoriesModalOpen, setIsCategoriesModalOpen] = useState(false);
+  const [categorySearchQuery, setCategorySearchQuery] = useState('');
   const [isEntertainmentHubOpen, setIsEntertainmentHubOpen] = useState(false);
   const [isDiscountPopupOpen, setIsDiscountPopupOpen] = useState(false);
+  const cartItems = useCartStore((state) => state.items);
+  const cartItemCount = cartItems.reduce((acc, item) => acc + item.quantity, 0);
   const [memberStatus, setMemberStatus] = useState<'unlocked' | 'verified-member' | null>(() => {
     return sessionStorage.getItem('member_status') as 'unlocked' | 'verified-member' | null;
   });
@@ -158,82 +176,135 @@ export function PublicMenuPage() {
   }, [id, searchParams]);
 
   // Load Data
-  useEffect(() => {
-    const fetchMenu = async () => {
-      try {
-        const [shopRes, menuRes] = await Promise.all([
-          api.get(`/public/shop/${id}`),
-          api.get(`/public/shop/${id}/menu`)
-        ]);
+  const fetchMenu = async (currentOffset: number = 0, append = false) => {
+    if (append) setIsLoadingMoreCategories(true);
+    
+    if (id && menuCache[id] && Date.now() - menuCache[id].timestamp < 5 * 60 * 1000 && !append) {
+      setShop(menuCache[id].shop);
+      setCategories(menuCache[id].categories);
+      setIsLoading(false);
+      return;
+    }
 
-        setShop(shopRes.data);
-        setCategories(menuRes.data);
+    try {
+      const [shopRes, menuRes] = await Promise.all([
+        api.get(`/public/shop/${id}`),
+        api.get(`/public/shop/${id}/menu?limit=${CATEGORIES_LIMIT}&offset=${currentOffset}`)
+      ]);
 
-        // (Discounts are now fetched in a separate useEffect so they update on auth)
-
-        // Show welcome popup once per session if shop has a welcome message
-        const shopData = shopRes.data as Shop;
-        if (shopData.welcome_message && !sessionStorage.getItem(`welcome_${id}`)) {
-          sessionStorage.setItem(`welcome_${id}`, 'true');
-          setShowWelcome(true);
-          setWelcomePhase('entering');
-          // Transition to fully visible after entrance animation
-          setTimeout(() => {
-            setWelcomePhase('visible');
-            triggerWelcomeEffect();
-          }, 600);
-        }
-
-        // Track view
-        api.post(`/public/shop/${id}/view`).catch(console.error);
-
-      } catch (error) {
-        console.error("Failed to load menu", error);
-      } finally {
-        setIsLoading(false);
+      const data = menuRes.data || [];
+      if (data.length < CATEGORIES_LIMIT) {
+        setHasMoreCategories(false);
+      } else {
+        setHasMoreCategories(true);
       }
-    };
 
-    if (id) fetchMenu();
+      if (id && !append) {
+        menuCache[id] = {
+          shop: shopRes.data,
+          categories: data,
+          timestamp: Date.now()
+        };
+      }
+
+      setShop(shopRes.data);
+      if (append) {
+        setCategories(prev => [...prev, ...data]);
+      } else {
+        setCategories(data);
+      }
+
+      // Show welcome popup once per session if shop has a welcome message
+      const shopData = shopRes.data as Shop;
+      if (shopData.welcome_message && !sessionStorage.getItem(`welcome_${id}`)) {
+        sessionStorage.setItem(`welcome_${id}`, 'true');
+        setShowWelcome(true);
+        setWelcomePhase('entering');
+        setTimeout(() => {
+          setWelcomePhase('visible');
+          triggerWelcomeEffect();
+        }, 600);
+      }
+
+      // Track view
+      if (!append) api.post(`/public/shop/${id}/view`).catch(console.error);
+
+    } catch (error) {
+      console.error("Failed to load menu", error);
+    } finally {
+      if (append) setIsLoadingMoreCategories(false);
+      else setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (id) fetchMenu(0, false);
   }, [id]);
 
-  // Fetch Discounts (Re-runs when memberStatus changes)
-  useEffect(() => {
+  const handleLoadMoreCategories = () => {
+    const newOffset = categoriesOffset + CATEGORIES_LIMIT;
+    setCategoriesOffset(newOffset);
+    fetchMenu(newOffset, true);
+  };
+
+  // Fetch Discounts
+  const fetchDiscounts = async (currentOffset: number = 0, append = false) => {
     if (!id) return;
-    
-    const fetchDiscounts = async () => {
-      try {
-        const discountRes = await api.get(`/public/shop/${id}/discounts`);
-        const now = new Date();
-        const currentDay = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][now.getDay()];
-        const currentTime = now.getHours() * 60 + now.getMinutes();
+    if (append) setIsLoadingMoreDiscounts(true);
 
-        const filteredDiscounts = (discountRes.data || []).filter((d: Discount) => {
-          if (d.available_days && d.available_days.length > 0) {
-            if (!d.available_days.includes(currentDay)) return false;
-          }
-          if (d.available_time_presets && d.available_time_presets.length > 0) {
-            const timingFilters = [];
-            if (currentTime >= 240 && currentTime < 480) timingFilters.push('Early Morning');
-            if (currentTime >= 480 && currentTime < 720) timingFilters.push('Morning');
-            if (currentTime >= 720 && currentTime < 960) timingFilters.push('Afternoon');
-            if (currentTime >= 960 && currentTime < 1200) timingFilters.push('Evening');
-            if (currentTime >= 1200 && currentTime < 1440) timingFilters.push('Night');
-            if (currentTime >= 0 && currentTime < 240) timingFilters.push('Mid-night');
-
-            if (!timingFilters.some(t => d.available_time_presets?.includes(t))) return false;
-          }
-          return true;
-        });
-
-        setActiveDiscounts(filteredDiscounts);
-      } catch {
-        // Non-critical — silently ignore
+    try {
+      const discountRes = await api.get(`/public/shop/${id}/discounts?limit=${DISCOUNTS_LIMIT}&offset=${currentOffset}`);
+      const data = discountRes.data || [];
+      
+      if (data.length < DISCOUNTS_LIMIT) {
+        setHasMoreDiscounts(false);
+      } else {
+        setHasMoreDiscounts(true);
       }
-    };
-    
-    fetchDiscounts();
+
+      const now = new Date();
+      const currentDay = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][now.getDay()];
+      const currentTime = now.getHours() * 60 + now.getMinutes();
+
+      const filteredDiscounts = data.filter((d: Discount) => {
+        if (d.available_days && d.available_days.length > 0) {
+          if (!d.available_days.includes(currentDay)) return false;
+        }
+        if (d.available_time_presets && d.available_time_presets.length > 0) {
+          const timingFilters = [];
+          if (currentTime >= 240 && currentTime < 480) timingFilters.push('Early Morning');
+          if (currentTime >= 480 && currentTime < 720) timingFilters.push('Morning');
+          if (currentTime >= 720 && currentTime < 960) timingFilters.push('Afternoon');
+          if (currentTime >= 960 && currentTime < 1200) timingFilters.push('Evening');
+          if (currentTime >= 1200 && currentTime < 1440) timingFilters.push('Night');
+          if (currentTime >= 0 && currentTime < 240) timingFilters.push('Mid-night');
+
+          if (!timingFilters.some(t => d.available_time_presets?.includes(t))) return false;
+        }
+        return true;
+      });
+
+      if (append) {
+        setActiveDiscounts(prev => [...prev, ...filteredDiscounts]);
+      } else {
+        setActiveDiscounts(filteredDiscounts);
+      }
+    } catch {
+      // Non-critical — silently ignore
+    } finally {
+      if (append) setIsLoadingMoreDiscounts(false);
+    }
+  };
+
+  useEffect(() => {
+    if (id) fetchDiscounts(0, false);
   }, [id, memberStatus]);
+
+  const handleLoadMoreDiscounts = () => {
+    const newOffset = discountsOffset + DISCOUNTS_LIMIT;
+    setDiscountsOffset(newOffset);
+    fetchDiscounts(newOffset, true);
+  };
 
   // Handle Search Tracking with Debounce
   useEffect(() => {
@@ -355,16 +426,50 @@ export function PublicMenuPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col">
-        <Skeleton className="h-48 w-full rounded-none" />
-        <div className="p-4 space-y-4">
-          <Skeleton className="h-10 w-3/4 mx-auto" />
-          <Skeleton className="h-12 w-full rounded-full mt-6" />
-          <div className="flex gap-2 mt-4 overflow-hidden">
-            {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-8 w-24 rounded-full shrink-0" />)}
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
+        {/* Header Skeleton */}
+        <div className="h-48 sm:h-64 bg-slate-200 dark:bg-slate-800 animate-pulse relative">
+          <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 w-24 h-24 rounded-full border-4 border-white dark:border-slate-950 bg-slate-300 dark:bg-slate-700 animate-pulse" />
+        </div>
+
+        <div className="pt-12 px-4 pb-4 max-w-4xl mx-auto">
+          {/* Title Skeleton */}
+          <div className="flex flex-col items-center gap-2 mb-8">
+            <Skeleton className="w-48 h-8 rounded-lg" />
+            <Skeleton className="w-32 h-4 rounded-md" />
+            <div className="flex gap-2 mt-2">
+              <Skeleton className="w-16 h-6 rounded-full" />
+              <Skeleton className="w-16 h-6 rounded-full" />
+            </div>
           </div>
-          <div className="mt-8 space-y-4">
-            {[1, 2, 3].map(i => <Skeleton key={i} className="h-32 w-full rounded-2xl" />)}
+
+          {/* Categories Nav Skeleton */}
+          <div className="flex gap-3 overflow-x-hidden mb-6">
+            <Skeleton className="w-24 h-10 rounded-full shrink-0" />
+            <Skeleton className="w-32 h-10 rounded-full shrink-0" />
+            <Skeleton className="w-28 h-10 rounded-full shrink-0" />
+            <Skeleton className="w-24 h-10 rounded-full shrink-0" />
+          </div>
+
+          {/* Menu Items Skeleton */}
+          <div className="space-y-6">
+            <div>
+              <Skeleton className="w-40 h-8 rounded-lg mb-4" />
+              <div className="grid grid-cols-2 gap-3 sm:gap-4">
+                {[1, 2, 3, 4].map((i) => (
+                  <div key={i} className="flex flex-col bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 overflow-hidden h-[240px]">
+                    <Skeleton className="w-full h-32 rounded-none" />
+                    <div className="p-3 flex-1 flex flex-col justify-between">
+                      <Skeleton className="w-3/4 h-5 rounded-md mb-2" />
+                      <div className="flex justify-between items-end">
+                        <Skeleton className="w-16 h-6 rounded-md" />
+                        <Skeleton className="w-8 h-8 rounded-lg" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -386,9 +491,13 @@ export function PublicMenuPage() {
   const { theme, settings } = shop;
   const layoutStyle = userViewMode || theme?.layout || 'grid';
   const primaryColor = theme?.primary_color || '#f97316';
+  
+  const borderRadiusClass = (theme as any)?.border_radius === 'sharp' ? 'rounded-none' : (theme as any)?.border_radius === 'pill' ? 'rounded-[32px]' : 'rounded-2xl';
+  const itemStyleClass = theme?.menu_item_style === 'flat' ? 'bg-slate-50 border-transparent shadow-none' : theme?.menu_item_style === 'elevated' ? 'bg-white shadow-md border-slate-100 hover:shadow-lg' : 'bg-white shadow-sm border-slate-100';
+  const categoryPillClass = (theme as any)?.border_radius === 'sharp' ? 'rounded-none' : 'rounded-full';
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 pb-20 animate-fade-in">
+    <div className="min-h-screen bg-slate-50 text-slate-900 pb-20 animate-fade-in" style={{ fontFamily: theme?.font_family || 'Inter' }}>
       {/* Welcome Popup Overlay */}
       {showWelcome && (
         <div
@@ -423,81 +532,81 @@ export function PublicMenuPage() {
           <div
             onClick={(e) => e.stopPropagation()}
             className={`relative w-full max-w-sm rounded-3xl p-[3px] overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.3)] transition-all duration-500 ${welcomePhase === 'entering'
-                ? 'translate-y-8 scale-95 opacity-0'
-                : welcomePhase === 'exiting'
-                  ? 'translate-y-4 scale-95 opacity-0'
-                  : 'translate-y-0 scale-100 opacity-100'
+              ? 'translate-y-8 scale-95 opacity-0'
+              : welcomePhase === 'exiting'
+                ? 'translate-y-4 scale-95 opacity-0'
+                : 'translate-y-0 scale-100 opacity-100'
               }`}
           >
             {/* Spinning Glowing Border Background */}
             <div className="absolute inset-0 z-0" style={{ backgroundColor: `${primaryColor}15` }} />
-            <div 
-              className="absolute inset-[-100%] z-0 animate-[spin_4s_linear_infinite]" 
+            <div
+              className="absolute inset-[-100%] z-0 animate-[spin_4s_linear_infinite]"
               style={{
                 background: `conic-gradient(from 0deg, transparent 0%, transparent 40%, white 49%, ${primaryColor} 50%, transparent 52%, transparent 90%, white 99%, ${primaryColor} 100%)`,
                 opacity: 0.9
-              }} 
+              }}
             />
-            
+
             {/* Inner Card Content */}
             <div className="relative z-10 w-full h-full bg-white/95 backdrop-blur-2xl rounded-[21px] flex flex-col overflow-hidden">
               {/* Gradient accent bar */}
               <div className="h-1.5 w-full shrink-0 relative z-20" style={{ background: `linear-gradient(90deg, ${primaryColor}, ${primaryColor}99, ${primaryColor}44)` }} />
 
-            <div className="p-6 sm:p-8 text-center">
-              {/* Logo with glow */}
-              <div
-                className="w-20 h-20 mx-auto rounded-2xl flex items-center justify-center mb-5 shadow-lg border-2 border-white overflow-hidden"
-                style={{
-                  backgroundColor: `${primaryColor}10`,
-                  boxShadow: `0 0 30px ${primaryColor}25, 0 8px 32px rgba(0,0,0,0.08)`,
-                  animation: 'welcome-logo-pulse 2s ease-in-out infinite',
-                }}
-              >
-                {shop.logo_url ? (
-                  <img src={shop.logo_url} className="w-full h-full object-cover" alt="Logo" />
-                ) : (
-                  <UtensilsCrossed size={32} style={{ color: primaryColor }} />
-                )}
+              <div className="p-6 sm:p-8 text-center">
+                {/* Logo with glow */}
+                <div
+                  className="w-20 h-20 mx-auto rounded-2xl flex items-center justify-center mb-5 shadow-lg border-2 border-white overflow-hidden"
+                  style={{
+                    backgroundColor: `${primaryColor}10`,
+                    boxShadow: `0 0 30px ${primaryColor}25, 0 8px 32px rgba(0,0,0,0.08)`,
+                    animation: 'welcome-logo-pulse 2s ease-in-out infinite',
+                  }}
+                >
+                  {shop.logo_url ? (
+                    <img src={shop.logo_url} className="w-full h-full object-cover" alt="Logo" />
+                  ) : (
+                    <UtensilsCrossed size={32} style={{ color: primaryColor }} />
+                  )}
+                </div>
+
+                {/* Sparkle + Title */}
+                <div className="flex items-center justify-center gap-2 mb-2">
+                  <Sparkles size={16} style={{ color: primaryColor }} className="opacity-60" />
+                  <span className="text-xs font-semibold uppercase tracking-widest opacity-50">Welcome to</span>
+                  <Sparkles size={16} style={{ color: primaryColor }} className="opacity-60" />
+                </div>
+                <h2 className="text-2xl sm:text-3xl font-bold font-heading mb-4" style={{ color: '#1e293b' }}>
+                  {shop.name}
+                </h2>
+
+                {/* Divider */}
+                <div className="flex items-center gap-3 mb-4 px-4">
+                  <div className="flex-1 h-px bg-slate-200" />
+                  <UtensilsCrossed size={14} className="text-slate-300" />
+                  <div className="flex-1 h-px bg-slate-200" />
+                </div>
+
+                {/* Welcome Message */}
+                <p className="text-sm sm:text-base text-slate-500 leading-relaxed mb-6 px-2">
+                  {shop.welcome_message}
+                </p>
+
+                {/* CTA Button */}
+                <button
+                  onClick={() => {
+                    setWelcomePhase('exiting');
+                    setTimeout(() => setShowWelcome(false), 500);
+                  }}
+                  className="w-full py-3.5 rounded-2xl text-white font-bold text-sm shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
+                  style={{
+                    backgroundColor: primaryColor,
+                    boxShadow: `0 4px 20px ${primaryColor}40`,
+                  }}
+                >
+                  Explore Menu
+                </button>
               </div>
-
-              {/* Sparkle + Title */}
-              <div className="flex items-center justify-center gap-2 mb-2">
-                <Sparkles size={16} style={{ color: primaryColor }} className="opacity-60" />
-                <span className="text-xs font-semibold uppercase tracking-widest opacity-50">Welcome to</span>
-                <Sparkles size={16} style={{ color: primaryColor }} className="opacity-60" />
-              </div>
-              <h2 className="text-2xl sm:text-3xl font-bold font-heading mb-4" style={{ color: '#1e293b' }}>
-                {shop.name}
-              </h2>
-
-              {/* Divider */}
-              <div className="flex items-center gap-3 mb-4 px-4">
-                <div className="flex-1 h-px bg-slate-200" />
-                <UtensilsCrossed size={14} className="text-slate-300" />
-                <div className="flex-1 h-px bg-slate-200" />
-              </div>
-
-              {/* Welcome Message */}
-              <p className="text-sm sm:text-base text-slate-500 leading-relaxed mb-6 px-2">
-                {shop.welcome_message}
-              </p>
-
-              {/* CTA Button */}
-              <button
-                onClick={() => {
-                  setWelcomePhase('exiting');
-                  setTimeout(() => setShowWelcome(false), 500);
-                }}
-                className="w-full py-3.5 rounded-2xl text-white font-bold text-sm shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
-                style={{
-                  backgroundColor: primaryColor,
-                  boxShadow: `0 4px 20px ${primaryColor}40`,
-                }}
-              >
-                Explore Menu
-              </button>
-            </div>
             </div>
           </div>
         </div>
@@ -547,8 +656,8 @@ export function PublicMenuPage() {
                 }, 200);
               }}
               className={`w-full h-10 rounded-lg bg-white border border-slate-200 shadow-sm focus:outline-none focus:ring-2 transition-all duration-300 text-sm ${isSearchFocused || searchQuery
-                  ? 'pl-9 pr-8 text-slate-900 placeholder-slate-400'
-                  : 'p-0 sm:pl-9 sm:pr-8 text-transparent sm:text-slate-900 placeholder-transparent sm:placeholder-slate-400 cursor-pointer sm:cursor-text'
+                ? 'pl-9 pr-8 text-slate-900 placeholder-slate-400'
+                : 'p-0 sm:pl-9 sm:pr-8 text-transparent sm:text-slate-900 placeholder-transparent sm:placeholder-slate-400 cursor-pointer sm:cursor-text'
                 }`}
               style={{ '--tw-ring-color': primaryColor } as any}
             />
@@ -644,36 +753,45 @@ export function PublicMenuPage() {
         </div>
 
         {/* Sticky Categories */}
-        <div className="px-4 pb-3 flex gap-2 overflow-x-auto scrollbar-hide no-scrollbar max-w-3xl mx-auto">
+        <div className="px-4 pb-3 flex gap-2 overflow-x-auto scrollbar-hide no-scrollbar max-w-3xl mx-auto items-center">
           <button
             onClick={() => {
               setActiveCategoryId('all');
               window.scrollTo({ top: 200, behavior: 'smooth' });
             }}
-            className={`px-4 py-1.5 rounded-full whitespace-nowrap text-xs font-medium transition-all ${activeCategoryId === 'all'
-                ? 'text-white shadow-sm'
-                : 'bg-slate-100 text-slate-600 border border-slate-200'
+            className={`px-4 py-1.5 ${categoryPillClass} whitespace-nowrap text-xs font-medium transition-all flex items-center gap-1.5 ${activeCategoryId === 'all'
+              ? 'text-white shadow-sm'
+              : 'bg-slate-100 text-slate-600 border border-slate-200'
               }`}
             style={activeCategoryId === 'all' ? { backgroundColor: primaryColor } : {}}
           >
+            <LayoutGrid size={14} />
             All Menu
           </button>
-          {categories.map(cat => (
+          {categories.slice(0, 3).map(cat => (
             <button
               key={cat.id}
               onClick={() => {
                 setActiveCategoryId(cat.id);
                 window.scrollTo({ top: 200, behavior: 'smooth' });
               }}
-              className={`px-4 py-1.5 rounded-full whitespace-nowrap text-xs font-medium transition-all ${activeCategoryId === cat.id
-                  ? 'text-white shadow-sm'
-                  : 'bg-slate-100 text-slate-600 border border-slate-200'
+              className={`px-4 py-1.5 ${categoryPillClass} whitespace-nowrap text-xs font-medium transition-all ${activeCategoryId === cat.id
+                ? 'text-white shadow-sm'
+                : 'bg-slate-100 text-slate-600 border border-slate-200'
                 }`}
               style={activeCategoryId === cat.id ? { backgroundColor: primaryColor } : {}}
             >
               {cat.name}
             </button>
           ))}
+          {categories.length > 3 && (
+            <button
+              onClick={() => setIsCategoriesModalOpen(true)}
+              className="px-4 py-1.5 rounded-full whitespace-nowrap text-xs font-bold transition-all bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 flex items-center gap-1 shadow-sm"
+            >
+              More <ChevronDown size={14} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -738,8 +856,8 @@ export function PublicMenuPage() {
                 }, 200);
               }}
               className={`w-full h-12 rounded-full border shadow-sm focus:outline-none focus:ring-2 transition-all duration-300 bg-white border-slate-200 text-sm sm:text-base ${isSearchFocused || searchQuery
-                  ? 'pl-12 pr-10 text-slate-900 placeholder-slate-400'
-                  : 'p-0 sm:pl-12 sm:pr-10 text-transparent sm:text-slate-900 placeholder-transparent sm:placeholder-slate-400 cursor-pointer sm:cursor-text'
+                ? 'pl-12 pr-10 text-slate-900 placeholder-slate-400'
+                : 'p-0 sm:pl-12 sm:pr-10 text-transparent sm:text-slate-900 placeholder-transparent sm:placeholder-slate-400 cursor-pointer sm:cursor-text'
                 }`}
               style={{ '--tw-ring-color': primaryColor } as any}
             />
@@ -833,9 +951,9 @@ export function PublicMenuPage() {
           <div className="flex flex-wrap items-center gap-2 mb-4">
             {foodFilter !== 'all' && (
               <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full ${foodFilter === 'veg' ? 'bg-green-50 text-green-700 ring-1 ring-green-200' :
-                  foodFilter === 'egg' ? 'bg-yellow-50 text-yellow-700 ring-1 ring-yellow-200' :
-                    foodFilter === 'drink' ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-200' :
-                      'bg-red-50 text-red-700 ring-1 ring-red-200'
+                foodFilter === 'egg' ? 'bg-yellow-50 text-yellow-700 ring-1 ring-yellow-200' :
+                  foodFilter === 'drink' ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-200' :
+                    'bg-red-50 text-red-700 ring-1 ring-red-200'
                 }`}>
                 {foodFilter === 'veg' ? (
                   <><span className="w-3 h-3 border-[1.5px] border-green-600 rounded-[2px] flex items-center justify-center"><span className="w-1.5 h-1.5 bg-green-600 rounded-full"></span></span> Showing Veg Only</>
@@ -977,6 +1095,15 @@ export function PublicMenuPage() {
                   <div className="absolute inset-0 z-10 bg-gradient-to-r from-transparent via-white/60 to-transparent -translate-x-full animate-[shimmer_2.5s_infinite] pointer-events-none mix-blend-overlay" />
                 </div>
               ))}
+              {hasMoreDiscounts && (
+                <div className="flex items-center justify-center shrink-0 min-w-[40px] px-4 snap-center">
+                  <InfiniteScrollTrigger 
+                    onIntersect={handleLoadMoreDiscounts} 
+                    isLoading={isLoadingMoreDiscounts} 
+                    hasMore={hasMoreDiscounts} 
+                  />
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -995,26 +1122,34 @@ export function PublicMenuPage() {
           <button
             onClick={() => setActiveCategoryId('all')}
             className={`px-5 py-2 rounded-full whitespace-nowrap text-sm font-medium transition-all ${activeCategoryId === 'all'
-                ? 'text-white shadow-md scale-105'
-                : 'bg-white text-slate-600 border-slate-200 border opacity-80 hover:opacity-100'
+              ? 'text-white shadow-md scale-105'
+              : 'bg-white text-slate-600 border-slate-200 border opacity-80 hover:opacity-100'
               }`}
             style={activeCategoryId === 'all' ? { backgroundColor: primaryColor } : {}}
           >
             All Menu
           </button>
-          {categories.map(cat => (
+          {categories.slice(0, 4).map(cat => (
             <button
               key={cat.id}
               onClick={() => setActiveCategoryId(cat.id)}
               className={`px-5 py-2 rounded-full whitespace-nowrap text-sm font-medium transition-all ${activeCategoryId === cat.id
-                  ? 'text-white shadow-md scale-105'
-                  : 'bg-white text-slate-600 border-slate-200 border opacity-80 hover:opacity-100'
+                ? 'text-white shadow-md scale-105'
+                : 'bg-white text-slate-600 border-slate-200 border opacity-80 hover:opacity-100'
                 }`}
               style={activeCategoryId === cat.id ? { backgroundColor: primaryColor } : {}}
             >
               {cat.name}
             </button>
           ))}
+          {categories.length > 4 && (
+            <button
+              onClick={() => setIsCategoriesModalOpen(true)}
+              className="px-5 py-2 rounded-full whitespace-nowrap text-sm font-medium transition-all bg-white text-slate-600 border-slate-200 border opacity-80 hover:opacity-100"
+            >
+              + More
+            </button>
+          )}
         </div>
 
         {/* Menu Items */}
@@ -1043,14 +1178,13 @@ export function PublicMenuPage() {
                       <div
                         key={item.id}
                         onClick={() => item.is_available ? handleItemClick(item, cat.id) : null}
-                        className={`rounded-2xl overflow-hidden shadow-sm border transition-transform ${item.is_available ? 'active:scale-[0.98] cursor-pointer hover:shadow-md' : 'opacity-70 grayscale-[60%] cursor-not-allowed'
-                          } ${item.is_highlighted ? 'ring-2 ring-primary ring-offset-2 ring-offset-slate-50' : 'border-slate-100'
-                          } ${layoutStyle === 'list' ? 'flex h-28 sm:h-32' : 'flex flex-col'
-                          } bg-white relative`}
+                        className={`${borderRadiusClass} overflow-hidden border transition-transform ${item.is_available ? 'active:scale-[0.98] cursor-pointer' : 'opacity-70 grayscale-[60%] cursor-not-allowed'
+                          } ${item.is_highlighted ? 'ring-2 ring-primary ring-offset-2 ring-offset-slate-50' : ''
+                          } ${layoutStyle === 'list' ? 'flex h-28 sm:h-32' : 'flex flex-col h-full'
+                          } ${itemStyleClass} relative`}
                       >
                         {/* Image */}
-                        <div className={`relative bg-slate-100 ${layoutStyle === 'list' ? 'w-28 sm:w-32 h-full shrink-0' : 'w-full h-32 sm:h-40'
-                          }`}>
+                        <div className={`relative bg-slate-100 ${layoutStyle === 'list' ? 'w-[120px] shrink-0' : 'w-full h-32 sm:h-40'}`}>
                           {primaryImage ? (
                             <img src={primaryImage} alt={item.name} className="w-full h-full object-cover" />
                           ) : (
@@ -1062,13 +1196,13 @@ export function PublicMenuPage() {
                           {/* Tags */}
                           <div className="absolute top-2 left-2 flex flex-col gap-1 z-20">
                             {item.is_highlighted && (
-                              <div className="bg-primary text-white text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm flex items-center animate-pulse">
-                                <Flame size={10} className="mr-0.5" /> Chef's Special
+                              <div className={`bg-primary text-white font-bold rounded shadow-sm flex items-center animate-pulse ${layoutStyle === 'list' ? 'p-1' : 'text-[9px] sm:text-[10px] px-1.5 py-0.5'}`}>
+                                <Flame size={10} className={layoutStyle === 'list' ? '' : 'mr-0.5'} /> {layoutStyle === 'grid' && "Chef's Special"}
                               </div>
                             )}
                             {item.is_bestseller && (
-                              <div className="bg-amber-500 text-white text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm flex items-center">
-                                <Star size={10} className="mr-0.5 fill-white" /> Bestseller
+                              <div className={`bg-amber-500 text-white font-bold rounded shadow-sm flex items-center ${layoutStyle === 'list' ? 'p-1' : 'text-[9px] sm:text-[10px] px-1.5 py-0.5'}`}>
+                                <Star size={10} className={`fill-white ${layoutStyle === 'list' ? '' : 'mr-0.5'}`} /> {layoutStyle === 'grid' && 'Bestseller'}
                               </div>
                             )}
                           </div>
@@ -1076,7 +1210,7 @@ export function PublicMenuPage() {
                           {/* Out of Stock Overlay */}
                           {!item.is_available && (
                             <div className="absolute inset-0 bg-white/40 backdrop-blur-[1px] flex items-center justify-center z-10">
-                              <span className="bg-slate-900 text-white text-[10px] sm:text-xs font-bold px-2 sm:px-3 py-1 rounded-full uppercase tracking-wider shadow-lg">Out of Stock</span>
+                              <span className="bg-slate-900 text-white text-[10px] sm:text-xs font-bold px-2 sm:px-3 py-1 rounded-full uppercase tracking-wider shadow-lg text-center leading-tight">Out of Stock</span>
                             </div>
                           )}
 
@@ -1108,14 +1242,46 @@ export function PublicMenuPage() {
                               </div>
                             ))}
                           </div>
+
+                          {/* Variants and Add-ons Overlay (Grid only) */}
+                          {layoutStyle === 'grid' && ((item.variants && item.variants.length > 0) || (item.addons && item.addons.length > 0)) && (
+                            <div className="absolute bottom-2 left-2 flex flex-wrap gap-1.5 z-20">
+                              {item.variants && item.variants.length > 0 && (
+                                <span className="text-[9px] font-bold text-slate-700 bg-white/95 backdrop-blur-md px-1.5 py-0.5 rounded shadow-sm border border-white/50">
+                                  +{item.variants.length} Variants
+                                </span>
+                              )}
+                              {item.addons && item.addons.length > 0 && (
+                                <span className="text-[9px] font-bold text-slate-700 bg-white/95 backdrop-blur-md px-1.5 py-0.5 rounded shadow-sm border border-white/50">
+                                  +{item.addons.length} Add-ons
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
 
                         {/* Content */}
-                        <div className="p-3 sm:p-4 flex flex-col flex-1 justify-between min-w-0">
+                        <div className="p-3 sm:p-4 flex flex-col flex-1 justify-between min-w-0 relative">
                           <div>
-                            <h3 className="font-semibold text-sm sm:text-base leading-tight line-clamp-2">{item.name}</h3>
+                            <h3 className="font-semibold text-sm sm:text-base leading-tight line-clamp-2 pr-6">{item.name}</h3>
                             {item.description && layoutStyle === 'list' && (
-                              <p className="text-xs opacity-60 mt-1 line-clamp-2">{item.description}</p>
+                              <p className="text-[11px] text-slate-500 mt-1 line-clamp-2 leading-relaxed">{item.description}</p>
+                            )}
+                            
+                            {/* Variants and Add-ons (List only) */}
+                            {layoutStyle === 'list' && ((item.variants && item.variants.length > 0) || (item.addons && item.addons.length > 0)) && (
+                              <div className="flex flex-wrap gap-1 mt-1.5">
+                                {item.variants && item.variants.length > 0 && (
+                                  <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                                    +{item.variants.length} Variants
+                                  </span>
+                                )}
+                                {item.addons && item.addons.length > 0 && (
+                                  <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                                    +{item.addons.length} Add-ons
+                                  </span>
+                                )}
+                              </div>
                             )}
                           </div>
 
@@ -1166,8 +1332,8 @@ export function PublicMenuPage() {
                               }
 
                               return (
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  {isFrom && <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Starts from</span>}
+                                <div className={`flex items-center gap-1.5 flex-wrap ${layoutStyle === 'list' ? 'mt-1' : ''}`}>
+                                  {isFrom && <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">From</span>}
                                   {hasDiscount && (
                                     <span className="text-[11px] text-slate-400 line-through decoration-slate-300 font-medium">
                                       {settings?.currency || '₹'}{basePrice.toFixed(2).replace(/\.00$/, '')}
@@ -1185,41 +1351,49 @@ export function PublicMenuPage() {
                               );
                             })()}
 
-                            {((item.variants && item.variants.length > 0) || (item.addons && item.addons.length > 0)) && (
-                              <div className="flex flex-wrap gap-1.5 mt-0.5">
-                                {item.variants && item.variants.length > 0 && (
-                                  <span className="text-[9px] font-bold text-slate-600 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded shadow-sm">
-                                    +{item.variants.length} Variants
-                                  </span>
-                                )}
-                                {item.addons && item.addons.length > 0 && (
-                                  <span className="text-[9px] font-bold text-slate-600 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded shadow-sm">
-                                    +{item.addons.length} Add-ons
-                                  </span>
-                                )}
-                              </div>
-                            )}
-
                             {((item.available_days && item.available_days.length > 0) || (item.available_time_presets && item.available_time_presets.length > 0) || (item.custom_time_from && item.custom_time_to)) && (
-                              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                              <div className="flex flex-wrap gap-1 mt-1">
                                 {item.available_days && item.available_days.length > 0 && (
-                                  <span className="text-[9px] font-bold text-blue-600 bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded shadow-sm max-w-[120px] truncate" title={item.available_days.join(', ')}>
+                                  <span className="text-[9px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded max-w-[100px] truncate" title={item.available_days.join(', ')}>
                                     {item.available_days.length === 7 ? 'Everyday' : item.available_days.join(', ')}
                                   </span>
                                 )}
                                 {item.available_time_presets && item.available_time_presets.length > 0 && (
-                                  <span className="text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md shadow-sm truncate max-w-full" title={item.available_time_presets.map(p => `${p} ${PRESET_TIMINGS[p] || ''}`).join(', ')}>
+                                  <span className="text-[9px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded max-w-[100px] truncate" title={item.available_time_presets.map(p => `${p} ${PRESET_TIMINGS[p] || ''}`).join(', ')}>
                                     {item.available_time_presets.map(p => `${p} ${PRESET_TIMINGS[p] || ''}`).join(', ')}
                                   </span>
                                 )}
                                 {(item.custom_time_from && item.custom_time_to) && (
-                                  <span className="text-[9px] font-bold text-purple-600 bg-purple-50 border border-purple-100 px-1.5 py-0.5 rounded shadow-sm max-w-[120px] truncate" title={`${item.custom_time_from} - ${item.custom_time_to}`}>
-                                    {item.custom_time_from} - {item.custom_time_to}
+                                  <span className="text-[9px] font-bold text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded max-w-[100px] truncate" title={`${item.custom_time_from} - ${item.custom_time_to}`}>
+                                    {item.custom_time_from}-{item.custom_time_to}
                                   </span>
                                 )}
                               </div>
                             )}
                           </div>
+
+                          {/* Action Button */}
+                          {layoutStyle === 'grid' ? (
+                            <div className="mt-4 pb-1">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); navigate(`/shop/${id}/item/${item.id}`); }}
+                                className="w-full py-2.5 rounded-xl text-white font-bold flex items-center justify-center gap-1.5 text-sm active:scale-95 transition-transform"
+                                style={{ backgroundColor: primaryColor }}
+                              >
+                                <Eye size={16} /> View Details
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="absolute bottom-3 right-3">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); navigate(`/shop/${id}/item/${item.id}`); }}
+                                className="px-5 py-1.5 rounded-xl text-white font-bold text-xs shadow-sm active:scale-95 transition-transform"
+                                style={{ backgroundColor: primaryColor }}
+                              >
+                                ADD
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
@@ -1228,6 +1402,13 @@ export function PublicMenuPage() {
               </div>
             ))
           )}
+
+          {/* Infinite Scroll Categories */}
+          <InfiniteScrollTrigger 
+            onIntersect={handleLoadMoreCategories} 
+            isLoading={isLoadingMoreCategories} 
+            hasMore={hasMoreCategories && filteredCategories.length > 0} 
+          />
         </div>
 
         {/* --- Google Reviews Section --- */}
@@ -1321,8 +1502,8 @@ export function PublicMenuPage() {
                     Hours
                     {shop.opening_time && shop.closing_time && (
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isOpen
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-red-100 text-red-600'
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : 'bg-red-100 text-red-600'
                         }`}>
                         {isOpen ? 'Open Now' : 'Closed'}
                       </span>
@@ -1398,19 +1579,18 @@ export function PublicMenuPage() {
 
 
 
-      {/* Member Verify FAB */}
+      {/* Offers (Crown) FAB */}
       {memberStatus === null && activeDiscounts.some(d => d.visibility_type === 'members_only_hidden' || d.visibility_type === 'members_only_visible' || d.visibility_type === 'unlock_required') && (
         <button
           onClick={() => setIsDiscountPopupOpen(true)}
-          className={`fixed bottom-28 left-4 sm:left-6 h-14 px-5 rounded-full bg-slate-900 text-white shadow-xl flex items-center justify-center gap-2 hover:scale-105 transition-all duration-300 z-[45] border-4 border-slate-700/50 backdrop-blur-md animate-bounce hover:animate-none ${isScrollingDown ? 'translate-y-48 opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}
+          className={`fixed bottom-40 right-4 sm:right-6 w-14 h-14 rounded-full text-white shadow-xl flex items-center justify-center hover:scale-105 transition-all duration-300 z-40 border-4 border-white/50 backdrop-blur-md animate-bounce hover:animate-none ${isScrollingDown ? 'translate-y-32 opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}
+          style={{ backgroundColor: primaryColor }}
           title="Unlock Member Offers"
         >
-          <Gift size={24} className="animate-pulse text-yellow-400" />
-          <span className="font-bold text-sm">Offers!</span>
-          
-          <span className="absolute -top-1 -right-1 flex h-4 w-4">
+          <Crown size={24} className="text-white" />
+          <span className="absolute top-0 right-0 flex h-4 w-4">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-4 w-4 bg-red-500 border-2 border-slate-900"></span>
+            <span className="relative inline-flex rounded-full h-4 w-4 bg-red-500 border-2 border-white"></span>
           </span>
         </button>
       )}
@@ -1418,23 +1598,13 @@ export function PublicMenuPage() {
       {/* Filter FAB */}
       <button
         onClick={() => setIsFilterModalOpen(true)}
-        className={`fixed bottom-10 right-4 sm:right-6 w-14 h-14 rounded-full bg-slate-900 text-white shadow-xl flex items-center justify-center hover:scale-105 transition-all duration-300 z-40 border-4 border-white/50 backdrop-blur-md ${isScrollingDown ? 'translate-y-32 opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}
+        className={`fixed bottom-24 right-4 sm:right-6 w-14 h-14 rounded-full text-white shadow-xl flex items-center justify-center hover:scale-105 transition-all duration-300 z-40 border-4 border-white/50 backdrop-blur-md ${isScrollingDown ? 'translate-y-32 opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}
         style={{ backgroundColor: primaryColor }}
       >
         <SlidersHorizontal size={24} />
         {(sortOrder !== 'default' || extraFilters.length > 0) && (
           <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 rounded-full border-2 border-white"></span>
         )}
-      </button>
-
-      {/* Entertainment Hub FAB */}
-      <button
-        onClick={() => setIsEntertainmentHubOpen(true)}
-        className={`fixed bottom-10 left-4 sm:left-6 h-14 px-5 rounded-full bg-slate-900 text-white shadow-xl flex items-center justify-center gap-2 hover:scale-105 transition-all duration-300 z-40 border-4 border-white/50 backdrop-blur-md animate-bounce hover:animate-none ${isScrollingDown ? 'translate-y-32 opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}
-        style={{ backgroundColor: primaryColor }}
-      >
-        <Gamepad2 size={24} className="animate-pulse" />
-        <span className="font-bold text-sm">Bored?</span>
       </button>
 
       <EntertainmentHub
@@ -1496,8 +1666,8 @@ export function PublicMenuPage() {
                 <label
                   key={filter.id}
                   className={`relative flex flex-col items-center justify-center gap-2 py-4 px-2 rounded-xl border cursor-pointer transition-all text-center ${extraFilters.includes(filter.id)
-                      ? 'border-primary bg-primary/5 shadow-sm'
-                      : 'border-slate-200 bg-white hover:bg-slate-50'
+                    ? 'border-primary bg-primary/5 shadow-sm'
+                    : 'border-slate-200 bg-white hover:bg-slate-50'
                     }`}
                   style={extraFilters.includes(filter.id) ? { borderColor: primaryColor, backgroundColor: `${primaryColor}10` } : {}}
                 >
@@ -1536,8 +1706,8 @@ export function PublicMenuPage() {
                 <label
                   key={filter.id}
                   className={`relative flex items-center justify-center py-2.5 px-2 rounded-xl border cursor-pointer transition-all text-center ${extraFilters.includes(filter.id)
-                      ? 'border-primary bg-primary/5 shadow-sm'
-                      : 'border-slate-200 bg-white hover:bg-slate-50'
+                    ? 'border-primary bg-primary/5 shadow-sm'
+                    : 'border-slate-200 bg-white hover:bg-slate-50'
                     }`}
                   style={extraFilters.includes(filter.id) ? { borderColor: primaryColor, backgroundColor: `${primaryColor}10` } : {}}
                 >
@@ -1596,19 +1766,59 @@ export function PublicMenuPage() {
         />
       )}
 
-      {/* Bottom Branding Bar */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/90 backdrop-blur-md border-t border-slate-200 py-2 px-4">
-        <div className="max-w-3xl mx-auto flex items-center justify-center gap-2">
-          <span className="text-[10px] text-slate-400 font-medium">Powered by</span>
-          <a
-            href="https://menukit.debuggers.co.in/landing"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs font-bold bg-gradient-to-r from-orange-600 to-amber-500 bg-clip-text text-transparent hover:opacity-80 transition-opacity flex items-center gap-1"
+      {/* Premium Floating Bottom Navigation Dock */}
+      <div className={`fixed bottom-4 left-4 right-4 sm:bottom-6 sm:left-1/2 sm:-translate-x-1/2 sm:w-[420px] bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl rounded-[32px] shadow-[0_10px_40px_rgba(0,0,0,0.1)] border border-slate-100 dark:border-slate-800 z-40 p-2 transition-transform duration-300 ${isScrollingDown ? 'translate-y-32 opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}>
+        <div className="flex items-center justify-between px-1">
+
+          {/* Menu Button (Active) */}
+          <button
+            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            className="flex flex-col items-center justify-center gap-1 min-w-[60px]"
           >
-            Menukit
-            <ExternalLink size={10} className="text-orange-500" />
-          </a>
+            <UtensilsCrossed size={22} style={{ color: primaryColor }} />
+            <span className="text-[10px] font-bold" style={{ color: primaryColor }}>Menu</span>
+          </button>
+
+          {/* Cart Button */}
+          <button
+            onClick={() => navigate(`/shop/${id}/cart`)}
+            className="flex flex-col items-center justify-center gap-1 min-w-[60px] relative group"
+          >
+            <div className="relative">
+              <ShoppingBag size={22} className="text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors" />
+              {cartItemCount > 0 && (
+                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center border-[1.5px] border-white dark:border-slate-900">
+                  {cartItemCount}
+                </span>
+              )}
+            </div>
+            <span className="text-[10px] font-bold text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors">Cart</span>
+          </button>
+
+          {/* Games Button */}
+          <button
+            onClick={() => setIsEntertainmentHubOpen(true)}
+            className="flex flex-col items-center justify-center gap-1 min-w-[60px] group"
+          >
+            <Gamepad2 size={22} className="text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors" />
+            <span className="text-[10px] font-bold text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors">Games</span>
+          </button>
+
+          {/* Discover Button */}
+          <button
+            onClick={() => navigate('/discover')}
+            className="flex items-center justify-center gap-1.5 px-6 h-[46px] rounded-full text-white font-bold ml-1 transition-all active:scale-95 group overflow-hidden relative border-2 border-transparent hover:border-white/50"
+            style={{ 
+              backgroundColor: primaryColor,
+              boxShadow: `0 0 20px 4px ${primaryColor}60, 0 8px 20px -4px rgba(0,0,0,0.3)`
+            }}
+          >
+            <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" />
+            <MapPin size={16} className="relative z-10" />
+            <span className="relative z-10 tracking-wide text-sm">Discover</span>
+            <ArrowUpRight size={16} className="relative z-10" strokeWidth={3} />
+          </button>
+
         </div>
       </div>
 
@@ -1751,7 +1961,7 @@ export function PublicMenuPage() {
             </div>
 
             <div className="pt-4">
-              {((memberStatus === null && selectedDiscountForModal.visibility_type === 'unlock_required') || 
+              {((memberStatus === null && selectedDiscountForModal.visibility_type === 'unlock_required') ||
                 (memberStatus === null && (selectedDiscountForModal.visibility_type === 'members_only_hidden'))) ? (
                 <button
                   onClick={() => {
@@ -1877,6 +2087,75 @@ export function PublicMenuPage() {
               </div>
             ))
           )}
+        </div>
+      </Modal>
+
+      {/* Categories Modal */}
+      <Modal
+        isOpen={isCategoriesModalOpen}
+        onClose={() => setIsCategoriesModalOpen(false)}
+        title="Menu Categories"
+        className="bg-white text-slate-900 h-[80vh] sm:h-[600px] flex flex-col p-0 overflow-hidden rounded-t-3xl sm:rounded-3xl"
+      >
+        <div className="p-4 border-b border-slate-100 shrink-0 mt-2">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <input
+              type="text"
+              placeholder="Search categories..."
+              className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-slate-300 focus:ring-2 focus:ring-slate-100 transition-all font-medium text-slate-800 placeholder-slate-400"
+              value={categorySearchQuery}
+              onChange={(e) => setCategorySearchQuery(e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-2 pb-safe">
+          <button
+            onClick={() => {
+              setActiveCategoryId('all');
+              setIsCategoriesModalOpen(false);
+              window.scrollTo({ top: 200, behavior: 'smooth' });
+            }}
+            className={`w-full flex items-center justify-between p-4 rounded-2xl transition-all border ${activeCategoryId === 'all' ? 'border-transparent shadow-md' : 'border-slate-100 hover:border-slate-200 hover:bg-slate-50'}`}
+            style={activeCategoryId === 'all' ? { backgroundColor: primaryColor, color: 'white' } : {}}
+          >
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${activeCategoryId === 'all' ? 'bg-white/20' : 'bg-slate-100 text-slate-500'}`}>
+                <LayoutGrid size={20} />
+              </div>
+              <span className={`font-bold text-base ${activeCategoryId === 'all' ? 'text-white' : 'text-slate-800'}`}>All Menu</span>
+            </div>
+            <span className={`text-xs font-bold px-3 py-1 rounded-full ${activeCategoryId === 'all' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>
+              {categories.reduce((acc, cat) => acc + (cat.items?.length || 0), 0)} items
+            </span>
+          </button>
+
+          {categories
+            .filter(c => c.name.toLowerCase().includes(categorySearchQuery.toLowerCase()))
+            .map(cat => (
+              <button
+                key={cat.id}
+                onClick={() => {
+                  setActiveCategoryId(cat.id);
+                  setIsCategoriesModalOpen(false);
+                  window.scrollTo({ top: 200, behavior: 'smooth' });
+                }}
+                className={`w-full flex items-center justify-between p-4 rounded-2xl transition-all border ${activeCategoryId === cat.id ? 'border-transparent shadow-md' : 'border-slate-100 hover:border-slate-200 hover:bg-slate-50'}`}
+                style={activeCategoryId === cat.id ? { backgroundColor: primaryColor, color: 'white' } : {}}
+              >
+                <span className={`font-bold text-base ${activeCategoryId === cat.id ? 'text-white' : 'text-slate-800'}`}>{cat.name}</span>
+                <span className={`text-xs font-bold px-3 py-1 rounded-full ${activeCategoryId === cat.id ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                  {cat.items?.length || 0} items
+                </span>
+              </button>
+            ))}
+            
+            {categories.filter(c => c.name.toLowerCase().includes(categorySearchQuery.toLowerCase())).length === 0 && (
+              <div className="text-center py-12 text-slate-400">
+                <Search size={32} className="mx-auto mb-3 opacity-20" />
+                <p className="font-medium text-slate-500">No categories found</p>
+              </div>
+            )}
         </div>
       </Modal>
 

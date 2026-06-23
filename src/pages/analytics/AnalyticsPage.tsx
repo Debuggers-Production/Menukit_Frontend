@@ -1,25 +1,69 @@
 import { useState, useEffect } from 'react';
-import { QrCode, Eye, Search, CalendarDays, Filter } from 'lucide-react';
+import { QrCode, Eye, Search, CalendarDays, Filter, Users, Lock, ChevronRight } from 'lucide-react';
 import { api } from '@/services/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { SearchableSelect } from '@/components/ui/SearchableSelect';
 import { Modal } from '@/components/ui/Modal';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { useShopStore } from '@/store/shopStore';
+import { membershipService, RepeatedCustomer } from '@/services/memberships';
 
 export function AnalyticsPage() {
   const [data, setData] = useState<any>(null);
+  const [repeatedCustomers, setRepeatedCustomers] = useState<RepeatedCustomer[]>([]);
+  const [subscriptionInfo, setSubscriptionInfo] = useState<{is_active: boolean, is_all_access: boolean, active_modules: string[]} | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [dateFilter, setDateFilter] = useState<number>(30);
+  const [dateFilter, setDateFilter] = useState<number | 'custom'>(30);
+  const [customStart, setCustomStart] = useState<string>('');
+  const [customEnd, setCustomEnd] = useState<string>('');
   const [activeBar, setActiveBar] = useState<number | null>(null);
+  const { shop } = useShopStore();
   
-  const [viewAllModal, setViewAllModal] = useState<{isOpen: boolean, type: 'views' | 'searches' | null}>({isOpen: false, type: null});
+  const [viewAllModal, setViewAllModal] = useState<{isOpen: boolean, type: 'views' | 'searches' | 'repeated' | null}>({isOpen: false, type: null});
   const [modalSearch, setModalSearch] = useState('');
+  
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [dailyReportData, setDailyReportData] = useState<any>(null);
+  
+  const handleBarClick = async (date: string) => {
+    setSelectedDate(date);
+    
+    try {
+      const res = await api.get(`/analytics/daily?date=${date}`);
+      setDailyReportData(res.data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      
+    }
+  };
 
   useEffect(() => {
     const fetchAnalytics = async () => {
       try {
-        const res = await api.get('/analytics/dashboard');
+        let currentShopId = shop?.id;
+        
+        // Fetch shop if not loaded
+        if (!shop) {
+          const shopRes = await api.get('/shops/me');
+          if (shopRes.data.id) {
+            // setShop(shopRes.data);
+            currentShopId = shopRes.data.id;
+          }
+        }
+
+        const [res, subRes] = await Promise.all([
+          api.get('/analytics/dashboard'),
+          api.get('/subscription/current')
+        ]);
         setData(res.data);
+        setSubscriptionInfo(subRes.data);
+        
+        if (currentShopId) {
+          const repeated = await membershipService.getRepeatedCustomers(currentShopId, 2);
+          setRepeatedCustomers(repeated);
+        }
       } catch (error) {
         console.error('Failed to fetch analytics', error);
       } finally {
@@ -27,7 +71,7 @@ export function AnalyticsPage() {
       }
     };
     fetchAnalytics();
-  }, []);
+  }, [shop?.id]);
 
   if (isLoading) {
     return (
@@ -42,19 +86,50 @@ export function AnalyticsPage() {
     );
   }
 
+  const hasAdvancedFilters = subscriptionInfo?.is_all_access || subscriptionInfo?.active_modules?.includes('analytics-advanced-filters');
+  const hasCustomerInsights = subscriptionInfo?.is_all_access || subscriptionInfo?.active_modules?.includes('analytics-customer-insights');
+
   // Filter data based on selected range
-  const filteredScans = data?.daily_scans?.slice(-dateFilter) || [];
+  const filteredScans = dateFilter === 'custom'
+    ? (data?.daily_scans || []).filter((d: any) => {
+        const date = new Date(d.date);
+        const start = customStart ? new Date(customStart) : new Date(0);
+        const end = customEnd ? new Date(customEnd + 'T23:59:59') : new Date('2999-12-31');
+        return date >= start && date <= end;
+      })
+    : (data?.daily_scans?.slice(-dateFilter) || []);
   const maxScans = filteredScans.length > 0 
     ? Math.max(...filteredScans.map((d: any) => d.count)) 
     : 10;
 
+  const displayData = selectedDate && dailyReportData ? {
+    ...data,
+    overview: {
+      total_qr_scans: dailyReportData.total_scans,
+      total_menu_views: dailyReportData.total_views,
+    },
+    top_items: dailyReportData.top_items,
+    top_searches: dailyReportData.top_searches,
+  } : data;
+
+  const displayRepeatedCustomers = selectedDate && dailyReportData ? dailyReportData.repeated_customers : repeatedCustomers;
+
   return (
     <div className="space-y-6 sm:space-y-8 max-w-6xl animate-fade-in pb-20">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 sm:gap-4">
-        <div>
-          <h2 className="text-xl sm:text-2xl font-bold font-heading">Analytics & Reports</h2>
-          <p className="text-sm sm:text-base text-slate-500">Track your menu's performance and customer behavior.</p>
-        </div>
+        <PageHeader 
+          title={selectedDate ? `Daily Report: ${new Date(selectedDate).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}` : "Analytics & Reports"}
+          subtitle={selectedDate ? "Showing data for the selected date only." : "Track your menu's performance and customer behavior."}
+          className="mb-0"
+        />
+        {selectedDate && (
+          <button 
+            onClick={() => setSelectedDate(null)}
+            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
+          >
+            Get Overall
+          </button>
+        )}
       </div>
 
       {/* Main Stats */}
@@ -67,7 +142,7 @@ export function AnalyticsPage() {
                   Total Scans
                 </p>
                 <h3 className="text-2xl sm:text-4xl font-bold text-slate-900 dark:text-white">
-                  {data?.overview?.total_qr_scans || 0}
+                  {displayData?.overview?.total_qr_scans || 0}
                 </h3>
               </div>
               <div className="p-2 sm:p-3 rounded-xl self-start bg-purple-100 dark:bg-purple-900/30 text-purple-500">
@@ -85,7 +160,7 @@ export function AnalyticsPage() {
                   Menu Views
                 </p>
                 <h3 className="text-2xl sm:text-4xl font-bold text-slate-900 dark:text-white">
-                  {data?.overview?.total_menu_views || 0}
+                  {displayData?.overview?.total_menu_views || 0}
                 </h3>
               </div>
               <div className="p-2 sm:p-3 rounded-xl self-start bg-orange-100 dark:bg-orange-900/30 text-orange-500">
@@ -98,27 +173,54 @@ export function AnalyticsPage() {
 
       {/* Chart */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between pb-2">
-          <CardTitle className="flex items-center text-lg">
-            <CalendarDays size={18} className="mr-2 text-primary" />
-            Scan Activity
-          </CardTitle>
-          <div className="flex items-center gap-2">
-            <Filter size={16} className="text-slate-400" />
-            <div className="w-36">
-              <SearchableSelect
-                options={[
-                  { id: '7', name: 'Last 7 Days' },
-                  { id: '14', name: 'Last 14 Days' },
-                  { id: '30', name: 'Last 30 Days' },
-                ]}
-                value={dateFilter.toString()}
-                onChange={(val) => setDateFilter(Number(val))}
-                showSearch={false}
-                className="h-9 bg-slate-100 dark:bg-slate-800 border-none shadow-none"
-              />
+        <CardHeader className="flex flex-col gap-3 pb-2">
+          <div className="flex flex-row items-center justify-between w-full">
+            <CardTitle className="flex items-center text-lg">
+              <CalendarDays size={18} className="mr-2 text-primary" />
+              Scan Activity
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              <Filter size={16} className="text-slate-400" />
+              <div className="w-40">
+                {!hasAdvancedFilters ? (
+                  <div className="flex items-center justify-between px-3 h-9 bg-slate-100 dark:bg-slate-800 rounded-md text-sm text-slate-500 cursor-not-allowed border border-slate-200 dark:border-slate-700 select-none">
+                    <span>30 Days (Basic)</span>
+                    <Lock size={12} className="text-slate-400" />
+                  </div>
+                ) : (
+                  <SearchableSelect
+                    options={[
+                      { id: '7', name: 'Last 7 Days' },
+                      { id: '14', name: 'Last 14 Days' },
+                      { id: '30', name: 'Last 30 Days' },
+                      { id: 'custom', name: 'Custom Range' },
+                    ]}
+                    value={dateFilter.toString()}
+                    onChange={(val) => setDateFilter(val === 'custom' ? 'custom' : Number(val))}
+                    showSearch={false}
+                    className="h-9 bg-slate-100 dark:bg-slate-800 border-none shadow-none"
+                  />
+                )}
+              </div>
             </div>
           </div>
+          {dateFilter === 'custom' && (
+            <div className="flex items-center justify-end gap-2 text-sm w-full animate-fade-in">
+              <input 
+                type="date" 
+                value={customStart} 
+                onChange={e => setCustomStart(e.target.value)}
+                className="h-9 px-3 rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-700 dark:text-slate-300"
+              />
+              <span className="text-slate-400 font-medium">to</span>
+              <input 
+                type="date" 
+                value={customEnd} 
+                onChange={e => setCustomEnd(e.target.value)}
+                className="h-9 px-3 rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/50 text-slate-700 dark:text-slate-300"
+              />
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           {filteredScans.length > 0 ? (
@@ -127,13 +229,16 @@ export function AnalyticsPage() {
               {filteredScans.map((day: any, i: number) => {
                 const height = maxScans > 0 ? `${(day.count / maxScans) * 100}%` : '0%';
                 // Show fewer labels depending on range
-                const showLabel = dateFilter <= 7 || i % Math.ceil(filteredScans.length / 7) === 0 || i === filteredScans.length - 1;
+                const showLabel = dateFilter === 'custom' 
+                  ? (filteredScans.length <= 7 || i % Math.ceil(filteredScans.length / 7) === 0 || i === filteredScans.length - 1)
+                  : (dateFilter <= 7 || i % Math.ceil(filteredScans.length / 7) === 0 || i === filteredScans.length - 1);
                 
                 return (
                   <div 
                     key={i} 
                     className="flex-1 flex flex-col items-center group relative h-full justify-end"
-                    onClick={() => setActiveBar(activeBar === i ? null : i)}
+                    onClick={() => handleBarClick(day.date)}
+                    onMouseEnter={() => setActiveBar(i)}
                     onMouseLeave={() => setActiveBar(null)}
                   >
                     <div 
@@ -177,28 +282,28 @@ export function AnalyticsPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {data?.top_items?.length > 0 ? (
+            {displayData?.top_items?.length > 0 ? (
               <div className="space-y-4">
-                {data.top_items.slice(0, 5).map((item: any, i: number) => (
+                {displayData.top_items.slice(0, 5).map((item: any, i: number) => (
                   <div key={i} className="flex items-center justify-between">
                     <span className="font-medium text-sm">{item.name}</span>
                     <div className="flex items-center">
                       <div className="w-32 h-2 bg-slate-100 dark:bg-slate-800 rounded-full mr-3 overflow-hidden">
                         <div 
                           className="h-full bg-primary" 
-                          style={{ width: `${(item.count / data.top_items[0].count) * 100}%` }}
+                          style={{ width: `${(item.count / displayData.top_items[0].count) * 100}%` }}
                         ></div>
                       </div>
                       <span className="text-xs font-semibold w-8 text-right">{item.count}</span>
                     </div>
                   </div>
                 ))}
-                {data.top_items.length > 5 && (
+                {displayData.top_items.length > 5 && (
                   <button 
                     onClick={() => { setViewAllModal({isOpen: true, type: 'views'}); setModalSearch(''); }}
                     className="w-full py-2 mt-2 text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800 rounded-lg transition-colors"
                   >
-                    +{data.top_items.length - 5} more items
+                    +{displayData.top_items.length - 5} more items
                   </button>
                 )}
               </div>
@@ -217,11 +322,11 @@ export function AnalyticsPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {data?.top_searches?.length > 0 ? (
+            {displayData?.top_searches?.length > 0 ? (
               <div className="flex flex-wrap gap-2">
-                {data.top_searches.slice(0, 5).map((search: any, i: number) => {
+                {displayData.top_searches.slice(0, 5).map((search: any, i: number) => {
                   // Calculate size based on count relative to max
-                  const maxCount = data.top_searches[0].count;
+                  const maxCount = displayData.top_searches[0].count;
                   const ratio = search.count / maxCount;
                   const sizeClass = ratio > 0.8 ? 'text-sm font-semibold bg-primary-100 dark:bg-primary-900/40' 
                                   : ratio > 0.4 ? 'text-xs font-medium bg-slate-100 dark:bg-slate-800' 
@@ -234,12 +339,12 @@ export function AnalyticsPage() {
                     </span>
                   );
                 })}
-                {data.top_searches.length > 5 && (
+                {displayData.top_searches.length > 5 && (
                   <button
                     onClick={() => { setViewAllModal({isOpen: true, type: 'searches'}); setModalSearch(''); }}
                     className="px-3 py-1.5 rounded-full text-sm font-medium bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors"
                   >
-                    +{data.top_searches.length - 5} more
+                    +{displayData.top_searches.length - 5} more
                   </button>
                 )}
               </div>
@@ -250,6 +355,67 @@ export function AnalyticsPage() {
         </Card>
       </div>
 
+      {/* Repeated Customers Report */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center">
+            <Users size={18} className="mr-2 text-slate-500" />
+            Top Repeated Customers
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {!hasCustomerInsights ? (
+            <div className="flex flex-col items-center justify-center py-8 px-4 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-900/50">
+              <div className="w-12 h-12 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center mb-4">
+                <Lock size={20} className="text-indigo-500" />
+              </div>
+              <h4 className="text-base font-bold text-slate-900 dark:text-white mb-2">Customer Insights Locked</h4>
+              <p className="text-sm text-slate-500 max-w-sm mb-5">
+                Upgrade to the Customer Insights Report add-on to view top repeated customers, visit counts, and contact information.
+              </p>
+              <a href="/dashboard/subscriptions" className="bg-primary hover:bg-primary-600 text-white text-sm font-semibold px-5 py-2.5 rounded-lg flex items-center gap-2 transition-colors">
+                View Add-ons <ChevronRight size={16} />
+              </a>
+            </div>
+          ) : displayRepeatedCustomers.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-slate-100 dark:border-slate-800">
+                    <th className="py-2 px-3 font-medium text-slate-500">Name</th>
+                    <th className="py-2 px-3 font-medium text-slate-500">Mobile</th>
+                    <th className="py-2 px-3 font-medium text-slate-500 text-center">Visits</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {displayRepeatedCustomers.slice(0, 5).map((customer: any, idx: number) => (
+                    <tr key={idx} className="border-b border-slate-50 dark:border-slate-800/50 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                      <td className="py-3 px-3 font-medium text-slate-800 dark:text-slate-200">{customer.name || 'Anonymous'}</td>
+                      <td className="py-3 px-3 text-slate-600 dark:text-slate-400">{customer.mobile_number}</td>
+                      <td className="py-3 px-3 text-center">
+                        <span className="bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 font-semibold px-2.5 py-1 rounded-full text-xs border border-indigo-100 dark:border-indigo-800">
+                          {customer.visit_count}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {displayRepeatedCustomers.length > 5 && (
+                <button
+                  onClick={() => { setViewAllModal({isOpen: true, type: 'repeated'}); setModalSearch(''); }}
+                  className="w-full py-2 mt-4 text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                >
+                  +{displayRepeatedCustomers.length - 5} more customers
+                </button>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500 py-4 text-center">No repeated customers found yet.</p>
+          )}
+        </CardContent>
+      </Card>
+
       {/* View All Modal */}
       <Modal
         isOpen={viewAllModal.isOpen}
@@ -257,7 +423,7 @@ export function AnalyticsPage() {
           setViewAllModal({isOpen: false, type: null});
           setModalSearch('');
         }}
-        title={viewAllModal.type === 'views' ? 'All Viewed Items' : 'All Searches'}
+        title={viewAllModal.type === 'views' ? 'All Viewed Items' : viewAllModal.type === 'searches' ? 'All Searches' : 'All Repeated Customers'}
         className="max-w-xl bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
       >
         <div className="mt-4">
@@ -273,11 +439,11 @@ export function AnalyticsPage() {
           </div>
 
           <div className="max-h-[60vh] overflow-y-auto pr-2 space-y-4 custom-scrollbar">
-            {viewAllModal.type === 'views' && data?.top_items && (
-              data.top_items
+            {viewAllModal.type === 'views' && displayData?.top_items && (
+              displayData.top_items
                 .filter((item: any) => item.name.toLowerCase().includes(modalSearch.toLowerCase()))
                 .length > 0 ? (
-                  data.top_items
+                  displayData.top_items
                     .filter((item: any) => item.name.toLowerCase().includes(modalSearch.toLowerCase()))
                     .map((item: any, i: number) => (
                       <div key={i} className="flex items-center justify-between">
@@ -286,7 +452,7 @@ export function AnalyticsPage() {
                           <div className="w-32 h-2 bg-slate-100 dark:bg-slate-800 rounded-full mr-3 overflow-hidden">
                             <div 
                               className="h-full bg-primary" 
-                              style={{ width: `${(item.count / data.top_items[0].count) * 100}%` }}
+                              style={{ width: `${(item.count / displayData.top_items[0].count) * 100}%` }}
                             ></div>
                           </div>
                           <span className="text-xs font-semibold w-8 text-right">{item.count}</span>
@@ -298,13 +464,13 @@ export function AnalyticsPage() {
                 )
             )}
 
-            {viewAllModal.type === 'searches' && data?.top_searches && (
-              data.top_searches.filter((search: any) => search.term.toLowerCase().includes(modalSearch.toLowerCase())).length > 0 ? (
+            {viewAllModal.type === 'searches' && displayData?.top_searches && (
+              displayData.top_searches.filter((search: any) => search.term.toLowerCase().includes(modalSearch.toLowerCase())).length > 0 ? (
                 <div className="flex flex-wrap gap-2">
-                  {data.top_searches
+                  {displayData.top_searches
                     .filter((search: any) => search.term.toLowerCase().includes(modalSearch.toLowerCase()))
                     .map((search: any, i: number) => {
-                      const maxCount = data.top_searches[0].count;
+                      const maxCount = displayData.top_searches[0].count;
                       const ratio = search.count / maxCount;
                       const sizeClass = ratio > 0.8 ? 'text-sm font-semibold bg-primary-100 dark:bg-primary-900/40' 
                                       : ratio > 0.4 ? 'text-xs font-medium bg-slate-100 dark:bg-slate-800' 
@@ -321,9 +487,43 @@ export function AnalyticsPage() {
                 <p className="text-sm text-slate-500 py-4 text-center">No searches match your search.</p>
               )
             )}
+
+            {viewAllModal.type === 'repeated' && displayRepeatedCustomers && (
+              displayRepeatedCustomers.filter((c: any) => (c.name || '').toLowerCase().includes(modalSearch.toLowerCase()) || c.mobile_number.includes(modalSearch)).length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-100 dark:border-slate-800">
+                        <th className="py-2 px-3 font-medium text-slate-500">Name</th>
+                        <th className="py-2 px-3 font-medium text-slate-500">Mobile</th>
+                        <th className="py-2 px-3 font-medium text-slate-500 text-center">Visits</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {repeatedCustomers
+                        .filter((c: any) => (c.name || '').toLowerCase().includes(modalSearch.toLowerCase()) || c.mobile_number.includes(modalSearch))
+                        .map((customer: any, idx: number) => (
+                          <tr key={idx} className="border-b border-slate-50 dark:border-slate-800/50 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                            <td className="py-3 px-3 font-medium text-slate-800 dark:text-slate-200">{customer.name || 'Anonymous'}</td>
+                            <td className="py-3 px-3 text-slate-600 dark:text-slate-400">{customer.mobile_number}</td>
+                            <td className="py-3 px-3 text-center">
+                              <span className="bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 font-semibold px-2.5 py-1 rounded-full text-xs border border-indigo-100 dark:border-indigo-800">
+                                {customer.visit_count}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500 py-4 text-center">No customers match your search.</p>
+              )
+            )}
           </div>
         </div>
       </Modal>
+
     </div>
   );
 }

@@ -1,8 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Gift, Phone, ShieldCheck, User } from 'lucide-react';
+import { Gift, Phone, ShieldCheck, User, ChevronDown } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { customerService } from '../../services/customers';
+
+const COUNTRY_CODES = [
+  { code: '+91', label: 'India (+91)' },
+  { code: '+1', label: 'USA/Canada (+1)' },
+  { code: '+44', label: 'UK (+44)' },
+  { code: '+971', label: 'UAE (+971)' },
+  { code: '+61', label: 'Australia (+61)' },
+  { code: '+65', label: 'Singapore (+65)' },
+  { code: '+94', label: 'Sri Lanka (+94)' },
+];
 
 interface DiscountUnlockPopupProps {
   shopId: string;
@@ -13,12 +23,52 @@ interface DiscountUnlockPopupProps {
 export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId, onClose, onUnlock }) => {
   const [step, setStep] = useState<'intro' | 'mobile' | 'otp' | 'name' | 'success' | 'no_offers'>('intro');
   const [mobileNumber, setMobileNumber] = useState('');
+  const [countryCode, setCountryCode] = useState('+91');
   const [otpCode, setOtpCode] = useState('');
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [isStrictMember, setIsStrictMember] = useState(false);
   const [isVerified, setIsVerified] = useState(false);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // Detect IP country
+    fetch('https://ipapi.co/json/')
+      .then(res => res.json())
+      .then(data => {
+        if (data.country_calling_code) {
+          setCountryCode(data.country_calling_code);
+        }
+      })
+      .catch(() => {
+        // ignore error, default remains +91
+      });
+  }, []);
+
+  useEffect(() => {
+    // Click outside to close
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    if (step === 'intro') {
+      confetti({
+        particleCount: 100,
+        spread: 80,
+        origin: { y: 0.6 },
+        colors: ['#f97316', '#eab308', '#3b82f6', '#ec4899', '#8b5cf6'],
+        zIndex: 9999
+      });
+    }
+  }, [step]);
 
   const handleClose = () => {
     if (isVerified) {
@@ -67,7 +117,7 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
     setError('');
     setLoading(true);
     try {
-      const res = await customerService.verifyMobile(mobileNumber, shopId);
+      const res = await customerService.verifyMobile(`${countryCode}${mobileNumber}`, shopId);
       if (res.otp_required === false) {
         // Token was valid and matched!
         if (!res.is_global_customer) {
@@ -98,7 +148,7 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
     setError('');
     setLoading(true);
     try {
-      const res = await customerService.verifyOtp(mobileNumber, otpCode, shopId);
+      const res = await customerService.verifyOtp(`${countryCode}${mobileNumber}`, otpCode, shopId);
       if (!res.is_global_customer) {
         setStep('name');
       } else {
@@ -125,7 +175,7 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
     setLoading(true);
     try {
       // In a real flow, OTP code might be re-sent or stored in session. We pass "123456" or just the otpCode
-      await customerService.register(name, mobileNumber, shopId, otpCode);
+      await customerService.register(name, `${countryCode}${mobileNumber}`, shopId, otpCode);
       setIsStrictMember(false); // newly registered users are not strict members
       triggerConfetti();
       setIsVerified(true);
@@ -143,14 +193,8 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
         initial={{ opacity: 0, scale: 0.9, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.9, y: 20 }}
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden relative"
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-md relative"
       >
-        <button 
-          onClick={handleClose}
-          className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors z-10"
-        >
-          <X className="w-5 h-5" />
-        </button>
 
         <AnimatePresence mode="wait">
           {step === 'intro' && (
@@ -159,27 +203,27 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 20 }}
-              className="p-8 text-center"
+              className="p-6 text-center"
             >
-              <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-6">
-                <Gift className="w-10 h-10 text-primary" />
+              <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Gift className="w-8 h-8 text-primary" />
               </div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-4">
+              <h2 className="text-xl font-bold text-gray-900 mb-2">
                 🎉 Special Discounts Waiting For You!
               </h2>
-              <p className="text-gray-600 mb-8 leading-relaxed">
+              <p className="text-sm text-gray-600 mb-6 leading-relaxed">
                 Tired of seeing discounts that you can't unlock? Enter your mobile number and discover member-only offers instantly.
               </p>
-              <div className="space-y-3">
+              <div className="space-y-2.5">
                 <button 
                   onClick={() => setStep('mobile')}
-                  className="w-full py-4 bg-primary text-white rounded-xl font-semibold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 hover:shadow-primary/30 active:scale-[0.98]"
+                  className="w-full py-3 bg-primary text-white rounded-xl font-semibold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 hover:shadow-primary/30 active:scale-[0.98] text-sm"
                 >
                   Unlock My Offers
                 </button>
                 <button 
                   onClick={handleClose}
-                  className="w-full py-4 text-gray-600 font-medium bg-white border-2 border-gray-200 hover:border-gray-300 hover:bg-gray-50 rounded-xl transition-all"
+                  className="w-full py-3 text-gray-600 font-medium bg-white border-2 border-gray-200 hover:border-gray-300 hover:bg-gray-50 rounded-xl transition-all text-sm"
                 >
                   Maybe Later
                 </button>
@@ -193,37 +237,70 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 20 }}
-              className="p-8"
+              className="p-6"
             >
-              <div className="mb-8">
-                <h2 className="text-2xl font-bold text-gray-900 mb-2">Enter Mobile Number</h2>
-                <p className="text-gray-500">We'll send you a secure OTP to verify.</p>
+              <div className="mb-6">
+                <h2 className="text-xl font-bold text-gray-900 mb-1">Enter Mobile Number</h2>
+                <p className="text-sm text-gray-500">We'll send you a secure OTP to verify.</p>
               </div>
 
-              <form onSubmit={handleMobileSubmit} className="space-y-6">
+              <form onSubmit={handleMobileSubmit} className="space-y-5">
                 <div>
                   <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                      <Phone className="h-5 w-5 text-gray-400" />
+                    <div ref={dropdownRef} className="absolute inset-y-0 left-0 flex items-center pl-2">
+                      <div 
+                        className="flex items-center gap-1 cursor-pointer hover:bg-gray-100 p-1.5 rounded-lg transition-colors"
+                        onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                      >
+                        <Phone className="h-4 w-4 text-gray-400" />
+                        <span className="text-gray-700 font-medium text-base min-w-[32px]">{countryCode}</span>
+                        <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
+                      </div>
+
+                      <AnimatePresence>
+                        {isDropdownOpen && (
+                          <motion.div 
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            className="absolute top-[85%] left-2 mt-1 w-48 bg-white border border-gray-100 rounded-xl shadow-xl z-50 overflow-hidden"
+                          >
+                            <div className="max-h-48 overflow-y-auto">
+                              {COUNTRY_CODES.map((c) => (
+                                <div 
+                                  key={c.code}
+                                  className={`px-4 py-2.5 hover:bg-gray-50 cursor-pointer flex items-center justify-between transition-colors ${countryCode === c.code ? 'bg-primary/5' : ''}`}
+                                  onClick={() => {
+                                    setCountryCode(c.code);
+                                    setIsDropdownOpen(false);
+                                  }}
+                                >
+                                  <span className={`text-sm ${countryCode === c.code ? 'font-semibold text-primary' : 'text-gray-700'}`}>{c.label}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </div>
                     <input
                       type="tel"
                       value={mobileNumber}
                       onChange={(e) => setMobileNumber(e.target.value.replace(/[^0-9]/g, ''))}
-                      className="block w-full pl-12 pr-4 py-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent transition-all outline-none text-lg"
-                      placeholder="Enter 10 digit number"
+                      className="block w-full pl-[105px] pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent transition-all outline-none text-base"
+                      placeholder="Enter mobile number"
                       maxLength={15}
                       autoFocus
                       required
                     />
                   </div>
-                  {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
+                  {error && <p className="text-red-500 text-sm mt-1">{error}</p>}
                 </div>
                 
                 <button 
                   type="submit"
                   disabled={loading || mobileNumber.length < 10}
-                  className="w-full py-4 bg-gray-900 text-white rounded-xl font-semibold hover:bg-black transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full py-3 bg-gray-900 text-white rounded-xl font-semibold hover:bg-black transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                 >
                   {loading ? 'Sending OTP...' : 'Send OTP'}
                 </button>
@@ -237,36 +314,36 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 20 }}
-              className="p-8"
+              className="p-6"
             >
-              <div className="mb-8">
-                <div className="w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center mb-4">
-                  <ShieldCheck className="w-6 h-6 text-blue-500" />
+              <div className="mb-6">
+                <div className="w-10 h-10 bg-blue-50 rounded-full flex items-center justify-center mb-3">
+                  <ShieldCheck className="w-5 h-5 text-blue-500" />
                 </div>
-                <h2 className="text-2xl font-bold text-gray-900 mb-2">Verify OTP</h2>
-                <p className="text-gray-500">Code sent to +{mobileNumber}</p>
-                <p className="text-xs text-amber-600 mt-1 font-medium bg-amber-50 p-2 rounded inline-block">Hint: Dev mode - use 123456 or check console</p>
+                <h2 className="text-xl font-bold text-gray-900 mb-1">Verify OTP</h2>
+                <p className="text-sm text-gray-500">Code sent to {countryCode} {mobileNumber}</p>
+                <p className="text-xs text-amber-600 mt-1 font-medium bg-amber-50 p-1.5 rounded inline-block">Hint: Dev mode - use 123456</p>
               </div>
 
-              <form onSubmit={handleOtpSubmit} className="space-y-6">
+              <form onSubmit={handleOtpSubmit} className="space-y-5">
                 <div>
                   <input
                     type="text"
                     value={otpCode}
                     onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, ''))}
-                    className="block w-full px-4 py-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent transition-all outline-none text-center text-3xl tracking-widest font-mono"
+                    className="block w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent transition-all outline-none text-center text-2xl tracking-widest font-mono"
                     placeholder="••••••"
                     maxLength={6}
                     autoFocus
                     required
                   />
-                  {error && <p className="text-red-500 text-sm mt-2 text-center">{error}</p>}
+                  {error && <p className="text-red-500 text-sm mt-1 text-center">{error}</p>}
                 </div>
                 
                 <button 
                   type="submit"
                   disabled={loading || otpCode.length !== 6}
-                  className="w-full py-4 bg-gray-900 text-white rounded-xl font-semibold hover:bg-black transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full py-3 bg-gray-900 text-white rounded-xl font-semibold hover:bg-black transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                 >
                   {loading ? 'Verifying...' : 'Verify & Unlock'}
                 </button>
@@ -280,47 +357,48 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 20 }}
-              className="p-8"
+              className="p-6"
             >
-              <div className="mb-8">
-                <h2 className="text-2xl font-bold text-gray-900 mb-2">Just One More Step!</h2>
-                <p className="text-gray-500">Tell us your name to personalize your experience.</p>
+              <div className="mb-6">
+                <h2 className="text-xl font-bold text-gray-900 mb-1">Just One More Step!</h2>
+                <p className="text-sm text-gray-500">Tell us your name to personalize your experience.</p>
               </div>
 
-              <form onSubmit={handleNameSubmit} className="space-y-6">
-                <div className="space-y-4">
+              <form onSubmit={handleNameSubmit} className="space-y-5">
+                <div className="space-y-3">
                   <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                      <User className="h-5 w-5 text-gray-400" />
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <User className="h-4 w-4 text-gray-400" />
                     </div>
                     <input
                       type="text"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      className="block w-full pl-12 pr-4 py-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent transition-all outline-none text-lg"
+                      className="block w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent transition-all outline-none text-base"
                       placeholder="Your Full Name"
                       autoFocus
                       required
                     />
                   </div>
                   <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                      <Phone className="h-5 w-5 text-gray-400" />
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none gap-1">
+                      <Phone className="h-4 w-4 text-gray-400" />
+                      <span className="text-gray-500 font-medium text-base">{countryCode}</span>
                     </div>
                     <input
                       type="text"
                       value={mobileNumber}
                       disabled
-                      className="block w-full pl-12 pr-4 py-4 bg-gray-100 border border-gray-200 rounded-xl text-gray-500 outline-none text-lg cursor-not-allowed"
+                      className="block w-full pl-[95px] pr-4 py-3 bg-gray-100 border border-gray-200 rounded-xl text-gray-500 outline-none text-base cursor-not-allowed"
                     />
                   </div>
-                  {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
+                  {error && <p className="text-red-500 text-sm mt-1">{error}</p>}
                 </div>
                 
                 <button 
                   type="submit"
                   disabled={loading || name.length < 2}
-                  className="w-full py-4 bg-gray-900 text-white rounded-xl font-semibold hover:bg-black transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full py-3 bg-gray-900 text-white rounded-xl font-semibold hover:bg-black transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                 >
                   {loading ? 'Completing...' : 'Complete Registration'}
                 </button>

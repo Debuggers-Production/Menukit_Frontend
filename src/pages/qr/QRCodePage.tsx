@@ -6,6 +6,7 @@ import { useShopStore } from '@/store/shopStore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { QRCodeInfo } from '@/types';
 
 
@@ -416,10 +417,11 @@ export function QRCodePage() {
 
   return (
     <div className="space-y-6 max-w-4xl animate-fade-in">
-      <div>
-        <h2 className="text-2xl font-bold font-heading">QR Code Generator</h2>
-        <p className="text-slate-500">Download and print your unique menu QR code.</p>
-      </div>
+      <PageHeader 
+        title="QR Code Generator"
+        subtitle="Download and print your unique menu QR code."
+        className="mb-0"
+      />
 
       {!qrCode ? (
         <Card className="border-dashed text-center">

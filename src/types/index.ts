@@ -31,6 +31,9 @@ export interface ThemeSettings {
   font_family: string;
   layout: 'grid' | 'list';
   banner_style: 'hero' | 'carousel';
+  theme_scope: 'public' | 'app' | 'all';
+  discount_card_style: 'modern' | 'minimal' | 'gradient' | 'solid';
+  menu_item_style: 'default' | 'elevated' | 'flat' | 'bordered';
 }
 
 export interface Shop {
@@ -173,6 +176,7 @@ export interface Discount {
   available_time_presets?: string[] | null;
   is_active: boolean;
   visibility_type: 'everyone' | 'unlock_required' | 'members_only_hidden' | 'members_only_visible';
+  display_order: number;
   created_at: string;
   updated_at: string;
 }

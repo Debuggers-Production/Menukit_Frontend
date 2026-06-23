@@ -18,6 +18,7 @@ import { useShopStore } from '@/store/shopStore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Button } from '@/components/ui/Button';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 export function DashboardPage() {
   const [stats, setStats] = useState<any>(null);
@@ -114,12 +115,11 @@ export function DashboardPage() {
     {/* Dashboard Content */}
     <div className="space-y-6 sm:space-y-8 animate-slide-up pb-20">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 sm:gap-4">
-        <div>
-          <h2 className="text-xl sm:text-2xl font-bold font-heading">Overview</h2>
-          <p className="text-sm sm:text-base text-slate-500">
-            Welcome back! Here's what's happening at {shop.name}.
-          </p>
-        </div>
+        <PageHeader 
+          title="Overview"
+          subtitle={`Welcome back! Here's what's happening at ${shop.name}.`}
+          className="mb-0"
+        />
       </div>
 
       {/* Stats Grid */}

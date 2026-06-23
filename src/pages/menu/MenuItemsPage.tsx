@@ -11,10 +11,56 @@ import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Switch } from '@/components/ui/Switch';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { SearchableSelect } from '@/components/ui/SearchableSelect';
 import { Lightbox } from '@/components/ui/Lightbox';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
+import { GripVertical } from 'lucide-react';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  rectSortingStrategy,
+  verticalListSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
+const SortableMenuItem = ({ children, item }: { children: React.ReactNode, item: MenuItem }) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: item.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 10 : 1,
+    position: 'relative' as const,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className={`h-full ${isDragging ? 'opacity-50' : ''}`}>
+      <div className="absolute top-2 left-2 z-30 touch-none cursor-grab active:cursor-grabbing p-1 bg-white/80 dark:bg-black/50 backdrop-blur-sm rounded-md text-slate-500 hover:text-slate-800 dark:hover:text-white" {...attributes} {...listeners}>
+        <GripVertical size={16} />
+      </div>
+      {children}
+    </div>
+  );
+};
 export function MenuItemsPage() {
   const { menuItems, setMenuItems, categories, setCategories } = useShopStore();
   const [isLoading, setIsLoading] = useState(true);
@@ -66,6 +112,17 @@ export function MenuItemsPage() {
     custom_time_to: ''
   };
   const [formData, setFormData] = useState(defaultForm);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   useEffect(() => {
     fetchData();
@@ -188,6 +245,38 @@ export function MenuItemsPage() {
     }
   };
 
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (active.id !== over?.id) {
+      const oldIndex = filteredItems.findIndex((item) => item.id === active.id);
+      const newIndex = filteredItems.findIndex((item) => item.id === over?.id);
+      
+      if (oldIndex !== -1 && newIndex !== -1) {
+        const newFilteredItems = arrayMove(filteredItems, oldIndex, newIndex);
+        
+        const newMenuItems = [...menuItems];
+        newFilteredItems.forEach((item, index) => {
+          const globalItem = newMenuItems.find(i => i.id === item.id);
+          if (globalItem) {
+            globalItem.display_order = index;
+          }
+        });
+        setMenuItems(newMenuItems);
+        
+        const order = newFilteredItems.map((item, index) => ({
+          id: item.id,
+          display_order: index,
+        }));
+        
+        api.put('/menu-items/reorder/batch', { order }).catch(() => {
+          toast.error('Failed to reorder items');
+          fetchData();
+        });
+      }
+    }
+  };
+
   const filteredItems = menuItems.filter(item => {
     const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -196,7 +285,7 @@ export function MenuItemsPage() {
   }).sort((a, b) => {
     if (a.is_highlighted && !b.is_highlighted) return -1;
     if (!a.is_highlighted && b.is_highlighted) return 1;
-    return 0;
+    return (a.display_order || 0) - (b.display_order || 0);
   });
 
   const openModal = (item?: MenuItem) => {
@@ -364,24 +453,16 @@ export function MenuItemsPage() {
 
   return (
     <div className="space-y-6 max-w-6xl animate-fade-in">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-bold font-heading">Menu Items</h2>
-          <p className="text-slate-500">Add and manage your menus.</p>
-        </div>
-        {menuItems.length > 0 && (
-          <button
-            onClick={() => setShowDeleteAllConfirm(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 font-medium text-sm transition-colors border border-red-200 dark:bg-red-900/20 dark:border-red-800 dark:hover:bg-red-900/40"
-          >
-            <Trash2 size={15} />
-            Delete All
-          </button>
-        )}
+      <div className="mb-2">
+        <PageHeader 
+          title="Menu Items"
+          subtitle="Add and manage your menus."
+          className="mb-0"
+        />
       </div>
 
       {/* Filters & Tabs */}
-      <div className="flex flex-col md:flex-row gap-4 justify-between">
+      <div className="sticky top-[-16px] sm:top-[-24px] lg:top-[-32px] z-20 bg-[#f8fafc]/90 backdrop-blur-md pb-4 pt-4 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 border-b border-slate-200 mb-6 flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
         <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide no-scrollbar w-full md:w-auto">
           <button
             onClick={() => setActiveTab('all')}
@@ -408,17 +489,24 @@ export function MenuItemsPage() {
           ))}
         </div>
         
-        <div className="flex items-center gap-2 w-full md:w-auto">
-          <div className="flex-1 relative min-w-0 md:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
-            <input
-              type="text"
-              placeholder="Search menus..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full h-10 pl-9 pr-4 rounded-full border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary dark:bg-slate-900 dark:border-slate-700"
-            />
-          </div>
+        <div className="w-full md:w-auto flex gap-2">
+          <Input
+            leftIcon={<Search size={18} />}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search items..."
+            className="w-full sm:w-64 bg-white flex-1"
+          />
+          {menuItems.length > 0 && (
+            <button
+              onClick={() => setShowDeleteAllConfirm(true)}
+              className="flex items-center justify-center gap-2 px-4 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 font-medium text-sm transition-colors border border-red-200 dark:bg-red-900/20 dark:border-red-800 dark:hover:bg-red-900/40 shrink-0"
+              title="Delete All Menu Items"
+            >
+              <Trash2 size={16} />
+              <span className="hidden sm:inline">Delete All</span>
+            </button>
+          )}
           <div className="flex bg-white border border-slate-200 rounded-lg p-1 dark:bg-slate-900 dark:border-slate-700 shrink-0">
             <button
               onClick={() => setViewMode('grid')}
@@ -459,12 +547,22 @@ export function MenuItemsPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className={`grid gap-4 ${viewMode === 'grid' ? 'grid-cols-2 lg:grid-cols-3' : 'grid-cols-1'}`}>
-          {filteredItems.map(item => {
-            const categoryName = categories.find(c => c.id === item.category_id)?.name || 'Unknown';
-            
-            return (
-              <Card key={item.id} className={`flex ${viewMode === 'grid' ? 'flex-col' : 'flex-row'} overflow-hidden transition-all hover:shadow-md ${!item.is_available ? 'opacity-70 grayscale-[30%]' : ''}`}>
+        <DndContext 
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext 
+            items={filteredItems.map(i => i.id)}
+            strategy={viewMode === 'grid' ? rectSortingStrategy : verticalListSortingStrategy}
+          >
+            <div className={`grid gap-4 ${viewMode === 'grid' ? 'grid-cols-2 lg:grid-cols-3' : 'grid-cols-1'}`}>
+              {filteredItems.map(item => {
+                const categoryName = categories.find(c => c.id === item.category_id)?.name || 'Unknown';
+                
+                return (
+                  <SortableMenuItem key={item.id} item={item} >
+                    <Card className={`flex ${viewMode === 'grid' ? 'flex-col' : 'flex-row'} overflow-hidden transition-all hover:shadow-md ${!item.is_available ? 'opacity-70 grayscale-[30%]' : ''}`}>
                 <div className={`${viewMode === 'grid' ? 'h-32' : 'w-32 sm:w-40 shrink-0'} bg-slate-100 dark:bg-slate-800 relative`}>
                   {item.image_url ? (
                     <div className="relative w-full h-full group/img">
@@ -666,13 +764,16 @@ export function MenuItemsPage() {
                         </button>
                       )}
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
+                    </div>
+                  </CardContent>
+                </Card>
+              </SortableMenuItem>
             );
           })}
         </div>
-      )}
+      </SortableContext>
+    </DndContext>
+  )}
 
       {/* Add/Edit Modal */}
       <Modal 

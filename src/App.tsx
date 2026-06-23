@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router';
 import { useAuthStore } from '@/store/authStore';
+import { ThemeProvider } from '@/components/ThemeProvider';
 
 // Layouts
 import { AuthLayout } from '@/layouts/AuthLayout';
@@ -18,16 +19,20 @@ import { CategoriesPage } from '@/pages/menu/CategoriesPage';
 import { MenuItemsPage } from '@/pages/menu/MenuItemsPage';
 import { BulkUploadPage } from '@/pages/menu/BulkUploadPage';
 import { JsonBulkUploadPage } from '@/pages/menu/JsonBulkUploadPage';
-import { ThemeCustomizePage } from '@/pages/customize/ThemeCustomizePage';
+import { CustomizeThemePage } from '@/pages/theme/CustomizeThemePage';
 import { QRCodePage } from '@/pages/qr/QRCodePage';
 import { AnalyticsPage } from '@/pages/analytics/AnalyticsPage';
 import { DiscountsPage } from '@/pages/discounts/DiscountsPage';
 import { InternalBulkPage } from '@/pages/admin/InternalBulkPage';
 import { MembersPage } from '@/pages/members/MembersPage';
+import { SettingsPage } from '@/pages/settings/SettingsPage';
+import { SubscriptionMarketplacePage } from '@/pages/subscription/SubscriptionMarketplacePage';
+import { NotificationsPage } from '@/pages/notifications/NotificationsPage';
 
 // Public Pages
 import { PublicMenuPage } from '@/pages/public/PublicMenuPage';
 import { PublicItemPage } from '@/pages/public/PublicItemPage';
+import { PublicCartPage } from '@/pages/public/PublicCartPage';
 import { TermsPage } from '@/pages/public/TermsPage';
 import { StoreDiscoveryPage } from '@/pages/public/StoreDiscoveryPage';
 
@@ -65,18 +70,21 @@ function App() {
       
       {/* Dashboard Routes (Protected) */}
       <Route element={<ProtectedRoute />}>
-        <Route element={<DashboardLayout />}>
+        <Route element={<ThemeProvider><DashboardLayout /></ThemeProvider>}>
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/shop-setup" element={<ShopSetupPage />} />
           <Route path="/categories" element={<CategoriesPage />} />
           <Route path="/menu-items" element={<MenuItemsPage />} />
           <Route path="/bulk-upload" element={<BulkUploadPage />} />
           <Route path="/json-bulk-upload" element={<JsonBulkUploadPage />} />
-          <Route path="/customize" element={<ThemeCustomizePage />} />
+          <Route path="/customize" element={<CustomizeThemePage />} />
           <Route path="/qr-code" element={<QRCodePage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/discounts" element={<DiscountsPage />} />
           <Route path="/members" element={<MembersPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/subscription" element={<SubscriptionMarketplacePage />} />
+          <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/internal-bulk" element={<InternalBulkPage />} />
           <Route path="/admin" element={<AdminPlaceholder />} />
         </Route>
@@ -88,6 +96,7 @@ function App() {
       <Route path="/discover/scan" element={<StoreDiscoveryPage />} />
       <Route path="/shop/:id" element={<PublicMenuPage />} />
       <Route path="/shop/:id/item/:itemId" element={<PublicItemPage />} />
+      <Route path="/shop/:id/cart" element={<PublicCartPage />} />
       <Route path="/terms" element={<TermsPage />} />
 
       {/* Fallback routes */}

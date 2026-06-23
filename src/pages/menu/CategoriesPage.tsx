@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'react-hot-toast';
-import { Plus, Edit2, Trash2, GripVertical, MenuSquare } from 'lucide-react';
+import { Plus, Edit2, Trash2, GripVertical, MenuSquare, Search } from 'lucide-react';
 import { api } from '@/services/api';
 import { useShopStore } from '@/store/shopStore';
 import { Category } from '@/types';
@@ -12,6 +12,7 @@ import { Modal } from '@/components/ui/Modal';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Switch } from '@/components/ui/Switch';
+import { PageHeader } from '@/components/ui/PageHeader';
 import {
   DndContext,
   closestCenter,
@@ -30,12 +31,12 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
-const SortableCategoryItem = ({ 
-  cat, 
-  onToggleActive, 
-  onEdit, 
-  onDelete 
-}: { 
+const SortableCategoryItem = ({
+  cat,
+  onToggleActive,
+  onEdit,
+  onDelete
+}: {
   cat: Category;
   onToggleActive: (cat: Category) => void;
   onEdit: (cat: Category) => void;
@@ -71,23 +72,22 @@ const SortableCategoryItem = ({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <button 
+            <button
               onClick={(e) => { e.stopPropagation(); onToggleActive(cat); }}
-              className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${
-                cat.is_active 
-                  ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400' 
+              className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${cat.is_active
+                  ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400'
-              }`}
+                }`}
             >
               {cat.is_active ? 'Active' : 'Hidden'}
             </button>
-            <button 
+            <button
               onClick={(e) => { e.stopPropagation(); onEdit(cat); }}
               className="p-2 text-slate-500 hover:bg-slate-100 hover:text-primary rounded-lg transition-colors dark:hover:bg-slate-800"
             >
               <Edit2 size={16} />
             </button>
-            <button 
+            <button
               onClick={(e) => { e.stopPropagation(); onDelete(cat.id); }}
               className="p-2 text-slate-500 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors dark:hover:bg-red-900/20"
             >
@@ -105,13 +105,18 @@ export function CategoriesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCat, setEditingCat] = useState<Category | null>(null);
-  
+
   const [formData, setFormData] = useState({ name: '', is_active: true });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [categoryToDelete, setCategoryToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDeletingAll, setIsDeletingAll] = useState(false);
   const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredCategories = categories.filter(c => 
+    c.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -156,7 +161,7 @@ export function CategoriesPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name.trim()) return toast.error('Category name is required');
-    
+
     setIsSubmitting(true);
     try {
       if (editingCat) {
@@ -220,16 +225,16 @@ export function CategoriesPage() {
     if (active.id !== over?.id) {
       const oldIndex = categories.findIndex((item) => item.id === active.id);
       const newIndex = categories.findIndex((item) => item.id === over?.id);
-      
+
       const newItems = arrayMove(categories, oldIndex, newIndex);
       setCategories(newItems);
-      
+
       // Prepare order payload
       const order = newItems.map((item, index) => ({
         id: item.id,
         display_order: index,
       }));
-      
+
       // Trigger API call to update order
       api.put('/categories/reorder/batch', { order }).catch(() => {
         toast.error('Failed to reorder categories');
@@ -240,18 +245,32 @@ export function CategoriesPage() {
 
   return (
     <div className="space-y-6 max-w-5xl animate-fade-in">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-bold font-heading">Menu Categories {categories.length > 0 && `(${categories.length})`}</h2>
-          <p className="text-slate-500">Create categories like Starters, Main Course, Drinks.</p>
+      <div className="mb-2">
+        <PageHeader 
+          title={`Menu Categories ${categories.length > 0 ? `(${categories.length})` : ''}`}
+          subtitle="Create categories like Starters, Main Course, Drinks."
+          className="mb-0"
+        />
+      </div>
+
+      <div className="sticky top-[-16px] sm:top-[-24px] lg:top-[-32px] z-20 bg-[#f8fafc]/90 backdrop-blur-md pb-4 pt-4 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 border-b border-slate-200 mb-6 flex gap-3">
+        <div className="w-full sm:max-w-md flex-1">
+          <Input
+            leftIcon={<Search size={18} />}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search categories..."
+            className="w-full bg-white"
+          />
         </div>
         {categories.length > 0 && (
           <button
             onClick={() => setShowDeleteAllConfirm(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 font-medium text-sm transition-colors border border-red-200 dark:bg-red-900/20 dark:border-red-800 dark:hover:bg-red-900/40"
+            className="flex items-center justify-center gap-2 px-4 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 font-medium text-sm transition-colors border border-red-200 dark:bg-red-900/20 dark:border-red-800 dark:hover:bg-red-900/40 shrink-0"
+            title="Delete All Categories"
           >
-            <Trash2 size={15} />
-            Delete All
+            <Trash2 size={16} />
+            <span className="hidden sm:inline">Delete All</span>
           </button>
         )}
       </div>
@@ -271,21 +290,25 @@ export function CategoriesPage() {
             <Button onClick={() => openModal()}>Create Category</Button>
           </CardContent>
         </Card>
+      ) : filteredCategories.length === 0 ? (
+        <div className="py-12 text-center text-slate-500 border border-dashed rounded-xl bg-slate-50">
+          No categories match your search.
+        </div>
       ) : (
-        <div>
-          <DndContext 
+        <div className="pb-24">
+          <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
             onDragEnd={handleDragEnd}
           >
-            <SortableContext 
-              items={categories.map(c => c.id)}
+            <SortableContext
+              items={filteredCategories.map(c => c.id)}
               strategy={verticalListSortingStrategy}
             >
-              {categories.map((cat) => (
-                <SortableCategoryItem 
-                  key={cat.id} 
-                  cat={cat} 
+              {filteredCategories.map((cat) => (
+                <SortableCategoryItem
+                  key={cat.id}
+                  cat={cat}
                   onToggleActive={handleToggleActive}
                   onEdit={() => openModal(cat)}
                   onDelete={setCategoryToDelete}
@@ -297,8 +320,8 @@ export function CategoriesPage() {
       )}
 
       {/* Add/Edit Modal */}
-      <Modal 
-        isOpen={isModalOpen} 
+      <Modal
+        isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         title={editingCat ? "Edit Category" : "Add New Category"}
       >
@@ -306,22 +329,22 @@ export function CategoriesPage() {
           <Input
             label="Category Name"
             value={formData.name}
-            onChange={(e) => setFormData({...formData, name: e.target.value})}
+            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
             placeholder="e.g. Starters, Main Course"
             required
             autoFocus
           />
-          
+
           <div className="pt-2">
             <Switch
               checked={formData.is_active}
-              onChange={(c) => setFormData({...formData, is_active: c})}
+              onChange={(c) => setFormData({ ...formData, is_active: c })}
               label="Visible on public menu"
               description="Turn off to hide this category from your customers"
               className="p-3 border border-slate-200 dark:border-slate-800 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50"
             />
           </div>
-          
+
           <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
             <Button variant="secondary" type="button" onClick={() => setIsModalOpen(false)}>Cancel</Button>
             <Button type="submit" isLoading={isSubmitting}>Save Category</Button>
@@ -348,7 +371,7 @@ export function CategoriesPage() {
         confirmText="Delete All"
         isLoading={isDeletingAll}
       />
-      
+
       {/* FAB for Add Category */}
       {!isModalOpen && createPortal(
         <button

@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/Input';
 import { Switch } from '@/components/ui/Switch';
 import { SearchableSelect } from '@/components/ui/SearchableSelect';
 import { TimePicker } from '@/components/ui/TimePicker';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -301,10 +302,11 @@ export function ShopSetupPage() {
   return (
     <div className="space-y-6 max-w-3xl mx-auto animate-fade-in pb-12">
       <div className="flex justify-between items-end">
-        <div>
-          <h2 className="text-2xl font-bold font-heading text-slate-900 dark:text-white">Shop Setup</h2>
-          <p className="text-slate-500">Configure your restaurant's digital presence</p>
-        </div>
+        <PageHeader 
+          title="Shop Setup"
+          subtitle="Configure your restaurant's digital presence"
+          className="mb-0"
+        />
         {viewMode === 'summary' && (
           <button 
             onClick={() => setViewMode('edit')} 

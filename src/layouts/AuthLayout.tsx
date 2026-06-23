@@ -1,12 +1,18 @@
 import { useState } from 'react';
-import { Outlet } from 'react-router';
+import { Outlet, Navigate } from 'react-router';
 import { Languages } from 'lucide-react';
 import { GoogleTranslate } from '@/components/GoogleTranslate';
 import { LanguageSelectorModal } from '@/components/LanguageSelectorModal';
 import logo from "../assets/menukit-logo.svg";
+import { useAuthStore } from '@/store/authStore';
 
 export function AuthLayout() {
   const [isLanguageModalOpen, setIsLanguageModalOpen] = useState(false);
+  const { isAuthenticated } = useAuthStore();
+
+  if (isAuthenticated) {
+    return <Navigate to="/dashboard" replace />;
+  }
 
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-4 relative overflow-hidden">
