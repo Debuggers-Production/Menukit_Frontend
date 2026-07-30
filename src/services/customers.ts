@@ -6,6 +6,7 @@ export interface OTPVerifyResponse {
   is_strict_member: boolean;
   customer_name?: string | null;
   access_token?: string | null;
+  delivery_address?: string | null;
 }
 
 export interface Customer {
@@ -13,6 +14,7 @@ export interface Customer {
   name: string | null;
   mobile_number: string;
   created_at: string;
+  delivery_address?: string | null;
 }
 
 export interface MobileVerifyResponse {
@@ -23,6 +25,7 @@ export interface MobileVerifyResponse {
   is_strict_member?: boolean;
   customer_name?: string | null;
   access_token?: string | null;
+  delivery_address?: string | null;
 }
 
 export const customerService = {

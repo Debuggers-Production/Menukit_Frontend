@@ -74,6 +74,11 @@ export function SubscriptionMarketplacePage() {
   const [selectedFeatures, setSelectedFeatures] = useState<Set<string>>(new Set());
   const [isAllAccess, setIsAllAccess] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [mockGatewayOrder, setMockGatewayOrder] = useState<{
+    order_id: string;
+    amount: number;
+    currency: string;
+  } | null>(null);
   const setHeaderTitle = useHeaderStore((state) => state.setTitle);
 
   useEffect(() => {
@@ -138,6 +143,31 @@ export function SubscriptionMarketplacePage() {
     return { total: sum, activeItems: items };
   }, [selectedFeatures, isAllAccess]);
 
+  const handleMockPaymentSuccess = async () => {
+    if (!mockGatewayOrder) return;
+    setIsSubmitting(true);
+    try {
+      await api.post('/subscription/verify', {
+        razorpay_order_id: mockGatewayOrder.order_id,
+        razorpay_payment_id: "mock_payment_" + Date.now(),
+        razorpay_signature: "mock_signature_bypass",
+      });
+      toast.success("Payment successful! Subscription activated.");
+      setMockGatewayOrder(null);
+      // Force reload page to apply features
+      setTimeout(() => window.location.reload(), 1500);
+    } catch (error) {
+      toast.error("Payment verification failed.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleMockPaymentCancel = () => {
+    toast.error("Payment cancelled / failed.");
+    setMockGatewayOrder(null);
+  };
+
   const handleCheckout = async () => {
     if (total === 0) {
       toast.error("Please select at least one module or pack.");
@@ -156,12 +186,11 @@ export function SubscriptionMarketplacePage() {
 
       // 2. Mock Mode handling
       if (orderData.mock_mode) {
-        await api.post('/subscription/verify', {
-          razorpay_order_id: orderData.order_id,
-          razorpay_payment_id: "mock_payment_" + Date.now(),
-          razorpay_signature: "mock_signature_bypass",
+        setMockGatewayOrder({
+          order_id: orderData.order_id,
+          amount: orderData.amount,
+          currency: orderData.currency,
         });
-        toast.success("Subscription activated (Mock Mode)!");
         setIsSubmitting(false);
         return;
       }
@@ -504,6 +533,57 @@ export function SubscriptionMarketplacePage() {
 
           </div>
         </div>
+        {mockGatewayOrder && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-4">
+            <div className="bg-white dark:bg-[#111726] border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-6 animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-black text-xs">M</div>
+                  <div>
+                    <h3 className="font-extrabold text-sm text-slate-800 dark:text-slate-200 leading-tight">Menukit Sandbox Gateway</h3>
+                    <span className="text-[10px] text-slate-400">Order ID: {mockGatewayOrder.order_id}</span>
+                  </div>
+                </div>
+                <button 
+                  onClick={handleMockPaymentCancel}
+                  className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="bg-slate-50 dark:bg-[#172033] p-5 rounded-2xl border border-slate-100 dark:border-slate-800/60 text-center space-y-1">
+                  <span className="text-xs text-slate-450 dark:text-slate-400 block font-bold uppercase tracking-wider">Amount Due</span>
+                  <span className="text-3xl font-black text-slate-900 dark:text-white">₹{(mockGatewayOrder.amount / 100).toFixed(2)}</span>
+                  <span className="text-[10px] text-slate-450 dark:text-slate-450 font-medium block">Subscription: {isAllAccess ? "All-Access Pack" : "Custom Modules Bundle"}</span>
+                </div>
+
+                <div className="space-y-2.5 pt-2">
+                  <button
+                    onClick={handleMockPaymentSuccess}
+                    disabled={isSubmitting}
+                    className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold py-3.5 rounded-xl shadow-md transition-all active:scale-[0.98] flex items-center justify-center gap-2 text-xs uppercase tracking-wider disabled:opacity-50"
+                  >
+                    {isSubmitting ? "Processing..." : "🟢 Simulate Successful Payment"}
+                  </button>
+
+                  <button
+                    onClick={handleMockPaymentCancel}
+                    disabled={isSubmitting}
+                    className="w-full bg-white dark:bg-[#182135] hover:bg-red-50 hover:text-red-500 border border-slate-200 dark:border-slate-800 text-slate-650 dark:text-slate-400 font-bold py-3 rounded-xl transition-all active:scale-[0.98] text-xs uppercase tracking-wider disabled:opacity-50"
+                  >
+                    🔴 Simulate Failed Payment
+                  </button>
+                </div>
+              </div>
+
+              <div className="text-center pt-2">
+                <span className="text-[9px] text-slate-400 font-medium leading-none">🔒 Secure mock transaction simulated by Menukit Engine</span>
+              </div>
+            </div>
+          </div>
+        )}
 
       </div>
     </div>

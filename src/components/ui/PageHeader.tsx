@@ -14,34 +14,40 @@ export function PageHeader({ title, subtitle, className = '' }: PageHeaderProps)
 
   useEffect(() => {
     setTitle(title, subtitle);
-    // Cleanup is optional, but helps avoid stale titles if unmounted
     return () => setTitle('', '');
   }, [title, subtitle, setTitle]);
 
   return (
-    <div className={`mb-1 flex items-center gap-2 ${className}`}>
-      <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white font-heading">
-        {title}
-      </h1>
-      
+    <div className={`mb-4 text-left ${className}`}>
+      <div className="flex items-center gap-2">
+        <h1 className="text-xl sm:text-2xl font-black font-heading tracking-tight text-slate-900 dark:text-white">
+          {title}
+        </h1>
+        
+        {subtitle && (
+          <>
+            <button
+              data-tooltip-id="page-header-tooltip"
+              data-tooltip-content={subtitle}
+              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors rounded-full p-0.5 focus:outline-none shrink-0"
+              aria-label="More information"
+            >
+              <Info size={16} />
+            </button>
+            
+            <Tooltip 
+              id="page-header-tooltip" 
+              place="bottom-start"
+              className="!bg-slate-900 !text-white !text-xs !py-1.5 !px-3 !rounded-xl shadow-xl z-50 max-w-xs font-medium"
+            />
+          </>
+        )}
+      </div>
+
       {subtitle && (
-        <>
-          <button
-            data-tooltip-id="page-header-tooltip"
-            data-tooltip-content={subtitle}
-            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors rounded-full p-1 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
-            aria-label="More information"
-          >
-            <Info size={18} />
-          </button>
-          
-          <Tooltip 
-            id="page-header-tooltip" 
-            place="bottom"
-            className="z-50 max-w-xs text-center !bg-slate-800 dark:!bg-slate-700 !text-white !rounded-xl !text-xs !py-2 !px-3 !shadow-xl"
-            arrowColor="transparent"
-          />
-        </>
+        <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+          {subtitle}
+        </p>
       )}
     </div>
   );

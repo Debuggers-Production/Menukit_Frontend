@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { ChevronLeft, Star, Loader2, Send, Gift, ShoppingCart, Plus, Minus } from 'lucide-react';
+import { ChevronLeft, Star, Loader2, Send, Gift, ShoppingCart, Plus, Minus, Trash2 } from 'lucide-react';
 import { api } from '@/services/api';
 import { Shop, MenuItem, ReviewSummary, Discount } from '@/types';
 import { Lightbox } from '@/components/ui/Lightbox';
@@ -55,6 +55,17 @@ export function PublicItemPage() {
 
   const [isDiscountPopupOpen, setIsDiscountPopupOpen] = useState(false);
   const [memberStatus, setMemberStatus] = useState<'unlocked' | 'verified-member' | null>(() => sessionStorage.getItem('member_status') as any);
+
+  interface FlyingItem {
+    id: number;
+    left: number;
+    top: number;
+    scale: number;
+    opacity: number;
+    rotate: number;
+    imageUrl: string;
+  }
+  const [flyingItems, setFlyingItems] = useState<FlyingItem[]>([]);
 
   const [isScrollingDown, setIsScrollingDown] = useState(false);
   const lastScrollY = useRef(0);
@@ -206,14 +217,33 @@ export function PublicItemPage() {
   return (
     <div className={`min-h-screen pb-36 ${isDark ? 'dark bg-slate-950 text-slate-50' : 'bg-slate-50 text-slate-900'}`} style={{ fontFamily: theme?.font_family || 'Inter' }}>
       {/* Sticky Header */}
-      <div className="sticky top-0 z-40 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md border-b border-slate-100 dark:border-slate-800 p-4 flex items-center gap-3">
+      <div className="sticky top-0 z-45 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md border-b border-slate-100 dark:border-slate-800 p-4 flex items-center justify-between">
+        <div className="flex items-center gap-3 min-w-0">
+          <button
+            onClick={() => navigate(`/shop/${id}`)}
+            className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
+          >
+            <ChevronLeft size={24} />
+          </button>
+          <h1 className="font-bold truncate text-lg text-slate-800 dark:text-slate-100">{item.name}</h1>
+        </div>
+
+        {/* Top Cart Basket */}
         <button
-          onClick={() => navigate(`/shop/${id}`)}
-          className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          id="top-cart-basket"
+          onClick={() => navigate(`/shop/${id}/cart`)}
+          className="p-2.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-all relative text-slate-700 dark:text-slate-200 active:scale-95 cursor-pointer shrink-0"
         >
-          <ChevronLeft size={24} />
+          <ShoppingCart size={22} />
+          {cartItems.length > 0 && (
+            <span 
+              className="absolute -top-1 -right-1 w-5 h-5 rounded-full text-[10px] font-black flex items-center justify-center text-white"
+              style={{ backgroundColor: primaryColor }}
+            >
+              {cartItems.reduce((acc, curr) => acc + curr.quantity, 0)}
+            </span>
+          )}
         </button>
-        <h1 className="font-bold truncate text-lg">{item.name}</h1>
       </div>
 
       <div className="max-w-2xl mx-auto p-4 sm:p-6 bg-white dark:bg-slate-950">
@@ -222,6 +252,7 @@ export function PublicItemPage() {
           <div className="mb-6">
             <div className="aspect-[4/3] rounded-2xl overflow-hidden bg-slate-100 relative group cursor-pointer" onClick={() => setLightboxImage(item.images[0].image_url)}>
               <img
+                id="product-main-image"
                 src={item.images[0].image_url}
                 alt={item.name}
                 className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
@@ -248,6 +279,7 @@ export function PublicItemPage() {
         ) : item.image_url ? (
           <div className="mb-6 aspect-[4/3] rounded-2xl overflow-hidden bg-slate-100 relative group cursor-pointer" onClick={() => setLightboxImage(item.image_url)}>
             <img
+              id="product-main-image"
               src={item.image_url}
               alt={item.name}
               className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
@@ -593,9 +625,11 @@ export function PublicItemPage() {
         </button>
       )}
 
-      {/* Cart Fixed Bottom Bar */}
+      {/* Bottom Actions Bar */}
       {item && (
-        <div className="fixed bottom-0 left-0 right-0 p-3 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border-t border-slate-200 dark:border-slate-800 z-40 safe-area-bottom shadow-[0_-10px_30px_rgba(0,0,0,0.05)]">
+        <div id="bottom-actions-bar" className={`fixed bottom-0 inset-x-0 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-t border-slate-100 dark:border-slate-800 p-4 pb-8 z-30 select-none transition-transform duration-300 ${
+          isScrollingDown ? 'translate-y-full' : 'translate-y-0'
+        }`}>
           <div className="max-w-md mx-auto flex items-center gap-3 transition-all duration-300">
             {existingCartItem ? (
               <>
@@ -623,28 +657,84 @@ export function PublicItemPage() {
                   </button>
                 </div>
 
+                {/* View Cart Button */}
+                <button
+                  onClick={() => navigate(`/shop/${id}/cart`)}
+                  className="flex-1 py-2.5 px-4 rounded-xl text-white text-sm font-bold flex items-center justify-center gap-2 shadow-lg hover:shadow-xl active:scale-[0.98] transition-all animate-[fadeIn_0.3s_ease-out]"
+                  style={{ backgroundColor: primaryColor }}
+                >
+                  <ShoppingCart size={16} />
+                  View Cart
+                </button>
+
                 {/* Remove from Cart Button */}
                 <button
                   onClick={() => {
                     removeFromCart(existingCartItem.id);
                     toast.success(`Removed ${item.name} from cart`);
                   }}
-                  className="flex-1 py-2.5 px-4 rounded-xl text-white text-sm font-bold flex items-center justify-center gap-2 shadow-lg hover:shadow-xl active:scale-[0.98] transition-all bg-red-500 hover:bg-red-600 animate-[fadeIn_0.3s_ease-out]"
+                  className="p-2.5 rounded-xl text-red-500 bg-red-50 hover:bg-red-100 dark:bg-red-950/20 dark:hover:bg-red-900/30 text-sm font-bold flex items-center justify-center shadow-sm active:scale-[0.98] transition-all animate-[fadeIn_0.3s_ease-out]"
+                  title="Remove from Cart"
                 >
-                  <ShoppingCart size={16} />
-                  Remove
+                  <Trash2 size={16} />
                 </button>
               </>
             ) : (
               <button
-                onClick={() => {
+                onClick={(e) => {
                   if (id && item) {
                     addToCart(id, {
                       menuItem: item,
                       selectedVariantIdx,
                       selectedAddons,
-                      quantity: 1 // Default add is 1
+                      quantity: 1
                     });
+                    
+                    // Trigger falling/flying clone animation from main image to the clicked bottom button
+                    const imgEl = document.getElementById('product-main-image');
+                    const imgRect = imgEl?.getBoundingClientRect();
+                    const startX = imgRect ? (imgRect.left + imgRect.width / 2) : (window.innerWidth / 2);
+                    const startY = imgRect ? (imgRect.top + imgRect.height / 2) : 250;
+                    
+                    const barEl = document.getElementById('bottom-actions-bar');
+                    const barRect = barEl?.getBoundingClientRect();
+                    const endX = barRect ? (barRect.left + barRect.width / 2) : (window.innerWidth / 2);
+                    const endY = barRect ? (barRect.top + barRect.height / 2) : (window.innerHeight - 50);
+                    
+                    const flyId = Date.now();
+                    const flyItem = {
+                      id: flyId,
+                      left: startX - 28,
+                      top: startY - 28,
+                      scale: 1,
+                      opacity: 1,
+                      rotate: 0,
+                      imageUrl: item.images && item.images.length > 0 ? item.images[0].image_url : (item.image_url || '')
+                    };
+                    
+                    setFlyingItems(prev => [...prev, flyItem]);
+                    
+                    // Trigger the transition forward
+                    setTimeout(() => {
+                      setFlyingItems(prev => prev.map(f => {
+                        if (f.id === flyId) {
+                          return {
+                            ...f,
+                            left: endX - 28,
+                            top: endY - 28,
+                            scale: 0.15,
+                            opacity: 0.1,
+                            rotate: 360
+                          };
+                        }
+                        return f;
+                      }));
+                    }, 50);
+                    
+                    setTimeout(() => {
+                      setFlyingItems(prev => prev.filter(f => f.id !== flyId));
+                    }, 850);
+                    
                     toast.success(`Added ${item.name} to cart`);
                   }
                 }}
@@ -658,6 +748,26 @@ export function PublicItemPage() {
           </div>
         </div>
       )}
+      {/* Flying particles clones layer */}
+      {flyingItems.map(fItem => (
+        <div
+          key={fItem.id}
+          className="fixed pointer-events-none z-[100] rounded-full border-2 border-white shadow-lg overflow-hidden"
+          style={{
+            width: '56px',
+            height: '56px',
+            left: `${fItem.left}px`,
+            top: `${fItem.top}px`,
+            backgroundImage: `url(${fItem.imageUrl})`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            transform: `scale(${fItem.scale}) rotate(${fItem.rotate}deg)`,
+            opacity: fItem.opacity,
+            transition: 'left 0.8s cubic-bezier(0.25, 1, 0.5, 1), top 0.8s cubic-bezier(0.06, 0.97, 0.77, 1.2), transform 0.8s ease-out, opacity 0.8s ease-out',
+          }}
+        />
+      ))}
+
     </div>
   );
 }

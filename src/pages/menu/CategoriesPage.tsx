@@ -244,7 +244,7 @@ export function CategoriesPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-5xl animate-fade-in">
+    <div className="space-y-6 max-w-5xl mx-auto animate-fade-in">
       <div className="mb-2">
         <PageHeader 
           title={`Menu Categories ${categories.length > 0 ? `(${categories.length})` : ''}`}
@@ -324,8 +324,14 @@ export function CategoriesPage() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         title={editingCat ? "Edit Category" : "Add New Category"}
+        footer={
+          <div className="flex justify-end gap-3 w-full">
+            <Button variant="secondary" size="sm" type="button" onClick={() => setIsModalOpen(false)}>Cancel</Button>
+            <Button size="sm" type="button" onClick={handleSubmit} isLoading={isSubmitting}>Save Category</Button>
+          </div>
+        }
       >
-        <form onSubmit={handleSubmit} className="space-y-5 mt-4">
+        <div className="space-y-4">
           <Input
             label="Category Name"
             value={formData.name}
@@ -344,12 +350,7 @@ export function CategoriesPage() {
               className="p-3 border border-slate-200 dark:border-slate-800 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50"
             />
           </div>
-
-          <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
-            <Button variant="secondary" type="button" onClick={() => setIsModalOpen(false)}>Cancel</Button>
-            <Button type="submit" isLoading={isSubmitting}>Save Category</Button>
-          </div>
-        </form>
+        </div>
       </Modal>
 
       <ConfirmModal

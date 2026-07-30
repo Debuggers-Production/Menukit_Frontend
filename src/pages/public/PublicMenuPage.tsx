@@ -1,19 +1,22 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router';
-import { toast } from 'react-hot-toast';
-import { Search, Flame, MapPin, Phone, Info, UtensilsCrossed, X, Star, LayoutGrid, List as ListIcon, Clock, Sparkles, ExternalLink, SlidersHorizontal, Check, Languages, Tag, Crown, Calendar, Gift, ShoppingBag, ArrowUpRight, Eye, ChevronDown } from 'lucide-react';
+import { Search, Flame, MapPin, Phone, Info, UtensilsCrossed, X, Star, LayoutGrid, List as ListIcon, Clock, Sparkles, ExternalLink, SlidersHorizontal, Check, Languages, Tag, Crown, Calendar, ShoppingBag, ArrowUpRight, ChevronDown, QrCode, Download, History, Trophy, ChefHat, User } from 'lucide-react';
 import { api } from '@/services/api';
 import { Shop, Category, MenuItem, Discount } from '@/types';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Modal } from '@/components/ui/Modal';
+import { BottomSheet } from '@/components/ui/BottomSheet';
 import { GoogleTranslate } from '@/components/GoogleTranslate';
 import { LanguageSelectorModal } from '@/components/LanguageSelectorModal';
 import { EntertainmentHub } from '@/components/games/EntertainmentHub';
 import { Gamepad2 } from 'lucide-react';
 import { DiscountUnlockPopup } from '@/components/public/DiscountUnlockPopup';
 import { useCartStore } from '@/store/cartStore';
+import { useActiveOrders } from '@/hooks/useActiveOrders';
 import { InfiniteScrollTrigger } from '@/components/ui/InfiniteScrollTrigger';
+import QRCodeStyling from 'qr-code-styling';
 import confetti from 'canvas-confetti';
+import { contestService } from '@/services/contestService';
 
 const triggerWelcomeEffect = () => {
   const defaults = {
@@ -47,18 +50,17 @@ const triggerWelcomeEffect = () => {
   setTimeout(shoot, 500);
 };
 
-const PRESET_TIMINGS: Record<string, string> = {
-  'Early Morning': '(04:00 - 08:00)',
-  'Morning': '(08:00 - 12:00)',
-  'Afternoon': '(12:00 - 16:00)',
-  'Evening': '(16:00 - 20:00)',
-  'Night': '(20:00 - 00:00)',
-  'Mid-night': '(00:00 - 04:00)'
-};
+// const PRESET_TIMINGS: Record<string, string> = {
+//   'Early Morning': '(04:00 - 08:00)',
+//   'Morning': '(08:00 - 12:00)',
+//   'Afternoon': '(12:00 - 16:00)',
+//   'Evening': '(16:00 - 20:00)',
+//   'Night': '(20:00 - 00:00)',
+//   'Mid-night': '(00:00 - 04:00)'
+// };
 
 const menuCache: Record<string, { shop: any, categories: any, timestamp: number }> = {};
 
-// This is a special interface for the public menu structure returned by the backend
 interface PublicCategory extends Category {
   items: MenuItem[];
 }
@@ -84,10 +86,12 @@ export function PublicMenuPage() {
     date.setMinutes(parseInt(m, 10));
     return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
   };
+  
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [shop, setShop] = useState<Shop | null>(null);
+  const { currentOrder, totalActiveCount } = useActiveOrders(id);
   const [categories, setCategories] = useState<PublicCategory[]>([]);
   const [categoriesOffset, setCategoriesOffset] = useState(0);
   const [hasMoreCategories, setHasMoreCategories] = useState(true);
@@ -104,10 +108,43 @@ export function PublicMenuPage() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [userViewMode, setUserViewMode] = useState<'grid' | 'list' | null>(null);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [showProfileVerifyPopup, setShowProfileVerifyPopup] = useState(false);
+
+  const handleProfileClick = () => {
+    const token = localStorage.getItem('customer_token');
+    const profileAppUrl = import.meta.env.VITE_CUSTOMER_PROFILE_URL || 'http://localhost:5176';
+    if (token) {
+      window.location.href = `${profileAppUrl}/shop/${id}/profile`;
+    } else {
+      setShowProfileVerifyPopup(true);
+    }
+  };
   const categoriesRef = useRef<HTMLDivElement>(null);
 
   const [isScrollingDown, setIsScrollingDown] = useState(false);
   const lastScrollY = useRef(0);
+
+  const [contestBtnTextIndex, setContestBtnTextIndex] = useState(0);
+  const [globalParticipantsCount, setGlobalParticipantsCount] = useState<number | null>(null);
+  const contestTexts = [
+    'Contest',
+    globalParticipantsCount !== null ? `${globalParticipantsCount}+ Joined` : '1000+ Members',
+    'Live Join Now'
+  ];
+
+  useEffect(() => {
+    contestService.getGlobalParticipantsCount()
+      .then(setGlobalParticipantsCount)
+      .catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setContestBtnTextIndex((prev) => (prev + 1) % contestTexts.length);
+    }, 2500);
+    return () => clearInterval(timer);
+  }, [contestTexts.length]);
+
 
   // Handle Scroll
   useEffect(() => {
@@ -136,6 +173,123 @@ export function PublicMenuPage() {
   const [isLanguageModalOpen, setIsLanguageModalOpen] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const [welcomePhase, setWelcomePhase] = useState<'entering' | 'visible' | 'exiting' | 'hidden'>('hidden');
+
+  const [isQRModalOpen, setIsQRModalOpen] = useState(false);
+  const [qrStyleData, setQrStyleData] = useState<any>(null);
+  const [roundedPublicLogo, setRoundedPublicLogo] = useState<string | undefined>(undefined);
+  const publicQrRef = useRef<HTMLDivElement>(null);
+  const publicQrInstance = useRef<any>(null);
+
+  useEffect(() => {
+    if (id) {
+      api.get(`/public/shop/${id}/qr`)
+        .then(res => setQrStyleData(res.data))
+        .catch(err => console.error("Failed to load QR style", err));
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (shop?.logo_url && qrStyleData?.include_logo) {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const size = Math.min(img.width, img.height);
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.beginPath();
+          ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+          ctx.clip();
+          ctx.drawImage(img, (size - img.width) / 2, (size - img.height) / 2, img.width, img.height);
+          setRoundedPublicLogo(canvas.toDataURL());
+        } else {
+          setRoundedPublicLogo(shop.logo_url || undefined);
+        }
+      };
+      img.onerror = () => {
+        setRoundedPublicLogo(shop.logo_url || undefined);
+      };
+      img.src = shop.logo_url;
+    } else {
+      setRoundedPublicLogo(undefined);
+    }
+  }, [shop?.logo_url, qrStyleData]);
+
+  useEffect(() => {
+    if (!isQRModalOpen || !qrStyleData) return;
+
+    const timer = setTimeout(() => {
+      if (!publicQrRef.current) return;
+
+      const qrUrl = qrStyleData.qr_url;
+      const themeColor = qrStyleData.qr_color || '#1A1515';
+      const dotsPattern = qrStyleData.dot_type || 'dots';
+      const cornersRing = qrStyleData.corners_square_type || 'rounded';
+      const cornersCenter = qrStyleData.corners_dot_type || 'dot';
+
+      if (!publicQrInstance.current) {
+        publicQrInstance.current = new QRCodeStyling({
+          width: 260,
+          height: 260,
+          data: qrUrl,
+          dotsOptions: {
+            type: dotsPattern as any,
+            color: themeColor,
+          },
+          cornersSquareOptions: {
+            type: cornersRing as any,
+            color: themeColor,
+          },
+          cornersDotOptions: {
+            type: cornersCenter as any,
+            color: themeColor,
+          },
+          backgroundOptions: {
+            color: "#FFFFFF",
+          },
+          image: qrStyleData.include_logo && roundedPublicLogo ? roundedPublicLogo : undefined,
+          imageOptions: {
+            crossOrigin: "anonymous",
+            margin: 6,
+            imageSize: 0.35,
+          }
+        });
+        publicQrRef.current.innerHTML = '';
+        publicQrInstance.current.append(publicQrRef.current);
+      } else {
+        publicQrInstance.current.update({
+          data: qrUrl,
+          dotsOptions: {
+            type: dotsPattern as any,
+            color: themeColor,
+          },
+          cornersSquareOptions: {
+            type: cornersRing as any,
+            color: themeColor,
+          },
+          cornersDotOptions: {
+            type: cornersCenter as any,
+            color: themeColor,
+          },
+          image: qrStyleData.include_logo && roundedPublicLogo ? roundedPublicLogo : undefined,
+        });
+      }
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [isQRModalOpen, qrStyleData, roundedPublicLogo]);
+
+  const handleDownloadPublicQR = () => {
+    if (publicQrInstance.current) {
+      publicQrInstance.current.download({
+        name: `${shop?.name || 'shop'}-qr-code`,
+        extension: 'png'
+      });
+    }
+  };
+
   const [activeDiscounts, setActiveDiscounts] = useState<Discount[]>([]);
   const [discountsOffset, setDiscountsOffset] = useState(0);
   const [hasMoreDiscounts, setHasMoreDiscounts] = useState(true);
@@ -155,7 +309,6 @@ export function PublicMenuPage() {
     return sessionStorage.getItem('member_status') as 'unlocked' | 'verified-member' | null;
   });
 
-  // Trigger popup after 10 seconds if not already verified, haven't seen it, AND there are active discounts
   useEffect(() => {
     if (!id || memberStatus === 'verified-member' || sessionStorage.getItem(`discount_popup_seen_${id}`) || activeDiscounts.length === 0) return;
 
@@ -167,7 +320,6 @@ export function PublicMenuPage() {
     return () => clearTimeout(timer);
   }, [id, memberStatus, activeDiscounts.length]);
 
-  // Track scan if referrer is present
   useEffect(() => {
     const ref = searchParams.get('ref');
     if (id) {
@@ -175,7 +327,6 @@ export function PublicMenuPage() {
     }
   }, [id, searchParams]);
 
-  // Load Data
   const fetchMenu = async (currentOffset: number = 0, append = false) => {
     if (append) setIsLoadingMoreCategories(true);
     
@@ -214,7 +365,6 @@ export function PublicMenuPage() {
         setCategories(data);
       }
 
-      // Show welcome popup once per session if shop has a welcome message
       const shopData = shopRes.data as Shop;
       if (shopData.welcome_message && !sessionStorage.getItem(`welcome_${id}`)) {
         sessionStorage.setItem(`welcome_${id}`, 'true');
@@ -226,7 +376,6 @@ export function PublicMenuPage() {
         }, 600);
       }
 
-      // Track view
       if (!append) api.post(`/public/shop/${id}/view`).catch(console.error);
 
     } catch (error) {
@@ -247,7 +396,6 @@ export function PublicMenuPage() {
     fetchMenu(newOffset, true);
   };
 
-  // Fetch Discounts
   const fetchDiscounts = async (currentOffset: number = 0, append = false) => {
     if (!id) return;
     if (append) setIsLoadingMoreDiscounts(true);
@@ -290,7 +438,7 @@ export function PublicMenuPage() {
         setActiveDiscounts(filteredDiscounts);
       }
     } catch {
-      // Non-critical — silently ignore
+      // ignore
     } finally {
       if (append) setIsLoadingMoreDiscounts(false);
     }
@@ -306,12 +454,10 @@ export function PublicMenuPage() {
     fetchDiscounts(newOffset, true);
   };
 
-  // Handle Search Tracking with Debounce
   useEffect(() => {
     if (!searchQuery || !id) return;
 
     const timeoutId = setTimeout(() => {
-      // Find result count
       let resultCount = 0;
       categories.forEach(cat => {
         cat.items.forEach(item => {
@@ -327,20 +473,17 @@ export function PublicMenuPage() {
         result_count: resultCount
       }).catch(console.error);
 
-    }, 1000); // 1s debounce
+    }, 1000);
 
     return () => clearTimeout(timeoutId);
   }, [searchQuery, id, categories]);
 
-  // Apply styles dynamically
   useEffect(() => {
     if (!shop?.theme) return;
     const { primary_color, font_family } = shop.theme;
 
     document.documentElement.style.setProperty('--primary', primary_color);
     document.documentElement.classList.remove('dark');
-
-    // Add font family to body
     document.body.style.fontFamily = font_family;
 
     return () => {
@@ -350,7 +493,6 @@ export function PublicMenuPage() {
     };
   }, [shop?.theme]);
 
-  // Filter Items
   const filteredCategories = useMemo(() => {
     if (!categories) return [];
 
@@ -390,7 +532,6 @@ export function PublicMenuPage() {
         return matchesSearch && matchesFood && matchesExtra && matchesDiscount;
       });
 
-      // Sort
       filteredItems.sort((a, b) => {
         if (sortOrder === 'price_asc') {
           return Number(a.offer_price || a.price) - Number(b.offer_price || b.price);
@@ -398,7 +539,6 @@ export function PublicMenuPage() {
         if (sortOrder === 'price_desc') {
           return Number(b.offer_price || b.price) - Number(a.offer_price || a.price);
         }
-        // Default sort: Highlighted items first, then original order
         if (a.is_highlighted && !b.is_highlighted) return -1;
         if (!a.is_highlighted && b.is_highlighted) return 1;
         return 0;
@@ -427,13 +567,10 @@ export function PublicMenuPage() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
-        {/* Header Skeleton */}
         <div className="h-48 sm:h-64 bg-slate-200 dark:bg-slate-800 animate-pulse relative">
           <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 w-24 h-24 rounded-full border-4 border-white dark:border-slate-950 bg-slate-300 dark:bg-slate-700 animate-pulse" />
         </div>
-
         <div className="pt-12 px-4 pb-4 max-w-4xl mx-auto">
-          {/* Title Skeleton */}
           <div className="flex flex-col items-center gap-2 mb-8">
             <Skeleton className="w-48 h-8 rounded-lg" />
             <Skeleton className="w-32 h-4 rounded-md" />
@@ -442,16 +579,12 @@ export function PublicMenuPage() {
               <Skeleton className="w-16 h-6 rounded-full" />
             </div>
           </div>
-
-          {/* Categories Nav Skeleton */}
           <div className="flex gap-3 overflow-x-hidden mb-6">
             <Skeleton className="w-24 h-10 rounded-full shrink-0" />
             <Skeleton className="w-32 h-10 rounded-full shrink-0" />
             <Skeleton className="w-28 h-10 rounded-full shrink-0" />
             <Skeleton className="w-24 h-10 rounded-full shrink-0" />
           </div>
-
-          {/* Menu Items Skeleton */}
           <div className="space-y-6">
             <div>
               <Skeleton className="w-40 h-8 rounded-lg mb-4" />
@@ -493,7 +626,6 @@ export function PublicMenuPage() {
   const primaryColor = theme?.primary_color || '#f97316';
   
   const borderRadiusClass = (theme as any)?.border_radius === 'sharp' ? 'rounded-none' : (theme as any)?.border_radius === 'pill' ? 'rounded-[32px]' : 'rounded-2xl';
-  const itemStyleClass = theme?.menu_item_style === 'flat' ? 'bg-slate-50 border-transparent shadow-none' : theme?.menu_item_style === 'elevated' ? 'bg-white shadow-md border-slate-100 hover:shadow-lg' : 'bg-white shadow-sm border-slate-100';
   const categoryPillClass = (theme as any)?.border_radius === 'sharp' ? 'rounded-none' : 'rounded-full';
 
   return (
@@ -509,7 +641,6 @@ export function PublicMenuPage() {
             setTimeout(() => setShowWelcome(false), 500);
           }}
         >
-          {/* Floating decorative particles */}
           <div className="absolute inset-0 overflow-hidden pointer-events-none">
             {[...Array(6)].map((_, i) => (
               <div
@@ -528,7 +659,6 @@ export function PublicMenuPage() {
             ))}
           </div>
 
-          {/* Popup Card - Outer Wrapper for Animated Border */}
           <div
             onClick={(e) => e.stopPropagation()}
             className={`relative w-full max-w-sm rounded-3xl p-[3px] overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.3)] transition-all duration-500 ${welcomePhase === 'entering'
@@ -538,7 +668,6 @@ export function PublicMenuPage() {
                 : 'translate-y-0 scale-100 opacity-100'
               }`}
           >
-            {/* Spinning Glowing Border Background */}
             <div className="absolute inset-0 z-0" style={{ backgroundColor: `${primaryColor}15` }} />
             <div
               className="absolute inset-[-100%] z-0 animate-[spin_4s_linear_infinite]"
@@ -548,13 +677,10 @@ export function PublicMenuPage() {
               }}
             />
 
-            {/* Inner Card Content */}
             <div className="relative z-10 w-full h-full bg-white/95 backdrop-blur-2xl rounded-[21px] flex flex-col overflow-hidden">
-              {/* Gradient accent bar */}
               <div className="h-1.5 w-full shrink-0 relative z-20" style={{ background: `linear-gradient(90deg, ${primaryColor}, ${primaryColor}99, ${primaryColor}44)` }} />
 
               <div className="p-6 sm:p-8 text-center">
-                {/* Logo with glow */}
                 <div
                   className="w-20 h-20 mx-auto rounded-2xl flex items-center justify-center mb-5 shadow-lg border-2 border-white overflow-hidden"
                   style={{
@@ -570,7 +696,6 @@ export function PublicMenuPage() {
                   )}
                 </div>
 
-                {/* Sparkle + Title */}
                 <div className="flex items-center justify-center gap-2 mb-2">
                   <Sparkles size={16} style={{ color: primaryColor }} className="opacity-60" />
                   <span className="text-xs font-semibold uppercase tracking-widest opacity-50">Welcome to</span>
@@ -580,19 +705,16 @@ export function PublicMenuPage() {
                   {shop.name}
                 </h2>
 
-                {/* Divider */}
                 <div className="flex items-center gap-3 mb-4 px-4">
                   <div className="flex-1 h-px bg-slate-200" />
                   <UtensilsCrossed size={14} className="text-slate-300" />
                   <div className="flex-1 h-px bg-slate-200" />
                 </div>
 
-                {/* Welcome Message */}
                 <p className="text-sm sm:text-base text-slate-500 leading-relaxed mb-6 px-2">
                   {shop.welcome_message}
                 </p>
 
-                {/* CTA Button */}
                 <button
                   onClick={() => {
                     setWelcomePhase('exiting');
@@ -612,9 +734,8 @@ export function PublicMenuPage() {
         </div>
       )}
 
-      {/* Inline keyframes for welcome popup */}
       <style>{`
-        @keyframes float-particle {
+        @backgroundImage float-particle {
           0% { transform: translateY(0px) rotate(0deg); }
           100% { transform: translateY(-20px) rotate(180deg); }
         }
@@ -623,11 +744,11 @@ export function PublicMenuPage() {
           50% { transform: scale(1.04); }
         }
       `}</style>
+
       {/* Sticky Header */}
       <div className={`fixed top-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-md shadow-sm border-b border-slate-200 transition-all duration-300 transform ${isScrolled ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 pointer-events-none'
         }`}>
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-center gap-2 sm:gap-3 transition-all overflow-x-auto scrollbar-hide no-scrollbar w-full">
-          {/* Small Logo */}
           {!isSearchFocused && (
             <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 border border-slate-200 bg-white flex items-center justify-center shadow-sm transition-all">
               {shop.logo_url ? (
@@ -638,7 +759,6 @@ export function PublicMenuPage() {
             </div>
           )}
 
-          {/* Small Search */}
           <div className={`relative transition-all duration-300 overflow-hidden ${isSearchFocused || searchQuery ? 'flex-1' : 'w-10 sm:flex-1 shrink-0'}`}>
             <Search className={`absolute top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none transition-all duration-300 z-10 ${isSearchFocused || searchQuery ? 'left-3' : 'left-1/2 -translate-x-1/2 sm:left-3 sm:translate-x-0'
               }`} />
@@ -676,7 +796,6 @@ export function PublicMenuPage() {
 
           {!isSearchFocused && (
             <>
-              {/* Veg/Non-veg/Egg/Drink Toggle */}
               <div className="flex bg-slate-100 rounded-lg p-1 shrink-0 items-center overflow-x-auto scrollbar-hide no-scrollbar">
                 <button
                   onClick={() => setFoodFilter(foodFilter === 'veg' ? 'all' : 'veg')}
@@ -716,7 +835,6 @@ export function PublicMenuPage() {
                 </button>
               </div>
 
-              {/* Active Offers Label */}
               {activeDiscounts.length > 0 && (
                 <button
                   onClick={() => setIsDiscountsModalOpen(true)}
@@ -731,7 +849,6 @@ export function PublicMenuPage() {
                 </button>
               )}
 
-              {/* View Toggle */}
               <div className="flex bg-slate-100 rounded-lg p-1 shrink-0 items-center">
                 <button
                   onClick={() => setUserViewMode('grid')}
@@ -752,7 +869,6 @@ export function PublicMenuPage() {
           )}
         </div>
 
-        {/* Sticky Categories */}
         <div className="px-4 pb-3 flex gap-2 overflow-x-auto scrollbar-hide no-scrollbar max-w-3xl mx-auto items-center">
           <button
             onClick={() => {
@@ -797,6 +913,17 @@ export function PublicMenuPage() {
 
       {/* Banner & Header */}
       <div className="relative">
+        {/* Top-Left Customer Profile Icon */}
+        <div className="absolute top-4 left-4 z-20">
+          <button
+            onClick={handleProfileClick}
+            className="w-10 h-10 rounded-full bg-white/80 backdrop-blur-md border border-white/30 flex items-center justify-center text-slate-800 shadow-sm hover:bg-white/90 hover:scale-105 active:scale-95 transition-all cursor-pointer group"
+            title="Customer Profile & Loyalty Wallet"
+          >
+            <User size={20} className="text-orange-600 group-hover:scale-110 transition-transform" />
+          </button>
+        </div>
+
         <GoogleTranslate />
         {shop.banner_url ? (
           <img src={shop.banner_url} alt="Restaurant Banner" className="w-full h-48 sm:h-64 object-cover" />
@@ -807,6 +934,15 @@ export function PublicMenuPage() {
         )}
 
         <div className="absolute top-4 right-4 flex gap-2">
+          {qrStyleData && (
+            <button
+              onClick={() => setIsQRModalOpen(true)}
+              className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md border border-white/30 flex items-center justify-center text-white shadow-sm hover:bg-white/30 transition-colors"
+              title="Show QR Code"
+            >
+              <QrCode size={20} className="text-orange-500" />
+            </button>
+          )}
           <button
             onClick={() => setIsLanguageModalOpen(true)}
             className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md border border-white/30 flex items-center justify-center text-white shadow-sm hover:bg-white/30 transition-colors"
@@ -836,6 +972,8 @@ export function PublicMenuPage() {
         <div className="text-center mb-4">
           <h1 className="text-3xl font-bold font-heading">{shop.name}</h1>
         </div>
+
+        {/* ❌ REMOVED: `<ContestHub/>` component was successfully pulled from top layout context */}
 
         {/* Search & View Toggle */}
         <div className="flex items-center justify-center gap-2 sm:gap-3 mb-3 transition-all overflow-x-auto scrollbar-hide no-scrollbar w-full">
@@ -876,7 +1014,6 @@ export function PublicMenuPage() {
 
           {!isSearchFocused && (
             <>
-              {/* Veg/Non-veg/Egg/Drink Toggle */}
               <div className="flex bg-white shadow-sm border border-slate-200 rounded-full p-1 shrink-0 items-center overflow-x-auto no-scrollbar scrollbar-hide">
                 <button
                   onClick={() => setFoodFilter(foodFilter === 'veg' ? 'all' : 'veg')}
@@ -925,7 +1062,6 @@ export function PublicMenuPage() {
                 </button>
               </div>
 
-              {/* View Toggle */}
               <div className="flex bg-white shadow-sm border border-slate-200 rounded-full p-1 shrink-0 items-center">
                 <button
                   onClick={() => setUserViewMode('grid')}
@@ -1009,7 +1145,7 @@ export function PublicMenuPage() {
           </div>
         )}
 
-        {/* 🎉 Active Offers Banner */}
+        {/* Active Offers Banner */}
         {activeDiscounts.filter(d => d.visibility_type !== 'members_only_hidden' || memberStatus !== null).length > 0 && (
           <div className="mb-6 w-full -mx-4 px-4 sm:mx-0 sm:px-0">
             <div className="flex gap-4 overflow-x-auto pb-4 pt-1 snap-x snap-mandatory scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
@@ -1020,12 +1156,10 @@ export function PublicMenuPage() {
                   className="relative shrink-0 min-h-[120px] w-[85%] sm:w-[350px] flex shadow-md rounded-2xl overflow-hidden cursor-pointer transition-all duration-300 hover:shadow-xl hover:-translate-y-1 active:scale-[0.98] snap-center group bg-white"
                   style={{ border: `1px solid ${primaryColor}30` }}
                 >
-                  {/* Left Ticket Stub */}
                   <div
                     className="relative w-28 sm:w-32 flex flex-col items-center justify-center text-white p-4 shrink-0"
                     style={{ backgroundColor: primaryColor }}
                   >
-                    {/* Cutouts for ticket effect */}
                     <div className="absolute -top-3 -right-3 w-6 h-6 bg-slate-50 rounded-full border-b border-l border-transparent" style={{ borderColor: `${primaryColor}30` }} />
                     <div className="absolute -bottom-3 -right-3 w-6 h-6 bg-slate-50 rounded-full border-t border-l border-transparent" style={{ borderColor: `${primaryColor}30` }} />
 
@@ -1042,10 +1176,8 @@ export function PublicMenuPage() {
                     </div>
                   </div>
 
-                  {/* Perforated line */}
                   <div className="relative border-l-2 border-dashed border-slate-200 my-4" />
 
-                  {/* Right Ticket Body */}
                   <div className="flex-1 p-4 sm:p-5 flex flex-col justify-center relative bg-white overflow-hidden min-w-0">
                     <div className="flex justify-between items-start mb-1.5 gap-2">
                       <h3 className="font-extrabold text-slate-800 text-sm sm:text-base leading-tight truncate">
@@ -1091,7 +1223,6 @@ export function PublicMenuPage() {
                     </div>
                   </div>
 
-                  {/* Constant shimmer effect spanning the whole card */}
                   <div className="absolute inset-0 z-10 bg-gradient-to-r from-transparent via-white/60 to-transparent -translate-x-full animate-[shimmer_2.5s_infinite] pointer-events-none mix-blend-overlay" />
                 </div>
               ))}
@@ -1125,7 +1256,7 @@ export function PublicMenuPage() {
               ? 'text-white shadow-md scale-105'
               : 'bg-white text-slate-600 border-slate-200 border opacity-80 hover:opacity-100'
               }`}
-            style={activeCategoryId === 'all' ? { backgroundColor: primaryColor } : {}}
+            style={{ backgroundColor: activeCategoryId === 'all' ? primaryColor : undefined }}
           >
             All Menu
           </button>
@@ -1137,7 +1268,7 @@ export function PublicMenuPage() {
                 ? 'text-white shadow-md scale-105'
                 : 'bg-white text-slate-600 border-slate-200 border opacity-80 hover:opacity-100'
                 }`}
-              style={activeCategoryId === cat.id ? { backgroundColor: primaryColor } : {}}
+              style={{ backgroundColor: activeCategoryId === cat.id ? primaryColor : undefined }}
             >
               {cat.name}
             </button>
@@ -1178,114 +1309,111 @@ export function PublicMenuPage() {
                       <div
                         key={item.id}
                         onClick={() => item.is_available ? handleItemClick(item, cat.id) : null}
-                        className={`${borderRadiusClass} overflow-hidden border transition-transform ${item.is_available ? 'active:scale-[0.98] cursor-pointer' : 'opacity-70 grayscale-[60%] cursor-not-allowed'
-                          } ${item.is_highlighted ? 'ring-2 ring-primary ring-offset-2 ring-offset-slate-50' : ''
-                          } ${layoutStyle === 'list' ? 'flex h-28 sm:h-32' : 'flex flex-col h-full'
-                          } ${itemStyleClass} relative`}
+                        className={`${borderRadiusClass} overflow-hidden border transition-all duration-300 ${
+                          item.is_available 
+                            ? 'hover:shadow-md active:scale-[0.99] cursor-pointer' 
+                            : 'opacity-70 grayscale-[40%] cursor-not-allowed'
+                        } ${item.is_highlighted ? 'ring-2 ring-offset-2' : ''
+                        } ${layoutStyle === 'list' 
+                          ? 'flex p-3 gap-4 items-center bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-md' 
+                          : 'flex flex-col bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-md h-full'
+                        }`}
+                        style={{
+                          borderColor: item.is_highlighted ? primaryColor : undefined,
+                          ['--tw-ring-color' as any]: primaryColor,
+                        }}
                       >
-                        {/* Image */}
-                        <div className={`relative bg-slate-100 ${layoutStyle === 'list' ? 'w-[120px] shrink-0' : 'w-full h-32 sm:h-40'}`}>
+                        <div className={`relative overflow-hidden shrink-0 bg-slate-50 dark:bg-slate-800 ${
+                          layoutStyle === 'list' 
+                            ? 'w-24 h-24 sm:w-28 sm:h-28 rounded-xl' 
+                            : 'w-full h-36 sm:h-44 rounded-t-xl'
+                        }`}>
                           {primaryImage ? (
-                            <img src={primaryImage} alt={item.name} className="w-full h-full object-cover" />
+                            <img 
+                              src={primaryImage} 
+                              alt={item.name} 
+                              className="w-full h-full object-cover transition-transform duration-500 hover:scale-105" 
+                            />
                           ) : (
-                            <div className="w-full h-full flex items-center justify-center opacity-20">
+                            <div className="w-full h-full flex items-center justify-center text-slate-300 dark:text-slate-600">
                               <UtensilsCrossed size={32} />
                             </div>
                           )}
 
-                          {/* Tags */}
                           <div className="absolute top-2 left-2 flex flex-col gap-1 z-20">
                             {item.is_highlighted && (
-                              <div className={`bg-primary text-white font-bold rounded shadow-sm flex items-center animate-pulse ${layoutStyle === 'list' ? 'p-1' : 'text-[9px] sm:text-[10px] px-1.5 py-0.5'}`}>
-                                <Flame size={10} className={layoutStyle === 'list' ? '' : 'mr-0.5'} /> {layoutStyle === 'grid' && "Chef's Special"}
+                              <div className="bg-orange-600 text-white font-extrabold text-[9px] uppercase tracking-wider px-2 py-0.5 rounded-full shadow-md flex items-center gap-0.5 backdrop-blur-sm bg-orange-600/90">
+                                <Flame size={9} className="animate-bounce" /> Special
                               </div>
                             )}
                             {item.is_bestseller && (
-                              <div className={`bg-amber-500 text-white font-bold rounded shadow-sm flex items-center ${layoutStyle === 'list' ? 'p-1' : 'text-[9px] sm:text-[10px] px-1.5 py-0.5'}`}>
-                                <Star size={10} className={`fill-white ${layoutStyle === 'list' ? '' : 'mr-0.5'}`} /> {layoutStyle === 'grid' && 'Bestseller'}
+                              <div className="bg-amber-500 text-white font-extrabold text-[9px] uppercase tracking-wider px-2 py-0.5 rounded-full shadow-md flex items-center gap-0.5 backdrop-blur-sm bg-amber-500/90">
+                                <Star size={9} className="fill-white" /> Bestseller
                               </div>
                             )}
                           </div>
 
-                          {/* Out of Stock Overlay */}
-                          {!item.is_available && (
-                            <div className="absolute inset-0 bg-white/40 backdrop-blur-[1px] flex items-center justify-center z-10">
-                              <span className="bg-slate-900 text-white text-[10px] sm:text-xs font-bold px-2 sm:px-3 py-1 rounded-full uppercase tracking-wider shadow-lg text-center leading-tight">Out of Stock</span>
-                            </div>
-                          )}
-
-                          {/* Food Type mark */}
-                          <div className="absolute top-2 right-2 flex flex-col gap-1 z-20">
+                          <div className="absolute top-2 right-2 z-20">
                             {item.food_types?.map((type) => (
-                              <div key={type} className="bg-white/90 backdrop-blur-sm p-0.5 rounded shadow-sm">
+                              <div key={type} className="bg-white/95 dark:bg-slate-900/95 p-1 rounded-lg shadow-md border border-slate-100/50 dark:border-slate-800/50">
                                 {type === 'veg' ? (
-                                  <span className="w-3 h-3 border border-green-600 rounded-[2px] flex items-center justify-center" title="Veg">
+                                  <span className="w-3.5 h-3.5 border-2 border-green-600 rounded-[3px] flex items-center justify-center" title="Veg">
                                     <span className="w-1.5 h-1.5 bg-green-600 rounded-full"></span>
                                   </span>
                                 ) : type === 'egg' ? (
-                                  <span className="w-3 h-3 border border-yellow-500 rounded-[2px] flex items-center justify-center" title="Egg">
+                                  <span className="w-3.5 h-3.5 border-2 border-yellow-500 rounded-[3px] flex items-center justify-center" title="Contains Egg">
                                     <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full"></span>
                                   </span>
+                                ) : type === 'non-veg' ? (
+                                  <span className="w-3.5 h-3.5 border-2 border-red-600 rounded-[3px] flex items-center justify-center" title="Non-Veg">
+                                    <span className="w-0 h-0 border-l-[3.5px] border-r-[3.5px] border-b-[6px] border-transparent border-b-red-600"></span>
+                                  </span>
                                 ) : type === 'drink' ? (
-                                  <span className="w-3 h-3 border border-blue-500 rounded-[2px] flex items-center justify-center" title="Drink">
+                                  <span className="w-3.5 h-3.5 border-2 border-blue-500 rounded-full flex items-center justify-center" title="Beverage">
                                     <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
                                   </span>
                                 ) : type === 'dessert' ? (
-                                  <span className="w-3 h-3 border border-pink-500 rounded-[2px] flex items-center justify-center" title="Dessert">
+                                  <span className="w-3.5 h-3.5 border-2 border-pink-500 rounded-[3px] flex items-center justify-center" title="Dessert">
                                     <span className="w-1.5 h-1.5 bg-pink-500 rounded-[1px]"></span>
-                                  </span>
-                                ) : type === 'non-veg' ? (
-                                  <span className="w-3 h-3 border border-red-600 rounded-[2px] flex items-center justify-center" title="Non-Veg">
-                                    <span className="w-0 h-0 border-l-[3px] border-r-[3px] border-b-[5px] border-transparent border-b-red-600"></span>
                                   </span>
                                 ) : null}
                               </div>
                             ))}
                           </div>
 
-                          {/* Variants and Add-ons Overlay (Grid only) */}
-                          {layoutStyle === 'grid' && ((item.variants && item.variants.length > 0) || (item.addons && item.addons.length > 0)) && (
-                            <div className="absolute bottom-2 left-2 flex flex-wrap gap-1.5 z-20">
-                              {item.variants && item.variants.length > 0 && (
-                                <span className="text-[9px] font-bold text-slate-700 bg-white/95 backdrop-blur-md px-1.5 py-0.5 rounded shadow-sm border border-white/50">
-                                  +{item.variants.length} Variants
-                                </span>
-                              )}
-                              {item.addons && item.addons.length > 0 && (
-                                <span className="text-[9px] font-bold text-slate-700 bg-white/95 backdrop-blur-md px-1.5 py-0.5 rounded shadow-sm border border-white/50">
-                                  +{item.addons.length} Add-ons
-                                </span>
-                              )}
+                          {!item.is_available && (
+                            <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-[2px] flex items-center justify-center z-10">
+                              <span className="bg-red-600 text-white text-[9px] sm:text-[10px] font-extrabold px-2.5 py-1 rounded-full uppercase tracking-widest shadow-lg">Sold Out</span>
                             </div>
                           )}
                         </div>
 
-                        {/* Content */}
-                        <div className="p-3 sm:p-4 flex flex-col flex-1 justify-between min-w-0 relative">
+                        <div className="flex-1 flex flex-col justify-between min-w-0 w-full p-3 sm:p-4 relative">
                           <div>
-                            <h3 className="font-semibold text-sm sm:text-base leading-tight line-clamp-2 pr-6">{item.name}</h3>
-                            {item.description && layoutStyle === 'list' && (
-                              <p className="text-[11px] text-slate-500 mt-1 line-clamp-2 leading-relaxed">{item.description}</p>
+                            <h3 className="font-bold text-slate-800 dark:text-slate-100 text-sm sm:text-base leading-snug line-clamp-1">
+                              {item.name}
+                            </h3>
+                            {item.description && (
+                              <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2 leading-relaxed">
+                                {item.description}
+                              </p>
                             )}
-                            
-                            {/* Variants and Add-ons (List only) */}
-                            {layoutStyle === 'list' && ((item.variants && item.variants.length > 0) || (item.addons && item.addons.length > 0)) && (
-                              <div className="flex flex-wrap gap-1 mt-1.5">
-                                {item.variants && item.variants.length > 0 && (
-                                  <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
-                                    +{item.variants.length} Variants
-                                  </span>
-                                )}
-                                {item.addons && item.addons.length > 0 && (
-                                  <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
-                                    +{item.addons.length} Add-ons
-                                  </span>
-                                )}
-                              </div>
-                            )}
+
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {((item.variants && item.variants.length > 0) || (item.addons && item.addons.length > 0)) && (
+                                <span className="text-[9px] font-semibold text-slate-500 bg-slate-100 dark:bg-slate-800 dark:text-slate-400 px-1.5 py-0.5 rounded">
+                                  Customizable
+                                </span>
+                              )}
+                              {item.available_days && item.available_days.length > 0 && item.available_days.length < 7 && (
+                                <span className="text-[9px] font-semibold text-blue-600 bg-blue-50 dark:bg-blue-950/30 dark:text-blue-400 px-1.5 py-0.5 rounded">
+                                  {item.available_days.join(', ')}
+                                </span>
+                              )}
+                            </div>
                           </div>
 
-                          <div className={`mt-2 flex flex-col gap-1.5 ${layoutStyle === 'grid' ? 'justify-between' : ''}`}>
+                          <div className="mt-3 flex items-center justify-between border-t border-slate-50 dark:border-slate-800/60 pt-2 shrink-0">
                             {(() => {
                               let basePrice = Number(item.price);
                               let offerPrice = item.offer_price ? Number(item.offer_price) : null;
@@ -1332,68 +1460,35 @@ export function PublicMenuPage() {
                               }
 
                               return (
-                                <div className={`flex items-center gap-1.5 flex-wrap ${layoutStyle === 'list' ? 'mt-1' : ''}`}>
-                                  {isFrom && <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">From</span>}
-                                  {hasDiscount && (
-                                    <span className="text-[11px] text-slate-400 line-through decoration-slate-300 font-medium">
-                                      {settings?.currency || '₹'}{basePrice.toFixed(2).replace(/\.00$/, '')}
+                                <div className="flex flex-col">
+                                  <div className="flex items-baseline gap-1.5 flex-wrap">
+                                    {isFrom && <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">From</span>}
+                                    <span className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white">
+                                      {settings?.currency || '₹'}{finalPrice.toFixed(2).replace(/\.00$/, '')}
                                     </span>
-                                  )}
-                                  <span className="font-bold whitespace-nowrap text-base" style={{ color: primaryColor }}>
-                                    {settings?.currency || '₹'}{finalPrice.toFixed(2).replace(/\.00$/, '')}
-                                  </span>
+                                    {hasDiscount && (
+                                      <span className="text-[10px] text-slate-400 line-through font-medium">
+                                        {settings?.currency || '₹'}{basePrice.toFixed(2).replace(/\.00$/, '')}
+                                      </span>
+                                    )}
+                                  </div>
                                   {hasDiscount && basePrice > 0 && (
-                                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded ml-1" style={{ backgroundColor: `${primaryColor}15`, color: primaryColor }}>
-                                      {Math.round(((basePrice - finalPrice) / basePrice) * 100)}% OFF
+                                    <span className="text-[9px] font-bold text-green-600 dark:text-green-400">
+                                      Save {Math.round(((basePrice - finalPrice) / basePrice) * 100)}%
                                     </span>
                                   )}
                                 </div>
                               );
                             })()}
 
-                            {((item.available_days && item.available_days.length > 0) || (item.available_time_presets && item.available_time_presets.length > 0) || (item.custom_time_from && item.custom_time_to)) && (
-                              <div className="flex flex-wrap gap-1 mt-1">
-                                {item.available_days && item.available_days.length > 0 && (
-                                  <span className="text-[9px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded max-w-[100px] truncate" title={item.available_days.join(', ')}>
-                                    {item.available_days.length === 7 ? 'Everyday' : item.available_days.join(', ')}
-                                  </span>
-                                )}
-                                {item.available_time_presets && item.available_time_presets.length > 0 && (
-                                  <span className="text-[9px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded max-w-[100px] truncate" title={item.available_time_presets.map(p => `${p} ${PRESET_TIMINGS[p] || ''}`).join(', ')}>
-                                    {item.available_time_presets.map(p => `${p} ${PRESET_TIMINGS[p] || ''}`).join(', ')}
-                                  </span>
-                                )}
-                                {(item.custom_time_from && item.custom_time_to) && (
-                                  <span className="text-[9px] font-bold text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded max-w-[100px] truncate" title={`${item.custom_time_from} - ${item.custom_time_to}`}>
-                                    {item.custom_time_from}-{item.custom_time_to}
-                                  </span>
-                                )}
-                              </div>
-                            )}
+                            <button
+                              onClick={(e) => { e.stopPropagation(); navigate(`/shop/${id}/item/${item.id}`); }}
+                              className="px-4 py-2 rounded-xl text-white font-extrabold text-xs shadow-sm hover:shadow-md active:scale-95 transition-all flex items-center gap-1 hover:brightness-110"
+                              style={{ backgroundColor: primaryColor }}
+                            >
+                              <span>{layoutStyle === 'list' ? 'ADD' : 'VIEW'}</span>
+                            </button>
                           </div>
-
-                          {/* Action Button */}
-                          {layoutStyle === 'grid' ? (
-                            <div className="mt-4 pb-1">
-                              <button
-                                onClick={(e) => { e.stopPropagation(); navigate(`/shop/${id}/item/${item.id}`); }}
-                                className="w-full py-2.5 rounded-xl text-white font-bold flex items-center justify-center gap-1.5 text-sm active:scale-95 transition-transform"
-                                style={{ backgroundColor: primaryColor }}
-                              >
-                                <Eye size={16} /> View Details
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="absolute bottom-3 right-3">
-                              <button
-                                onClick={(e) => { e.stopPropagation(); navigate(`/shop/${id}/item/${item.id}`); }}
-                                className="px-5 py-1.5 rounded-xl text-white font-bold text-xs shadow-sm active:scale-95 transition-transform"
-                                style={{ backgroundColor: primaryColor }}
-                              >
-                                ADD
-                              </button>
-                            </div>
-                          )}
                         </div>
                       </div>
                     );
@@ -1403,7 +1498,6 @@ export function PublicMenuPage() {
             ))
           )}
 
-          {/* Infinite Scroll Categories */}
           <InfiniteScrollTrigger 
             onIntersect={handleLoadMoreCategories} 
             isLoading={isLoadingMoreCategories} 
@@ -1411,7 +1505,7 @@ export function PublicMenuPage() {
           />
         </div>
 
-        {/* --- Google Reviews Section --- */}
+        {/* Google Reviews Section */}
         {(shop.google_review_link || shop.review_widget_code) && (
           <div className="px-4 sm:px-6 md:px-8 max-w-4xl mx-auto pb-12 mt-8 border-t pt-8" style={{ borderColor: 'rgba(100, 116, 139, 0.1)' }}>
             <h2 className="text-xl font-bold mb-4 flex items-center gap-2" style={{ color: theme?.theme === 'dark' ? 'white' : 'inherit' }}>
@@ -1439,16 +1533,10 @@ export function PublicMenuPage() {
             )}
           </div>
         )}
-
       </div>
 
       {/* Shop Info Modal */}
-      <Modal
-        isOpen={isShopInfoOpen}
-        onClose={() => setIsShopInfoOpen(false)}
-        title="Restaurant Info"
-        className="bg-white text-slate-900"
-      >
+      <Modal isOpen={isShopInfoOpen} onClose={() => setIsShopInfoOpen(false)} title="Restaurant Info" className="bg-white text-slate-900">
         <div className="space-y-4 mt-4">
           {shop.address && (
             <div className="flex items-start gap-3">
@@ -1476,7 +1564,6 @@ export function PublicMenuPage() {
           )}
 
           {(shop.opening_time || shop.closing_time) && (() => {
-            // Determine if currently open
             const now = new Date();
             const currentMinutes = now.getHours() * 60 + now.getMinutes();
             let isOpen = false;
@@ -1488,7 +1575,6 @@ export function PublicMenuPage() {
               if (closeMin > openMin) {
                 isOpen = currentMinutes >= openMin && currentMinutes < closeMin;
               } else {
-                // Overnight hours (e.g. 22:00 - 06:00)
                 isOpen = currentMinutes >= openMin || currentMinutes < closeMin;
               }
             }
@@ -1501,10 +1587,7 @@ export function PublicMenuPage() {
                   <h4 className="font-medium text-sm flex items-center gap-2">
                     Hours
                     {shop.opening_time && shop.closing_time && (
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isOpen
-                        ? 'bg-emerald-100 text-emerald-700'
-                        : 'bg-red-100 text-red-600'
-                        }`}>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isOpen ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>
                         {isOpen ? 'Open Now' : 'Closed'}
                       </span>
                     )}
@@ -1519,12 +1602,10 @@ export function PublicMenuPage() {
             );
           })()}
 
-          {/* Google Maps & Reviews */}
           {shop.address && (
             <div className="pt-4 mt-4 border-t border-slate-100 space-y-2">
-              {/* Google Maps link */}
               <a
-                href={`https://maps.google.com/?q=${encodeURIComponent(shop.name + ' ' + (shop.address || ''))}`}
+                href={`http://googleusercontent.com/maps.google.com/?q=${encodeURIComponent(shop.name + ' ' + (shop.address || ''))}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 transition-colors group"
@@ -1533,15 +1614,12 @@ export function PublicMenuPage() {
                   <MapPin size={18} />
                 </div>
                 <div className="flex-1">
-                  <p className="text-sm font-semibold text-slate-800 group-hover:text-blue-600 transition-colors">
-                    View on Google Maps
-                  </p>
+                  <p className="text-sm font-semibold text-slate-800 group-hover:text-blue-600 transition-colors">View on Google Maps</p>
                   <p className="text-xs text-slate-400">Get directions</p>
                 </div>
                 <ExternalLink size={14} className="text-slate-400 group-hover:text-blue-500 transition-colors" />
               </a>
 
-              {/* Google Reviews link */}
               <a
                 href={`https://www.google.com/search?q=${encodeURIComponent(shop.name + ' ' + (shop.address || ''))}&tbm=lcl#lrd=,1`}
                 target="_blank"
@@ -1552,9 +1630,7 @@ export function PublicMenuPage() {
                   <Star size={18} />
                 </div>
                 <div className="flex-1">
-                  <p className="text-sm font-semibold text-slate-800 group-hover:text-amber-600 transition-colors">
-                    Google Reviews
-                  </p>
+                  <p className="text-sm font-semibold text-slate-800 group-hover:text-amber-600 transition-colors">Google Reviews</p>
                   <p className="text-xs text-slate-400">Read & write reviews on Google</p>
                 </div>
                 <ExternalLink size={14} className="text-slate-400 group-hover:text-amber-500 transition-colors" />
@@ -1564,26 +1640,18 @@ export function PublicMenuPage() {
 
           <div className="pt-4 mt-4 border-t border-slate-200 flex flex-col items-center gap-1">
             <span className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Powered by</span>
-            <a
-              href="https://menukit.debuggers.co.in/landing"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs font-extrabold bg-gradient-to-r from-orange-600 to-amber-500 bg-clip-text text-transparent hover:opacity-80 transition-opacity flex items-center gap-1"
-            >
-              Menukit
-              <ExternalLink size={10} className="text-orange-500" />
+            <a href="https://menukit.debuggers.co.in/landing" target="_blank" rel="noopener noreferrer" className="text-xs font-extrabold bg-gradient-to-r from-orange-600 to-amber-500 bg-clip-text text-transparent hover:opacity-80 transition-opacity flex items-center gap-1">
+              Menukit <ExternalLink size={10} className="text-orange-500" />
             </a>
           </div>
         </div>
       </Modal>
 
-
-
-      {/* Offers (Crown) FAB */}
+      {/* Offers Crown Floating Button */}
       {memberStatus === null && activeDiscounts.some(d => d.visibility_type === 'members_only_hidden' || d.visibility_type === 'members_only_visible' || d.visibility_type === 'unlock_required') && (
         <button
           onClick={() => setIsDiscountPopupOpen(true)}
-          className={`fixed bottom-40 right-4 sm:right-6 w-14 h-14 rounded-full text-white shadow-xl flex items-center justify-center hover:scale-105 transition-all duration-300 z-40 border-4 border-white/50 backdrop-blur-md animate-bounce hover:animate-none ${isScrollingDown ? 'translate-y-32 opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}
+          className={`fixed bottom-48 right-4 sm:right-6 w-14 h-14 rounded-full text-white shadow-xl flex items-center justify-center hover:scale-105 transition-all duration-300 z-40 border-4 border-white/50 backdrop-blur-md animate-bounce hover:animate-none ${isScrollingDown ? 'translate-x-full opacity-0 pointer-events-none' : 'translate-x-0 opacity-100'}`}
           style={{ backgroundColor: primaryColor }}
           title="Unlock Member Offers"
         >
@@ -1595,10 +1663,10 @@ export function PublicMenuPage() {
         </button>
       )}
 
-      {/* Filter FAB */}
+      {/* Filter Options FAB Toggle */}
       <button
         onClick={() => setIsFilterModalOpen(true)}
-        className={`fixed bottom-24 right-4 sm:right-6 w-14 h-14 rounded-full text-white shadow-xl flex items-center justify-center hover:scale-105 transition-all duration-300 z-40 border-4 border-white/50 backdrop-blur-md ${isScrollingDown ? 'translate-y-32 opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}
+        className={`fixed bottom-35 right-4 sm:right-6 w-14 h-14 rounded-full text-white shadow-xl flex items-center justify-center hover:scale-105 transition-all duration-300 z-40 border-4 border-white/50 backdrop-blur-md ${isScrollingDown ? 'translate-x-full opacity-0 pointer-events-none' : 'translate-x-0 opacity-100'}`}
         style={{ backgroundColor: primaryColor }}
       >
         <SlidersHorizontal size={24} />
@@ -1615,36 +1683,37 @@ export function PublicMenuPage() {
         currency={settings?.currency || '₹'}
       />
 
-      {/* Filter Options Modal */}
-      <Modal
+      <BottomSheet
         isOpen={isFilterModalOpen}
         onClose={() => setIsFilterModalOpen(false)}
         title="Sort & Filter"
-        className="bg-white text-slate-900 max-w-md w-full"
+        footer={
+          <div className="flex gap-3">
+            <button onClick={() => { setSortOrder('default'); setExtraFilters([]); }} className="flex-1 py-3 px-4 rounded-xl font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors text-sm">Reset</button>
+            <button onClick={() => setIsFilterModalOpen(false)} className="flex-[2] py-3 px-4 rounded-xl font-semibold text-white shadow-lg hover:shadow-xl transition-all text-sm" style={{ backgroundColor: primaryColor }}>Show Results</button>
+          </div>
+        }
       >
-        <div className="space-y-6 mt-4">
-          {/* Sort Section */}
+        <div className="space-y-6">
           <div>
             <h3 className="text-xs font-bold mb-3 opacity-70 uppercase tracking-wider">Sort By</h3>
             <div className="space-y-2">
               <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/50 cursor-pointer hover:bg-slate-50 transition-colors">
-                <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${sortOrder === 'default' ? 'border-primary' : 'border-slate-300'}`} style={sortOrder === 'default' ? { borderColor: primaryColor } : {}}>
+                <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${sortOrder === 'default' ? 'border-primary' : 'border-slate-300'}`} style={{ borderColor: sortOrder === 'default' ? primaryColor : undefined }}>
                   {sortOrder === 'default' && <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: primaryColor }} />}
                 </div>
                 <input type="radio" className="hidden" checked={sortOrder === 'default'} onChange={() => setSortOrder('default')} />
                 <span className="text-sm font-medium">Default (Chef's Specials first)</span>
               </label>
-
               <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/50 cursor-pointer hover:bg-slate-50 transition-colors">
-                <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${sortOrder === 'price_asc' ? 'border-primary' : 'border-slate-300'}`} style={sortOrder === 'price_asc' ? { borderColor: primaryColor } : {}}>
+                <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${sortOrder === 'price_asc' ? 'border-primary' : 'border-slate-300'}`} style={{ borderColor: sortOrder === 'price_asc' ? primaryColor : undefined }}>
                   {sortOrder === 'price_asc' && <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: primaryColor }} />}
                 </div>
                 <input type="radio" className="hidden" checked={sortOrder === 'price_asc'} onChange={() => setSortOrder('price_asc')} />
                 <span className="text-sm font-medium">Price: Low to High</span>
               </label>
-
               <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/50 cursor-pointer hover:bg-slate-50 transition-colors">
-                <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${sortOrder === 'price_desc' ? 'border-primary' : 'border-slate-300'}`} style={sortOrder === 'price_desc' ? { borderColor: primaryColor } : {}}>
+                <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${sortOrder === 'price_desc' ? 'border-primary' : 'border-slate-300'}`} style={{ borderColor: sortOrder === 'price_desc' ? primaryColor : undefined }}>
                   {sortOrder === 'price_desc' && <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: primaryColor }} />}
                 </div>
                 <input type="radio" className="hidden" checked={sortOrder === 'price_desc'} onChange={() => setSortOrder('price_desc')} />
@@ -1653,7 +1722,6 @@ export function PublicMenuPage() {
             </div>
           </div>
 
-          {/* Filter Section */}
           <div>
             <h3 className="text-xs font-bold mb-3 opacity-70 uppercase tracking-wider">Quick Filters</h3>
             <div className="grid grid-cols-2 gap-2">
@@ -1663,35 +1731,16 @@ export function PublicMenuPage() {
                 { id: 'in_stock', label: "In Stock", icon: null },
                 { id: 'out_of_stock', label: "Out of Stock", icon: null }
               ].map(filter => (
-                <label
-                  key={filter.id}
-                  className={`relative flex flex-col items-center justify-center gap-2 py-4 px-2 rounded-xl border cursor-pointer transition-all text-center ${extraFilters.includes(filter.id)
-                    ? 'border-primary bg-primary/5 shadow-sm'
-                    : 'border-slate-200 bg-white hover:bg-slate-50'
-                    }`}
-                  style={extraFilters.includes(filter.id) ? { borderColor: primaryColor, backgroundColor: `${primaryColor}10` } : {}}
-                >
-                  <input
-                    type="checkbox"
-                    className="hidden"
-                    checked={extraFilters.includes(filter.id)}
-                    onChange={() => toggleExtraFilter(filter.id)}
-                  />
+                <label key={filter.id} className={`relative flex flex-col items-center justify-center gap-2 py-4 px-2 rounded-xl border cursor-pointer transition-all text-center ${extraFilters.includes(filter.id) ? 'shadow-sm' : 'border-slate-200 bg-white hover:bg-slate-50'}`} style={{ borderColor: extraFilters.includes(filter.id) ? primaryColor : undefined, backgroundColor: extraFilters.includes(filter.id) ? `${primaryColor}10` : undefined }}>
+                  <input type="checkbox" className="hidden" checked={extraFilters.includes(filter.id)} onChange={() => toggleExtraFilter(filter.id)} />
                   {filter.icon && <div>{filter.icon}</div>}
-                  <span className={`text-xs font-medium ${extraFilters.includes(filter.id) ? 'text-slate-900' : 'text-slate-600'}`}>
-                    {filter.label}
-                  </span>
-                  {extraFilters.includes(filter.id) && (
-                    <div className="absolute top-2 right-2">
-                      <Check size={14} style={{ color: primaryColor }} />
-                    </div>
-                  )}
+                  <span className={`text-xs font-medium ${extraFilters.includes(filter.id) ? 'text-slate-900' : 'text-slate-600'}`}>{filter.label}</span>
+                  {extraFilters.includes(filter.id) && <div className="absolute top-2 right-2"><Check size={14} style={{ color: primaryColor }} /></div>}
                 </label>
               ))}
             </div>
           </div>
 
-          {/* Availability Section */}
           <div>
             <h3 className="text-xs font-bold mb-3 opacity-70 uppercase tracking-wider">Availability</h3>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -1703,55 +1752,17 @@ export function PublicMenuPage() {
                 { id: 'timing_Night', label: 'Night' },
                 { id: 'timing_Mid-night', label: 'Mid-night' }
               ].map(filter => (
-                <label
-                  key={filter.id}
-                  className={`relative flex items-center justify-center py-2.5 px-2 rounded-xl border cursor-pointer transition-all text-center ${extraFilters.includes(filter.id)
-                    ? 'border-primary bg-primary/5 shadow-sm'
-                    : 'border-slate-200 bg-white hover:bg-slate-50'
-                    }`}
-                  style={extraFilters.includes(filter.id) ? { borderColor: primaryColor, backgroundColor: `${primaryColor}10` } : {}}
-                >
-                  <input
-                    type="checkbox"
-                    className="hidden"
-                    checked={extraFilters.includes(filter.id)}
-                    onChange={() => toggleExtraFilter(filter.id)}
-                  />
-                  <span className={`text-xs font-medium ${extraFilters.includes(filter.id) ? 'text-slate-900' : 'text-slate-600'}`}>
-                    {filter.label}
-                  </span>
-                  {extraFilters.includes(filter.id) && (
-                    <div className="absolute top-1.5 right-1.5">
-                      <Check size={12} style={{ color: primaryColor }} />
-                    </div>
-                  )}
+                <label key={filter.id} className={`relative flex items-center justify-center py-2.5 px-2 rounded-xl border cursor-pointer transition-all text-center ${extraFilters.includes(filter.id) ? 'shadow-sm' : 'border-slate-200 bg-white hover:bg-slate-50'}`} style={{ borderColor: extraFilters.includes(filter.id) ? primaryColor : undefined, backgroundColor: extraFilters.includes(filter.id) ? `${primaryColor}10` : undefined }}>
+                  <input type="checkbox" className="hidden" checked={extraFilters.includes(filter.id)} onChange={() => toggleExtraFilter(filter.id)} />
+                  <span className={`text-xs font-medium ${extraFilters.includes(filter.id) ? 'text-slate-900' : 'text-slate-600'}`}>{filter.label}</span>
+                  {extraFilters.includes(filter.id) && <div className="absolute top-1.5 right-1.5"><Check size={12} style={{ color: primaryColor }} /></div>}
                 </label>
               ))}
             </div>
           </div>
-
-          <div className="pt-2 flex gap-3">
-            <button
-              onClick={() => {
-                setSortOrder('default');
-                setExtraFilters([]);
-              }}
-              className="flex-1 py-3 px-4 rounded-xl font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors text-sm"
-            >
-              Reset
-            </button>
-            <button
-              onClick={() => setIsFilterModalOpen(false)}
-              className="flex-[2] py-3 px-4 rounded-xl font-semibold text-white shadow-lg hover:shadow-xl transition-all text-sm"
-              style={{ backgroundColor: primaryColor }}
-            >
-              Show Results
-            </button>
-          </div>
         </div>
-      </Modal>
+      </BottomSheet>
 
-      {/* Discount Unlock Popup */}
       {isDiscountPopupOpen && shop && (
         <DiscountUnlockPopup
           shopId={shop.id}
@@ -1766,404 +1777,254 @@ export function PublicMenuPage() {
         />
       )}
 
-      {/* Premium Floating Bottom Navigation Dock */}
-      <div className={`fixed bottom-4 left-4 right-4 sm:bottom-6 sm:left-1/2 sm:-translate-x-1/2 sm:w-[420px] bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl rounded-[32px] shadow-[0_10px_40px_rgba(0,0,0,0.1)] border border-slate-100 dark:border-slate-800 z-40 p-2 transition-transform duration-300 ${isScrollingDown ? 'translate-y-32 opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}>
-        <div className="flex items-center justify-between px-1">
+      {/* 🏷️ Zomato District Style Side Tab (Clings to right wall, slides completely right out of sight on down-scroll) */}
+      <div 
+        className={`fixed right-0 bottom-22 z-50 transition-all duration-300 transform ${
+          isScrollingDown ? 'translate-x-full opacity-0' : 'translate-x-0 opacity-100'
+        }`}
+      >
+        <button
+          onClick={() => navigate('/discover')}
+          className="flex items-center justify-center gap-1.5 pl-4 pr-3 h-[42px] rounded-l-full font-black text-white shadow-[0_4px_16px_rgba(0,0,0,0.15)] border-l border-y border-white/20 active:scale-95 group transition-transform hover:brightness-110"
+          style={{ backgroundColor: primaryColor }}
+        >
+          <span className="tracking-wide text-xs">Discover</span>
+          <ArrowUpRight size={14} strokeWidth={3} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+        </button>
+      </div>
 
-          {/* Menu Button (Active) */}
-          <button
-            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-            className="flex flex-col items-center justify-center gap-1 min-w-[60px]"
-          >
-            <UtensilsCrossed size={22} style={{ color: primaryColor }} />
-            <span className="text-[10px] font-bold" style={{ color: primaryColor }}>Menu</span>
-          </button>
+      {/* 🧱 Premium Floating Bottom Asymmetric Sized Navigation Dock Frame */}
+      <div className={`fixed bottom-4 left-4 right-4 sm:bottom-6 sm:left-1/2 sm:-translate-x-1/2 sm:w-[480px] z-40 transition-transform duration-300 ${isScrollingDown ? 'translate-y-32 opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}>
+        <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl rounded-[32px] shadow-[0_12px_45px_rgba(0,0,0,0.15)] border border-slate-100 dark:border-slate-800 p-2">
+          {/* Configured grid cols structure layout mapping to give dynamic wider room weight */}
+          <div className="grid grid-cols-6 gap-1 items-center text-center">
 
-          {/* Cart Button */}
-          <button
-            onClick={() => navigate(`/shop/${id}/cart`)}
-            className="flex flex-col items-center justify-center gap-1 min-w-[60px] relative group"
-          >
-            <div className="relative">
-              <ShoppingBag size={22} className="text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors" />
+            {/* Menu Button */}
+            <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="col-span-1 flex flex-col items-center justify-center gap-1">
+              <UtensilsCrossed size={19} style={{ color: primaryColor }} />
+              <span className="text-[10px] font-bold" style={{ color: primaryColor }}>Menu</span>
+            </button>
+
+            {/* Cart Button */}
+            <button onClick={() => navigate(`/shop/${id}/cart`)} className="col-span-1 flex flex-col items-center justify-center gap-1 relative">
+              <ShoppingBag size={19} className="text-slate-400" />
               {cartItemCount > 0 && (
-                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center border-[1.5px] border-white dark:border-slate-900">
+                <span className="absolute top-0 right-2 bg-red-500 text-white text-[9px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center">
                   {cartItemCount}
                 </span>
               )}
+              <span className="text-[10px] font-bold text-slate-400">Cart</span>
+            </button>
+
+            {/* Games Button */}
+            <button onClick={() => setIsEntertainmentHubOpen(true)} className="col-span-1 flex flex-col items-center justify-center gap-1">
+              <Gamepad2 size={19} className="text-slate-400" />
+              <span className="text-[10px] font-bold text-slate-400">Games</span>
+            </button>
+
+            {/* Orders Button */}
+            <div className="col-span-1 flex flex-col items-center justify-center gap-1 relative">
+              <div className="relative">
+                <button
+                  onClick={() => navigate(`/shop/${id}/orders`)}
+                  className="flex items-center justify-center"
+                >
+                  <History size={19} className="text-slate-400" />
+                </button>
+                {totalActiveCount > 0 && currentOrder && (
+                  <button
+                    key={currentOrder.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate(`/shop/${id}/order/${currentOrder.id}`);
+                    }}
+                    className={`absolute -top-4 left-1/2 -translate-x-1/2 whitespace-nowrap text-white text-[8px] font-black px-1.5 py-0.5 rounded-full shadow-md flex items-center gap-1 border border-white dark:border-slate-900 transition-all duration-300 cursor-pointer hover:brightness-110 active:scale-95 ${
+                      currentOrder.order_status === 'pending'
+                        ? 'bg-gradient-to-r from-amber-500 to-amber-600 animate-pulse'
+                        : 'bg-gradient-to-r from-blue-500 to-indigo-600 animate-bounce'
+                    }`}
+                  >
+                    <span>#{currentOrder.id.slice(0, 4).toUpperCase()}</span>
+                    {currentOrder.order_status === 'pending' ? <Clock size={10} className="animate-spin text-white" /> : <ChefHat size={10} className="text-white" />}
+                    <span>{currentOrder.order_status === 'pending' ? 'Waiting' : 'Preparing'}</span>
+                  </button>
+                )}
+              </div>
+              <span className="text-[10px] font-bold text-slate-400">Orders</span>
             </div>
-            <span className="text-[10px] font-bold text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors">Cart</span>
-          </button>
 
-          {/* Games Button */}
-          <button
-            onClick={() => setIsEntertainmentHubOpen(true)}
-            className="flex flex-col items-center justify-center gap-1 min-w-[60px] group"
-          >
-            <Gamepad2 size={22} className="text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors" />
-            <span className="text-[10px] font-bold text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors">Games</span>
-          </button>
+            {/* 🏆 Asymmetric Extra-Wide Contest Button (Only rounded top-right and bottom-right corners) */}
+            <button
+              onClick={() => navigate(`/shop/${id}/contest`)}
+              className="col-span-2 relative flex items-center justify-center gap-1.5 h-[46px] text-white font-black shadow-md transition-all active:scale-[0.97] hover:brightness-110 tracking-wider px-3 rounded-r-2xl rounded-l-none overflow-hidden" 
+              style={{ 
+                background: `linear-gradient(135deg, ${primaryColor} 0%, #ff8c00 100%)`,
+                boxShadow: `0 4px 12px 0 ${primaryColor}30`
+              }}
+            >
+              {/* Continuous flowing/popping colorful particles inside the button */}
+              <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-r-2xl">
+                <div className="absolute left-1/2 top-1/2 w-2.5 h-1.5 bg-yellow-400 rounded-sm animate-[particle-pop_1.8s_infinite_ease-out]" style={{ '--tx': '45px', '--ty': '-12px', '--rot': '120deg' } as any} />
+                <div className="absolute left-1/2 top-1/2 w-1.5 h-3.5 bg-rose-400 rounded-sm animate-[particle-pop_1.8s_infinite_ease-out_0.2s]" style={{ '--tx': '-40px', '--ty': '10px', '--rot': '180deg' } as any} />
+                <div className="absolute left-1/2 top-1/2 w-3 h-1.5 bg-cyan-400 rounded-sm animate-[particle-pop_1.8s_infinite_ease-out_0.4s]" style={{ '--tx': '30px', '--ty': '15px', '--rot': '90deg' } as any} />
+                <div className="absolute left-1/2 top-1/2 w-2 h-2 bg-emerald-400 rounded-full animate-[particle-pop_1.8s_infinite_ease-out_0.6s]" style={{ '--tx': '-25px', '--ty': '-16px', '--rot': '45deg' } as any} />
+                <div className="absolute left-1/2 top-1/2 w-1.5 h-3 bg-purple-400 animate-[particle-pop_1.8s_infinite_ease-out_0.8s]" style={{ '--tx': '55px', '--ty': '4deg', '--rot': '270deg' } as any} />
+                <div className="absolute left-1/2 top-1/2 w-2.5 h-2.5 bg-amber-400 rounded-xs animate-[particle-pop_1.8s_infinite_ease-out_1.0s]" style={{ '--tx': '-55px', '--ty': '-6px', '--rot': '135deg' } as any} />
+                <div className="absolute left-1/2 top-1/2 w-2 h-1.5 bg-blue-400 animate-[particle-pop_1.8s_infinite_ease-out_0.1s]" style={{ '--tx': '20px', '--ty': '-20px', '--rot': '210deg' } as any} />
+                <div className="absolute left-1/2 top-1/2 w-2 h-2 bg-pink-400 rounded-full animate-[particle-pop_1.8s_infinite_ease-out_0.3s]" style={{ '--tx': '-15px', '--ty': '20px', '--rot': '330deg' } as any} />
+                <div className="absolute left-1/2 top-1/2 w-2.5 h-2 bg-orange-400 rounded-sm animate-[particle-pop_1.8s_infinite_ease-out_0.5s]" style={{ '--tx': '40px', '--ty': '-8px', '--rot': '75deg' } as any} />
+                <div className="absolute left-1/2 top-1/2 w-1.5 h-3 bg-lime-400 animate-[particle-pop_1.8s_infinite_ease-out_0.7s]" style={{ '--tx': '-50px', '--ty': '14px', '--rot': '160deg' } as any} />
+              </div>
 
-          {/* Discover Button */}
-          <button
-            onClick={() => navigate('/discover')}
-            className="flex items-center justify-center gap-1.5 px-6 h-[46px] rounded-full text-white font-bold ml-1 transition-all active:scale-95 group overflow-hidden relative border-2 border-transparent hover:border-white/50"
-            style={{ 
-              backgroundColor: primaryColor,
-              boxShadow: `0 0 20px 4px ${primaryColor}60, 0 8px 20px -4px rgba(0,0,0,0.3)`
-            }}
-          >
-            <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" />
-            <MapPin size={16} className="relative z-10" />
-            <span className="relative z-10 tracking-wide text-sm">Discover</span>
-            <ArrowUpRight size={16} className="relative z-10" strokeWidth={3} />
-          </button>
+              {/* Icon & Reduced Text Label Setup */}
+              <Trophy size={15} className="text-white fill-white/10 shrink-0 relative z-10" />
+              <span 
+                key={contestBtnTextIndex} 
+                className="text-[10px] uppercase tracking-widest text-white relative z-10 animate-[btn-text-swap_0.4s_ease-out] block"
+              >
+                {contestTexts[contestBtnTextIndex]}
+              </span>
+            </button>
 
+          </div>
         </div>
+
+        <style>{`
+          @keyframes particle-pop {
+            0% { transform: translate(-50%, -50%) translate(0, 0) scale(0.1) rotate(0deg); opacity: 1; }
+            80% { opacity: 0.95; }
+            100% { transform: translate(-50%, -50%) translate(var(--tx), var(--ty)) scale(1.1) rotate(var(--rot)); opacity: 0; }
+          }
+          @keyframes btn-text-swap {
+            0% { transform: translateY(8px); opacity: 0; }
+            100% { transform: translateY(0); opacity: 1; }
+          }
+        `}</style>
       </div>
 
       {/* Offer Details Modal */}
-      <Modal
-        isOpen={!!selectedDiscountForModal}
-        onClose={() => setSelectedDiscountForModal(null)}
-        title="Offer Details"
-        className="bg-white text-slate-900"
-      >
+      <Modal isOpen={!!selectedDiscountForModal} onClose={() => setSelectedDiscountForModal(null)} title="Offer Details" className="bg-white text-slate-900">
         {selectedDiscountForModal && (
           <div className="space-y-5 mt-2">
             <div className="flex flex-col items-center text-center pb-5 border-b border-slate-100">
               {(() => {
                 const isCashLook = selectedDiscountForModal.discount_type === 'flat' || selectedDiscountForModal.discount_type === 'combo';
                 return isCashLook ? (
-                  <div
-                    className="min-w-[8rem] w-auto h-20 px-8 flex items-center justify-center shrink-0 text-white font-bold mb-4 transform hover:scale-105 transition-transform duration-300 relative overflow-hidden"
-                    style={{
-                      backgroundColor: '#16a34a',
-                      borderRadius: '8px',
-                      boxShadow: '0 12px 32px #16a34a60'
-                    }}
-                  >
+                  <div className="min-w-[8rem] w-auto h-20 px-8 flex items-center justify-center shrink-0 text-white font-bold mb-4 transform hover:scale-105 transition-transform duration-300 relative overflow-hidden" style={{ backgroundColor: '#16a34a', borderRadius: '8px', boxShadow: '0 12px 32px #16a34a60' }}>
                     <div className="absolute inset-1.5 border-2 border-white/30 border-dashed rounded-[4px]" />
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent -translate-x-full animate-[shimmer_2.5s_infinite] pointer-events-none" />
-                    <span className="text-3xl tracking-tight z-10 font-mono">
-                      {settings?.currency || '₹'}{Number(selectedDiscountForModal.discount_value)}
-                    </span>
+                    <span className="text-3xl tracking-tight z-10 font-mono">{settings?.currency || '₹'}{Number(selectedDiscountForModal.discount_value)}</span>
                   </div>
                 ) : (
-                  <div
-                    className="min-w-[8rem] w-auto h-24 px-8 flex items-center justify-center shrink-0 text-white font-bold mb-4 transform hover:scale-105 transition-transform duration-300 relative overflow-hidden"
-                    style={{
-                      backgroundColor: primaryColor,
-                      borderRadius: '16px',
-                      boxShadow: `0 12px 32px ${primaryColor}60`
-                    }}
-                  >
+                  <div className="min-w-[8rem] w-auto h-24 px-8 flex items-center justify-center shrink-0 text-white font-bold mb-4 transform hover:scale-105 transition-transform duration-300 relative overflow-hidden" style={{ backgroundColor: primaryColor, borderRadius: '16px', boxShadow: `0 12px 32px ${primaryColor}60` }}>
                     <div className="absolute -left-4 top-1/2 -translate-y-1/2 w-8 h-8 bg-white rounded-full shadow-[inset_0_0_10px_rgba(0,0,0,0.1)]" />
                     <div className="absolute -right-4 top-1/2 -translate-y-1/2 w-8 h-8 bg-white rounded-full shadow-[inset_0_0_10px_rgba(0,0,0,0.1)]" />
-                    <div className="absolute inset-y-2 left-6 border-l-2 border-white/30 border-dashed" />
-                    <div className="absolute inset-y-2 right-6 border-r-2 border-white/30 border-dashed" />
-
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent -translate-x-full animate-[shimmer_2.5s_infinite] pointer-events-none" />
                     <span className="text-3xl tracking-tight z-10 text-center px-2">
-                      {selectedDiscountForModal.discount_type === 'percentage'
-                        ? `${Number(selectedDiscountForModal.discount_value)}%`
-                        : `Buy ${selectedDiscountForModal.buy_quantity}\nGet ${selectedDiscountForModal.get_quantity}`}
+                      {selectedDiscountForModal.discount_type === 'percentage' ? `${Number(selectedDiscountForModal.discount_value)}%` : `Buy ${selectedDiscountForModal.buy_quantity}\nGet ${selectedDiscountForModal.get_quantity}`}
                     </span>
                   </div>
                 );
               })()}
               <h3 className="text-2xl font-bold font-heading text-slate-900">{selectedDiscountForModal.title}</h3>
-              {selectedDiscountForModal.description && (
-                <p className="text-sm text-slate-500 mt-2 max-w-[280px] leading-relaxed">{selectedDiscountForModal.description}</p>
-              )}
-              {(selectedDiscountForModal.visibility_type === 'members_only_hidden' || selectedDiscountForModal.visibility_type === 'members_only_visible') && (
-                <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-100 text-purple-700 text-xs font-bold uppercase tracking-wider">
-                  <Crown size={14} />
-                  Members Only
-                </div>
-              )}
+              {selectedDiscountForModal.description && <p className="text-sm text-slate-500 mt-2 max-w-[280px] leading-relaxed">{selectedDiscountForModal.description}</p>}
             </div>
 
-            {(selectedDiscountForModal.start_date || selectedDiscountForModal.end_date || (selectedDiscountForModal.available_days && selectedDiscountForModal.available_days.length > 0) || (selectedDiscountForModal.available_time_presets && selectedDiscountForModal.available_time_presets.length > 0)) && (
+            {(selectedDiscountForModal.start_date || selectedDiscountForModal.end_date || (selectedDiscountForModal.available_days && selectedDiscountForModal.available_days.length > 0)) && (
               <div className="pt-2">
-                <h4 className="text-xs font-bold text-slate-400 mb-2 uppercase tracking-wider flex items-center gap-2">
-                  <Clock size={14} className="text-blue-500" /> Availability
-                </h4>
+                <h4 className="text-xs font-bold text-slate-400 mb-2 uppercase tracking-wider flex items-center gap-2"><Clock size={14} className="text-blue-500" /> Availability</h4>
                 <div className="bg-slate-50 rounded-2xl p-3 border border-slate-100 flex flex-col gap-2">
-                  {(selectedDiscountForModal.start_date || selectedDiscountForModal.end_date) && (
-                    <p className="text-sm font-medium text-slate-700 flex items-center gap-2">
-                      <Calendar size={14} className="text-slate-400 shrink-0" />
-                      <span className="truncate">
-                        {selectedDiscountForModal.start_date ? new Date(selectedDiscountForModal.start_date).toLocaleDateString() : 'Now'}
-                        {' → '}
-                        {selectedDiscountForModal.end_date ? new Date(selectedDiscountForModal.end_date).toLocaleDateString() : 'No end'}
-                      </span>
-                    </p>
-                  )}
                   {selectedDiscountForModal.available_days && selectedDiscountForModal.available_days.length > 0 && (
-                    <p className="text-sm font-medium text-slate-700 flex items-center gap-2">
-                      <Calendar size={14} className="text-slate-400 shrink-0" />
-                      <span className="truncate">{formatDays(selectedDiscountForModal.available_days)}</span>
-                    </p>
-                  )}
-                  {selectedDiscountForModal.available_time_presets && selectedDiscountForModal.available_time_presets.length > 0 && (
-                    <p className="text-sm font-medium text-slate-700 flex items-center gap-2">
-                      <Clock size={14} className="text-slate-400 shrink-0" />
-                      <span className="line-clamp-2">
-                        {selectedDiscountForModal.available_time_presets.map(p => PRESET_TIMINGS[p] ? `${p} ${PRESET_TIMINGS[p]}` : p).join(', ')}
-                      </span>
-                    </p>
+                    <p className="text-sm font-medium text-slate-700 flex items-center gap-2"><Calendar size={14} className="text-slate-400 shrink-0" /><span className="truncate">{formatDays(selectedDiscountForModal.available_days)}</span></p>
                   )}
                 </div>
               </div>
             )}
 
-            <div className="pt-2">
-              <h4 className="text-xs font-bold text-slate-400 mb-3 uppercase tracking-wider flex items-center gap-2">
-                <Sparkles size={14} className="text-amber-500" /> Valid For
-              </h4>
-              <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 max-h-48 overflow-y-auto scrollbar-hide">
-                {selectedDiscountForModal.applies_to === 'all' ? (
-                  <p className="text-sm font-semibold text-slate-700 flex items-center gap-3">
-                    <span className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-600 shrink-0">
-                      <Check size={16} />
-                    </span>
-                    Entire Menu
-                  </p>
-                ) : selectedDiscountForModal.applies_to === 'category' ? (
-                  <ul className="space-y-3">
-                    {categories
-                      .filter(c => selectedDiscountForModal.target_ids?.includes(c.id))
-                      .map(c => (
-                        <li key={c.id} className="text-sm font-semibold text-slate-700 flex items-center gap-3">
-                          <span className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-600 shrink-0">
-                            <Check size={16} />
-                          </span>
-                          {c.name}
-                        </li>
-                      ))}
-                  </ul>
-                ) : (
-                  <ul className="space-y-3">
-                    {categories.flatMap(c => c.items)
-                      .filter(i => selectedDiscountForModal.target_ids?.includes(i.id))
-                      .map(i => (
-                        <li key={i.id} className="text-sm font-semibold text-slate-700 flex items-center gap-3">
-                          <span className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-600 shrink-0">
-                            <Check size={16} />
-                          </span>
-                          {i.name}
-                        </li>
-                      ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-
             <div className="pt-4">
-              {((memberStatus === null && selectedDiscountForModal.visibility_type === 'unlock_required') ||
-                (memberStatus === null && (selectedDiscountForModal.visibility_type === 'members_only_hidden'))) ? (
-                <button
-                  onClick={() => {
-                    setSelectedDiscountForModal(null);
-                    setIsDiscountPopupOpen(true);
-                  }}
-                  className="w-full py-4 px-4 rounded-2xl font-bold text-white transition-all transform hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2 bg-slate-900 shadow-xl border border-slate-700"
-                >
-                  <Gift size={18} className="text-yellow-400" /> Unlock Offer
-                </button>
-              ) : (memberStatus !== 'verified-member' && selectedDiscountForModal.visibility_type === 'members_only_visible') ? (
-                <button
-                  onClick={() => {
-                    toast.error("Member Required! Please ask the waiter or hotel staff to verify your membership.");
-                  }}
-                  className="w-full py-4 px-4 rounded-2xl font-bold text-slate-700 transition-all transform hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2 bg-slate-100 shadow-sm border border-slate-200"
-                >
-                  Ask Staff to Unlock
-                </button>
-              ) : (
-                <button
-                  onClick={() => {
-                    setActiveDiscountFilter(selectedDiscountForModal.id);
-                    setSelectedDiscountForModal(null);
-                    window.scrollTo({ top: 300, behavior: 'smooth' });
-                  }}
-                  className="w-full py-4 px-4 rounded-2xl font-bold text-white transition-all transform hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2"
-                  style={{
-                    backgroundColor: primaryColor,
-                    boxShadow: `0 8px 24px ${primaryColor}50`
-                  }}
-                >
-                  View Applicable Items
-                </button>
-              )}
+              <button
+                onClick={() => { setActiveDiscountFilter(selectedDiscountForModal.id); setSelectedDiscountForModal(null); window.scrollTo({ top: 300, behavior: 'smooth' }); }}
+                className="w-full py-4 px-4 rounded-2xl font-bold text-white transition-all transform hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2"
+                style={{ backgroundColor: primaryColor, boxShadow: `0 8px 24px ${primaryColor}50` }}
+              >
+                View Applicable Items
+              </button>
             </div>
           </div>
         )}
       </Modal>
 
       {/* All Discounts Modal */}
-      <Modal
-        isOpen={isDiscountsModalOpen}
-        onClose={() => setIsDiscountsModalOpen(false)}
-        title="Active Offers"
-        className="bg-white text-slate-900 max-w-md"
-      >
+      <Modal isOpen={isDiscountsModalOpen} onClose={() => setIsDiscountsModalOpen(false)} title="Active Offers" className="bg-white text-slate-900 max-w-md">
         <div className="space-y-4 mt-4 max-h-[60vh] overflow-y-auto scrollbar-hide">
-          {activeDiscounts.filter(d => d.visibility_type !== 'members_only_hidden' || memberStatus === 'verified-member').length === 0 ? (
+          {activeDiscounts.length === 0 ? (
             <p className="text-slate-500 text-sm text-center py-8">No active offers at the moment.</p>
           ) : (
-            activeDiscounts.filter(d => d.visibility_type !== 'members_only_hidden' || memberStatus === 'verified-member').map(disc => (
-              <div
-                key={disc.id}
-                onClick={() => {
-                  setIsDiscountsModalOpen(false);
-                  setSelectedDiscountForModal(disc);
-                }}
-                className="relative w-full flex shadow-sm rounded-xl overflow-hidden cursor-pointer transition-all duration-300 hover:shadow-md active:scale-[0.98] group bg-white"
-                style={{ border: `1px solid ${primaryColor}30` }}
-              >
-                {/* Left Ticket Stub */}
-                <div
-                  className="relative w-24 flex flex-col items-center justify-center text-white p-3 shrink-0"
-                  style={{ backgroundColor: primaryColor }}
-                >
-                  {/* Cutouts for ticket effect */}
-                  <div className="absolute -top-3 -right-3 w-6 h-6 bg-white rounded-full border-b border-l border-transparent z-10" style={{ borderColor: `${primaryColor}30` }} />
-                  <div className="absolute -bottom-3 -right-3 w-6 h-6 bg-white rounded-full border-t border-l border-transparent z-10" style={{ borderColor: `${primaryColor}30` }} />
-
-                  <div className="text-xl font-black tracking-tight drop-shadow-sm text-center">
+            activeDiscounts.map(disc => (
+              <div key={disc.id} onClick={() => { setIsDiscountsModalOpen(false); setSelectedDiscountForModal(disc); }} className="relative w-full flex shadow-sm rounded-xl overflow-hidden cursor-pointer transition-all duration-300 hover:shadow-md active:scale-[0.98] group bg-white" style={{ border: `1px solid ${primaryColor}30` }}>
+                <div className="relative w-24 flex flex-col items-center justify-center text-white p-3 shrink-0" style={{ backgroundColor: primaryColor }}>
+                  <div className="text-xl font-black tracking-tight drop-shadow-md text-center">
                     {disc.discount_type === 'percentage' && `${Number(disc.discount_value)}%`}
                     {disc.discount_type === 'flat' && `${settings?.currency || '₹'}${Number(disc.discount_value)}`}
-                    {disc.discount_type === 'bogo' && 'BOGO'}
-                    {disc.discount_type === 'combo' && 'COMBO'}
-                  </div>
-                  <div className="text-[9px] font-bold uppercase tracking-widest mt-0.5 opacity-90 text-center">
-                    {['percentage', 'flat'].includes(disc.discount_type) && 'Off'}
-                    {disc.discount_type === 'bogo' && `Buy ${disc.buy_quantity} Get ${disc.get_quantity}`}
-                    {disc.discount_type === 'combo' && `${settings?.currency || '₹'}${Number(disc.discount_value)}`}
                   </div>
                 </div>
-
-                {/* Perforated line */}
-                <div className="relative border-l-2 border-dashed border-slate-100 my-3" />
-
-                {/* Right Ticket Body */}
                 <div className="flex-1 p-3 flex flex-col justify-center relative bg-white overflow-hidden min-w-0">
-                  <div className="flex justify-between items-start mb-1 gap-2">
-                    <p className="font-extrabold text-slate-800 text-sm leading-tight truncate">
-                      {disc.title}
-                    </p>
-                  </div>
-
-                  {disc.description && (
-                    <p className="text-[11px] text-slate-500 line-clamp-1 leading-relaxed mb-2 font-medium">
-                      {disc.description}
-                    </p>
-                  )}
-
-                  <div className="mt-auto flex items-center justify-between">
-                    {disc.visibility_type === 'members_only_hidden' || disc.visibility_type === 'members_only_visible' ? (
-                      <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded shadow-sm flex items-center gap-1 shrink-0 bg-purple-100 text-purple-700">
-                        <Crown size={10} className="shrink-0" />
-                        Members Only
-                      </span>
-                    ) : (
-                      <span
-                        className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded shadow-sm shrink-0"
-                        style={{ color: primaryColor, backgroundColor: `${primaryColor}15` }}
-                      >
-                        Limited Offer
-                      </span>
-                    )}
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 group-hover:text-slate-600 transition-colors ml-2 shrink-0">
-                      View
-                    </span>
-                  </div>
+                  <p className="font-extrabold text-slate-800 text-sm leading-tight truncate">{disc.title}</p>
                 </div>
-
-                {/* Constant shimmer effect spanning the whole card */}
-                <div className="absolute inset-0 z-10 bg-gradient-to-r from-transparent via-white/60 to-transparent -translate-x-full animate-[shimmer_2.5s_infinite] pointer-events-none mix-blend-overlay" />
               </div>
             ))
           )}
         </div>
       </Modal>
 
-      {/* Categories Modal */}
-      <Modal
+      {/* Categories Bottom Sheet */}
+      <BottomSheet
         isOpen={isCategoriesModalOpen}
         onClose={() => setIsCategoriesModalOpen(false)}
         title="Menu Categories"
-        className="bg-white text-slate-900 h-[80vh] sm:h-[600px] flex flex-col p-0 overflow-hidden rounded-t-3xl sm:rounded-3xl"
-      >
-        <div className="p-4 border-b border-slate-100 shrink-0 mt-2">
+        footer={
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-            <input
-              type="text"
-              placeholder="Search categories..."
-              className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-slate-300 focus:ring-2 focus:ring-slate-100 transition-all font-medium text-slate-800 placeholder-slate-400"
-              value={categorySearchQuery}
-              onChange={(e) => setCategorySearchQuery(e.target.value)}
-            />
+            <input type="text" placeholder="Search categories..." className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-slate-300 text-slate-800" value={categorySearchQuery} onChange={(e) => setCategorySearchQuery(e.target.value)} />
           </div>
-        </div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-2 pb-safe">
-          <button
-            onClick={() => {
-              setActiveCategoryId('all');
-              setIsCategoriesModalOpen(false);
-              window.scrollTo({ top: 200, behavior: 'smooth' });
-            }}
-            className={`w-full flex items-center justify-between p-4 rounded-2xl transition-all border ${activeCategoryId === 'all' ? 'border-transparent shadow-md' : 'border-slate-100 hover:border-slate-200 hover:bg-slate-50'}`}
-            style={activeCategoryId === 'all' ? { backgroundColor: primaryColor, color: 'white' } : {}}
-          >
-            <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${activeCategoryId === 'all' ? 'bg-white/20' : 'bg-slate-100 text-slate-500'}`}>
-                <LayoutGrid size={20} />
-              </div>
-              <span className={`font-bold text-base ${activeCategoryId === 'all' ? 'text-white' : 'text-slate-800'}`}>All Menu</span>
-            </div>
-            <span className={`text-xs font-bold px-3 py-1 rounded-full ${activeCategoryId === 'all' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>
-              {categories.reduce((acc, cat) => acc + (cat.items?.length || 0), 0)} items
-            </span>
+        }
+      >
+        <div className="space-y-2">
+          <button onClick={() => { setActiveCategoryId('all'); setIsCategoriesModalOpen(false); window.scrollTo({ top: 200, behavior: 'smooth' }); }} className={`w-full flex items-center justify-between p-4 rounded-2xl transition-all border ${activeCategoryId === 'all' ? 'border-transparent shadow-md' : 'border-slate-100'}`} style={activeCategoryId === 'all' ? { backgroundColor: primaryColor, color: 'white' } : {}}>
+            <span className="font-bold text-base">All Menu</span>
           </button>
+          {categories.filter(c => c.name.toLowerCase().includes(categorySearchQuery.toLowerCase())).map(cat => (
+            <button key={cat.id} onClick={() => { setActiveCategoryId(cat.id); setIsCategoriesModalOpen(false); window.scrollTo({ top: 200, behavior: 'smooth' }); }} className={`w-full flex items-center justify-between p-4 rounded-2xl transition-all border ${activeCategoryId === cat.id ? 'border-transparent shadow-md' : 'border-slate-100'}`} style={activeCategoryId === cat.id ? { backgroundColor: primaryColor, color: 'white' } : {}}>
+              <span className="font-bold text-base">{cat.name}</span>
+            </button>
+          ))}
+        </div>
+      </BottomSheet>
 
-          {categories
-            .filter(c => c.name.toLowerCase().includes(categorySearchQuery.toLowerCase()))
-            .map(cat => (
-              <button
-                key={cat.id}
-                onClick={() => {
-                  setActiveCategoryId(cat.id);
-                  setIsCategoriesModalOpen(false);
-                  window.scrollTo({ top: 200, behavior: 'smooth' });
-                }}
-                className={`w-full flex items-center justify-between p-4 rounded-2xl transition-all border ${activeCategoryId === cat.id ? 'border-transparent shadow-md' : 'border-slate-100 hover:border-slate-200 hover:bg-slate-50'}`}
-                style={activeCategoryId === cat.id ? { backgroundColor: primaryColor, color: 'white' } : {}}
-              >
-                <span className={`font-bold text-base ${activeCategoryId === cat.id ? 'text-white' : 'text-slate-800'}`}>{cat.name}</span>
-                <span className={`text-xs font-bold px-3 py-1 rounded-full ${activeCategoryId === cat.id ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>
-                  {cat.items?.length || 0} items
-                </span>
-              </button>
-            ))}
-            
-            {categories.filter(c => c.name.toLowerCase().includes(categorySearchQuery.toLowerCase())).length === 0 && (
-              <div className="text-center py-12 text-slate-400">
-                <Search size={32} className="mx-auto mb-3 opacity-20" />
-                <p className="font-medium text-slate-500">No categories found</p>
-              </div>
-            )}
+      <LanguageSelectorModal isOpen={isLanguageModalOpen} onClose={() => setIsLanguageModalOpen(false)} primaryColor={primaryColor} />
+
+      {/* QR Code Modal */}
+      <Modal isOpen={isQRModalOpen} onClose={() => setIsQRModalOpen(false)} title="Scan QR Code">
+        <div className="flex flex-col items-center p-6 text-center">
+          <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 shadow-inner inline-block relative mb-4">
+            <div ref={publicQrRef} className="w-[260px] h-[260px] flex items-center justify-center bg-white rounded-xl shadow-sm overflow-hidden" />
+          </div>
+          <h3 className="font-bold text-lg mb-1 text-slate-800">{shop?.name}</h3>
+          <button onClick={handleDownloadPublicQR} className="flex items-center justify-center gap-2 px-6 py-3 text-white font-extrabold text-xs tracking-wider uppercase rounded-2xl shadow-md" style={{ backgroundColor: primaryColor }}><Download size={14} /> Download QR Code</button>
         </div>
       </Modal>
 
-      <LanguageSelectorModal
-        isOpen={isLanguageModalOpen}
-        onClose={() => setIsLanguageModalOpen(false)}
-        primaryColor={primaryColor}
-      />
+      {/* Profile Mobile Verification Modal */}
+      {showProfileVerifyPopup && (
+        <DiscountUnlockPopup
+          shopId={id || ''}
+          initialStep="mobile"
+          onClose={() => setShowProfileVerifyPopup(false)}
+          onUnlock={() => {
+            setShowProfileVerifyPopup(false);
+            const profileAppUrl = import.meta.env.VITE_CUSTOMER_PROFILE_URL || 'http://localhost:5176';
+            window.location.href = `${profileAppUrl}/shop/${id}/profile`;
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -21,6 +21,13 @@ export interface ShopSettings {
   show_offers: boolean;
   is_discoverable: boolean;
   show_menus_in_discovery: boolean;
+  delivery_enabled?: boolean;
+  takeaway_enabled?: boolean;
+  dinein_enabled?: boolean;
+  auto_accept_orders?: boolean;
+  cashfree_app_id?: string;
+  cashfree_secret_key?: string;
+  cashfree_sandbox?: boolean;
 }
 
 export interface ThemeSettings {

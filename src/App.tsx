@@ -23,18 +23,24 @@ import { CustomizeThemePage } from '@/pages/theme/CustomizeThemePage';
 import { QRCodePage } from '@/pages/qr/QRCodePage';
 import { AnalyticsPage } from '@/pages/analytics/AnalyticsPage';
 import { DiscountsPage } from '@/pages/discounts/DiscountsPage';
+import { ContestsPage } from '@/pages/contests/ContestsPage';
 import { InternalBulkPage } from '@/pages/admin/InternalBulkPage';
 import { MembersPage } from '@/pages/members/MembersPage';
 import { SettingsPage } from '@/pages/settings/SettingsPage';
 import { SubscriptionMarketplacePage } from '@/pages/subscription/SubscriptionMarketplacePage';
 import { NotificationsPage } from '@/pages/notifications/NotificationsPage';
+import { OrdersPage } from '@/pages/orders/OrdersPage';
 
 // Public Pages
 import { PublicMenuPage } from '@/pages/public/PublicMenuPage';
 import { PublicItemPage } from '@/pages/public/PublicItemPage';
 import { PublicCartPage } from '@/pages/public/PublicCartPage';
+import { OrderStatusPage } from '@/pages/public/OrderStatusPage';
+import { PublicOrdersPage } from '@/pages/public/PublicOrdersPage';
 import { TermsPage } from '@/pages/public/TermsPage';
 import { StoreDiscoveryPage } from '@/pages/public/StoreDiscoveryPage';
+import { PublicContestPage } from './pages/public/PublicContestPage';
+import { CustomerProfilePage } from './pages/public/CustomerProfilePage';
 
 const AdminPlaceholder = () => (
   <div className="flex items-center justify-center min-h-[60vh]">
@@ -80,7 +86,9 @@ function App() {
           <Route path="/customize" element={<CustomizeThemePage />} />
           <Route path="/qr-code" element={<QRCodePage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
+          <Route path="/orders" element={<OrdersPage />} />
           <Route path="/discounts" element={<DiscountsPage />} />
+          <Route path="/contests" element={<ContestsPage />} />
           <Route path="/members" element={<MembersPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/subscription" element={<SubscriptionMarketplacePage />} />
@@ -96,7 +104,13 @@ function App() {
       <Route path="/discover/scan" element={<StoreDiscoveryPage />} />
       <Route path="/shop/:id" element={<PublicMenuPage />} />
       <Route path="/shop/:id/item/:itemId" element={<PublicItemPage />} />
-      <Route path="/shop/:id/cart" element={<PublicCartPage />} />
+      <Route path="/shop/:id/contest" element={<PublicContestPage />} />
+      <Route path="/shop/:id/contest/:contestId" element={<PublicContestPage />} />
+
+      <Route path="/shop/:id/orders" element={<PublicOrdersPage />} />
+      <Route path="/shop/:id/order/:orderId" element={<OrderStatusPage />} />
+      <Route path="/shop/:id/profile" element={<CustomerProfilePage />} />
+      <Route path="/profile" element={<CustomerProfilePage />} />
       <Route path="/terms" element={<TermsPage />} />
 
       {/* Fallback routes */}

@@ -18,10 +18,12 @@ interface DiscountUnlockPopupProps {
   shopId: string;
   onClose: () => void;
   onUnlock: (customerId: string | null) => void;
+  /** Skip the intro/offers screen and go straight to phone entry */
+  initialStep?: 'intro' | 'mobile';
 }
 
-export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId, onClose, onUnlock }) => {
-  const [step, setStep] = useState<'intro' | 'mobile' | 'otp' | 'name' | 'success' | 'no_offers'>('intro');
+export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId, onClose, onUnlock, initialStep = 'intro' }) => {
+  const [step, setStep] = useState<'intro' | 'mobile' | 'otp' | 'name' | 'success' | 'no_offers'>(initialStep);
   const [mobileNumber, setMobileNumber] = useState('');
   const [countryCode, setCountryCode] = useState('+91');
   const [otpCode, setOtpCode] = useState('');
@@ -59,7 +61,8 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
   }, []);
 
   useEffect(() => {
-    if (step === 'intro') {
+    // Only fire confetti on intro if we actually started there
+    if (step === 'intro' && initialStep === 'intro') {
       confetti({
         particleCount: 100,
         spread: 80,
@@ -120,6 +123,16 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
       const res = await customerService.verifyMobile(`${countryCode}${mobileNumber}`, shopId);
       if (res.otp_required === false) {
         // Token was valid and matched!
+        if (res.access_token) {
+          localStorage.setItem('customer_token', res.access_token);
+        }
+        if (res.customer_name) {
+          localStorage.setItem('customer_name', res.customer_name);
+        }
+        if (res.delivery_address) {
+          localStorage.setItem('customer_address', res.delivery_address);
+        }
+        localStorage.setItem('customer_mobile', `${countryCode}${mobileNumber}`);
         if (!res.is_global_customer) {
           setStep('name');
         } else {
@@ -149,6 +162,13 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
     setLoading(true);
     try {
       const res = await customerService.verifyOtp(`${countryCode}${mobileNumber}`, otpCode, shopId);
+      localStorage.setItem('customer_mobile', `${countryCode}${mobileNumber}`);
+      if (res.customer_name) {
+        localStorage.setItem('customer_name', res.customer_name);
+      }
+      if (res.delivery_address) {
+        localStorage.setItem('customer_address', res.delivery_address);
+      }
       if (!res.is_global_customer) {
         setStep('name');
       } else {
@@ -175,7 +195,12 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
     setLoading(true);
     try {
       // In a real flow, OTP code might be re-sent or stored in session. We pass "123456" or just the otpCode
-      await customerService.register(name, `${countryCode}${mobileNumber}`, shopId, otpCode);
+      const res = await customerService.register(name, `${countryCode}${mobileNumber}`, shopId, otpCode);
+      localStorage.setItem('customer_mobile', `${countryCode}${mobileNumber}`);
+      localStorage.setItem('customer_name', name);
+      if (res.delivery_address) {
+        localStorage.setItem('customer_address', res.delivery_address);
+      }
       setIsStrictMember(false); // newly registered users are not strict members
       triggerConfetti();
       setIsVerified(true);
@@ -186,6 +211,7 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
       setLoading(false);
     }
   };
+
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">

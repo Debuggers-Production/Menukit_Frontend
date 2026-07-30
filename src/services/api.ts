@@ -18,14 +18,14 @@ api.interceptors.request.use(
     // If it's a public endpoint, attach the customer token if available
     if (config.url?.startsWith('/public') || config.url?.startsWith('/customers')) {
       const customerToken = localStorage.getItem('customer_token');
-      if (customerToken) {
-        config.headers.Authorization = `Bearer ${customerToken}`;
+      if (customerToken && customerToken !== 'undefined' && customerToken !== 'null') {
+        config.headers.set('Authorization', `Bearer ${customerToken}`);
       }
     } else {
       // Otherwise, attach the admin access token
       const token = localStorage.getItem('access_token');
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
+      if (token && token !== 'undefined' && token !== 'null') {
+        config.headers.set('Authorization', `Bearer ${token}`);
       }
     }
     return config;
@@ -45,7 +45,7 @@ api.interceptors.response.use(
       
       try {
         const refreshToken = localStorage.getItem('refresh_token');
-        if (!refreshToken) {
+        if (!refreshToken || refreshToken === 'undefined' || refreshToken === 'null') {
           throw new Error('No refresh token available');
         }
         
@@ -60,7 +60,8 @@ api.interceptors.response.use(
         localStorage.setItem('access_token', access_token);
         localStorage.setItem('refresh_token', new_refresh_token);
         
-        // Update authorization header and retry original request
+        // Update authorization header on the original request and retry it
+        originalRequest.headers.set('Authorization', `Bearer ${access_token}`);
         api.defaults.headers.common.Authorization = `Bearer ${access_token}`;
         return api(originalRequest);
       } catch (refreshError) {

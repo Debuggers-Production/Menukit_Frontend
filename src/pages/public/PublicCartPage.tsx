@@ -1,12 +1,35 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { ShoppingBag, Plus, Minus, Info, ChevronLeft } from 'lucide-react';
+import { ShoppingBag, Plus, Minus, Info, ChevronLeft, ChevronRight, CheckCircle, Key, MapPin, Navigation, Map, Armchair, Gift, Sparkles, Percent, Banknote } from 'lucide-react';
 import { useCartStore } from '@/store/cartStore';
 import { api } from '@/services/api';
 import { Shop, Discount } from '@/types';
+import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Modal } from '@/components/ui/Modal';
+import { BottomSheet } from '@/components/ui/BottomSheet';
+import { DiscountUnlockPopup } from '@/components/public/DiscountUnlockPopup';
+import confetti from 'canvas-confetti';
 import toast from 'react-hot-toast';
+import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+});
+
+function MapEventsHandler({ onClick }: { onClick: (lat: number, lng: number) => void }) {
+  useMapEvents({
+    click(e) {
+      onClick(e.latlng.lat, e.latlng.lng);
+    },
+  });
+  return null;
+}
 
 export function PublicCartPage() {
   const { id } = useParams();
@@ -19,6 +42,128 @@ export function PublicCartPage() {
   const [memberStatus] = useState<'unlocked' | 'verified-member' | null>(() => {
     return sessionStorage.getItem('member_status') as any;
   });
+
+  // Ordering & Checkout state
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [orderType, setOrderType] = useState<'dine_in' | 'takeaway' | 'delivery'>('dine_in');
+  const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [tableNumber, setTableNumber] = useState('');
+  const [deliveryAddress, setDeliveryAddress] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'online'>('cash');
+  const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+  const [showVerifyPopup, setShowVerifyPopup] = useState(false);
+  const [pendingCheckoutAfterVerify, setPendingCheckoutAfterVerify] = useState(false);
+  const [token, setToken] = useState<string | null>(() => localStorage.getItem('customer_token'));
+
+  const [isLocating, setIsLocating] = useState(false);
+  const [activeTableIdx, setActiveTableIdx] = useState(0);
+  const startAngle = useRef(0);
+  const isPanning = useRef(false);
+  const [selectedBalloonDiscount, setSelectedBalloonDiscount] = useState<Discount | null>(null);
+  const [poppingId, setPoppingId] = useState<string | null>(null);
+  
+  const handleBalloonClick = (disc: Discount) => {
+    if (manualDiscountId === disc.id) {
+      setSelectedBalloonDiscount(disc);
+      return;
+    }
+    setPoppingId(disc.id);
+    setTimeout(() => {
+      setSelectedBalloonDiscount(disc);
+      setPoppingId(null);
+    }, 320);
+  };
+  
+  const rotation = useMotionValue(Math.PI / 2);
+  const rotationSpring = useSpring(rotation, { stiffness: 100, damping: 22 });
+  const negativeRotation = useTransform(rotationSpring, r => `${-r * (180 / Math.PI)}deg`);
+  const tableRotationDeg = useTransform(rotationSpring, r => `${r * (180 / Math.PI)}deg`);
+  const [showMap, setShowMap] = useState(false);
+  const [mapCenter, setMapCenter] = useState<[number, number]>([12.9716, 77.5946]);
+
+  const handleAutoFetchLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error("Geolocation is not supported by your browser");
+      return;
+    }
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        setMapCenter([latitude, longitude]);
+        try {
+          const response = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`
+          );
+          const data = await response.json();
+          if (data && data.display_name) {
+            setDeliveryAddress(data.display_name);
+            toast.success("Location auto-detected!");
+          } else {
+            setDeliveryAddress(`Lat: ${latitude.toFixed(6)}, Lon: ${longitude.toFixed(6)}`);
+            toast.success("Location coordinates fetched!");
+          }
+        } catch (error) {
+          console.error("Reverse geocoding failed", error);
+          setDeliveryAddress(`Lat: ${latitude.toFixed(6)}, Lon: ${longitude.toFixed(6)}`);
+          toast.success("Location coordinates fetched!");
+        } finally {
+          setIsLocating(false);
+        }
+      },
+      (error) => {
+        console.error("Geolocation error", error);
+        toast.error("Failed to access your location. Please type your address manually.");
+        setIsLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  const handleMapMarkerChange = async (lat: number, lng: number) => {
+    setMapCenter([lat, lng]);
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
+      );
+      const data = await response.json();
+      if (data && data.display_name) {
+        setDeliveryAddress(data.display_name);
+      } else {
+        setDeliveryAddress(`Lat: ${lat.toFixed(6)}, Lon: ${lng.toFixed(6)}`);
+      }
+    } catch (error) {
+      setDeliveryAddress(`Lat: ${lat.toFixed(6)}, Lon: ${lng.toFixed(6)}`);
+    }
+  };
+
+  // Pre-fill verified phone, name, and address on mount/token change
+  useEffect(() => {
+    try {
+      const storedToken = localStorage.getItem('customer_token');
+      if (storedToken) {
+        const payload = JSON.parse(atob(storedToken.split('.')[1]));
+        if (payload?.sub) {
+          let phone = payload.sub;
+          if (phone.startsWith('+91')) {
+            phone = phone.substring(3);
+          }
+          setCustomerPhone(phone);
+        }
+      }
+      
+      const storedName = localStorage.getItem('customer_name');
+      if (storedName) {
+        setCustomerName(storedName);
+      }
+
+      const storedAddress = localStorage.getItem('customer_address');
+      if (storedAddress) {
+        setDeliveryAddress(storedAddress);
+      }
+    } catch (e){}
+  }, [token, isCheckoutOpen]);
 
   // Fetch shop and discounts
   useEffect(() => {
@@ -77,6 +222,111 @@ export function PublicCartPage() {
     
     fetchData();
   }, [id, memberStatus]);
+
+  // Set default order type once shop settings are loaded
+  useEffect(() => {
+    if (shop?.settings) {
+      if (shop.settings.dinein_enabled) {
+        setOrderType('dine_in');
+      } else if (shop.settings.takeaway_enabled) {
+        setOrderType('takeaway');
+      } else if (shop.settings.delivery_enabled) {
+        setOrderType('delivery');
+      }
+    }
+  }, [shop]);
+
+  const handlePlaceOrder = async () => {
+    const currentToken = localStorage.getItem('customer_token');
+    if (!currentToken) {
+      toast.error("Please verify your mobile number first.");
+      setShowVerifyPopup(true);
+      return;
+    }
+
+    if (!customerName || !customerPhone) {
+      toast.error("Please enter your name and mobile number");
+      return;
+    }
+    if (orderType === 'delivery' && !deliveryAddress) {
+      toast.error("Please enter your delivery address");
+      return;
+    }
+
+    if (orderType === 'delivery' && deliveryAddress) {
+      localStorage.setItem('customer_address', deliveryAddress);
+    }
+
+    let finalPhone = customerPhone;
+    try {
+      const payload = JSON.parse(atob(currentToken.split('.')[1]));
+      if (payload?.sub) {
+        finalPhone = payload.sub;
+      }
+    } catch (e){}
+
+    setIsPlacingOrder(true);
+    try {
+      const payload = {
+        customer_name: customerName,
+        customer_phone: finalPhone,
+        order_type: orderType,
+        table_number: orderType === 'dine_in' ? tableNumber : null,
+        delivery_address: orderType === 'delivery' ? deliveryAddress : null,
+        payment_method: paymentMethod,
+        total_amount: finalTotal,
+        items: items.map(it => ({
+          menu_item_id: it.menuItem.id,
+          name: it.menuItem.name,
+          quantity: it.quantity,
+          price: it.menuItem.variants && it.menuItem.variants.length > 0 
+            ? Number(it.menuItem.variants[it.selectedVariantIdx].price)
+            : Number(it.menuItem.price),
+          variant_info: it.menuItem.variants && it.menuItem.variants.length > 0 
+            ? { name: it.menuItem.variants[it.selectedVariantIdx].name }
+            : null,
+          addons_info: it.selectedAddons.map(idx => ({ name: it.menuItem.addons![idx].name, price: it.menuItem.addons![idx].price }))
+        }))
+      };
+
+      const res = await api.post(`/public/shop/${id}/orders`, payload);
+      const order = res.data;
+
+      // Launch Confetti splash decoration effect
+      confetti({
+        particleCount: 120,
+        spread: 70,
+        origin: { y: 0.6 },
+        colors: [primaryColor, '#eab308', '#22c55e', '#3b82f6', '#ec4899'],
+        zIndex: 9999
+      });
+
+      // Clear cart
+      useCartStore.getState().clearCart();
+
+      if (paymentMethod === 'online' && order.payment_session_id) {
+        toast.loading("Redirecting to Cashfree secure checkout...", { duration: 1500 });
+        setTimeout(() => {
+          window.location.href = order.payment_session_id;
+        }, 1500);
+      } else {
+        toast.success("Order placed successfully!");
+        setTimeout(() => {
+          navigate(`/shop/${id}/order/${order.id}`);
+        }, 1500);
+      }
+    } catch (err: any) {
+      console.error(err);
+      const errorMsg = typeof err.response?.data?.detail === 'string' 
+        ? err.response.data.detail 
+        : Array.isArray(err.response?.data?.detail)
+          ? "Validation failed. Please check your input fields."
+          : "Failed to place order. Please try again.";
+      toast.error(errorMsg);
+    } finally {
+      setIsPlacingOrder(false);
+    }
+  };
 
   const primaryColor = shop?.theme?.primary_color || '#ea580c';
 
@@ -404,45 +654,354 @@ export function PublicCartPage() {
           </div>
         ) : (
           <div className="space-y-6">
-            {/* Items List */}
-            <div className="space-y-3">
-              {visibleItems.map(item => renderItem(item))}
+            {/* Rotating dining table container */}
+            <div className="flex flex-col items-center relative w-full overflow-visible px-8">
               
-              {remainingItemsCount > 0 && (
-                <button 
-                  onClick={() => setShowAllItemsModal(true)}
-                  className="w-full py-2.5 rounded-xl font-bold text-sm shadow-sm hover:opacity-90 transition-all active:scale-[0.98] border-2 mt-2"
-                  style={{ color: primaryColor, backgroundColor: `${primaryColor}15`, borderColor: `${primaryColor}30` }}
+              {/* Left / Right Spin Arrows (hidden on mobile, visible on desktop) */}
+              <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 justify-between pointer-events-none px-1 sm:px-2 z-30 hidden md:flex">
+                <button
+                  onClick={() => {
+                    const nextIdx = (activeTableIdx - 1 + items.length) % items.length;
+                    setActiveTableIdx(nextIdx);
+                    const angleStep = (2 * Math.PI) / items.length;
+                    rotation.set(Math.PI / 2 - angleStep * nextIdx);
+                  }}
+                  className="w-10 h-10 rounded-full bg-white/95 border border-slate-200 shadow-md flex items-center justify-center pointer-events-auto active:scale-90 transition-transform cursor-pointer text-slate-700 hover:text-slate-900"
                 >
-                  View All {items.length} Items
+                  <ChevronLeft size={20} />
                 </button>
-              )}
-            </div>
+                <button
+                  onClick={() => {
+                    const nextIdx = (activeTableIdx + 1) % items.length;
+                    setActiveTableIdx(nextIdx);
+                    const angleStep = (2 * Math.PI) / items.length;
+                    rotation.set(Math.PI / 2 - angleStep * nextIdx);
+                  }}
+                  className="w-10 h-10 rounded-full bg-white/95 border border-slate-200 shadow-md flex items-center justify-center pointer-events-auto active:scale-90 transition-transform cursor-pointer text-slate-700 hover:text-slate-900"
+                >
+                  <ChevronRight size={20} />
+                </button>
+              </div>
 
-            {/* Offers */}
+              {/* Table and Chairs Wrapper Area - with top margin to avoid overlap in mobile headers */}
+              <div className="relative w-64 h-64 mx-auto flex items-center justify-center overflow-visible mb-6 mt-20">
+                
+                {/* 4 Static Chairs (Top, Bottom, Left, Right) - rendered outside the rotating element */}
+                {[
+                  { id: 'top', cx: 0, cy: -156, rotation: 180 },
+                  { id: 'bottom', cx: 0, cy: 156, rotation: 0 },
+                  { id: 'left', cx: -156, cy: 0, rotation: 90 },
+                  { id: 'right', cx: 156, cy: 0, rotation: 270 }
+                ].map(chair => (
+                  <div 
+                    key={`chair-static-${chair.id}`}
+                    className="absolute w-11 h-11 flex items-center justify-center pointer-events-none select-none z-0 bg-gradient-to-br from-amber-700 to-amber-900 border border-amber-955/40 rounded-xl shadow-lg"
+                    style={{
+                      transform: `translate3d(${chair.cx}px, ${chair.cy}px, 0) rotate(${chair.rotation}deg)`,
+                      left: 'calc(50% - 22px)',
+                      top: 'calc(50% - 22px)',
+                    }}
+                  >
+                    <Armchair size={20} className="text-amber-100/90 drop-shadow" />
+                  </div>
+                ))}
+
+                {/* Rotating Dining Table (Lazy Susan) */}
+                <motion.div
+                  onPanStart={() => {
+                    startAngle.current = rotation.get();
+                    isPanning.current = true;
+                  }}
+                  onPan={(e, info) => {
+                    // Spin table based on drag gesture offset with higher sensitivity for easier rotation
+                    rotation.set(startAngle.current + info.offset.x * 0.018);
+                  }}
+                  onPanEnd={() => {
+                    // Reset panning state after a tiny delay so click doesn't trigger on drag end
+                    setTimeout(() => {
+                      isPanning.current = false;
+                    }, 50);
+                  }}
+                  className="absolute inset-0 rounded-full border-8 border-amber-955/80 dark:border-slate-800 shadow-2xl flex items-center justify-center cursor-grab active:cursor-grabbing select-none overflow-visible"
+                  style={{
+                    rotate: tableRotationDeg,
+                    background: "radial-gradient(circle, #b45309 0%, #78350f 65%, #451a03 100%)",
+                    boxShadow: "0 20px 40px -10px rgba(69, 26, 3, 0.4), inset 0 2px 8px rgba(255, 255, 255, 0.15)"
+                  }}
+                >
+                  {/* Center lazy susan glass accent with counter-rotating Menukit logo */}
+                  <div className="absolute w-20 h-20 rounded-full bg-white/10 backdrop-blur-md border border-white/15 flex flex-col items-center justify-center text-center pointer-events-none select-none z-0 overflow-hidden">
+                    <motion.div style={{ rotate: negativeRotation }} className="flex items-center justify-center">
+                      <img 
+                        src="/menukit-logo.svg" 
+                        alt="Menukit Logo" 
+                        className="w-12 h-12 object-contain opacity-95 drop-shadow" 
+                      />
+                    </motion.div>
+                  </div>
+
+                  {/* Outer ring decorations */}
+                  <div className="absolute inset-2 rounded-full border border-amber-900/30 pointer-events-none" />
+                  <div className="absolute inset-16 rounded-full border border-amber-900/10 pointer-events-none" />
+
+                {/* Plates distributed in a circle */}
+                {items.map((item, idx) => {
+                  const angleStep = (2 * Math.PI) / items.length;
+                  const angle = angleStep * idx;
+                  const radius = 86; // Radius of circular plates placement
+                  const x = radius * Math.cos(angle);
+                  const y = radius * Math.sin(angle);
+                  const isActive = activeTableIdx === idx;
+                  
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={(e) => {
+                        // Prevent click action if the user was actually dragging/swiping
+                        if (isPanning.current) return;
+                        e.stopPropagation();
+                        setActiveTableIdx(idx);
+                        // Gently rotate selected item to the front (bottom position: Math.PI / 2)
+                        const targetRot = Math.PI / 2 - angleStep * idx;
+                        rotation.set(targetRot);
+                      }}
+                      className="absolute w-14 h-14"
+                      style={{
+                        transform: `translate3d(${x}px, ${y}px, 0)`,
+                        left: 'calc(50% - 28px)',
+                        top: 'calc(50% - 28px)',
+                      }}
+                    >
+                      <motion.div
+                        style={{ rotate: negativeRotation }}
+                        className={`w-14 h-14 rounded-full bg-white shadow-md border-2 transition-all duration-300 flex items-center justify-center cursor-pointer select-none z-10 ${
+                          isActive 
+                            ? 'ring-4 ring-amber-500 scale-120 border-amber-600 shadow-amber-900/40' 
+                            : 'border-slate-200 opacity-90 hover:opacity-100'
+                        }`}
+                      >
+                        <div className="w-12 h-12 rounded-full overflow-hidden border border-slate-100 bg-slate-50 relative">
+                          {(item.menuItem.image_url || item.menuItem.images?.[0]?.image_url) ? (
+                            <img 
+                              src={item.menuItem.image_url || item.menuItem.images![0].image_url} 
+                              alt={item.menuItem.name} 
+                              className="w-full h-full object-cover pointer-events-none"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center pointer-events-none">
+                              <span className="text-[9px] text-slate-400 font-bold uppercase">{item.menuItem.name.substring(0, 2).toUpperCase()}</span>
+                            </div>
+                          )}
+                          
+                          {/* Ceramic plate gold rim decoration */}
+                          <div className="absolute inset-0.5 rounded-full border border-amber-300/40 pointer-events-none" />
+                          
+                          {/* Quantity indicator badge */}
+                          <span className="absolute -top-1.5 -right-1.5 min-w-5 h-5 bg-amber-600 text-white text-[8px] font-black rounded-full flex items-center justify-center px-1 shadow-md border border-white">
+                            {item.quantity}
+                          </span>
+                        </div>
+                      </motion.div>
+                    </div>
+                  );
+                })}
+              </motion.div>
+            </div>
+          </div>
+
+            {/* Selected food plate information card (Tooltip style popover) */}
+            {items[activeTableIdx] && (() => {
+              const item = items[activeTableIdx];
+              const { menuItem, selectedVariantIdx, selectedAddons, quantity } = item;
+              
+              let basePrice = 0;
+              if (menuItem.variants && menuItem.variants.length > 0) {
+                basePrice = Number(menuItem.variants[selectedVariantIdx].price);
+              } else {
+                basePrice = Number(menuItem.price);
+              }
+              
+              let addonsPrice = 0;
+              if (menuItem.addons) {
+                selectedAddons.forEach((idx: number) => {
+                  addonsPrice += Number(menuItem.addons![idx].price);
+                });
+              }
+
+              const variantName = menuItem.variants && menuItem.variants.length > 0 ? menuItem.variants[selectedVariantIdx].name : '';
+              const addonNames = menuItem.addons ? selectedAddons.map((idx: number) => menuItem.addons![idx].name).join(', ') : '';
+
+              return (
+                <div className="bg-amber-50/90 dark:bg-slate-900/80 border border-amber-200/80 dark:border-slate-800 rounded-2xl p-4 shadow-xl backdrop-blur-md relative animate-[fadeIn_0.3s_ease-out] mb-6">
+                  {/* Tooltip arrow pointer pointing at the table */}
+                  <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 w-4 h-4 bg-amber-50 dark:bg-slate-900 border-l border-t border-amber-200/80 dark:border-slate-800 rotate-45" />
+
+                  <div className="flex justify-between items-start gap-3 relative z-10">
+                    <div>
+                      <h4 className="font-extrabold text-base text-amber-950 dark:text-amber-100">{menuItem.name}</h4>
+                      {(variantName || addonNames) && (
+                        <div className="text-[11px] font-medium text-amber-800/80 dark:text-slate-400 mt-1 leading-snug">
+                          {variantName && <span>{variantName}</span>}
+                          {variantName && addonNames && <span> • </span>}
+                          {addonNames && <span>+ {addonNames}</span>}
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="text-right shrink-0">
+                      <span className="font-black text-base text-amber-950 dark:text-amber-300">
+                        {shop?.settings?.currency || '₹'}{(basePrice + addonsPrice) * quantity}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Quantity adjustment & Remove row */}
+                  <div className="flex items-center justify-between mt-4 pt-3 border-t border-amber-200/40 dark:border-slate-800/60 relative z-10">
+                    <button
+                      onClick={() => {
+                        removeFromCart(item.id);
+                        if (activeTableIdx >= items.length - 1) {
+                          setActiveTableIdx(Math.max(0, items.length - 2));
+                        }
+                      }}
+                      className="text-xs font-bold text-red-500 hover:text-red-650 transition-colors"
+                    >
+                      Remove Item
+                    </button>
+                    
+                    <div className="flex items-center gap-3 bg-white/90 dark:bg-slate-800 rounded-lg p-1 border border-amber-200/40 dark:border-slate-700 shadow-2xs">
+                      <button 
+                        onClick={() => {
+                          if (quantity === 1) {
+                            removeFromCart(item.id);
+                            if (activeTableIdx >= items.length - 1) {
+                              setActiveTableIdx(Math.max(0, items.length - 2));
+                            }
+                          } else {
+                            updateQuantity(item.id, -1);
+                          }
+                        }}
+                        className="w-7 h-7 flex items-center justify-center rounded-md bg-white dark:bg-slate-750 shadow-3xs text-slate-600 hover:text-slate-900 dark:text-slate-350 transition-colors"
+                      >
+                        <Minus size={14} />
+                      </button>
+                      <span className="text-xs font-black w-5 text-center text-slate-800 dark:text-slate-100">{quantity}</span>
+                      <button 
+                        onClick={() => updateQuantity(item.id, 1)}
+                        className="w-7 h-7 flex items-center justify-center rounded-md bg-white dark:bg-slate-750 shadow-3xs text-slate-600 hover:text-slate-900 dark:text-slate-350 transition-colors"
+                      >
+                        <Plus size={14} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Offers (Balloon Garden) */}
             <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
               <h3 className="font-black text-slate-800 mb-3 flex items-center gap-2">
                 <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ backgroundColor: `${primaryColor}20`, color: primaryColor }}>%</div>
                 Offers & Benefits
               </h3>
               
-              <div className="space-y-3">
-                {visibleDiscounts.map(disc => renderOffer(disc))}
-                
-                {applicableDiscounts.length === 0 && (
-                  <p className="text-sm text-slate-400 italic">No offers available at the moment.</p>
-                )}
-                
-                {remainingDiscountsCount > 0 && (
-                  <button 
-                    onClick={() => setShowAllOffersModal(true)}
-                    className="w-full py-2.5 rounded-xl font-bold text-sm shadow-sm hover:opacity-90 transition-all active:scale-[0.98] border-2 mt-2"
-                    style={{ color: primaryColor, backgroundColor: `${primaryColor}15`, borderColor: `${primaryColor}30` }}
-                  >
-                    View All {applicableDiscounts.length} Offers
-                  </button>
-                )}
-              </div>
+              {applicableDiscounts.length === 0 ? (
+                <p className="text-sm text-slate-400 italic">No offers available at the moment.</p>
+              ) : (
+                <div className="flex flex-wrap justify-center gap-6 py-4 overflow-visible">
+                  {applicableDiscounts.map((disc, idx) => {
+                    const colors = [
+                      { bg: 'bg-rose-500', knot: 'border-b-rose-600', string: 'bg-rose-300', particle: '#f43f5e' },
+                      { bg: 'bg-purple-500', knot: 'border-b-purple-600', string: 'bg-purple-300', particle: '#a855f7' },
+                      { bg: 'bg-blue-500', knot: 'border-b-blue-600', string: 'bg-blue-300', particle: '#3b82f6' },
+                      { bg: 'bg-orange-500', knot: 'border-b-orange-600', string: 'bg-orange-300', particle: '#f97316' }
+                    ];
+                    const color = colors[idx % colors.length];
+                    const isApplied = manualDiscountId === disc.id;
+                    const isPopping = poppingId === disc.id;
+
+                    return (
+                      <motion.div
+                        key={disc.id}
+                        animate={isPopping ? {
+                          scale: [1, 1.3, 0],
+                          opacity: [1, 0.8, 0]
+                        } : { 
+                          y: isApplied ? 15 : [0, -10, 0],
+                          scale: isApplied ? 0.9 : 1,
+                          opacity: isApplied ? 0.75 : 1
+                        }}
+                        transition={isPopping ? {
+                          duration: 0.3,
+                          ease: "easeOut"
+                        } : { 
+                          y: { repeat: Infinity, repeatType: "mirror", duration: 1.8 + (idx * 0.3), ease: "easeInOut" },
+                          scale: { duration: 0.25 }
+                        }}
+                        onClick={() => {
+                          if (isPanning.current) return;
+                          handleBalloonClick(disc);
+                        }}
+                        className="relative flex flex-col items-center cursor-pointer select-none group overflow-visible"
+                      >
+                        {/* Particle Explosion Ring */}
+                        {isPopping && (
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
+                            {[...Array(10)].map((_, i) => {
+                              const angle = (i * 2 * Math.PI) / 10;
+                              const px = 40 * Math.cos(angle);
+                              const py = 40 * Math.sin(angle);
+                              return (
+                                <motion.div
+                                  key={i}
+                                  initial={{ x: 0, y: 0, scale: 1.2, opacity: 1 }}
+                                  animate={{ x: px, y: py, scale: 0, opacity: 0 }}
+                                  transition={{ duration: 0.3, ease: "easeOut" }}
+                                  className="absolute w-2 h-2 rounded-full"
+                                  style={{ backgroundColor: color.particle }}
+                                />
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {isApplied ? (
+                          /* Popped Balloon Indicator - Sparkles icon */
+                          <div className="flex flex-col items-center">
+                            <div className="w-10 h-10 rounded-full bg-rose-50 border border-rose-200 flex items-center justify-center shadow-inner animate-pulse text-rose-500">
+                              <Sparkles size={18} />
+                            </div>
+                            <span className="text-[9px] font-black text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200 mt-1.5 uppercase">Applied</span>
+                          </div>
+                        ) : (
+                          /* Floating Balloon */
+                          <div className="relative flex flex-col items-center">
+                            {/* Balloon Bubble */}
+                            <div className={`w-12 h-14 rounded-[50%_50%_50%_50%_/_45%_45%_55%_55%] ${color.bg} shadow-md flex items-center justify-center relative transition-transform group-hover:scale-110`}>
+                              {/* Shiny Light Reflection */}
+                              <div className="absolute top-1.5 left-2 w-2.5 h-4 bg-white/30 rounded-full rotate-[30deg]" />
+                              {disc.discount_type === 'percentage' ? (
+                                <Percent size={15} className="text-white drop-shadow-xs" />
+                              ) : (
+                                <Banknote size={16} className="text-white drop-shadow-xs" />
+                              )}
+                            </div>
+                            {/* Balloon Tie Knot */}
+                            <div className={`w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-b-[6px] ${color.knot} -mt-0.5`} />
+                            {/* Hanging String */}
+                            <div className={`w-0.5 h-6 ${color.string} opacity-60`} />
+                            
+                            {/* Coupon Label */}
+                            <span className="text-[9px] font-black text-slate-500 mt-1 uppercase tracking-wider max-w-[65px] truncate text-center">
+                              Offer {idx + 1}
+                            </span>
+                          </div>
+                        )}
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Bill Summary */}
@@ -493,15 +1052,252 @@ export function PublicCartPage() {
               </p>
             </div>
             <button
-              onClick={() => toast('Checkout is coming soon!', { icon: '🚧' })}
-              className="flex-[2] py-2.5 rounded-xl text-white font-bold text-[15px] shadow-lg hover:opacity-90 transition-all flex items-center justify-center gap-2 active:scale-[0.98] opacity-80 cursor-not-allowed"
+              onClick={() => {
+                const anyEnabled = shop?.settings?.dinein_enabled || shop?.settings?.takeaway_enabled || shop?.settings?.delivery_enabled;
+                if (!anyEnabled) {
+                  toast.error("Ordering is currently disabled for this shop.");
+                  return;
+                }
+                const currentToken = localStorage.getItem('customer_token');
+                if (!currentToken) {
+                  // Must verify mobile first, then open checkout
+                  setPendingCheckoutAfterVerify(true);
+                  setShowVerifyPopup(true);
+                } else {
+                  setIsCheckoutOpen(true);
+                }
+              }}
+              className="flex-[2] py-2.5 rounded-xl text-white font-bold text-[15px] shadow-lg hover:opacity-90 transition-all flex items-center justify-center gap-2 active:scale-[0.98]"
               style={{ backgroundColor: primaryColor, boxShadow: `0 4px 20px ${primaryColor}40` }}
             >
-              Coming Soon
+              Checkout Order
             </button>
           </div>
         </div>
       )}
+
+      {/* Checkout Bottom Sheet */}
+      <BottomSheet
+        isOpen={isCheckoutOpen}
+        onClose={() => setIsCheckoutOpen(false)}
+        title="Checkout Details"
+        footer={
+          <button
+            onClick={handlePlaceOrder}
+            disabled={isPlacingOrder}
+            className="w-full py-3.5 rounded-2xl text-white font-extrabold shadow-md hover:brightness-110 active:scale-[0.98] transition-all text-center flex items-center justify-center gap-2"
+            style={{ backgroundColor: primaryColor }}
+          >
+            {isPlacingOrder ? (
+              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
+            ) : (
+              `Place Order (${shop?.settings?.currency || '₹'}${finalTotal.toFixed(2)})`
+            )}
+          </button>
+        }
+      >
+        <div className="space-y-5">
+          {/* Order Channel Selector */}
+          <div>
+            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Order Type</label>
+            <div className="grid grid-cols-3 gap-2">
+              {shop?.settings?.dinein_enabled && (
+                <button
+                  type="button"
+                  onClick={() => setOrderType('dine_in')}
+                  className={`py-2.5 rounded-xl font-bold text-sm border text-center transition-all ${
+                    orderType === 'dine_in'
+                      ? 'border-transparent text-white shadow-sm'
+                      : 'border-slate-200 bg-white text-slate-650 hover:bg-slate-50'
+                  }`}
+                  style={orderType === 'dine_in' ? { backgroundColor: primaryColor } : {}}
+                >
+                  Dine-in
+                </button>
+              )}
+              {shop?.settings?.takeaway_enabled && (
+                <button
+                  type="button"
+                  onClick={() => setOrderType('takeaway')}
+                  className={`py-2.5 rounded-xl font-bold text-sm border text-center transition-all ${
+                    orderType === 'takeaway'
+                      ? 'border-transparent text-white shadow-sm'
+                      : 'border-slate-200 bg-white text-slate-650 hover:bg-slate-50'
+                  }`}
+                  style={orderType === 'takeaway' ? { backgroundColor: primaryColor } : {}}
+                >
+                  Takeaway
+                </button>
+              )}
+              {shop?.settings?.delivery_enabled && (
+                <button
+                  type="button"
+                  onClick={() => setOrderType('delivery')}
+                  className={`py-2.5 rounded-xl font-bold text-sm border text-center transition-all ${
+                    orderType === 'delivery'
+                      ? 'border-transparent text-white shadow-sm'
+                      : 'border-slate-200 bg-white text-slate-655 hover:bg-slate-50'
+                  }`}
+                  style={orderType === 'delivery' ? { backgroundColor: primaryColor } : {}}
+                >
+                  Delivery
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Customer Details Form */}
+          <div className="space-y-3.5">
+            <div>
+              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Your Name</label>
+              <input
+                type="text"
+                placeholder="e.g. John Doe"
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-slate-300 transition-all font-medium text-slate-800 placeholder-slate-400 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider flex justify-between items-center mb-1.5">
+                <span>Mobile Number</span>
+                {token ? (
+                  <span className="text-[10px] text-green-600 font-extrabold uppercase bg-green-50 px-2 py-0.5 rounded-md border border-green-100 flex items-center gap-1">
+                    <span>Verified</span>
+                    <CheckCircle size={10} className="fill-green-600/10 text-green-650" />
+                  </span>
+                ) : (
+                  <button 
+                    type="button" 
+                    onClick={() => setShowVerifyPopup(true)} 
+                    className="text-[10px] text-orange-650 font-extrabold uppercase bg-orange-50 px-2 py-0.5 rounded-md border border-orange-100 hover:bg-orange-100 transition-all flex items-center gap-1"
+                  >
+                    <span>Verify Now</span>
+                    <Key size={10} />
+                  </button>
+                )}
+              </label>
+              <input
+                type="tel"
+                placeholder="e.g. 9876543210"
+                value={customerPhone}
+                disabled={!!token}
+                onChange={(e) => setCustomerPhone(e.target.value)}
+                className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:border-slate-300 transition-all font-medium text-sm ${
+                  token 
+                    ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200' 
+                    : 'bg-slate-50 text-slate-800 border-slate-200'
+                }`}
+              />
+            </div>
+
+            {orderType === 'dine_in' && (
+              <div>
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Table Number (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Table 5"
+                  value={tableNumber}
+                  onChange={(e) => setTableNumber(e.target.value)}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-slate-300 transition-all font-medium text-slate-800 placeholder-slate-400 text-sm"
+                />
+              </div>
+            )}
+
+            {orderType === 'delivery' && (
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Delivery Address</label>
+                <textarea
+                  placeholder="Street, Building, Flat Number, Landmarks..."
+                  value={deliveryAddress}
+                  rows={2}
+                  onChange={(e) => setDeliveryAddress(e.target.value)}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-slate-300 transition-all font-medium text-slate-800 placeholder-slate-400 text-sm"
+                />
+                
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleAutoFetchLocation}
+                    disabled={isLocating}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 transition-colors"
+                  >
+                    <Navigation size={14} className={isLocating ? "animate-spin text-primary" : "text-slate-500"} style={{ color: isLocating ? primaryColor : undefined }} />
+                    <span>{isLocating ? "Locating..." : "Detect Location"}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowMap(!showMap)}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 transition-colors"
+                  >
+                    <Map size={14} className="text-slate-500" />
+                    <span>{showMap ? "Hide Map" : "Select from Map"}</span>
+                  </button>
+                </div>
+
+                {showMap && (
+                  <div className="h-44 w-full rounded-xl overflow-hidden border border-slate-200 relative mt-2 z-10">
+                    <MapContainer
+                      center={mapCenter}
+                      zoom={15}
+                      style={{ height: '100%', width: '100%' }}
+                    >
+                      <TileLayer
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                      />
+                      <Marker position={mapCenter} />
+                      <MapEventsHandler onClick={handleMapMarkerChange} />
+                    </MapContainer>
+                    <div className="absolute bottom-2 left-2 z-[1000] bg-white/90 backdrop-blur px-2 py-1 rounded shadow text-[9px] font-bold text-slate-650 pointer-events-none">
+                      Tap map to move marker & fetch address
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Payment Method Selector */}
+          <div>
+            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Payment Option</label>
+            <div className="space-y-2">
+              <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/50 cursor-pointer hover:bg-slate-50 transition-colors">
+                <input 
+                  type="radio" 
+                  name="payment" 
+                  checked={paymentMethod === 'cash'} 
+                  onChange={() => setPaymentMethod('cash')} 
+                  className="w-4 h-4 accent-primary" 
+                  style={{ accentColor: primaryColor }}
+                />
+                <div className="flex flex-col">
+                  <span className="text-sm font-semibold text-slate-850">Pay at Counter / Cash</span>
+                  <span className="text-[10px] text-slate-400">Pay physically at the shop or on delivery.</span>
+                </div>
+              </label>
+
+              {shop?.settings?.cashfree_app_id && (
+                <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/50 cursor-pointer hover:bg-slate-50 transition-colors">
+                  <input 
+                    type="radio" 
+                    name="payment" 
+                    checked={paymentMethod === 'online'} 
+                    onChange={() => setPaymentMethod('online')} 
+                    className="w-4 h-4 accent-primary"
+                    style={{ accentColor: primaryColor }}
+                  />
+                  <div className="flex flex-col">
+                    <span className="text-sm font-semibold text-slate-850">Pay Online Instantly</span>
+                    <span className="text-[10px] text-slate-400">UPI, Cards, Netbanking using Cashfree.</span>
+                  </div>
+                </label>
+              )}
+            </div>
+          </div>
+        </div>
+      </BottomSheet>
 
       {/* All Items Modal */}
       <Modal 
@@ -526,6 +1322,79 @@ export function PublicCartPage() {
           {applicableDiscounts.map(disc => renderOffer(disc))}
         </div>
       </Modal>
+
+      {/* Balloon Pop Reveal Modal */}
+      <Modal
+        isOpen={!!selectedBalloonDiscount}
+        onClose={() => setSelectedBalloonDiscount(null)}
+        title="Special Offer Found!"
+      >
+        {selectedBalloonDiscount && (() => {
+          const disc = selectedBalloonDiscount;
+          const isApplied = manualDiscountId === disc.id;
+          return (
+            <div className="text-center p-3">
+              <div className="flex justify-center mb-4">
+                {disc.discount_type === 'percentage' ? (
+                  <Percent size={40} className="text-emerald-500 animate-bounce" />
+                ) : (
+                  <Banknote size={40} className="text-emerald-500 animate-bounce" />
+                )}
+              </div>
+              <h3 className="text-xl font-black text-slate-800">{disc.title}</h3>
+              <p className="text-sm font-medium text-slate-500 mt-2">
+                {disc.description || 'Tap below to apply this exclusive dining discount to your current bill!'}
+              </p>
+              
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 my-5 flex items-center justify-between shadow-inner">
+                <span className="text-xs font-bold text-slate-455">Discount Offer</span>
+                <span className="font-black text-lg text-emerald-600">
+                  {disc.discount_type === 'percentage' ? `${disc.discount_value}% OFF` : `Flat ₹${disc.discount_value} OFF`}
+                </span>
+              </div>
+
+              <button
+                onClick={() => {
+                  setManualDiscount(isApplied ? null : disc.id);
+                  setSelectedBalloonDiscount(null);
+                  if (!isApplied) {
+                    toast.success(`Discount applied successfully!`);
+                  } else {
+                    toast.success('Discount removed.');
+                  }
+                }}
+                className="w-full py-3.5 rounded-xl text-white font-extrabold text-base shadow-lg hover:brightness-110 active:scale-[0.97] transition-all"
+                style={{ backgroundColor: primaryColor }}
+              >
+                {isApplied ? 'Remove Discount' : 'Apply Discount'}
+              </button>
+            </div>
+          );
+        })()}
+      </Modal>
+
+      {showVerifyPopup && shop && (
+        <DiscountUnlockPopup 
+          shopId={shop.id}
+          initialStep={pendingCheckoutAfterVerify ? 'mobile' : 'intro'}
+          onClose={() => {
+            setShowVerifyPopup(false);
+            setPendingCheckoutAfterVerify(false);
+          }}
+          onUnlock={() => {
+            setShowVerifyPopup(false);
+            const newToken = localStorage.getItem('customer_token');
+            if (newToken) {
+              setToken(newToken);
+              // If checkout was pending, open it now after verification
+              if (pendingCheckoutAfterVerify) {
+                setPendingCheckoutAfterVerify(false);
+                setTimeout(() => setIsCheckoutOpen(true), 300);
+              }
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -3,6 +3,31 @@ import { useShopStore } from '@/store/shopStore';
 import { useNotificationStore } from '@/store/notificationStore';
 import { toast } from 'react-hot-toast';
 
+export const playChimeNotificationSound = () => {
+  try {
+    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    
+    const playNote = (freq: number, start: number, duration: number) => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, start);
+      gain.gain.setValueAtTime(0.08, start);
+      gain.gain.exponentialRampToValueAtTime(0.01, start + duration);
+      osc.start(start);
+      osc.stop(start + duration);
+    };
+
+    const now = audioCtx.currentTime;
+    playNote(659.25, now, 0.25);
+    playNote(880.00, now + 0.12, 0.35);
+  } catch (e) {
+    console.error("Failed to play notification sound", e);
+  }
+};
+
 export function useWebSocket() {
   const { shop } = useShopStore();
   const { addNotification, setNotifications } = useNotificationStore();
@@ -29,6 +54,9 @@ export function useWebSocket() {
       };
 
       ws.onmessage = (event) => {
+        if (typeof event.data === 'string' && (event.data === 'ping' || event.data === 'pong')) {
+          return;
+        }
         try {
           const message = JSON.parse(event.data);
           
@@ -39,9 +67,12 @@ export function useWebSocket() {
             const notif = message.data;
             addNotification(notif);
             
+            // Play notification chime sound
+            playChimeNotificationSound();
+
             // Show toast popup
             toast(notif.title + '\n' + notif.message, {
-              icon: notif.type === 'NEW_CUSTOMER' ? '👋' : '⭐',
+              icon: notif.type === 'NEW_ORDER' ? '🛍️' : notif.type === 'ORDER_STATUS' ? '🍳' : notif.type === 'NEW_CUSTOMER' ? '👋' : '⭐',
               style: {
                 borderRadius: '10px',
                 background: '#333',

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
-import { Plus, Edit2, Trash2, Search, Filter, Image as ImageIcon, Star, Flame, LayoutGrid, List, Sparkles, Wand2, Loader2, MessageSquare, Check, RefreshCw, Code } from 'lucide-react';
+import { Plus, Edit2, Trash2, Search, Filter, Image as ImageIcon, Star, Flame, LayoutGrid, List, Sparkles, Wand2, Loader2, MessageSquare, Check, RefreshCw, Code, ChevronLeft, ChevronRight } from 'lucide-react';
 import { api } from '@/services/api';
 import { useShopStore } from '@/store/shopStore';
 import { MenuItem, MenuItemVariant, MenuItemAddon } from '@/types';
@@ -781,10 +781,52 @@ export function MenuItemsPage() {
         onClose={() => setIsModalOpen(false)}
         title={editingItem ? "Edit Menu" : "Add New Menu"}
         className="max-w-xl"
+        footer={
+          <div className="flex justify-between items-center w-full">
+            <Button 
+              variant="secondary" 
+              size="sm"
+              type="button" 
+              onClick={() => {
+                if (currentStep > 1) setCurrentStep(currentStep - 1);
+                else setIsModalOpen(false);
+              }}
+              leftIcon={currentStep > 1 ? <ChevronLeft size={14} /> : undefined}
+            >
+              {currentStep > 1 ? 'Back' : 'Cancel'}
+            </Button>
+            
+            {currentStep < 4 ? (
+              <Button 
+                type="button"
+                size="sm"
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (!formData.name.trim() || !formData.category_id) {
+                    toast.error('Please fill in Menu Name and Category');
+                    return;
+                  }
+                  setCurrentStep(currentStep + 1);
+                }}
+              >
+                Next Step <ChevronRight size={14} className="ml-1" />
+              </Button>
+            ) : (
+              <Button 
+                type="button" 
+                size="sm"
+                onClick={handleSubmit} 
+                isLoading={isSubmitting}
+              >
+                Save Menu
+              </Button>
+            )}
+          </div>
+        }
       >
-        <div className="mt-4">
+        <div className="space-y-4">
           {/* Step Indicator */}
-          <div className="flex items-center justify-between mb-8 relative max-w-sm mx-auto">
+          <div className="flex items-center justify-between mb-4 relative max-w-sm mx-auto">
             <div className="absolute left-0 right-0 top-1/2 h-0.5 bg-slate-200 dark:bg-slate-800 -z-10" />
             
             {[1, 2, 3, 4].map(step => {
@@ -807,9 +849,8 @@ export function MenuItemsPage() {
             })}
           </div>
 
-          <form onSubmit={handleSubmit} className="mt-2 flex flex-col h-[450px] sm:h-[500px]">
-            <div className="flex-1 overflow-y-auto px-1 space-y-5 no-scrollbar pb-4">
-              {currentStep === 1 && (
+          <div className="space-y-5">
+            {currentStep === 1 && (
               <div className="space-y-4 animate-fade-in">
                 <Input
                   label="Menu Name *"
@@ -1365,33 +1406,7 @@ export function MenuItemsPage() {
                 </div>
               </div>
             )}
-            </div>
-
-            <div className="flex justify-between items-center pt-4 mt-2 border-t border-slate-100 dark:border-slate-800 shrink-0">
-              <Button 
-                variant="secondary" 
-                type="button" 
-                onClick={() => {
-                  if (currentStep > 1) setCurrentStep(currentStep - 1);
-                  else setIsModalOpen(false);
-                }}
-              >
-                {currentStep > 1 ? 'Back' : 'Cancel'}
-              </Button>
-              
-              {currentStep < 4 ? (
-                <Button 
-                  type="submit"
-                >
-                  Next Step
-                </Button>
-              ) : (
-                <Button type="submit" isLoading={isSubmitting}>
-                  Save Menu
-                </Button>
-              )}
-            </div>
-          </form>
+          </div>
         </div>
       </Modal>
 

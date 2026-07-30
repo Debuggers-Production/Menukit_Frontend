@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-hot-toast';
-import { Download, Printer, Copy, RefreshCw, ExternalLink, QrCode, UtensilsCrossed } from 'lucide-react';
+import { Download, Printer, Copy, RefreshCw, ExternalLink, QrCode, UtensilsCrossed, Palette } from 'lucide-react';
 import { api } from '@/services/api';
 import { useShopStore } from '@/store/shopStore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { QRCodeInfo } from '@/types';
+import QRCodeStyling from 'qr-code-styling';
+import { SearchableSelect } from '@/components/ui/SearchableSelect';
 
 
 export function QRCodePage() {
@@ -16,9 +18,106 @@ export function QRCodePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
 
+  // QR Code Customization States
+  const [dotType, setDotType] = useState<string>('dots');
+  const [cornersSquareType, setCornersSquareType] = useState<string>('rounded');
+  const [cornersDotType, setCornersDotType] = useState<string>('dot');
+  const [qrColor, setQrColor] = useState<string>('#1A1515');
+  const [includeLogo, setIncludeLogo] = useState<boolean>(true);
+  const [roundedLogoUrl, setRoundedLogoUrl] = useState<string | undefined>(undefined);
+
+  const qrRef = useRef<HTMLDivElement>(null);
+  const qrCodeInstance = useRef<any>(null);
+
   useEffect(() => {
     fetchQRCode();
   }, []);
+
+  // Effect to make shop logo rounded
+  useEffect(() => {
+    if (shop?.logo_url && includeLogo) {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const size = Math.min(img.width, img.height);
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.beginPath();
+          ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+          ctx.clip();
+          ctx.drawImage(img, (size - img.width) / 2, (size - img.height) / 2, img.width, img.height);
+          setRoundedLogoUrl(canvas.toDataURL());
+        } else {
+          setRoundedLogoUrl(shop.logo_url || undefined);
+        }
+      };
+      img.onerror = () => {
+        setRoundedLogoUrl(shop.logo_url || undefined);
+      };
+      img.src = shop.logo_url;
+    } else {
+      setRoundedLogoUrl(undefined);
+    }
+  }, [shop?.logo_url, includeLogo]);
+
+  useEffect(() => {
+    if (!qrCode?.qr_url) return;
+
+    if (!qrCodeInstance.current) {
+      qrCodeInstance.current = new QRCodeStyling({
+        width: 240,
+        height: 240,
+        data: qrCode.qr_url,
+        dotsOptions: {
+          type: dotType as any,
+          color: qrColor,
+        },
+        cornersSquareOptions: {
+          type: cornersSquareType as any,
+          color: qrColor,
+        },
+        cornersDotOptions: {
+          type: cornersDotType as any,
+          color: qrColor,
+        },
+        backgroundOptions: {
+          color: "#FFFFFF",
+        },
+        image: includeLogo && roundedLogoUrl ? roundedLogoUrl : undefined,
+        imageOptions: {
+          crossOrigin: "anonymous",
+          margin: 6,
+          imageSize: 0.35,
+        }
+      });
+      if (qrRef.current) {
+        qrRef.current.innerHTML = '';
+        qrCodeInstance.current.append(qrRef.current);
+      }
+    } else {
+      qrCodeInstance.current.update({
+        data: qrCode.qr_url,
+        dotsOptions: {
+          type: dotType as any,
+          color: qrColor,
+        },
+        cornersSquareOptions: {
+          type: cornersSquareType as any,
+          color: qrColor,
+        },
+        cornersDotOptions: {
+          type: cornersDotType as any,
+          color: qrColor,
+        },
+        image: includeLogo && roundedLogoUrl ? roundedLogoUrl : undefined,
+      });
+    }
+  }, [qrCode?.qr_url, dotType, cornersSquareType, cornersDotType, qrColor, includeLogo, roundedLogoUrl]);
+
+  const [isSavingStyle, setIsSavingStyle] = useState(false);
 
   const fetchQRCode = async () => {
     try {
@@ -36,6 +135,13 @@ export function QRCodePage() {
 
       const res = await api.get('/qr/info');
       setQrCode(res.data);
+      if (res.data) {
+        if (res.data.dot_type) setDotType(res.data.dot_type);
+        if (res.data.corners_square_type) setCornersSquareType(res.data.corners_square_type);
+        if (res.data.corners_dot_type) setCornersDotType(res.data.corners_dot_type);
+        if (res.data.qr_color) setQrColor(res.data.qr_color);
+        if (res.data.include_logo !== undefined) setIncludeLogo(res.data.include_logo);
+      }
     } catch (error: any) {
       // If 404, it means QR hasn't been generated yet, which is fine
       if (error.response?.status !== 404) {
@@ -51,6 +157,13 @@ export function QRCodePage() {
     try {
       const res = await api.post('/qr/generate');
       setQrCode(res.data);
+      if (res.data) {
+        if (res.data.dot_type) setDotType(res.data.dot_type);
+        if (res.data.corners_square_type) setCornersSquareType(res.data.corners_square_type);
+        if (res.data.corners_dot_type) setCornersDotType(res.data.corners_dot_type);
+        if (res.data.qr_color) setQrColor(res.data.qr_color);
+        if (res.data.include_logo !== undefined) setIncludeLogo(res.data.include_logo);
+      }
       toast.success('QR Code generated successfully!');
     } catch (error) {
       toast.error('Failed to generate QR code');
@@ -58,6 +171,26 @@ export function QRCodePage() {
       setIsGenerating(false);
     }
   };
+
+  const handleSaveStyle = async () => {
+    setIsSavingStyle(true);
+    try {
+      const res = await api.put('/qr/style', {
+        dot_type: dotType,
+        corners_square_type: cornersSquareType,
+        corners_dot_type: cornersDotType,
+        qr_color: qrColor,
+        include_logo: includeLogo
+      });
+      setQrCode(res.data);
+      toast.success('QR Code style saved successfully!');
+    } catch (e) {
+      toast.error('Failed to save style preferences');
+    } finally {
+      setIsSavingStyle(false);
+    }
+  };
+
   const publicLink = qrCode?.qr_url || '';
 
   const handleCopyLink = () => {
@@ -67,7 +200,7 @@ export function QRCodePage() {
   };
 
   const handleDownloadPNG = async () => {
-    if (!qrCode?.qr_image_url) return;
+    if (!qrCode?.qr_url) return;
     
     const toastId = toast.loading('Generating high-quality image...');
     
@@ -179,7 +312,37 @@ export function QRCodePage() {
       ctx.stroke();
 
       // 7. Load and Draw QR Code
-      const qrImage = await loadImage(qrCode.qr_image_url);
+      const exportQr = new QRCodeStyling({
+        width: 600,
+        height: 600,
+        data: qrCode.qr_url,
+        dotsOptions: {
+          type: dotType as any,
+          color: qrColor,
+        },
+        cornersSquareOptions: {
+          type: cornersSquareType as any,
+          color: qrColor,
+        },
+        cornersDotOptions: {
+          type: cornersDotType as any,
+          color: qrColor,
+        },
+        backgroundOptions: {
+          color: "#FFFFFF",
+        },
+        image: includeLogo && roundedLogoUrl ? roundedLogoUrl : undefined,
+        imageOptions: {
+          crossOrigin: "anonymous",
+          margin: 6,
+          imageSize: 0.35,
+        }
+      });
+
+      const blob = await exportQr.getRawData("png") as Blob;
+      if (!blob) throw new Error("Failed to generate raw QR code blob");
+      const blobUrl = URL.createObjectURL(blob);
+      const qrImage = await loadImage(blobUrl);
       const padding = 60;
       ctx.drawImage(
         qrImage, 
@@ -188,9 +351,7 @@ export function QRCodePage() {
         qrBoxSize - (padding * 2), 
         qrBoxSize - (padding * 2)
       );
-
-      // Draw Logo in center of QR
-      // (Removed as per user request)
+      URL.revokeObjectURL(blobUrl);
 
       currentY += qrBoxSize + 100;
 
@@ -229,180 +390,257 @@ export function QRCodePage() {
       toast.success('Downloaded successfully!', { id: toastId });
     } catch (error) {
       console.error('Failed to generate image:', error);
-      toast.error('Failed to generate image. Please try downloading normally.', { id: toastId });
-      
-      // Fallback to direct download
-      const a = document.createElement('a');
-      a.href = qrCode.qr_image_url;
-      a.download = `${shop?.slug || 'menu'}-qr.png`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      toast.error('Failed to generate image.', { id: toastId });
     }
   };
 
-  const handlePrint = () => {
-    if (!qrCode?.qr_image_url) return;
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
+  const handleDownloadQROnly = async () => {
+    if (!qrCode?.qr_url) return;
     
-    const logoHtml = shop?.logo_url 
-      ? `<img class="logo" src="${shop.logo_url}" alt="Logo" />`
-      : `<div class="logo-placeholder">🍽️</div>`;
+    const toastId = toast.loading('Downloading QR code...');
+    
+    try {
+      const exportQr = new QRCodeStyling({
+        width: 1000,
+        height: 1000,
+        data: qrCode.qr_url,
+        dotsOptions: {
+          type: dotType as any,
+          color: qrColor,
+        },
+        cornersSquareOptions: {
+          type: cornersSquareType as any,
+          color: qrColor,
+        },
+        cornersDotOptions: {
+          type: cornersDotType as any,
+          color: qrColor,
+        },
+        backgroundOptions: {
+          color: "#FFFFFF",
+        },
+        image: includeLogo && roundedLogoUrl ? roundedLogoUrl : undefined,
+        imageOptions: {
+          crossOrigin: "anonymous",
+          margin: 6,
+          imageSize: 0.35,
+        }
+      });
+      await exportQr.download({
+        name: `${shop?.slug || 'menu'}-qr-only`,
+        extension: 'png'
+      });
+      toast.success('Downloaded successfully!', { id: toastId });
+    } catch (error) {
+      console.error('Failed to download QR code:', error);
+      toast.error('Failed to download QR code.', { id: toastId });
+    }
+  };
+
+  const handlePrint = async () => {
+    if (!qrCode?.qr_url) return;
+    
+    const toastId = toast.loading('Preparing print...');
+    try {
+      const exportQr = new QRCodeStyling({
+        width: 500,
+        height: 500,
+        data: qrCode.qr_url,
+        dotsOptions: {
+          type: dotType as any,
+          color: qrColor,
+        },
+        cornersSquareOptions: {
+          type: cornersSquareType as any,
+          color: qrColor,
+        },
+        cornersDotOptions: {
+          type: cornersDotType as any,
+          color: qrColor,
+        },
+        backgroundOptions: {
+          color: "#FFFFFF",
+        },
+        image: includeLogo && roundedLogoUrl ? roundedLogoUrl : undefined,
+        imageOptions: {
+          crossOrigin: "anonymous",
+          margin: 6,
+          imageSize: 0.35,
+        }
+      });
+
+      const blob = await exportQr.getRawData("png") as Blob;
+      if (!blob) throw new Error("Could not generate QR Blob");
+      const blobUrl = URL.createObjectURL(blob);
+
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        toast.dismiss(toastId);
+        return;
+      }
       
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Print QR Code - ${shop?.name}</title>
-          <style>
-            @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&display=swap');
-            body { 
-              font-family: 'Outfit', system-ui, -apple-system, sans-serif; 
-              display: flex; 
-              flex-direction: column; 
-              align-items: center; 
-              justify-content: center; 
-              height: 100vh; 
-              margin: 0; 
-              background-color: #f8fafc;
-            }
-            .container { 
-              background: white;
-              border: 3px solid #f1f5f9;
-              box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
-              padding: 40px; 
-              border-radius: 24px; 
-              width: 380px; 
-              text-align: center;
-              position: relative;
-              overflow: hidden;
-            }
-            .accent-bar {
-              position: absolute;
-              top: 0;
-              left: 0;
-              right: 0;
-              height: 8px;
-              background: linear-gradient(90deg, #ea580c 0%, #f59e0b 100%);
-            }
-            .logo { 
-              width: 70px; 
-              height: 70px; 
-              object-fit: cover;
-              border-radius: 50%;
-              border: 2px solid #e2e8f0;
-              margin: 10px auto 15px auto;
-              box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
-            }
-            .logo-placeholder {
-              width: 70px;
-              height: 70px;
-              line-height: 70px;
-              font-size: 32px;
-              border-radius: 50%;
-              border: 2px solid #e2e8f0;
-              background-color: #f8fafc;
-              margin: 10px auto 15px auto;
-            }
-            h1 { 
-              margin: 0 0 4px 0; 
-              font-size: 26px;
-              font-weight: 800;
-              color: #1e293b; 
-            }
-            .tagline { 
-              color: #ea580c; 
-              font-size: 11px; 
-              font-weight: 800; 
-              letter-spacing: 0.1em;
-              text-transform: uppercase;
-              margin-bottom: 25px;
-            }
-            .qr-wrapper {
-              background-color: #f8fafc;
-              padding: 20px;
-              border-radius: 20px;
-              border: 1px solid #f1f5f9;
-              display: inline-block;
-              margin-bottom: 25px;
-            }
-            .qr-image { 
-              width: 240px; 
-              height: 240px; 
-              display: block;
-            }
-            .branding {
-              margin-top: 10px;
-            }
-            .powered-by {
-              font-size: 9px;
-              font-weight: 800;
-              letter-spacing: 0.15em;
-              color: #94a3b8;
-              text-transform: uppercase;
-              margin: 0;
-            }
-            .brand-name {
-              font-size: 14px;
-              font-weight: 800;
-              background: linear-gradient(90deg, #ea580c 0%, #f59e0b 100%);
-              -webkit-background-clip: text;
-              -webkit-text-fill-color: transparent;
-              margin: 2px 0 0 0;
-            }
-            .site-link {
-              font-size: 9px;
-              color: #94a3b8;
-              text-decoration: none;
-              margin-top: 4px;
-              display: inline-block;
-            }
-            .site-link:hover {
-              color: #ea580c;
-            }
-            @media print {
-              body { background-color: white; }
-              .container { box-shadow: none; border: 2px solid #e2e8f0; }
-              .brand-name {
-                background: none;
-                -webkit-background-clip: unset;
-                -webkit-text-fill-color: #ea580c;
-                color: #ea580c;
+      const logoHtml = shop?.logo_url 
+        ? `<img class="logo" src="${shop.logo_url}" alt="Logo" />`
+        : `<div class="logo-placeholder">🍽️</div>`;
+        
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>Print QR Code - ${shop?.name}</title>
+            <style>
+              @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&display=swap');
+              body { 
+                font-family: 'Outfit', system-ui, -apple-system, sans-serif; 
+                display: flex; 
+                flex-direction: column; 
+                align-items: center; 
+                justify-content: center; 
+                height: 100vh; 
+                margin: 0; 
+                background-color: #f8fafc;
+              }
+              .container { 
+                background: white;
+                border: 3px solid #f1f5f9;
+                box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+                padding: 40px; 
+                border-radius: 24px; 
+                width: 380px; 
+                text-align: center;
+                position: relative;
+                overflow: hidden;
               }
               .accent-bar {
-                -webkit-print-color-adjust: exact;
-                print-color-adjust: exact;
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                height: 8px;
+                background: linear-gradient(90deg, #ea580c 0%, #f59e0b 100%);
               }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="accent-bar"></div>
-            ${logoHtml}
-            <h1>${shop?.name}</h1>
-            <div class="tagline">Scan to view our digital menu</div>
-            <div class="qr-wrapper">
-              <img class="qr-image" src="${qrCode.qr_image_url}" alt="QR Code" />
+              .logo { 
+                width: 70px; 
+                height: 70px; 
+                object-fit: cover;
+                border-radius: 50%;
+                border: 2px solid #e2e8f0;
+                margin: 10px auto 15px auto;
+                box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+              }
+              .logo-placeholder {
+                width: 70px;
+                height: 70px;
+                line-height: 70px;
+                font-size: 32px;
+                border-radius: 50%;
+                border: 2px solid #e2e8f0;
+                background-color: #f8fafc;
+                margin: 10px auto 15px auto;
+              }
+              h1 { 
+                margin: 0 0 4px 0; 
+                font-size: 26px;
+                font-weight: 800;
+                color: #1e293b; 
+              }
+              .tagline { 
+                color: #ea580c; 
+                font-size: 11px; 
+                font-weight: 800; 
+                letter-spacing: 0.1em;
+                text-transform: uppercase;
+                margin-bottom: 25px;
+              }
+              .qr-wrapper {
+                background-color: #f8fafc;
+                padding: 20px;
+                border-radius: 20px;
+                border: 1px solid #f1f5f9;
+                display: inline-block;
+                margin-bottom: 25px;
+              }
+              .qr-image { 
+                width: 240px; 
+                height: 240px; 
+                display: block;
+              }
+              .branding {
+                margin-top: 10px;
+              }
+              .powered-by {
+                font-size: 9px;
+                font-weight: 800;
+                letter-spacing: 0.15em;
+                color: #94a3b8;
+                text-transform: uppercase;
+                margin: 0;
+              }
+              .brand-name {
+                font-size: 14px;
+                font-weight: 800;
+                background: linear-gradient(90deg, #ea580c 0%, #f59e0b 100%);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                margin: 2px 0 0 0;
+              }
+              .site-link {
+                font-size: 9px;
+                color: #94a3b8;
+                text-decoration: none;
+                margin-top: 4px;
+                display: inline-block;
+              }
+              .site-link:hover {
+                color: #ea580c;
+              }
+              @media print {
+                body { background-color: white; }
+                .container { box-shadow: none; border: 2px solid #e2e8f0; }
+                .brand-name {
+                  background: none;
+                  -webkit-background-clip: unset;
+                  -webkit-text-fill-color: #ea580c;
+                  color: #ea580c;
+                }
+                .accent-bar {
+                  -webkit-print-color-adjust: exact;
+                  print-color-adjust: exact;
+                }
+              }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="accent-bar"></div>
+              ${logoHtml}
+              <h1>${shop?.name}</h1>
+              <div class="tagline">Scan to view our digital menu</div>
+              <div class="qr-wrapper">
+                <img class="qr-image" src="${blobUrl}" alt="QR Code" />
+              </div>
+              <div class="branding">
+                <p class="powered-by">Powered By</p>
+                <h2 class="brand-name">MenuKit</h2>
+                <a href="https://menukit.debuggers.co.in/landing" class="site-link" target="_blank" rel="noopener noreferrer">menukit.debuggers.co.in/landing</a>
+              </div>
             </div>
-            <div class="branding">
-              <p class="powered-by">Powered By</p>
-              <h2 class="brand-name">MenuKit</h2>
-              <a href="https://menukit.debuggers.co.in/landing" class="site-link" target="_blank" rel="noopener noreferrer">menukit.debuggers.co.in/landing</a>
-            </div>
-          </div>
-          <script>
-            window.onload = () => { 
-              setTimeout(() => {
-                window.print(); 
-                window.close(); 
-              }, 500);
-            }
-          </script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
+            <script>
+              window.onload = () => { 
+                setTimeout(() => {
+                  window.print(); 
+                  window.close(); 
+                }, 500);
+              }
+            </script>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+      toast.success('Print ready!', { id: toastId });
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to prepare print.', { id: toastId });
+    }
   };
 
   if (isLoading) {
@@ -416,7 +654,7 @@ export function QRCodePage() {
   }
 
   return (
-    <div className="space-y-6 max-w-4xl animate-fade-in">
+    <div className="space-y-6 max-w-4xl mx-auto animate-fade-in">
       <PageHeader 
         title="QR Code Generator"
         subtitle="Download and print your unique menu QR code."
@@ -458,11 +696,7 @@ export function QRCodePage() {
             
             {/* QR Code Container */}
             <div className="bg-slate-50 p-6 rounded-2xl shadow-inner border border-slate-100 inline-block relative">
-              {qrCode.qr_image_url ? (
-                <img src={qrCode.qr_image_url} alt="Menu QR Code" className="w-48 h-48 sm:w-56 sm:h-56 mix-blend-multiply" />
-              ) : (
-                <div className="w-48 h-48 bg-slate-100 flex items-center justify-center">Error</div>
-              )}
+              <div ref={qrRef} className="w-48 h-48 sm:w-56 sm:h-56 flex items-center justify-center bg-white rounded-xl shadow-sm overflow-hidden" />
             </div>
             
             {/* Branding */}
@@ -484,7 +718,7 @@ export function QRCodePage() {
               Generated: {new Date(qrCode.created_at).toLocaleDateString()}
             </p>
           </Card>
-
+ 
           <div className="md:col-span-3 space-y-4">
             <Card>
               <CardHeader>
@@ -513,23 +747,163 @@ export function QRCodePage() {
               </CardContent>
             </Card>
 
+            {/* Customize Style Card */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2">
+                  <Palette className="w-5 h-5 text-orange-500" />
+                  Customize Style
+                </CardTitle>
+                <CardDescription>Design your QR code to match your brand identity</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Theme Colors */}
+                <div>
+                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Theme Color</label>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {[
+                      { name: 'Classic Black', value: '#1A1515' },
+                      { name: 'Vibrant Orange', value: '#ea580c' },
+                      { name: 'Deep Blue', value: '#1d4ed8' },
+                      { name: 'Forest Green', value: '#15803d' },
+                      { name: 'Sunset Red', value: '#be123c' },
+                      { name: 'Elegance Purple', value: '#6d28d9' }
+                    ].map((c) => (
+                      <button
+                        key={c.value}
+                        onClick={() => setQrColor(c.value)}
+                        className={`w-8 h-8 rounded-full border-2 transition-all ${
+                          qrColor === c.value ? 'scale-110 border-slate-900 ring-2 ring-slate-200' : 'border-transparent'
+                        }`}
+                        style={{ backgroundColor: c.value }}
+                        title={c.name}
+                      />
+                    ))}
+                    {/* Custom Color Input */}
+                    <div className="flex items-center gap-2 border border-slate-200 rounded-lg px-2 py-1 ml-auto">
+                      <span className="text-xs font-medium text-slate-500">Custom:</span>
+                      <input 
+                        type="color" 
+                        value={qrColor} 
+                        onChange={(e) => setQrColor(e.target.value)} 
+                        className="w-6 h-6 border-0 p-0 cursor-pointer rounded bg-transparent"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Dot Type Options */}
+                <div>
+                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Dot Pattern</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { name: 'Dots', value: 'dots' },
+                      { name: 'Rounded', value: 'rounded' },
+                      { name: 'Classy', value: 'classy' },
+                      { name: 'Classy Rounded', value: 'classy-rounded' },
+                      { name: 'Extra Rounded', value: 'extra-rounded' },
+                      { name: 'Square', value: 'square' },
+                    ].map((opt) => (
+                      <button
+                        key={opt.value}
+                        onClick={() => setDotType(opt.value)}
+                        className={`px-3 py-2 text-xs font-medium border rounded-lg transition-all ${
+                          dotType === opt.value
+                            ? 'bg-orange-50 border-orange-500 text-orange-700 shadow-sm'
+                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        {opt.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Corner Ring Style */}
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Corner Ring</label>
+                    <SearchableSelect
+                      options={[
+                        { id: 'square', name: 'Square' },
+                        { id: 'rounded', name: 'Rounded' },
+                        { id: 'extra-rounded', name: 'Extra Rounded' },
+                        { id: 'dot', name: 'Dot' }
+                      ]}
+                      value={cornersSquareType}
+                      onChange={(val) => setCornersSquareType(val)}
+                      showSearch={false}
+                    />
+                  </div>
+
+                  {/* Corner Center Style */}
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Corner Center</label>
+                    <SearchableSelect
+                      options={[
+                        { id: 'dot', name: 'Dot' },
+                        { id: 'square', name: 'Square' }
+                      ]}
+                      value={cornersDotType}
+                      onChange={(val) => setCornersDotType(val)}
+                      showSearch={false}
+                    />
+                  </div>
+                </div>
+
+                {/* Logo Option */}
+                {shop?.logo_url && (
+                  <div className="flex items-center justify-between border-t border-slate-100 pt-3 mt-2">
+                    <div>
+                      <span className="text-xs font-bold text-slate-700">Center Logo</span>
+                      <p className="text-[10px] text-slate-400">Place restaurant logo inside the QR code</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={includeLogo} 
+                        onChange={(e) => setIncludeLogo(e.target.checked)} 
+                        className="sr-only peer"
+                      />
+                      <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-orange-500"></div>
+                    </label>
+                  </div>
+                )}
+
+                {/* Save Style Button */}
+                <div className="border-t border-slate-100 pt-4 mt-3 flex justify-end">
+                  <Button 
+                    onClick={handleSaveStyle} 
+                    isLoading={isSavingStyle}
+                    className="w-full sm:w-auto px-6 bg-orange-600 hover:bg-orange-700 text-white"
+                  >
+                    Save Style Preferences
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+ 
             <Card>
               <CardHeader>
                 <CardTitle>Download & Print</CardTitle>
                 <CardDescription>Export your QR code for physical display</CardDescription>
               </CardHeader>
-              <CardContent className="flex flex-row sm:flex-col gap-3 sm:gap-0 sm:space-y-3">
-                <Button className="flex-1 sm:w-full sm:justify-start h-12" variant="secondary" onClick={handleDownloadPNG} title="Download PNG">
-                  <Download size={20} className="sm:mr-2" />
-                  <span className="hidden sm:inline">Download PNG Image (High Quality)</span>
+              <CardContent className="flex flex-col space-y-3">
+                <Button className="w-full justify-start h-12" variant="secondary" onClick={handleDownloadPNG} title="Download QR with Template">
+                  <Download size={20} className="mr-2" />
+                  <span>Download QR with Template</span>
                 </Button>
-                <Button className="flex-1 sm:w-full sm:justify-start h-12" variant="secondary" onClick={handlePrint} title="Print">
-                  <Printer size={20} className="sm:mr-2" />
-                  <span className="hidden sm:inline">Print directly from browser</span>
+                <Button className="w-full justify-start h-12" variant="secondary" onClick={handleDownloadQROnly} title="Download QR Code Only">
+                  <Download size={20} className="mr-2" />
+                  <span>Download QR Code Only</span>
                 </Button>
-                <Button className="flex-1 sm:w-full sm:justify-start h-12 bg-slate-100 sm:bg-transparent" variant="ghost" onClick={generateQRCode} isLoading={isGenerating} title="Regenerate">
-                  {!isGenerating && <RefreshCw size={20} className="sm:mr-2" />}
-                  <span className="hidden sm:inline">Regenerate QR Code</span>
+                <Button className="w-full justify-start h-12" variant="secondary" onClick={handlePrint} title="Print">
+                  <Printer size={20} className="mr-2" />
+                  <span>Print directly from browser</span>
+                </Button>
+                <Button className="w-full justify-start h-12 bg-slate-100 sm:bg-transparent" variant="ghost" onClick={generateQRCode} isLoading={isGenerating} title="Regenerate">
+                  {!isGenerating && <RefreshCw size={20} className="mr-2" />}
+                  <span>Regenerate QR Code</span>
                 </Button>
               </CardContent>
             </Card>

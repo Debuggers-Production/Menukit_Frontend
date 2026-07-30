@@ -171,7 +171,7 @@ export function MembersPage() {
   if (!shop) return null;
 
   return (
-    <div className="space-y-6 max-w-5xl animate-fade-in pb-24 lg:pb-12">
+    <div className="space-y-6 max-w-5xl mx-auto animate-fade-in pb-24 lg:pb-12">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <PageHeader

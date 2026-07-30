@@ -382,6 +382,10 @@ export function StoreDiscoveryPage() {
     });
   }, []);
 
+  useEffect(() => {
+    getUserLocation(false);
+  }, [getUserLocation]);
+
   // ── Handle Scanned QR Code ─────────────────────────────────────────────────
   const handleScanResult = useCallback((text: string) => {
     const match = text.match(/\/shop\/([a-f0-9-]{36})/);
@@ -482,25 +486,60 @@ export function StoreDiscoveryPage() {
     }
   }, [pendingNearestFly, userLocation, shops]);
 
-  // ── Sorted & filtered list ────────────────────────────────────────────────
+  // ── Helper: parse discount percentage numerical value ──
+  const getShopDiscountVal = (s: PublicShopListing) => {
+    if (!s.best_discount_label) return s.active_discounts_count ? 1 : 0;
+    const matchPct = s.best_discount_label.match(/(\d+)%/);
+    if (matchPct) return parseInt(matchPct[1], 10);
+    const matchFlat = s.best_discount_label.match(/₹(\d+)/);
+    if (matchFlat) return parseInt(matchFlat[1], 10);
+    return 5; // BOGO/Combo default value
+  };
+
+  // ── Sorted & filtered list with smart relevance ranking ──────────────────
   const filteredShops = shops
     .filter(s =>
       s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (s.address ?? '').toLowerCase().includes(searchQuery.toLowerCase())
+      (s.address ?? '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (s.best_discount_label ?? '').toLowerCase().includes(searchQuery.toLowerCase())
     )
     .sort((a, b) => {
-      if (sortMode === 'deals')
-        return (b.active_discounts_count - a.active_discounts_count)
-          || ((b.average_rating ?? 0) - (a.average_rating ?? 0));
-      if (sortMode === 'rating')
-        return (b.average_rating ?? 0) - (a.average_rating ?? 0);
-      if (sortMode === 'nearest' && userLocation) {
-        const da = a.latitude && a.longitude
-          ? haversineKm(userLocation[0], userLocation[1], a.latitude, a.longitude) : 9999;
-        const db = b.latitude && b.longitude
-          ? haversineKm(userLocation[0], userLocation[1], b.latitude, b.longitude) : 9999;
-        return da - db;
+      const distA = userLocation && a.latitude && a.longitude
+        ? haversineKm(userLocation[0], userLocation[1], a.latitude, a.longitude) : 9999;
+      const distB = userLocation && b.latitude && b.longitude
+        ? haversineKm(userLocation[0], userLocation[1], b.latitude, b.longitude) : 9999;
+
+      const ratingA = a.average_rating ?? 0;
+      const ratingB = b.average_rating ?? 0;
+      const discValA = getShopDiscountVal(a);
+      const discValB = getShopDiscountVal(b);
+
+      if (sortMode === 'deals') {
+        // Primary: Highest discount value/offers -> Secondary: Rating -> Tertiary: Proximity
+        return (discValB - discValA)
+          || (b.active_discounts_count - a.active_discounts_count)
+          || (ratingB - ratingA)
+          || (distA - distB);
       }
+
+      if (sortMode === 'rating') {
+        // Primary: Rating -> Secondary: Review count -> Tertiary: Best deals -> Quaternary: Proximity
+        return (ratingB - ratingA)
+          || (b.total_reviews - a.total_reviews)
+          || (discValB - discValA)
+          || (distA - distB);
+      }
+
+      if (sortMode === 'nearest') {
+        // Primary: Distance (if user location available) -> Secondary: Best deals -> Tertiary: Rating
+        if (userLocation) {
+          if (Math.abs(distA - distB) > 0.05) {
+            return distA - distB;
+          }
+        }
+        return (discValB - discValA) || (ratingB - ratingA);
+      }
+
       return 0;
     });
 

@@ -113,7 +113,7 @@ export function DashboardPage() {
   return (
   <>
     {/* Dashboard Content */}
-    <div className="space-y-6 sm:space-y-8 animate-slide-up pb-20">
+    <div className="space-y-6 sm:space-y-8 max-w-6xl mx-auto animate-slide-up pb-20">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 sm:gap-4">
         <PageHeader 
           title="Overview"

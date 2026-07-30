@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
 import {
   Plus, Tag, Trash2, Edit2, ToggleLeft, ToggleRight, Calendar, Percent,
-  ShoppingBag, Layers, Clock, CheckCircle2, AlertCircle, Timer, Sparkles, X, Search, Crown
+  ShoppingBag, Layers, Clock, CheckCircle2, AlertCircle, Timer, Sparkles, X, Search, Crown, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { api } from '@/services/api';
 import { Discount, Category, MenuItem } from '@/types';
@@ -384,7 +384,7 @@ export function DiscountsPage() {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-6 max-w-4xl animate-fade-in pb-24 lg:pb-12">
+    <div className="space-y-6 max-w-4xl mx-auto animate-fade-in pb-24 lg:pb-12">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <PageHeader 
@@ -596,15 +596,46 @@ export function DiscountsPage() {
         onClose={() => setIsModalOpen(false)}
         title={editingDiscount ? 'Edit Offer' : 'Create New Offer'}
         className="max-w-lg"
+        footer={
+          <div className="flex justify-between items-center w-full">
+            <Button 
+              variant="secondary" 
+              size="sm"
+              type="button" 
+              onClick={() => {
+                if (currentStep > 1) setCurrentStep(currentStep - 1);
+                else setIsModalOpen(false);
+              }}
+              leftIcon={currentStep > 1 ? <ChevronLeft size={14} /> : undefined}
+            >
+              {currentStep > 1 ? 'Back' : 'Cancel'}
+            </Button>
+            
+            {currentStep < 3 ? (
+              <Button 
+                type="button"
+                size="sm"
+                onClick={() => {
+                  if (currentStep === 1 && !formData.title.trim()) {
+                    toast.error('Please enter offer title');
+                    return;
+                  }
+                  setCurrentStep(currentStep + 1);
+                }}
+              >
+                Next Step <ChevronRight size={14} className="ml-1" />
+              </Button>
+            ) : (
+              <Button type="button" size="sm" onClick={handleSubmit} isLoading={isSubmitting}>
+                {editingDiscount ? 'Update Offer' : 'Create Offer'}
+              </Button>
+            )}
+          </div>
+        }
       >
-        <form onSubmit={e => {
-          e.preventDefault();
-          if (currentStep < 3) {
-            setCurrentStep(currentStep + 1);
-          }
-        }} className="mt-2 flex flex-col h-[450px] sm:h-[500px]">
+        <div className="space-y-4">
           {/* Step Indicator */}
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <button type="button" onClick={() => setCurrentStep(1)} className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm transition-all ${currentStep === 1 ? 'bg-primary text-white shadow-md scale-110' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>1</button>
               <div className={`w-12 h-1 rounded-full ${currentStep > 1 ? 'bg-primary' : 'bg-slate-100'}`} />
@@ -617,7 +648,7 @@ export function DiscountsPage() {
             </span>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-1 space-y-5 no-scrollbar pb-4">
+          <div className="space-y-5">
             {/* Step 1: Basics */}
             {currentStep === 1 && (
               <>
@@ -1074,32 +1105,7 @@ export function DiscountsPage() {
               </>
             )}
           </div>
-
-          <div className="flex justify-between items-center pt-4 mt-6 border-t border-slate-100 dark:border-slate-800">
-            <Button 
-              variant="secondary" 
-              type="button" 
-              onClick={() => {
-                if (currentStep > 1) setCurrentStep(currentStep - 1);
-                else setIsModalOpen(false);
-              }}
-            >
-              {currentStep > 1 ? 'Back' : 'Cancel'}
-            </Button>
-            
-            {currentStep < 3 ? (
-              <Button 
-                type="submit"
-              >
-                Next Step
-              </Button>
-            ) : (
-              <Button type="button" onClick={handleSubmit} isLoading={isSubmitting}>
-                {editingDiscount ? 'Update Offer' : 'Create Offer'}
-              </Button>
-            )}
-          </div>
-        </form>
+        </div>
       </Modal>
 
       {/* Confirm Delete */}
