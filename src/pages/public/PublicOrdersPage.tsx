@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { ChevronLeft, ShoppingBag, Clock, ArrowRight, History, UtensilsCrossed, Gamepad2, MapPin, ArrowUpRight, Trophy, ChefHat, CheckCircle2, XCircle, CreditCard, AlertCircle, SlidersHorizontal, Bike, Home, Hotel, User } from 'lucide-react';
 import { api } from '@/services/api';
+import { APP_CONFIG } from '@/config';
 import { Shop } from '@/types';
 import { DiscountUnlockPopup } from '@/components/public/DiscountUnlockPopup';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -419,7 +420,7 @@ export function PublicOrdersPage() {
 
         <button
           onClick={() => {
-            const profileAppUrl = import.meta.env.VITE_CUSTOMER_PROFILE_URL || 'http://localhost:5176';
+            const profileAppUrl = APP_CONFIG.CUSTOMER_PROFILE_URL;
             window.location.href = `${profileAppUrl}/shop/${id}/profile`;
           }}
           className="p-2.5 bg-orange-50 text-orange-600 hover:bg-orange-100 rounded-full transition-all cursor-pointer flex items-center justify-center border border-orange-200/60"

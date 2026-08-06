@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router';
 import { Search, Flame, MapPin, Phone, Info, UtensilsCrossed, X, Star, LayoutGrid, List as ListIcon, Clock, Sparkles, ExternalLink, SlidersHorizontal, Check, Languages, Tag, Crown, Calendar, ShoppingBag, ArrowUpRight, ChevronDown, QrCode, Download, History, Trophy, ChefHat, User, Truck } from 'lucide-react';
 import { api } from '@/services/api';
+import { APP_CONFIG } from '@/config';
 import { Shop, Category, MenuItem, Discount } from '@/types';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Modal } from '@/components/ui/Modal';
@@ -138,7 +139,7 @@ export function PublicMenuPage() {
 
   const handleProfileClick = () => {
     const token = localStorage.getItem('customer_token');
-    const profileAppUrl = import.meta.env.VITE_CUSTOMER_PROFILE_URL || 'http://localhost:5176';
+    const profileAppUrl = APP_CONFIG.CUSTOMER_PROFILE_URL;
     if (token) {
       window.location.href = `${profileAppUrl}/shop/${id}/profile`;
     } else {
@@ -2107,7 +2108,7 @@ export function PublicMenuPage() {
           onClose={() => setShowProfileVerifyPopup(false)}
           onUnlock={() => {
             setShowProfileVerifyPopup(false);
-            const profileAppUrl = import.meta.env.VITE_CUSTOMER_PROFILE_URL || 'http://localhost:5176';
+            const profileAppUrl = APP_CONFIG.CUSTOMER_PROFILE_URL;
             window.location.href = `${profileAppUrl}/shop/${id}/profile`;
           }}
         />

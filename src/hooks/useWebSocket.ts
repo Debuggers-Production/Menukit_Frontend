@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { APP_CONFIG } from '@/config';
 import { useShopStore } from '@/store/shopStore';
 import { useNotificationStore } from '@/store/notificationStore';
 import { toast } from 'react-hot-toast';
@@ -40,7 +41,7 @@ export function useWebSocket() {
     const isProd = import.meta.env.MODE === 'production';
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = isProd ? window.location.host : 'localhost:8000'; // Fallback to 8000 for local dev if not running through vite proxy
-    const apiBase = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api/v1` : `${protocol}//${host}/api/v1`;
+    const apiBase = APP_CONFIG.API_URL ? `${APP_CONFIG.API_URL}/api/v1` : `${protocol}//${host}/api/v1`;
     
     // Replace http(s) with ws(s)
     const wsUrl = apiBase.replace(/^http/, 'ws') + `/notifications/ws/${shop.id}`;

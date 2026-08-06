@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '@/services/api';
+import { APP_CONFIG } from '@/config';
 
 export interface OrderItemInfo {
   id: string;
@@ -72,7 +73,7 @@ export function useActiveOrders(shopId: string | undefined) {
     const isProd = import.meta.env.MODE === 'production';
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = isProd ? window.location.host : 'localhost:8000';
-    const wsUrl = (import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/^http/, 'ws') : `${protocol}//${host}`) + `/api/v1/public/shop/${shopId}/ws/customer/${userId}`;
+    const wsUrl = (APP_CONFIG.API_URL ? APP_CONFIG.API_URL.replace(/^http/, 'ws') : `${protocol}//${host}`) + `/api/v1/public/shop/${shopId}/ws/customer/${userId}`;
 
     let socket: WebSocket;
     let reconnectTimeout: any;
