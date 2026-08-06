@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { ShoppingBag, Plus, Minus, Info, ChevronLeft, ChevronRight, CheckCircle, Key, MapPin, Navigation, Map, Armchair, Gift, Sparkles, Percent, Banknote } from 'lucide-react';
+import { ShoppingBag, Plus, Minus, Info, ChevronLeft, ChevronRight, CheckCircle, Key, MapPin, Navigation, Map, Armchair, Gift, Sparkles, Percent, Banknote, Truck } from 'lucide-react';
 import { useCartStore } from '@/store/cartStore';
 import { api } from '@/services/api';
 import { Shop, Discount } from '@/types';
@@ -22,21 +22,30 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 });
 
-function MapEventsHandler({ onClick }: { onClick: (lat: number, lng: number) => void }) {
-  useMapEvents({
+function MapEventsHandler({ onClick, center }: { onClick: (lat: number, lng: number) => void; center: [number, number] }) {
+  const map = useMapEvents({
     click(e) {
       onClick(e.latlng.lat, e.latlng.lng);
     },
   });
+
+  useEffect(() => {
+    map.setView(center, 15);
+    setTimeout(() => {
+      map.invalidateSize();
+    }, 200);
+  }, [center, map]);
+
   return null;
 }
 
 export function PublicCartPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { items, updateQuantity, removeFromCart, manualDiscountId, setManualDiscount } = useCartStore();
+  const { items, updateQuantity, removeFromCart, manualDiscountId, setManualDiscount, orderType, setOrderType } = useCartStore();
   
   const [shop, setShop] = useState<Shop | null>(null);
+  const currencySymbol = shop?.settings?.currency || '₹';
   const [availableDiscounts, setAvailableDiscounts] = useState<Discount[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [memberStatus] = useState<'unlocked' | 'verified-member' | null>(() => {
@@ -45,12 +54,21 @@ export function PublicCartPage() {
 
   // Ordering & Checkout state
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
-  const [orderType, setOrderType] = useState<'dine_in' | 'takeaway' | 'delivery'>('dine_in');
+  const [checkoutStep, setCheckoutStep] = useState<1 | 2>(1);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [tableNumber, setTableNumber] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'online'>('cash');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'online' | 'upi'>('cash');
+
+  // Keep paymentMethod synchronized when orderType changes
+  useEffect(() => {
+    if (orderType === 'delivery' || orderType === 'takeaway') {
+      setPaymentMethod('online');
+    } else {
+      setPaymentMethod('cash');
+    }
+  }, [orderType]);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [showVerifyPopup, setShowVerifyPopup] = useState(false);
   const [pendingCheckoutAfterVerify, setPendingCheckoutAfterVerify] = useState(false);
@@ -79,8 +97,15 @@ export function PublicCartPage() {
   const rotationSpring = useSpring(rotation, { stiffness: 100, damping: 22 });
   const negativeRotation = useTransform(rotationSpring, r => `${-r * (180 / Math.PI)}deg`);
   const tableRotationDeg = useTransform(rotationSpring, r => `${r * (180 / Math.PI)}deg`);
-  const [showMap, setShowMap] = useState(false);
-  const [mapCenter, setMapCenter] = useState<[number, number]>([12.9716, 77.5946]);
+  const [showMap, setShowMap] = useState(true);
+  const [mapCenter, setMapCenter] = useState<[number, number]>(() => {
+    const savedLat = localStorage.getItem('customer_lat');
+    const savedLng = localStorage.getItem('customer_lng');
+    if (savedLat && savedLng) {
+      return [parseFloat(savedLat), parseFloat(savedLng)];
+    }
+    return [12.9716, 77.5946];
+  });
 
   const handleAutoFetchLocation = () => {
     if (!navigator.geolocation) {
@@ -88,10 +113,13 @@ export function PublicCartPage() {
       return;
     }
     setIsLocating(true);
+    setShowMap(true);
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         const { latitude, longitude } = position.coords;
         setMapCenter([latitude, longitude]);
+        localStorage.setItem('customer_lat', latitude.toString());
+        localStorage.setItem('customer_lng', longitude.toString());
         try {
           const response = await fetch(
             `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`
@@ -123,6 +151,8 @@ export function PublicCartPage() {
 
   const handleMapMarkerChange = async (lat: number, lng: number) => {
     setMapCenter([lat, lng]);
+    localStorage.setItem('customer_lat', lat.toString());
+    localStorage.setItem('customer_lng', lng.toString());
     try {
       const response = await fetch(
         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
@@ -223,18 +253,29 @@ export function PublicCartPage() {
     fetchData();
   }, [id, memberStatus]);
 
-  // Set default order type once shop settings are loaded
+  // Set default order type once shop settings are loaded if not already set
   useEffect(() => {
-    if (shop?.settings) {
+    if (shop?.settings && !useCartStore.getState().isOrderTypeSet) {
       if (shop.settings.dinein_enabled) {
-        setOrderType('dine_in');
+        setOrderType('dine_in', false);
       } else if (shop.settings.takeaway_enabled) {
-        setOrderType('takeaway');
+        setOrderType('takeaway', false);
       } else if (shop.settings.delivery_enabled) {
-        setOrderType('delivery');
+        setOrderType('delivery', false);
       }
     }
   }, [shop]);
+
+  const loadRazorpaySDK = (): Promise<boolean> => {
+    return new Promise((resolve) => {
+      if ((window as any).Razorpay) { resolve(true); return; }
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
 
   const handlePlaceOrder = async () => {
     const currentToken = localStorage.getItem('customer_token');
@@ -257,32 +298,50 @@ export function PublicCartPage() {
       localStorage.setItem('customer_address', deliveryAddress);
     }
 
+    const savedLat = localStorage.getItem('customer_lat');
+    const savedLng = localStorage.getItem('customer_lng');
+
     let finalPhone = customerPhone;
     try {
       const payload = JSON.parse(atob(currentToken.split('.')[1]));
-      if (payload?.sub) {
-        finalPhone = payload.sub;
-      }
+      if (payload?.sub) finalPhone = payload.sub;
     } catch (e){}
+
+    const isOnlineDisabled = (shop?.settings as any)?.online_payments_enabled === false;
+    const apiPaymentMethod = (orderType === 'delivery' || orderType === 'takeaway') && isOnlineDisabled 
+      ? 'cash' 
+      : paymentMethod;
 
     setIsPlacingOrder(true);
     try {
+      let finalAddress = deliveryAddress;
+      if (orderType === 'delivery' && deliveryAddress && savedLat && savedLng) {
+        if (!deliveryAddress.includes('Lat:') && !deliveryAddress.includes('loc=')) {
+          finalAddress = `${deliveryAddress} [loc=${savedLat},${savedLng}]`;
+        }
+      }
+
       const payload = {
         customer_name: customerName,
         customer_phone: finalPhone,
         order_type: orderType,
         table_number: orderType === 'dine_in' ? tableNumber : null,
-        delivery_address: orderType === 'delivery' ? deliveryAddress : null,
-        payment_method: paymentMethod,
+        delivery_address: orderType === 'delivery' ? finalAddress : null,
+        payment_method: apiPaymentMethod,
         total_amount: finalTotal,
         items: items.map(it => ({
           menu_item_id: it.menuItem.id,
           name: it.menuItem.name,
           quantity: it.quantity,
-          price: it.menuItem.variants && it.menuItem.variants.length > 0 
-            ? Number(it.menuItem.variants[it.selectedVariantIdx].price)
-            : Number(it.menuItem.price),
-          variant_info: it.menuItem.variants && it.menuItem.variants.length > 0 
+          price: (() => {
+            const isDelivery = orderType === 'delivery';
+            if (it.menuItem.variants && it.menuItem.variants.length > 0) {
+              const v = it.menuItem.variants[it.selectedVariantIdx];
+              return Number((isDelivery && v.online_price) ? v.online_price : v.price);
+            }
+            return Number((isDelivery && it.menuItem.online_price) ? it.menuItem.online_price : it.menuItem.price);
+          })(),
+          variant_info: it.menuItem.variants && it.menuItem.variants.length > 0
             ? { name: it.menuItem.variants[it.selectedVariantIdx].name }
             : null,
           addons_info: it.selectedAddons.map(idx => ({ name: it.menuItem.addons![idx].name, price: it.menuItem.addons![idx].price }))
@@ -292,33 +351,107 @@ export function PublicCartPage() {
       const res = await api.post(`/public/shop/${id}/orders`, payload);
       const order = res.data;
 
-      // Launch Confetti splash decoration effect
-      confetti({
-        particleCount: 120,
-        spread: 70,
-        origin: { y: 0.6 },
-        colors: [primaryColor, '#eab308', '#22c55e', '#3b82f6', '#ec4899'],
-        zIndex: 9999
-      });
-
-      // Clear cart
-      useCartStore.getState().clearCart();
-
-      if (paymentMethod === 'online' && order.payment_session_id) {
-        toast.loading("Redirecting to Cashfree secure checkout...", { duration: 1500 });
+      // ── UPI Deep Link (Dine-in) ──
+      if (apiPaymentMethod === 'upi' && shop?.settings?.upi_id) {
+        useCartStore.getState().clearCart();
+        confetti({ particleCount: 100, spread: 65, origin: { y: 0.6 }, colors: [primaryColor, '#22c55e', '#3b82f6'], zIndex: 9999 });
+        const upiUrl = `upi://pay?pa=${encodeURIComponent(shop.settings.upi_id)}&pn=${encodeURIComponent(shop.name || 'Restaurant')}&am=${finalTotal.toFixed(2)}&cu=INR&tn=${encodeURIComponent(`Order #${order.id.slice(0,8)}`)}` ;
+        toast.success("Opening UPI app to complete payment...");
         setTimeout(() => {
-          window.location.href = order.payment_session_id;
-        }, 1500);
-      } else {
-        toast.success("Order placed successfully!");
-        setTimeout(() => {
+          window.open(upiUrl, '_blank');
           navigate(`/shop/${id}/order/${order.id}`);
-        }, 1500);
+        }, 1000);
+        return;
       }
+
+      // ── Razorpay (Online Delivery/Takeaway) ──
+      if (apiPaymentMethod === 'online') {
+        const sdkLoaded = await loadRazorpaySDK();
+        if (!sdkLoaded) {
+          toast.error("Could not load payment gateway. Please try again.");
+          setIsPlacingOrder(false);
+          return;
+        }
+
+        const payRes = await api.post(`/public/shop/${id}/orders/${order.id}/pay`);
+        const payData = payRes.data;
+
+        if (payData.mock_mode) {
+          // Mock payment — auto-verify
+          await api.post(`/public/shop/${id}/orders/${order.id}/verify`, {
+            razorpay_order_id: payData.razorpay_order_id,
+            razorpay_payment_id: `pay_mock_${Date.now()}`,
+            razorpay_signature: 'mock_signature'
+          });
+          useCartStore.getState().clearCart();
+          confetti({ particleCount: 120, spread: 70, origin: { y: 0.6 }, colors: [primaryColor, '#eab308', '#22c55e'], zIndex: 9999 });
+          toast.success("Payment successful! Order confirmed.");
+          setTimeout(() => navigate(`/shop/${id}/order/${order.id}`), 1200);
+          return;
+        }
+
+        const baseTotal = payData.base_total || (payData.amount / 100).toFixed(2);
+        const platFee = payData.platform_fee || 0;
+        const pgFee = payData.pg_fee || 0;
+        const gstFee = payData.gst_on_fee || 0;
+        const grandTotal = payData.grand_total || (payData.amount / 100).toFixed(2);
+
+        const rzpOptions = {
+          key: payData.razorpay_key,
+          amount: payData.amount,
+          currency: payData.currency || 'INR',
+          name: shop?.name || 'Restaurant Order',
+          description: `Items: ₹${baseTotal} | Platform Fee: ₹${platFee} | PG Fee (3%): ₹${pgFee} | GST: ₹${gstFee} = ₹${grandTotal}`,
+          order_id: payData.razorpay_order_id,
+          notes: {
+            "1_Items_Subtotal": `₹${baseTotal}`,
+            "2_Platform_Fee_1%": `₹${platFee}`,
+            "3_Payment_Gateway_Fee_3%": `₹${pgFee}`,
+            "4_GST_on_Fee_18%": `₹${gstFee}`,
+            "5_Grand_Total": `₹${grandTotal}`
+          },
+          handler: async (response: any) => {
+            try {
+              await api.post(`/public/shop/${id}/orders/${order.id}/verify`, {
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+              });
+              useCartStore.getState().clearCart();
+              confetti({ particleCount: 120, spread: 70, origin: { y: 0.6 }, colors: [primaryColor, '#eab308', '#22c55e'], zIndex: 9999 });
+              toast.success("Payment successful! Order confirmed.");
+              setTimeout(() => navigate(`/shop/${id}/order/${order.id}`), 1200);
+            } catch {
+              toast.error("Payment verification failed. Please contact support.");
+            }
+          },
+          prefill: { name: customerName, contact: finalPhone },
+          theme: { color: primaryColor },
+          modal: {
+            ondismiss: () => {
+              toast.error("Payment was cancelled. Order not placed.");
+              setIsPlacingOrder(false);
+            }
+          }
+        };
+
+        setIsCheckoutOpen(false);
+        const rzp = new (window as any).Razorpay(rzpOptions);
+        rzp.open();
+        setIsPlacingOrder(false);
+        return;
+      }
+
+      // ── Cash on Delivery / Counter ──
+      confetti({ particleCount: 120, spread: 70, origin: { y: 0.6 }, colors: [primaryColor, '#eab308', '#22c55e', '#3b82f6', '#ec4899'], zIndex: 9999 });
+      useCartStore.getState().clearCart();
+      toast.success("Order placed successfully!");
+      setTimeout(() => navigate(`/shop/${id}/order/${order.id}`), 1500);
+
     } catch (err: any) {
       console.error(err);
-      const errorMsg = typeof err.response?.data?.detail === 'string' 
-        ? err.response.data.detail 
+      const errorMsg = typeof err.response?.data?.detail === 'string'
+        ? err.response.data.detail
         : Array.isArray(err.response?.data?.detail)
           ? "Validation failed. Please check your input fields."
           : "Failed to place order. Please try again.";
@@ -330,19 +463,70 @@ export function PublicCartPage() {
 
   const primaryColor = shop?.theme?.primary_color || '#ea580c';
 
-  const { subtotal, automaticDiscountAmount, manualDiscountAmount, finalTotal, appliedAutoDiscounts } = useMemo(() => {
+  const calculateDistanceKm = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371; // Earth radius in km
+    const dLat = (lat2 - lat1) * (Math.PI / 180);
+    const dLon = (lon2 - lon1) * (Math.PI / 180);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+
+  const deliveryDistanceKm = useMemo(() => {
+    if (orderType !== 'delivery') return 0;
+    if (!shop?.latitude || !shop?.longitude) return 0;
+    if (!mapCenter || (mapCenter[0] === 12.9716 && mapCenter[1] === 77.5946 && !deliveryAddress)) return 0;
+    return calculateDistanceKm(shop.latitude, shop.longitude, mapCenter[0], mapCenter[1]);
+  }, [orderType, shop?.latitude, shop?.longitude, mapCenter, deliveryAddress]);
+
+  const deliveryFee = useMemo(() => {
+    if (orderType !== 'delivery') return 0;
+    if (!shop?.settings?.delivery_enabled) return 0;
+
+    const baseCharge = shop.settings.base_delivery_charge ?? 0;
+    const baseDistance = shop.settings.base_delivery_distance ?? 0;
+    const stepKm = shop.settings.extra_delivery_distance_step || 1;
+    const extraRate = shop.settings.extra_delivery_charge_per_step ?? 0;
+
+    if (deliveryDistanceKm <= baseDistance || baseDistance <= 0 || deliveryDistanceKm === 0) {
+      return baseCharge;
+    }
+
+    const extraDist = deliveryDistanceKm - baseDistance;
+    const steps = Math.ceil(extraDist / stepKm);
+    return baseCharge + (steps * extraRate);
+  }, [orderType, shop?.settings, deliveryDistanceKm]);
+
+  const { subtotal, automaticDiscountAmount, manualDiscountAmount, finalTotal, appliedAutoDiscounts, platformFee, pgFee, gstOnFee, grandTotal } = useMemo(() => {
     let subtotal = 0;
     let autoDiscountTotal = 0;
     const appliedAutoDiscounts = new Set<string>();
+    const isDelivery = orderType === 'delivery';
 
     items.forEach(item => {
       const { menuItem, selectedVariantIdx, selectedAddons, quantity } = item;
       
       let basePrice = 0;
+      let effectivePrice = 0;
+
       if (menuItem.variants && menuItem.variants.length > 0) {
-        basePrice = Number(menuItem.variants[selectedVariantIdx].price);
+        const v = menuItem.variants[selectedVariantIdx];
+        const p = (isDelivery && v.online_price) ? Number(v.online_price) : Number(v.price);
+        const op = isDelivery 
+          ? (v.online_offer_price ? Number(v.online_offer_price) : (v.online_price ? Number(v.online_price) : (v.offer_price ? Number(v.offer_price) : p)))
+          : (v.offer_price ? Number(v.offer_price) : p);
+        basePrice = p;
+        effectivePrice = op < p ? op : p;
       } else {
-        basePrice = Number(menuItem.price);
+        const p = (isDelivery && menuItem.online_price) ? Number(menuItem.online_price) : Number(menuItem.price);
+        const op = isDelivery 
+          ? (menuItem.online_offer_price ? Number(menuItem.online_offer_price) : (menuItem.online_price ? Number(menuItem.online_price) : (menuItem.offer_price ? Number(menuItem.offer_price) : p)))
+          : (menuItem.offer_price ? Number(menuItem.offer_price) : p);
+        basePrice = p;
+        effectivePrice = op < p ? op : p;
       }
       
       let addonsPrice = 0;
@@ -356,13 +540,9 @@ export function PublicCartPage() {
       subtotal += itemSubtotal;
 
       // Calculate automatic discount
-      let finalPrice = basePrice;
-      if (!manualDiscountId) {
-        if (menuItem.offer_price) {
-          finalPrice = Number(menuItem.offer_price);
-        } else if (menuItem.variants && menuItem.variants.length > 0 && menuItem.variants[selectedVariantIdx].offer_price) {
-          finalPrice = Number(menuItem.variants[selectedVariantIdx].offer_price);
-        } else {
+      let finalPrice = effectivePrice;
+      if (!manualDiscountId && finalPrice === basePrice) {
+
           const disc = availableDiscounts.find(d => {
             if (d.id === manualDiscountId) return false;
             if (d.visibility_type === 'members_only_hidden' && memberStatus !== 'verified-member') return false;
@@ -385,7 +565,6 @@ export function PublicCartPage() {
             appliedAutoDiscounts.add(disc.title);
           }
         }
-      }
 
       autoDiscountTotal += (basePrice - finalPrice) * quantity;
     });
@@ -404,16 +583,29 @@ export function PublicCartPage() {
       }
     }
 
-    const finalTotal = Math.max(0, subtotal - autoDiscountTotal - manualDiscountAmount);
+    const finalTotal = Math.max(0, subtotal - autoDiscountTotal - manualDiscountAmount + deliveryFee);
+
+    // Online payment fees (Razorpay — delivery/takeaway) — NOT for dine_in/cash/UPI
+    const isOnlineFeeApplicable = paymentMethod === 'online';
+    const platformFee = isOnlineFeeApplicable ? parseFloat((finalTotal * 0.02).toFixed(2)) : 0;
+    const pgFee = isOnlineFeeApplicable ? parseFloat((finalTotal * 0.03).toFixed(2)) : 0;
+    const gstOnFee = isOnlineFeeApplicable ? parseFloat((pgFee * 0.18).toFixed(2)) : 0;
+    const grandTotal = isOnlineFeeApplicable
+      ? parseFloat((finalTotal + platformFee + pgFee + gstOnFee).toFixed(2))
+      : finalTotal;
 
     return {
       subtotal,
       automaticDiscountAmount: autoDiscountTotal,
       manualDiscountAmount,
       finalTotal,
-      appliedAutoDiscounts: Array.from(appliedAutoDiscounts)
+      appliedAutoDiscounts: Array.from(appliedAutoDiscounts),
+      platformFee,
+      pgFee,
+      gstOnFee,
+      grandTotal,
     };
-  }, [items, availableDiscounts, manualDiscountId, memberStatus]);
+  }, [items, availableDiscounts, manualDiscountId, memberStatus, deliveryFee, paymentMethod]);
 
   const [showAllItemsModal, setShowAllItemsModal] = useState(false);
   const [showAllOffersModal, setShowAllOffersModal] = useState(false);
@@ -814,11 +1006,21 @@ export function PublicCartPage() {
               const item = items[activeTableIdx];
               const { menuItem, selectedVariantIdx, selectedAddons, quantity } = item;
               
+              const isDelivery = orderType === 'delivery';
               let basePrice = 0;
               if (menuItem.variants && menuItem.variants.length > 0) {
-                basePrice = Number(menuItem.variants[selectedVariantIdx].price);
+                const v = menuItem.variants[selectedVariantIdx];
+                const p = (isDelivery && v.online_price) ? Number(v.online_price) : Number(v.price);
+                const op = isDelivery 
+                  ? (v.online_offer_price ? Number(v.online_offer_price) : (v.online_price ? Number(v.online_price) : (v.offer_price ? Number(v.offer_price) : p)))
+                  : (v.offer_price ? Number(v.offer_price) : p);
+                basePrice = op < p ? op : p;
               } else {
-                basePrice = Number(menuItem.price);
+                const p = (isDelivery && menuItem.online_price) ? Number(menuItem.online_price) : Number(menuItem.price);
+                const op = isDelivery 
+                  ? (menuItem.online_offer_price ? Number(menuItem.online_offer_price) : (menuItem.online_price ? Number(menuItem.online_price) : (menuItem.offer_price ? Number(menuItem.offer_price) : p)))
+                  : (menuItem.offer_price ? Number(menuItem.offer_price) : p);
+                basePrice = op < p ? op : p;
               }
               
               let addonsPrice = 0;
@@ -1004,38 +1206,93 @@ export function PublicCartPage() {
               )}
             </div>
 
-            {/* Bill Summary */}
-            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 space-y-3">
-              <h3 className="font-black text-slate-800 mb-2">Bill Details</h3>
-              
-              <div className="flex justify-between text-sm font-medium">
-                <span className="text-slate-500">Item Total</span>
-                <span className="text-slate-800">{shop?.settings?.currency || '₹'}{subtotal.toFixed(2)}</span>
-              </div>
-              
-              {automaticDiscountAmount > 0 && (
-                <div className="flex justify-between text-sm font-bold text-green-600">
-                  <span className="flex items-center gap-1.5">
-                    Auto Discounts
-                    <span title={appliedAutoDiscounts.join(', ')}><Info size={14} className="opacity-60" /></span>
-                  </span>
-                  <span>-{shop?.settings?.currency || '₹'}{automaticDiscountAmount.toFixed(2)}</span>
+            {/* Bill Summary (Zomato-Style Modern Card) */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100/80 overflow-hidden font-sans">
+              <div className="p-4 space-y-3">
+                <h3 className="font-extrabold text-slate-900 text-base">Bill Summary</h3>
+                
+                {/* Item Total */}
+                <div className="flex justify-between text-xs font-semibold text-slate-700">
+                  <span>Item total</span>
+                  <span className="text-slate-900 font-bold">{currencySymbol}{subtotal.toFixed(2)}</span>
                 </div>
-              )}
+                
+                {/* Delivery Charge */}
+                {orderType === 'delivery' && (
+                  <div className="space-y-0.5">
+                    <div className="flex justify-between text-xs font-semibold text-slate-700">
+                      <span className="underline underline-offset-2 decoration-slate-300 decoration-dashed">
+                        Delivery partner fee {deliveryDistanceKm > 0 ? `for ${deliveryDistanceKm.toFixed(1)} km` : ''}
+                      </span>
+                      <span className="text-slate-900 font-bold">{currencySymbol}{deliveryFee.toFixed(2)}</span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 font-medium">Goes to them for their time and effort</p>
+                  </div>
+                )}
 
-              {manualDiscountAmount > 0 && (
-                <div className="flex justify-between text-sm font-bold text-green-600">
-                  <span>Coupon Applied</span>
-                  <span>-{shop?.settings?.currency || '₹'}{manualDiscountAmount.toFixed(2)}</span>
+                {/* Online Payment Fees (Platform Fee, PG Fee, GST) */}
+                {paymentMethod === 'online' && (
+                  <>
+                    <div className="flex justify-between text-xs font-semibold text-slate-700">
+                      <span className="underline underline-offset-2 decoration-slate-300 decoration-dashed">Platform fee</span>
+                      <span className="text-slate-900 font-bold">{currencySymbol}{platformFee.toFixed(2)}</span>
+                    </div>
+
+                    <div className="flex justify-between text-xs font-semibold text-slate-700">
+                      <span className="underline underline-offset-2 decoration-slate-300 decoration-dashed">Payment gateway fee</span>
+                      <span className="text-slate-900 font-bold">{currencySymbol}{pgFee.toFixed(2)}</span>
+                    </div>
+
+                    <div className="flex justify-between text-xs font-semibold text-slate-700">
+                      <span className="underline underline-offset-2 decoration-slate-300 decoration-dashed">GST on PG fee</span>
+                      <span className="text-slate-900 font-bold">{currencySymbol}{gstOnFee.toFixed(2)}</span>
+                    </div>
+                  </>
+                )}
+
+                {/* Discounts section */}
+                {(automaticDiscountAmount > 0 || manualDiscountAmount > 0) && (
+                  <div className="space-y-1.5 pt-1 border-t border-slate-100">
+                    {automaticDiscountAmount > 0 && (
+                      <div className="flex justify-between text-xs font-bold text-emerald-600">
+                        <span className="flex items-center gap-1">
+                          Auto Discount
+                          <span title={appliedAutoDiscounts.join(', ')}><Info size={12} className="opacity-70" /></span>
+                        </span>
+                        <span>-{currencySymbol}{automaticDiscountAmount.toFixed(2)}</span>
+                      </div>
+                    )}
+
+                    {manualDiscountAmount > 0 && (
+                      <div className="flex justify-between text-xs font-bold text-emerald-600">
+                        <span>Restaurant Coupon</span>
+                        <span>-{currencySymbol}{manualDiscountAmount.toFixed(2)}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Grand Total Divider */}
+                <div className="pt-3 border-t border-slate-200/80 flex justify-between items-baseline">
+                  <span className="font-extrabold text-slate-900 text-sm">To pay</span>
+                  <div className="text-right">
+                    {paymentMethod === 'online' && finalTotal !== grandTotal && (
+                      <span className="text-xs text-slate-400 line-through mr-1.5">{currencySymbol}{finalTotal.toFixed(2)}</span>
+                    )}
+                    <span className="font-black text-xl text-slate-900 tracking-tight">
+                      {currencySymbol}{grandTotal.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Savings Wavy Banner */}
+              {(automaticDiscountAmount > 0 || manualDiscountAmount > 0) && (
+                <div className="bg-blue-50/90 dark:bg-blue-950/40 px-4 py-2.5 border-t border-blue-100 dark:border-blue-900/40 flex items-center justify-center gap-2 text-blue-600 dark:text-blue-400 font-black text-xs">
+                  <span className="text-sm">🥳</span>
+                  <span>You saved {currencySymbol}{(automaticDiscountAmount + manualDiscountAmount).toFixed(2)} on this order</span>
                 </div>
               )}
-              
-              <div className="pt-4 border-t border-slate-100 flex justify-between items-center">
-                <span className="font-black text-slate-800 text-lg">To Pay</span>
-                <span className="font-black text-2xl tracking-tight" style={{ color: primaryColor }}>
-                  {shop?.settings?.currency || '₹'}{finalTotal.toFixed(2)}
-                </span>
-              </div>
             </div>
           </div>
         )}
@@ -1046,10 +1303,13 @@ export function PublicCartPage() {
         <div className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 shadow-[0_-10px_40px_rgba(0,0,0,0.08)] pb-safe">
           <div className="max-w-2xl mx-auto px-4 py-2 sm:py-3 flex items-center gap-4">
             <div className="flex-1">
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Total</p>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Total Payable</p>
               <p className="font-black text-lg leading-none" style={{ color: primaryColor }}>
-                {shop?.settings?.currency || '₹'}{finalTotal.toFixed(2)}
+                {shop?.settings?.currency || '₹'}{grandTotal.toFixed(2)}
               </p>
+              {paymentMethod === 'online' && platformFee > 0 && (
+                <p className="text-[9px] text-slate-400 mt-0.5">incl. fees</p>
+              )}
             </div>
             <button
               onClick={() => {
@@ -1076,226 +1336,354 @@ export function PublicCartPage() {
         </div>
       )}
 
-      {/* Checkout Bottom Sheet */}
+      {/* Checkout Bottom Sheet (2-Step Process) */}
       <BottomSheet
         isOpen={isCheckoutOpen}
-        onClose={() => setIsCheckoutOpen(false)}
-        title="Checkout Details"
+        onClose={() => {
+          setIsCheckoutOpen(false);
+          setCheckoutStep(1);
+        }}
+        title={checkoutStep === 1 ? "Step 1: Contact & Address Details" : "Step 2: Order Summary & Payment"}
         footer={
-          <button
-            onClick={handlePlaceOrder}
-            disabled={isPlacingOrder}
-            className="w-full py-3.5 rounded-2xl text-white font-extrabold shadow-md hover:brightness-110 active:scale-[0.98] transition-all text-center flex items-center justify-center gap-2"
-            style={{ backgroundColor: primaryColor }}
-          >
-            {isPlacingOrder ? (
-              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
-            ) : (
-              `Place Order (${shop?.settings?.currency || '₹'}${finalTotal.toFixed(2)})`
-            )}
-          </button>
+          checkoutStep === 1 ? (
+            <button
+              onClick={() => {
+                if (!customerName || !customerPhone) {
+                  toast.error("Please enter your name and mobile number");
+                  return;
+                }
+                if (orderType === 'delivery' && !deliveryAddress) {
+                  toast.error("Please enter your delivery address");
+                  return;
+                }
+                setCheckoutStep(2);
+              }}
+              className="w-full py-3.5 rounded-2xl text-white font-extrabold shadow-md hover:brightness-110 active:scale-[0.98] transition-all text-center flex items-center justify-center gap-2"
+              style={{ backgroundColor: primaryColor }}
+            >
+              <span>Proceed to Payment & Bill Summary →</span>
+            </button>
+          ) : (
+            <div className="flex gap-2 w-full">
+              <button
+                type="button"
+                onClick={() => setCheckoutStep(1)}
+                className="px-4 py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs transition-colors shrink-0"
+              >
+                ← Back
+              </button>
+              <button
+                onClick={handlePlaceOrder}
+                disabled={isPlacingOrder}
+                className="flex-1 py-3.5 rounded-2xl text-white font-extrabold shadow-md hover:brightness-110 active:scale-[0.98] transition-all text-center flex items-center justify-center gap-2"
+                style={{ backgroundColor: primaryColor }}
+              >
+                {isPlacingOrder ? (
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
+                ) : (
+                  `Place Order (${currencySymbol}${grandTotal.toFixed(2)})`
+                )}
+              </button>
+            </div>
+          )
         }
       >
-        <div className="space-y-5">
-          {/* Order Channel Selector */}
-          <div>
-            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Order Type</label>
-            <div className="grid grid-cols-3 gap-2">
-              {shop?.settings?.dinein_enabled && (
-                <button
-                  type="button"
-                  onClick={() => setOrderType('dine_in')}
-                  className={`py-2.5 rounded-xl font-bold text-sm border text-center transition-all ${
-                    orderType === 'dine_in'
-                      ? 'border-transparent text-white shadow-sm'
-                      : 'border-slate-200 bg-white text-slate-650 hover:bg-slate-50'
-                  }`}
-                  style={orderType === 'dine_in' ? { backgroundColor: primaryColor } : {}}
-                >
-                  Dine-in
-                </button>
-              )}
-              {shop?.settings?.takeaway_enabled && (
-                <button
-                  type="button"
-                  onClick={() => setOrderType('takeaway')}
-                  className={`py-2.5 rounded-xl font-bold text-sm border text-center transition-all ${
-                    orderType === 'takeaway'
-                      ? 'border-transparent text-white shadow-sm'
-                      : 'border-slate-200 bg-white text-slate-650 hover:bg-slate-50'
-                  }`}
-                  style={orderType === 'takeaway' ? { backgroundColor: primaryColor } : {}}
-                >
-                  Takeaway
-                </button>
-              )}
-              {shop?.settings?.delivery_enabled && (
-                <button
-                  type="button"
-                  onClick={() => setOrderType('delivery')}
-                  className={`py-2.5 rounded-xl font-bold text-sm border text-center transition-all ${
-                    orderType === 'delivery'
-                      ? 'border-transparent text-white shadow-sm'
-                      : 'border-slate-200 bg-white text-slate-655 hover:bg-slate-50'
-                  }`}
-                  style={orderType === 'delivery' ? { backgroundColor: primaryColor } : {}}
-                >
-                  Delivery
-                </button>
-              )}
-            </div>
+        <div className="space-y-4 font-sans">
+          {/* Step Progress Indicator */}
+          <div className="flex items-center gap-2 pb-1 border-b border-slate-100 dark:border-slate-800">
+            <div className={`flex-1 h-1.5 rounded-full transition-all ${checkoutStep === 1 ? 'bg-primary' : 'bg-primary/40'}`} style={{ backgroundColor: primaryColor }} />
+            <div className={`flex-1 h-1.5 rounded-full transition-all ${checkoutStep === 2 ? 'bg-primary' : 'bg-slate-200 dark:bg-slate-800'}`} style={{ backgroundColor: checkoutStep === 2 ? primaryColor : undefined }} />
           </div>
 
-          {/* Customer Details Form */}
-          <div className="space-y-3.5">
-            <div>
-              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Your Name</label>
-              <input
-                type="text"
-                placeholder="e.g. John Doe"
-                value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-slate-300 transition-all font-medium text-slate-800 placeholder-slate-400 text-sm"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider flex justify-between items-center mb-1.5">
-                <span>Mobile Number</span>
-                {token ? (
-                  <span className="text-[10px] text-green-600 font-extrabold uppercase bg-green-50 px-2 py-0.5 rounded-md border border-green-100 flex items-center gap-1">
-                    <span>Verified</span>
-                    <CheckCircle size={10} className="fill-green-600/10 text-green-650" />
-                  </span>
-                ) : (
-                  <button 
-                    type="button" 
-                    onClick={() => setShowVerifyPopup(true)} 
-                    className="text-[10px] text-orange-650 font-extrabold uppercase bg-orange-50 px-2 py-0.5 rounded-md border border-orange-100 hover:bg-orange-100 transition-all flex items-center gap-1"
-                  >
-                    <span>Verify Now</span>
-                    <Key size={10} />
-                  </button>
-                )}
-              </label>
-              <input
-                type="tel"
-                placeholder="e.g. 9876543210"
-                value={customerPhone}
-                disabled={!!token}
-                onChange={(e) => setCustomerPhone(e.target.value)}
-                className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:border-slate-300 transition-all font-medium text-sm ${
-                  token 
-                    ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200' 
-                    : 'bg-slate-50 text-slate-800 border-slate-200'
-                }`}
-              />
-            </div>
-
-            {orderType === 'dine_in' && (
+          {/* Fulfillment Mode Banner */}
+          <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200/60 dark:border-slate-800">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
+                {orderType === 'delivery' ? '🚚' : orderType === 'takeaway' ? '🛍️' : '🍽️'}
+              </div>
               <div>
-                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Table Number (Optional)</label>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Fulfillment Mode</p>
+                <p className="text-sm font-extrabold text-slate-800 dark:text-slate-100 capitalize">
+                  {orderType === 'delivery' ? 'Delivery to Home' : orderType === 'takeaway' ? 'Takeaway / Store Pickup' : 'Dine-In'}
+                </p>
+              </div>
+            </div>
+            <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/20 uppercase tracking-wider">
+              {orderType.replace('_', ' ')}
+            </span>
+          </div>
+
+          {/* STEP 1: Customer Contact & Delivery Info */}
+          {checkoutStep === 1 && (
+            <div className="space-y-3.5 animate-in fade-in duration-200">
+              <div>
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Your Name</label>
                 <input
                   type="text"
-                  placeholder="e.g. Table 5"
-                  value={tableNumber}
-                  onChange={(e) => setTableNumber(e.target.value)}
+                  placeholder="e.g. John Doe"
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-slate-300 transition-all font-medium text-slate-800 placeholder-slate-400 text-sm"
                 />
               </div>
-            )}
-
-            {orderType === 'delivery' && (
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Delivery Address</label>
-                <textarea
-                  placeholder="Street, Building, Flat Number, Landmarks..."
-                  value={deliveryAddress}
-                  rows={2}
-                  onChange={(e) => setDeliveryAddress(e.target.value)}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-slate-300 transition-all font-medium text-slate-800 placeholder-slate-400 text-sm"
-                />
-                
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={handleAutoFetchLocation}
-                    disabled={isLocating}
-                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 transition-colors"
-                  >
-                    <Navigation size={14} className={isLocating ? "animate-spin text-primary" : "text-slate-500"} style={{ color: isLocating ? primaryColor : undefined }} />
-                    <span>{isLocating ? "Locating..." : "Detect Location"}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setShowMap(!showMap)}
-                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 transition-colors"
-                  >
-                    <Map size={14} className="text-slate-500" />
-                    <span>{showMap ? "Hide Map" : "Select from Map"}</span>
-                  </button>
-                </div>
-
-                {showMap && (
-                  <div className="h-44 w-full rounded-xl overflow-hidden border border-slate-200 relative mt-2 z-10">
-                    <MapContainer
-                      center={mapCenter}
-                      zoom={15}
-                      style={{ height: '100%', width: '100%' }}
+              <div>
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider flex justify-between items-center mb-1.5">
+                  <span>Mobile Number</span>
+                  {token ? (
+                    <span className="text-[10px] text-green-600 font-extrabold uppercase bg-green-50 px-2 py-0.5 rounded-md border border-green-100 flex items-center gap-1">
+                      <span>Verified</span>
+                      <CheckCircle size={10} className="fill-green-600/10 text-green-650" />
+                    </span>
+                  ) : (
+                    <button 
+                      type="button" 
+                      onClick={() => setShowVerifyPopup(true)} 
+                      className="text-[10px] text-orange-650 font-extrabold uppercase bg-orange-50 px-2 py-0.5 rounded-md border border-orange-100 hover:bg-orange-100 transition-all flex items-center gap-1"
                     >
-                      <TileLayer
-                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                      />
-                      <Marker position={mapCenter} />
-                      <MapEventsHandler onClick={handleMapMarkerChange} />
-                    </MapContainer>
-                    <div className="absolute bottom-2 left-2 z-[1000] bg-white/90 backdrop-blur px-2 py-1 rounded shadow text-[9px] font-bold text-slate-650 pointer-events-none">
-                      Tap map to move marker & fetch address
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Payment Method Selector */}
-          <div>
-            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Payment Option</label>
-            <div className="space-y-2">
-              <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/50 cursor-pointer hover:bg-slate-50 transition-colors">
-                <input 
-                  type="radio" 
-                  name="payment" 
-                  checked={paymentMethod === 'cash'} 
-                  onChange={() => setPaymentMethod('cash')} 
-                  className="w-4 h-4 accent-primary" 
-                  style={{ accentColor: primaryColor }}
-                />
-                <div className="flex flex-col">
-                  <span className="text-sm font-semibold text-slate-850">Pay at Counter / Cash</span>
-                  <span className="text-[10px] text-slate-400">Pay physically at the shop or on delivery.</span>
-                </div>
-              </label>
-
-              {shop?.settings?.cashfree_app_id && (
-                <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/50 cursor-pointer hover:bg-slate-50 transition-colors">
-                  <input 
-                    type="radio" 
-                    name="payment" 
-                    checked={paymentMethod === 'online'} 
-                    onChange={() => setPaymentMethod('online')} 
-                    className="w-4 h-4 accent-primary"
-                    style={{ accentColor: primaryColor }}
-                  />
-                  <div className="flex flex-col">
-                    <span className="text-sm font-semibold text-slate-850">Pay Online Instantly</span>
-                    <span className="text-[10px] text-slate-400">UPI, Cards, Netbanking using Cashfree.</span>
-                  </div>
+                      <span>Verify Now</span>
+                      <Key size={10} />
+                    </button>
+                  )}
                 </label>
+                <input
+                  type="tel"
+                  placeholder="e.g. 9876543210"
+                  value={customerPhone}
+                  disabled={!!token}
+                  onChange={(e) => setCustomerPhone(e.target.value)}
+                  className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:border-slate-300 transition-all font-medium text-sm ${
+                    token 
+                      ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200' 
+                      : 'bg-slate-50 text-slate-800 border-slate-200'
+                  }`}
+                />
+              </div>
+
+              {orderType === 'dine_in' && (
+                <div>
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Table Number (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Table 5"
+                    value={tableNumber}
+                    onChange={(e) => setTableNumber(e.target.value)}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-slate-300 transition-all font-medium text-slate-800 placeholder-slate-400 text-sm"
+                  />
+                </div>
+              )}
+
+              {orderType === 'delivery' && (
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Delivery Address</label>
+                  <textarea
+                    placeholder="Street, Building, Flat Number, Landmarks..."
+                    value={deliveryAddress}
+                    rows={2}
+                    onChange={(e) => setDeliveryAddress(e.target.value)}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-slate-300 transition-all font-medium text-slate-800 placeholder-slate-400 text-sm"
+                  />
+                  
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleAutoFetchLocation}
+                      disabled={isLocating}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 transition-colors"
+                    >
+                      <Navigation size={14} className={isLocating ? "animate-spin text-primary" : "text-slate-500"} style={{ color: isLocating ? primaryColor : undefined }} />
+                      <span>{isLocating ? "Locating..." : "Detect Location"}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowMap(!showMap)}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 transition-colors"
+                    >
+                      <Map size={14} className="text-slate-500" />
+                      <span>{showMap ? "Hide Map" : "Select from Map"}</span>
+                    </button>
+                  </div>
+
+                  {showMap && (
+                    <div className="h-44 w-full rounded-xl overflow-hidden border border-slate-200 relative mt-2 z-10">
+                      <MapContainer
+                        center={mapCenter}
+                        zoom={15}
+                        style={{ height: '100%', width: '100%' }}
+                      >
+                        <TileLayer
+                          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                        />
+                        <Marker position={mapCenter} />
+                        <MapEventsHandler onClick={handleMapMarkerChange} center={mapCenter} />
+                      </MapContainer>
+                      <div className="absolute bottom-2 left-2 z-[1000] bg-white/90 backdrop-blur px-2 py-1 rounded shadow text-[9px] font-bold text-slate-650 pointer-events-none">
+                        Tap map to move marker & fetch address
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
-          </div>
+          )}
+
+          {/* STEP 2: Zomato-Style Bill Summary & Payment Selection */}
+          {checkoutStep === 2 && (
+            <div className="space-y-4 animate-in fade-in duration-200">
+              {/* Zomato-Style Bill Summary Block */}
+              <div className="bg-slate-50 dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/70 dark:border-slate-800 space-y-2.5">
+                <h4 className="font-extrabold text-slate-900 dark:text-white text-xs uppercase tracking-wider">Order Bill Breakdown</h4>
+
+                <div className="space-y-2 text-xs">
+                  <div className="flex justify-between font-semibold text-slate-700 dark:text-slate-300">
+                    <span>Item total</span>
+                    <span className="text-slate-900 dark:text-white font-bold">{currencySymbol}{subtotal.toFixed(2)}</span>
+                  </div>
+
+                  {orderType === 'delivery' && (
+                    <div className="flex justify-between font-semibold text-slate-700 dark:text-slate-300">
+                      <span className="underline underline-offset-2 decoration-slate-300 decoration-dashed">
+                        Delivery partner fee {deliveryDistanceKm > 0 ? `(${deliveryDistanceKm.toFixed(1)} km)` : ''}
+                      </span>
+                      <span className="text-slate-900 dark:text-white font-bold">{currencySymbol}{deliveryFee.toFixed(2)}</span>
+                    </div>
+                  )}
+
+                  {paymentMethod === 'online' && (
+                    <>
+                      <div className="flex justify-between font-semibold text-slate-700 dark:text-slate-300">
+                        <span className="underline underline-offset-2 decoration-slate-300 decoration-dashed">Platform fee</span>
+                        <span className="text-slate-900 dark:text-white font-bold">{currencySymbol}{platformFee.toFixed(2)}</span>
+                      </div>
+
+                      <div className="flex justify-between font-semibold text-slate-700 dark:text-slate-300">
+                        <span className="underline underline-offset-2 decoration-slate-300 decoration-dashed">Payment gateway fee</span>
+                        <span className="text-slate-900 dark:text-white font-bold">{currencySymbol}{pgFee.toFixed(2)}</span>
+                      </div>
+
+                      <div className="flex justify-between font-semibold text-slate-700 dark:text-slate-300">
+                        <span className="underline underline-offset-2 decoration-slate-300 decoration-dashed">GST on PG fee</span>
+                        <span className="text-slate-900 dark:text-white font-bold">{currencySymbol}{gstOnFee.toFixed(2)}</span>
+                      </div>
+                    </>
+                  )}
+
+                  {(automaticDiscountAmount > 0 || manualDiscountAmount > 0) && (
+                    <div className="pt-1.5 border-t border-slate-200 dark:border-slate-800 space-y-1">
+                      {automaticDiscountAmount > 0 && (
+                        <div className="flex justify-between font-bold text-emerald-600 dark:text-emerald-400">
+                          <span>Auto Discount</span>
+                          <span>-{currencySymbol}{automaticDiscountAmount.toFixed(2)}</span>
+                        </div>
+                      )}
+                      {manualDiscountAmount > 0 && (
+                        <div className="flex justify-between font-bold text-emerald-600 dark:text-emerald-400">
+                          <span>Restaurant Coupon</span>
+                          <span>-{currencySymbol}{manualDiscountAmount.toFixed(2)}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex justify-between items-baseline font-black text-sm text-slate-900 dark:text-white">
+                    <span>Total Payable</span>
+                    <span className="text-base" style={{ color: primaryColor }}>
+                      {currencySymbol}{grandTotal.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Payment Method Selector */}
+              <div>
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Payment Option</label>
+                <div className="space-y-2">
+                  {/* Cash — strictly for Dine-in orders */}
+                  {orderType === 'dine_in' && (
+                    <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/50 cursor-pointer hover:bg-slate-50 transition-colors">
+                      <input
+                        type="radio"
+                        name="payment"
+                        checked={paymentMethod === 'cash'}
+                        onChange={() => setPaymentMethod('cash')}
+                        className="w-4 h-4 accent-primary"
+                        style={{ accentColor: primaryColor }}
+                      />
+                      <div className="flex flex-col">
+                        <span className="text-sm font-semibold text-slate-850">Pay at Counter / Cash</span>
+                        <span className="text-[10px] text-slate-400">Pay physically at the shop.</span>
+                      </div>
+                    </label>
+                  )}
+
+                  {/* UPI — strictly for Dine-in orders when shop has upi_id */}
+                  {orderType === 'dine_in' && (
+                    shop?.settings?.upi_id ? (
+                      <label className="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all"
+                        style={paymentMethod === 'upi' ? { borderColor: primaryColor, backgroundColor: `${primaryColor}08` } : { borderColor: '#e2e8f0', backgroundColor: '#f8fafc' }}
+                      >
+                        <input
+                          type="radio"
+                          name="payment"
+                          checked={paymentMethod === 'upi'}
+                          onChange={() => setPaymentMethod('upi')}
+                          className="w-4 h-4"
+                          style={{ accentColor: primaryColor }}
+                        />
+                        <div className="flex flex-col flex-1">
+                          <span className="text-sm font-semibold text-slate-850">Pay via UPI</span>
+                          <span className="text-[10px] text-slate-400">Opens your UPI app to pay directly to the shop.</span>
+                        </div>
+                      </label>
+                    ) : (
+                      <p className="text-[11px] text-slate-400 italic px-1">
+                        Note: Direct UPI is currently disabled for this shop (UPI ID not configured).
+                      </p>
+                    )
+                  )}
+
+                  {/* Delivery & Takeaway payment options based on merchant setting */}
+                  {(orderType === 'delivery' || orderType === 'takeaway') && (
+                    (shop?.settings as any)?.online_payments_enabled !== false ? (
+                      <label className="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all"
+                        style={{ borderColor: primaryColor, backgroundColor: `${primaryColor}08` }}
+                      >
+                        <input
+                          type="radio"
+                          name="payment"
+                          checked={true}
+                          readOnly
+                          className="w-4 h-4"
+                          style={{ accentColor: primaryColor }}
+                        />
+                        <div className="flex flex-col flex-1">
+                          <span className="text-sm font-semibold text-slate-850">Pay Online</span>
+                          <span className="text-[10px] text-slate-400">UPI, Cards, Netbanking. Fast & secure.</span>
+                        </div>
+                      </label>
+                    ) : (
+                      <label className="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all border-emerald-200 bg-emerald-50/40">
+                        <input
+                          type="radio"
+                          name="payment"
+                          checked={paymentMethod === 'cash'}
+                          onChange={() => setPaymentMethod('cash')}
+                          className="w-4 h-4 accent-emerald-600"
+                        />
+                        <div className="flex flex-col flex-1">
+                          <span className="text-sm font-semibold text-slate-850">
+                            {orderType === 'delivery' ? 'Pay on Delivery (Cash / UPI on Spot)' : 'Pay on Pickup (Cash / UPI at Shop)'}
+                          </span>
+                          <span className="text-[10px] text-slate-500">Pay directly when your food arrives or when you pick up.</span>
+                        </div>
+                      </label>
+                    )
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </BottomSheet>
 

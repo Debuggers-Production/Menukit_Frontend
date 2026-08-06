@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router';
-import { Search, Flame, MapPin, Phone, Info, UtensilsCrossed, X, Star, LayoutGrid, List as ListIcon, Clock, Sparkles, ExternalLink, SlidersHorizontal, Check, Languages, Tag, Crown, Calendar, ShoppingBag, ArrowUpRight, ChevronDown, QrCode, Download, History, Trophy, ChefHat, User } from 'lucide-react';
+import { Search, Flame, MapPin, Phone, Info, UtensilsCrossed, X, Star, LayoutGrid, List as ListIcon, Clock, Sparkles, ExternalLink, SlidersHorizontal, Check, Languages, Tag, Crown, Calendar, ShoppingBag, ArrowUpRight, ChevronDown, QrCode, Download, History, Trophy, ChefHat, User, Truck } from 'lucide-react';
 import { api } from '@/services/api';
 import { Shop, Category, MenuItem, Discount } from '@/types';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -11,6 +11,7 @@ import { LanguageSelectorModal } from '@/components/LanguageSelectorModal';
 import { EntertainmentHub } from '@/components/games/EntertainmentHub';
 import { Gamepad2 } from 'lucide-react';
 import { DiscountUnlockPopup } from '@/components/public/DiscountUnlockPopup';
+import { OrderTypeModal } from '@/components/public/OrderTypeModal';
 import { useCartStore } from '@/store/cartStore';
 import { useActiveOrders } from '@/hooks/useActiveOrders';
 import { InfiniteScrollTrigger } from '@/components/ui/InfiniteScrollTrigger';
@@ -110,6 +111,31 @@ export function PublicMenuPage() {
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [showProfileVerifyPopup, setShowProfileVerifyPopup] = useState(false);
 
+  const { orderType, isOrderTypeSet, setOrderType } = useCartStore();
+  const [isOrderTypeModalOpen, setIsOrderTypeModalOpen] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(false);
+  const [welcomePhase, setWelcomePhase] = useState<'entering' | 'visible' | 'exiting' | 'hidden'>('hidden');
+
+  // URL Parameter Detection: QR Code (offline) vs Direct/Online link
+  useEffect(() => {
+    const typeParam = searchParams.get('type')?.toLowerCase();
+    const tableParam = searchParams.get('table');
+    const qrParam = searchParams.get('qr');
+
+    const isQR = 
+      typeParam === 'qr' || 
+      typeParam === 'qrcode' || 
+      typeParam === 'offline' || 
+      Boolean(typeParam && typeParam.includes('qr')) || 
+      Boolean(tableParam) || 
+      qrParam === 'true';
+
+    if (isQR) {
+      // Scanned QR code -> Auto-default to Dine-In mode for in-store QR scans
+      setOrderType('dine_in', true);
+    }
+  }, [searchParams, setOrderType]);
+
   const handleProfileClick = () => {
     const token = localStorage.getItem('customer_token');
     const profileAppUrl = import.meta.env.VITE_CUSTOMER_PROFILE_URL || 'http://localhost:5176';
@@ -171,8 +197,6 @@ export function PublicMenuPage() {
 
   const [isShopInfoOpen, setIsShopInfoOpen] = useState(false);
   const [isLanguageModalOpen, setIsLanguageModalOpen] = useState(false);
-  const [showWelcome, setShowWelcome] = useState(false);
-  const [welcomePhase, setWelcomePhase] = useState<'entering' | 'visible' | 'exiting' | 'hidden'>('hidden');
 
   const [isQRModalOpen, setIsQRModalOpen] = useState(false);
   const [qrStyleData, setQrStyleData] = useState<any>(null);
@@ -366,7 +390,9 @@ export function PublicMenuPage() {
       }
 
       const shopData = shopRes.data as Shop;
-      if (shopData.welcome_message && !sessionStorage.getItem(`welcome_${id}`)) {
+      const hasWelcome = Boolean(shopData.welcome_message && !sessionStorage.getItem(`welcome_${id}`));
+
+      if (hasWelcome) {
         sessionStorage.setItem(`welcome_${id}`, 'true');
         setShowWelcome(true);
         setWelcomePhase('entering');
@@ -374,6 +400,24 @@ export function PublicMenuPage() {
           setWelcomePhase('visible');
           triggerWelcomeEffect();
         }, 600);
+      } else {
+        // No welcome popup will be shown, prompt OrderTypeModal immediately if online/direct link
+        const typeParam = searchParams.get('type')?.toLowerCase();
+        const tableParam = searchParams.get('table');
+        const qrParam = searchParams.get('qr');
+        const isQR = 
+          typeParam === 'qr' || 
+          typeParam === 'qrcode' || 
+          typeParam === 'offline' || 
+          Boolean(typeParam && typeParam.includes('qr')) || 
+          Boolean(tableParam) || 
+          qrParam === 'true';
+
+        if (!isQR) {
+          if (typeParam === 'online' || !isOrderTypeSet) {
+            setIsOrderTypeModalOpen(true);
+          }
+        }
       }
 
       if (!append) api.post(`/public/shop/${id}/view`).catch(console.error);
@@ -718,7 +762,23 @@ export function PublicMenuPage() {
                 <button
                   onClick={() => {
                     setWelcomePhase('exiting');
-                    setTimeout(() => setShowWelcome(false), 500);
+                    setTimeout(() => {
+                      setShowWelcome(false);
+                      const typeParam = searchParams.get('type')?.toLowerCase();
+                      const tableParam = searchParams.get('table');
+                      const qrParam = searchParams.get('qr');
+                      const isQR = 
+                        typeParam === 'qr' || 
+                        typeParam === 'qrcode' || 
+                        typeParam === 'offline' || 
+                        Boolean(typeParam && typeParam.includes('qr')) || 
+                        Boolean(tableParam) || 
+                        qrParam === 'true';
+
+                      if (!isQR) {
+                        setIsOrderTypeModalOpen(true);
+                      }
+                    }, 500);
                   }}
                   className="w-full py-3.5 rounded-2xl text-white font-bold text-sm shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
                   style={{
@@ -969,8 +1029,30 @@ export function PublicMenuPage() {
       </div>
 
       <div className="pt-16 px-4 max-w-3xl mx-auto">
-        <div className="text-center mb-4">
+        <div className="text-center mb-4 flex flex-col items-center gap-2">
           <h1 className="text-3xl font-bold font-heading">{shop.name}</h1>
+          <button
+            onClick={() => setIsOrderTypeModalOpen(true)}
+            className={`px-3.5 py-1.5 rounded-full text-xs font-bold inline-flex items-center gap-1.5 transition-all shadow-xs ${
+              orderType === 'delivery'
+                ? 'bg-blue-600 text-white hover:bg-blue-700 ring-2 ring-blue-200'
+                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+            }`}
+            title="Click to switch order mode"
+          >
+            {orderType === 'delivery' ? (
+              <>
+                <Truck size={14} className="text-white" />
+                <span>Delivery Mode</span>
+              </>
+            ) : (
+              <>
+                <ShoppingBag size={14} className="text-slate-600 dark:text-slate-300" />
+                <span>Takeaway Mode</span>
+              </>
+            )}
+            <ChevronDown size={12} className="opacity-70" />
+          </button>
         </div>
 
         {/* ❌ REMOVED: `<ContestHub/>` component was successfully pulled from top layout context */}
@@ -1415,16 +1497,21 @@ export function PublicMenuPage() {
 
                           <div className="mt-3 flex items-center justify-between border-t border-slate-50 dark:border-slate-800/60 pt-2 shrink-0">
                             {(() => {
-                              let basePrice = Number(item.price);
-                              let offerPrice = item.offer_price ? Number(item.offer_price) : null;
+                              const isDelivery = orderType === 'delivery';
+                              let basePrice = (isDelivery && item.online_price) ? Number(item.online_price) : Number(item.price);
+                              let offerPrice = isDelivery 
+                                ? (item.online_offer_price ? Number(item.online_offer_price) : (item.online_price ? Number(item.online_price) : (item.offer_price ? Number(item.offer_price) : null))) 
+                                : (item.offer_price ? Number(item.offer_price) : null);
                               let isFrom = false;
 
                               if (item.variants && item.variants.length > 0) {
                                 let minPrice = Infinity;
                                 let minOffer = Infinity;
                                 item.variants.forEach(v => {
-                                  const p = Number(v.price);
-                                  const op = v.offer_price ? Number(v.offer_price) : p;
+                                  const p = (isDelivery && v.online_price) ? Number(v.online_price) : Number(v.price);
+                                  const op = isDelivery 
+                                    ? (v.online_offer_price ? Number(v.online_offer_price) : (v.online_price ? Number(v.online_price) : (v.offer_price ? Number(v.offer_price) : p))) 
+                                    : (v.offer_price ? Number(v.offer_price) : p);
                                   if (p < minPrice) minPrice = p;
                                   if (op < minOffer) minOffer = op;
                                 });
@@ -2025,6 +2112,17 @@ export function PublicMenuPage() {
           }}
         />
       )}
+
+      {/* Order Type Selection Modal */}
+      <OrderTypeModal
+        isOpen={isOrderTypeModalOpen}
+        onClose={() => setIsOrderTypeModalOpen(false)}
+        selectedType={orderType}
+        onSelectType={(type) => {
+          setOrderType(type, true);
+          setIsOrderTypeModalOpen(false);
+        }}
+      />
     </div>
   );
 }

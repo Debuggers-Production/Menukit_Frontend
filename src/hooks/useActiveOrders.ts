@@ -17,6 +17,20 @@ export interface ActiveOrderInfo {
   created_at: string;
 }
 
+export function getCustomerUserId(phone: string): string {
+  const clean = phone.replace(/\D/g, '').slice(-10);
+  let hash1 = 5381;
+  let hash2 = 0;
+  for (let i = 0; i < clean.length; i++) {
+    const code = clean.charCodeAt(i);
+    hash1 = ((hash1 * 33) ^ code) >>> 0;
+    hash2 = (((hash2 << 5) - hash2) + code) >>> 0;
+  }
+  const h1 = hash1.toString(16).padStart(8, '0');
+  const h2 = hash2.toString(16).padStart(8, '0');
+  return `usr_${h1}${h2}`;
+}
+
 export function useActiveOrders(shopId: string | undefined) {
   const [activeOrders, setActiveOrders] = useState<ActiveOrderInfo[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -54,11 +68,11 @@ export function useActiveOrders(shopId: string | undefined) {
     const mobile = localStorage.getItem('customer_mobile');
     if (!mobile) return;
 
-    const cleanPhone = mobile.replace(/\D/g, '').slice(-10);
+    const userId = getCustomerUserId(mobile);
     const isProd = import.meta.env.MODE === 'production';
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = isProd ? window.location.host : 'localhost:8000';
-    const wsUrl = (import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/^http/, 'ws') : `${protocol}//${host}`) + `/api/v1/public/shop/${shopId}/ws/customer/${cleanPhone}`;
+    const wsUrl = (import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/^http/, 'ws') : `${protocol}//${host}`) + `/api/v1/public/shop/${shopId}/ws/customer/${userId}`;
 
     let socket: WebSocket;
     let reconnectTimeout: any;
@@ -67,7 +81,7 @@ export function useActiveOrders(shopId: string | undefined) {
       socket = new WebSocket(wsUrl);
 
       socket.onopen = () => {
-        console.log('Customer WebSocket connected for phone:', cleanPhone);
+        console.log('Customer WebSocket connected for user ID:', userId);
       };
 
       socket.onmessage = (event) => {

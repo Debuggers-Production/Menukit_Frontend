@@ -435,7 +435,7 @@ export function ContestsPage() {
   };
 
   return (
-    <div className="space-y-4 max-w-5xl mx-auto pb-24 animate-fade-in">
+    <div className="space-y-4 max-w-5xl mx-auto pb-36 lg:pb-24 animate-fade-in">
       {/* Page Header */}
       <div className="mb-2">
         <PageHeader
@@ -1236,7 +1236,7 @@ export function ContestsPage() {
           }
           setIsModalOpen(true);
         }}
-        className="fixed bottom-20 right-5 sm:bottom-8 sm:right-8 z-40 w-14 h-14 rounded-full text-white shadow-xl hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center justify-center border border-white/20"
+        className="fixed bottom-28 right-5 lg:bottom-8 lg:right-8 z-50 w-14 h-14 rounded-full text-white shadow-xl hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center justify-center border border-white/20"
         style={{ backgroundColor: primaryColor }}
         title="Create Contest"
       >

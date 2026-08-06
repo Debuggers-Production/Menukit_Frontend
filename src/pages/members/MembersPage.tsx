@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Users, ShieldCheck, Smartphone, Plus, Edit2, Trash2, Info, Search } from 'lucide-react';
+import { useNavigate } from 'react-router';
+import { Users, ShieldCheck, Smartphone, Plus, Edit2, Trash2, Info, Search, Lock } from 'lucide-react';
 import { Tooltip } from 'react-tooltip';
 import { toast } from 'react-hot-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -10,8 +11,18 @@ import { membershipService, MembershipAnalytics, Member, RepeatedCustomer } from
 import { useShopStore } from '@/store/shopStore';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
+import { api } from '@/services/api';
+
 export function MembersPage() {
+  const navigate = useNavigate();
   const { shop } = useShopStore();
+  const [shopId, setShopId] = useState<string | null>(shop?.id || null);
+  const [subStatus, setSubStatus] = useState<any>(null);
+  const [isLocked, setIsLocked] = useState(false);
+
+  useEffect(() => {
+    api.get('/subscription/current').then(res => setSubStatus(res.data)).catch(console.error);
+  }, []);
 
   const [analytics, setAnalytics] = useState<MembershipAnalytics | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
@@ -42,35 +53,62 @@ export function MembersPage() {
     m.mobile_number.includes(searchQuery)
   );
 
-  useEffect(() => {
-    if (shop?.id) {
-      fetchAnalytics();
-    }
-  }, [shop?.id]);
-
-  const fetchAnalytics = async () => {
-    if (!shop?.id) return;
+  const fetchAnalytics = async (targetShopId?: string) => {
+    const id = targetShopId || shopId || shop?.id;
+    if (!id) return;
+    setIsLoading(true);
     try {
-      const data = await membershipService.getAnalytics(shop.id);
-      const membersData = await membershipService.getMembers(shop.id);
-      const autoData = await membershipService.getAutoRegisteredMembers(shop.id);
-      const repeatedData = await membershipService.getRepeatedCustomers(shop.id, minVisits);
+      const data = await membershipService.getAnalytics(id);
+      const membersData = await membershipService.getMembers(id);
+      const autoData = await membershipService.getAutoRegisteredMembers(id);
+      const repeatedData = await membershipService.getRepeatedCustomers(id, minVisits);
       setAnalytics(data);
       setMembers(membersData);
       setAutoMembers(autoData);
       setRepeatedMembers(repeatedData);
-    } catch (err) {
-      console.error('Failed to load membership analytics', err);
+      setIsLocked(false);
+    } catch (err: any) {
+      if (err.response?.status === 403) {
+        setIsLocked(true);
+      } else {
+        console.error('Failed to load membership analytics', err);
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    if (shop?.id && activeTab === 'repeated') {
+    const init = async () => {
+      let id = shop?.id;
+      if (!id) {
+        try {
+          const shopRes = await api.get('/shops/me');
+          if (shopRes.data?.id) {
+            id = shopRes.data.id;
+            setShopId(id);
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      } else {
+        setShopId(id);
+      }
+      if (id) {
+        fetchAnalytics(id);
+      } else {
+        setIsLoading(false);
+      }
+    };
+    init();
+  }, [shop?.id]);
+
+  useEffect(() => {
+    const currentId = shopId || shop?.id;
+    if (currentId && activeTab === 'repeated') {
       const fetchRepeated = async () => {
         try {
-          const repeatedData = await membershipService.getRepeatedCustomers(shop.id, minVisits);
+          const repeatedData = await membershipService.getRepeatedCustomers(currentId, minVisits);
           setRepeatedMembers(repeatedData);
         } catch (err) {
           console.error('Failed to load repeated customers', err);
@@ -78,7 +116,7 @@ export function MembersPage() {
       };
       fetchRepeated();
     }
-  }, [shop?.id, minVisits, activeTab]);
+  }, [shopId, shop?.id, minVisits, activeTab]);
 
   const handleConvertToMember = async (memberId: string) => {
     if (!shop?.id) return;
@@ -168,10 +206,28 @@ export function MembersPage() {
     setIsEditModalOpen(true);
   };
 
-  if (!shop) return null;
+  const isModuleLocked = isLocked || (subStatus && (subStatus.is_expired || (!subStatus.is_all_access && Array.isArray(subStatus.active_modules) && !subStatus.active_modules.includes('member-details') && !subStatus.active_modules.includes('member-count'))));
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto animate-fade-in pb-24 lg:pb-12">
+      {/* Module Lock Banner */}
+      {isModuleLocked && (
+        <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/40 dark:to-orange-950/40 border-2 border-amber-200 dark:border-amber-800/80 p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0">
+              <Lock size={20} />
+            </div>
+            <div>
+              <h4 className="font-black text-sm text-slate-900 dark:text-white">Customer Insights & Member Modules Locked</h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Subscribe to Member Count / Details modules or renew your subscription to access member data.</p>
+            </div>
+          </div>
+          <Button onClick={() => navigate('/subscription')} className="bg-amber-600 hover:bg-amber-700 text-white shrink-0 text-xs font-extrabold uppercase tracking-wider">
+            Unlock Modules →
+          </Button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <PageHeader
@@ -184,47 +240,47 @@ export function MembersPage() {
       {/* Analytics Cards */}
       <div className="grid grid-cols-3 gap-2 sm:gap-4">
         <Card className="bg-gradient-to-br from-indigo-50 to-white border-indigo-100">
-          <CardHeader className="p-3 sm:p-6 pb-0 sm:pb-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0">
-            <CardTitle className="text-[10px] sm:text-sm font-semibold text-slate-600 leading-tight">Total Members</CardTitle>
-            <div className="hidden sm:flex w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 items-center justify-center">
-              <Users size={16} />
+          <CardHeader className="p-3 sm:p-4 pb-0 sm:pb-1 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-0">
+            <CardTitle className="text-[10px] sm:text-xs font-semibold text-slate-600 leading-tight">Total Members</CardTitle>
+            <div className="hidden sm:flex w-7 h-7 rounded-full bg-indigo-100 text-indigo-600 items-center justify-center">
+              <Users size={14} />
             </div>
           </CardHeader>
-          <CardContent className="p-3 sm:p-6 pt-2 sm:pt-4">
-            <div className="text-xl sm:text-3xl font-bold text-slate-800">
+          <CardContent className="p-3 sm:p-4 pt-1 sm:pt-2">
+            <div className="text-lg sm:text-2xl font-bold text-slate-800">
               {isLoading ? '...' : analytics?.total_members || 0}
             </div>
-            <p className="text-[9px] sm:text-xs text-slate-500 mt-1 leading-tight line-clamp-2 hidden sm:block">Total registered customers</p>
+            <p className="text-[9px] sm:text-[11px] text-slate-500 mt-0.5 leading-tight line-clamp-1 hidden sm:block">Total registered customers</p>
           </CardContent>
         </Card>
 
         <Card className="bg-gradient-to-br from-emerald-50 to-white border-emerald-100">
-          <CardHeader className="p-3 sm:p-6 pb-0 sm:pb-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0">
-            <CardTitle className="text-[10px] sm:text-sm font-semibold text-slate-600 leading-tight">Manually Verified</CardTitle>
-            <div className="hidden sm:flex w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 items-center justify-center">
-              <ShieldCheck size={16} />
+          <CardHeader className="p-3 sm:p-4 pb-0 sm:pb-1 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-0">
+            <CardTitle className="text-[10px] sm:text-xs font-semibold text-slate-600 leading-tight">Manually Verified</CardTitle>
+            <div className="hidden sm:flex w-7 h-7 rounded-full bg-emerald-100 text-emerald-600 items-center justify-center">
+              <ShieldCheck size={14} />
             </div>
           </CardHeader>
-          <CardContent className="p-3 sm:p-6 pt-2 sm:pt-4">
-            <div className="text-xl sm:text-3xl font-bold text-slate-800">
+          <CardContent className="p-3 sm:p-4 pt-1 sm:pt-2">
+            <div className="text-lg sm:text-2xl font-bold text-slate-800">
               {isLoading ? '...' : analytics?.manually_added || 0}
             </div>
-            <p className="text-[9px] sm:text-xs text-slate-500 mt-1 leading-tight line-clamp-2 hidden sm:block">Added by you</p>
+            <p className="text-[9px] sm:text-[11px] text-slate-500 mt-0.5 leading-tight line-clamp-1 hidden sm:block">Added by you</p>
           </CardContent>
         </Card>
 
         <Card className="bg-gradient-to-br from-amber-50 to-white border-amber-100">
-          <CardHeader className="p-3 sm:p-6 pb-0 sm:pb-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0">
-            <CardTitle className="text-[10px] sm:text-sm font-semibold text-slate-600 leading-tight">Auto Registered</CardTitle>
-            <div className="hidden sm:flex w-8 h-8 rounded-full bg-amber-100 text-amber-600 items-center justify-center">
-              <Smartphone size={16} />
+          <CardHeader className="p-3 sm:p-4 pb-0 sm:pb-1 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-0">
+            <CardTitle className="text-[10px] sm:text-xs font-semibold text-slate-600 leading-tight">Auto Registered</CardTitle>
+            <div className="hidden sm:flex w-7 h-7 rounded-full bg-amber-100 text-amber-600 items-center justify-center">
+              <Smartphone size={14} />
             </div>
           </CardHeader>
-          <CardContent className="p-3 sm:p-6 pt-2 sm:pt-4">
-            <div className="text-xl sm:text-3xl font-bold text-slate-800">
+          <CardContent className="p-3 sm:p-4 pt-1 sm:pt-2">
+            <div className="text-lg sm:text-2xl font-bold text-slate-800">
               {isLoading ? '...' : analytics?.auto_registered || 0}
             </div>
-            <p className="text-[9px] sm:text-xs text-slate-500 mt-1 leading-tight line-clamp-2 hidden sm:block">New interested customers</p>
+            <p className="text-[9px] sm:text-[11px] text-slate-500 mt-0.5 leading-tight line-clamp-1 hidden sm:block">New interested customers</p>
           </CardContent>
         </Card>
       </div>
@@ -545,7 +601,7 @@ export function MembersPage() {
 
       <button
         onClick={() => setIsAddModalOpen(true)}
-        className="fixed bottom-20 right-4 w-14 h-14 bg-primary text-white rounded-full shadow-xl flex items-center justify-center hover:bg-primary/90 hover:scale-105 transition-all z-50 hover:shadow-2xl active:scale-95"
+        className="fixed bottom-20 lg:bottom-8 right-4 w-14 h-14 bg-primary text-white rounded-full shadow-xl flex items-center justify-center hover:bg-primary/90 hover:scale-105 transition-all z-50 hover:shadow-2xl active:scale-95 cursor-pointer"
         title="Add Member Manually"
       >
         <Plus size={28} />

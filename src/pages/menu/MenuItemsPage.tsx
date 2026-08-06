@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
-import { Plus, Edit2, Trash2, Search, Filter, Image as ImageIcon, Star, Flame, LayoutGrid, List, Sparkles, Wand2, Loader2, MessageSquare, Check, RefreshCw, Code, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Edit2, Trash2, Search, Filter, Image as ImageIcon, Star, Flame, LayoutGrid, List, Sparkles, Wand2, Loader2, MessageSquare, Check, RefreshCw, Code, ChevronLeft, ChevronRight, Store, Globe, Truck } from 'lucide-react';
 import { api } from '@/services/api';
 import { useShopStore } from '@/store/shopStore';
 import { MenuItem, MenuItemVariant, MenuItemAddon } from '@/types';
@@ -99,6 +99,8 @@ export function MenuItemsPage() {
     description: '',
     price: '',
     offer_price: '',
+    online_price: '',
+    online_offer_price: '',
     food_types: ['veg'],
     is_bestseller: false,
     is_highlighted: false,
@@ -302,6 +304,8 @@ export function MenuItemsPage() {
         description: item.description || '',
         price: item.price,
         offer_price: item.offer_price || '',
+        online_price: item.online_price || item.price || '',
+        online_offer_price: item.online_offer_price || item.offer_price || '',
         food_types: item.food_types || [],
         is_bestseller: item.is_bestseller,
         is_highlighted: item.is_highlighted,
@@ -333,6 +337,8 @@ export function MenuItemsPage() {
     const hasVariants = formData.variants && formData.variants.length > 0;
     const basePrice = hasVariants ? formData.variants[0].price : formData.price;
     const baseOfferPrice = hasVariants ? formData.variants[0].offer_price : formData.offer_price;
+    const baseOnlinePrice = hasVariants ? (formData.variants[0].online_price || formData.variants[0].price) : (formData.online_price || formData.price);
+    const baseOnlineOfferPrice = hasVariants ? (formData.variants[0].online_offer_price || formData.variants[0].offer_price) : (formData.online_offer_price || formData.offer_price);
     
     if (currentStep < 4) {
       if (currentStep === 1 && (!formData.name.trim() || !formData.category_id)) {
@@ -354,10 +360,19 @@ export function MenuItemsPage() {
     
     setIsSubmitting(true);
     try {
+      const processedVariants = formData.variants.map(v => ({
+        ...v,
+        online_price: v.online_price || v.price,
+        online_offer_price: v.online_offer_price || v.offer_price || null,
+      }));
+
       const payload = {
         ...formData,
         price: parseFloat(basePrice),
-        offer_price: baseOfferPrice ? parseFloat(baseOfferPrice) : null
+        offer_price: baseOfferPrice ? parseFloat(baseOfferPrice) : null,
+        online_price: baseOnlinePrice ? parseFloat(baseOnlinePrice) : parseFloat(basePrice),
+        online_offer_price: baseOnlineOfferPrice ? parseFloat(baseOnlineOfferPrice) : (baseOfferPrice ? parseFloat(baseOfferPrice) : null),
+        variants: processedVariants,
       };
 
       if (editingItem) {
@@ -394,11 +409,15 @@ export function MenuItemsPage() {
                console.error('Failed to save image url', err);
              }
           }
+          setPendingImages([]);
+          setPendingImageUrls([]);
           toast.dismiss('save-url-toast');
         }
         
         toast.success('Menu created');
       }
+      setPendingImages([]);
+      setPendingImageUrls([]);
       setIsModalOpen(false);
       fetchData();
     } catch (error: any) {
@@ -697,6 +716,11 @@ export function MenuItemsPage() {
                       {item.offer_price && (
                         <span className="text-xs text-slate-400 line-through">₹{item.price}</span>
                       )}
+                      {Boolean(item.online_price || item.online_offer_price) && (
+                        <span className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/40 px-1.5 py-0.5 rounded border border-blue-200/60 dark:border-blue-800/60 mt-0.5 flex items-center gap-1" title="Online Delivery Price">
+                          <Truck size={11} /> Online: ₹{item.online_offer_price || item.online_price}
+                        </span>
+                      )}
                     </div>
                   </div>
                   
@@ -885,24 +909,72 @@ export function MenuItemsPage() {
             {currentStep === 2 && (
               <div className="space-y-4 animate-fade-in">
                 {formData.variants.length === 0 && (
-                  <div className="grid grid-cols-2 gap-4">
-                    <Input
-                      label="Regular Price *"
-                      type="number"
-                      step="0.01"
-                      value={formData.price}
-                      onChange={(e) => setFormData({...formData, price: e.target.value})}
-                      placeholder="0.00"
-                      required
-                    />
-                    <Input
-                      label="Offer Price (Opt)"
-                      type="number"
-                      step="0.01"
-                      value={formData.offer_price}
-                      onChange={(e) => setFormData({...formData, offer_price: e.target.value})}
-                      placeholder="0.00"
-                    />
+                  <div className="space-y-3">
+                    <div className="bg-slate-50 dark:bg-slate-800/40 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700/60">
+                      <div className="text-xs font-semibold text-slate-700 dark:text-slate-200 mb-2 flex items-center gap-1.5">
+                        <Store size={14} className="text-slate-600 dark:text-slate-300" /> In-Store / Standard Price
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <Input
+                          label="Regular Price *"
+                          type="number"
+                          step="0.01"
+                          value={formData.price}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            const prevPrice = formData.price;
+                            setFormData(prev => ({
+                              ...prev,
+                              price: val,
+                              online_price: (!prev.online_price || prev.online_price === prevPrice) ? val : prev.online_price
+                            }));
+                          }}
+                          placeholder="0.00"
+                          required
+                        />
+                        <Input
+                          label="Offer Price (Opt)"
+                          type="number"
+                          step="0.01"
+                          value={formData.offer_price}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            const prevOffer = formData.offer_price;
+                            setFormData(prev => ({
+                              ...prev,
+                              offer_price: val,
+                              online_offer_price: (!prev.online_offer_price || prev.online_offer_price === prevOffer) ? val : prev.online_offer_price
+                            }));
+                          }}
+                          placeholder="0.00"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="bg-blue-50/40 dark:bg-blue-950/20 p-3.5 rounded-xl border border-blue-100 dark:border-blue-900/40">
+                      <div className="text-xs font-semibold text-blue-600 dark:text-blue-400 mb-1 flex items-center justify-between">
+                        <span className="flex items-center gap-1.5"><Globe size={14} /> Online Delivery Price (Delivery Orders Only)</span>
+                        <span className="text-[10px] font-normal text-slate-500">Defaults to In-Store price if left blank</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 mt-2">
+                        <Input
+                          label="Online Price"
+                          type="number"
+                          step="0.01"
+                          value={formData.online_price}
+                          onChange={(e) => setFormData({...formData, online_price: e.target.value})}
+                          placeholder={formData.price || "0.00"}
+                        />
+                        <Input
+                          label="Online Offer Price"
+                          type="number"
+                          step="0.01"
+                          value={formData.online_offer_price}
+                          onChange={(e) => setFormData({...formData, online_offer_price: e.target.value})}
+                          placeholder={formData.offer_price || "0.00"}
+                        />
+                      </div>
+                    </div>
                   </div>
                 )}
                 
@@ -911,7 +983,7 @@ export function MenuItemsPage() {
                     <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Variants (e.g. Sizes)</label>
                     <button 
                       type="button" 
-                      onClick={() => setFormData({...formData, variants: [...formData.variants, { name: '', price: '', offer_price: '' }]})}
+                      onClick={() => setFormData({...formData, variants: [...formData.variants, { name: '', price: '', offer_price: '', online_price: '', online_offer_price: '' }]})}
                       className="text-xs text-primary hover:text-primary-600 font-medium flex items-center"
                     >
                       <Plus size={14} className="mr-1"/> Add Variant
@@ -931,16 +1003,21 @@ export function MenuItemsPage() {
                           }} 
                           required 
                         />
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                           <Input 
-                            label="Price" 
+                            label="Price *" 
                             type="number" 
                             step="0.01" 
                             placeholder="0.00" 
                             value={v.price} 
                             onChange={(e) => {
+                              const val = e.target.value;
                               const newV = [...formData.variants];
-                              newV[idx].price = e.target.value;
+                              const prevP = newV[idx].price;
+                              newV[idx].price = val;
+                              if (!newV[idx].online_price || newV[idx].online_price === prevP) {
+                                newV[idx].online_price = val;
+                              }
                               setFormData({...formData, variants: newV});
                             }} 
                             required 
@@ -952,8 +1029,37 @@ export function MenuItemsPage() {
                             placeholder="0.00" 
                             value={v.offer_price || ''} 
                             onChange={(e) => {
+                              const val = e.target.value;
                               const newV = [...formData.variants];
-                              newV[idx].offer_price = e.target.value || null;
+                              const prevOp = newV[idx].offer_price;
+                              newV[idx].offer_price = val || null;
+                              if (!newV[idx].online_offer_price || newV[idx].online_offer_price === prevOp) {
+                                newV[idx].online_offer_price = val || null;
+                              }
+                              setFormData({...formData, variants: newV});
+                            }} 
+                          />
+                          <Input 
+                            label="Online Price" 
+                            type="number" 
+                            step="0.01" 
+                            placeholder={v.price || "0.00"} 
+                            value={v.online_price || ''} 
+                            onChange={(e) => {
+                              const newV = [...formData.variants];
+                              newV[idx].online_price = e.target.value || null;
+                              setFormData({...formData, variants: newV});
+                            }} 
+                          />
+                          <Input 
+                            label="Online Offer" 
+                            type="number" 
+                            step="0.01" 
+                            placeholder={v.offer_price || "0.00"} 
+                            value={v.online_offer_price || ''} 
+                            onChange={(e) => {
+                              const newV = [...formData.variants];
+                              newV[idx].online_offer_price = e.target.value || null;
                               setFormData({...formData, variants: newV});
                             }} 
                           />
@@ -1658,21 +1764,6 @@ export function MenuItemsPage() {
               : 'opacity-0 translate-y-4 scale-95 pointer-events-none'
           }`}
         >
-          <div className="flex items-center gap-3">
-            <span className="bg-white dark:bg-slate-800 px-3 py-2 rounded-lg shadow text-xs font-medium">
-              JSON Bulk Upload
-            </span>
-
-            <button
-              onClick={() => {
-                setIsFabOpen(false);
-                window.location.href = '/json-bulk-upload';
-              }}
-              className="w-12 h-12 rounded-full bg-white dark:bg-slate-800 shadow-lg flex items-center justify-center hover:scale-105 transition-transform text-blue-500"
-            >
-              <Code size={20} />
-            </button>
-          </div>
 
           <div className="flex items-center gap-3">
             <span className="bg-white dark:bg-slate-800 px-3 py-2 rounded-lg shadow text-xs font-medium">

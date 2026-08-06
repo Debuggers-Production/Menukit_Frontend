@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import { 
   QrCode, Eye, Search, CalendarDays, Filter, Users, Lock, ChevronRight,
   TrendingUp, TrendingDown, DollarSign, Receipt, ShoppingBag, Trophy, 
-  Sparkles, Download, ExternalLink, ArrowUpRight, Wallet, FileText, Calendar, CheckCircle2
+  Sparkles, Download, ExternalLink, ArrowUpRight, Wallet, FileText, Calendar, CheckCircle2, CreditCard, Banknote
 } from 'lucide-react';
 import { api } from '@/services/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -12,6 +12,8 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { DatePicker } from '@/components/ui/DatePicker';
 import { useShopStore } from '@/store/shopStore';
 import { membershipService, RepeatedCustomer } from '@/services/memberships';
+
+import { Button } from '@/components/ui/Button';
 
 export function AnalyticsPage() {
   const navigate = useNavigate();
@@ -22,14 +24,20 @@ export function AnalyticsPage() {
   const [data, setData] = useState<any>(null);
   const [revenueData, setRevenueData] = useState<any>(null);
   const [repeatedCustomers, setRepeatedCustomers] = useState<RepeatedCustomer[]>([]);
-  const [subscriptionInfo, setSubscriptionInfo] = useState<{is_active: boolean, is_all_access: boolean, active_modules: string[]} | null>(null);
+  const [subscriptionInfo, setSubscriptionInfo] = useState<{is_active: boolean, is_all_access: boolean, active_modules: string[], is_expired?: boolean} | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRevenueLoading, setIsRevenueLoading] = useState(false);
-  
+  const [isLocked, setIsLocked] = useState(false);
+  const [topSearchesList, setTopSearchesList] = useState<any[]>([]);
+  const [isSearchDataLocked, setIsSearchDataLocked] = useState<boolean>(false);
+
   // Timeframe & Custom Date State
   const [dateFilter, setDateFilter] = useState<number | 'custom'>(30);
   const [customStart, setCustomStart] = useState<string>('');
   const [customEnd, setCustomEnd] = useState<string>('');
+
+  // Payment Mode Filter State: 'all' | 'online' | 'offline'
+  const [paymentModeFilter, setPaymentModeFilter] = useState<'all' | 'online' | 'offline'>('all');
 
   const [invoiceSearch, setInvoiceSearch] = useState('');
 
@@ -40,32 +48,59 @@ export function AnalyticsPage() {
     return `/analytics/revenue?days=${typeof dateFilter === 'number' ? dateFilter : 30}`;
   };
 
+  // Dedicated fetch for Customer Search Data
+  useEffect(() => {
+    const fetchTopSearches = async () => {
+      try {
+        const res = await api.get('/analytics/top-searches');
+        setTopSearchesList(res.data?.top_searches || []);
+        setIsSearchDataLocked(false);
+      } catch (err: any) {
+        if (err.response?.status === 403) {
+          setIsSearchDataLocked(true);
+        } else {
+          console.error('Failed to fetch top searches', err);
+        }
+      }
+    };
+    fetchTopSearches();
+  }, []);
+
   useEffect(() => {
     const fetchAnalytics = async () => {
       setIsLoading(true);
       try {
         let currentShopId = shop?.id;
         if (!shop) {
-          const shopRes = await api.get('/shops/me');
-          if (shopRes.data.id) {
+          const shopRes = await api.get('/shops/me').catch(() => ({ data: {} }));
+          if (shopRes.data?.id) {
             currentShopId = shopRes.data.id;
           }
         }
 
-        const [res, revRes, subRes] = await Promise.all([
-          api.get('/analytics/dashboard'),
-          api.get(getRevenueApiUrl()),
-          api.get('/subscription/current')
-        ]);
-        setData(res.data);
-        setRevenueData(revRes.data);
+        const subRes = await api.get('/subscription/current').catch(() => ({ data: null }));
         setSubscriptionInfo(subRes.data);
-        
+
+        // Core Dashboard overview is free
+        const dashRes = await api.get('/analytics/dashboard').catch(() => ({ data: null }));
+        setData(dashRes.data);
+
+        // Revenue analytics module check
+        try {
+          const revRes = await api.get(getRevenueApiUrl());
+          setRevenueData(revRes.data);
+          setIsLocked(false);
+        } catch (revErr: any) {
+          if (revErr.response?.status === 403) {
+            setIsLocked(true);
+          }
+        }
+
         if (currentShopId) {
-          const repeated = await membershipService.getRepeatedCustomers(currentShopId, 2);
+          const repeated = await membershipService.getRepeatedCustomers(currentShopId, 2).catch(() => []);
           setRepeatedCustomers(repeated);
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('Failed to fetch analytics', error);
       } finally {
         setIsLoading(false);
@@ -93,6 +128,46 @@ export function AnalyticsPage() {
     }
   }, [dateFilter, customStart, customEnd]);
 
+  const isOnlinePm = (pm: string) => 
+    ['online', 'upi', 'card', 'pay_online', 'razorpay', 'cashfree'].includes((pm || '').toLowerCase());
+
+  const invoicesByMode = useMemo(() => {
+    const all = revenueData?.recent_invoices || [];
+    if (paymentModeFilter === 'online') {
+      return all.filter((inv: any) => isOnlinePm(inv.payment_method));
+    }
+    if (paymentModeFilter === 'offline') {
+      return all.filter((inv: any) => !isOnlinePm(inv.payment_method));
+    }
+    return all;
+  }, [revenueData?.recent_invoices, paymentModeFilter]);
+
+  const displayedGross = useMemo(() => {
+    if (paymentModeFilter === 'all') return revenueData?.total_gross_revenue || 0;
+    return invoicesByMode.reduce((sum: number, inv: any) => sum + (inv.total_order_amt || 0), 0);
+  }, [revenueData?.total_gross_revenue, invoicesByMode, paymentModeFilter]);
+
+  const displayedSettled = useMemo(() => {
+    if (paymentModeFilter === 'all') return revenueData?.total_settled_amount || 0;
+    return invoicesByMode.reduce((sum: number, inv: any) => sum + (inv.settled_amount || 0), 0);
+  }, [revenueData?.total_settled_amount, invoicesByMode, paymentModeFilter]);
+
+  const displayedPgCharges = useMemo(() => {
+    if (paymentModeFilter === 'all') return revenueData?.total_commission_paid || 0;
+    return invoicesByMode.reduce((sum: number, inv: any) => sum + (inv.commission_amount || 0), 0);
+  }, [revenueData?.total_commission_paid, invoicesByMode, paymentModeFilter]);
+
+  const filteredInvoices = useMemo(() => {
+    return invoicesByMode.filter((inv: any) => 
+      inv.invoice_no.toLowerCase().includes(invoiceSearch.toLowerCase()) ||
+      inv.order_id.toLowerCase().includes(invoiceSearch.toLowerCase()) ||
+      inv.customer_name.toLowerCase().includes(invoiceSearch.toLowerCase()) ||
+      (inv.payment_id && inv.payment_id.toLowerCase().includes(invoiceSearch.toLowerCase()))
+    );
+  }, [invoicesByMode, invoiceSearch]);
+
+  const maxRevenueBar = (revenueData?.daily_sales || []).reduce((max: number, d: any) => Math.max(max, d.gross_revenue), 100);
+
   if (isLoading) {
     return (
       <div className="space-y-6 max-w-6xl">
@@ -108,30 +183,21 @@ export function AnalyticsPage() {
     );
   }
 
-  const filteredInvoices = (revenueData?.recent_invoices || []).filter((inv: any) => 
-    inv.invoice_no.toLowerCase().includes(invoiceSearch.toLowerCase()) ||
-    inv.order_id.toLowerCase().includes(invoiceSearch.toLowerCase()) ||
-    inv.customer_name.toLowerCase().includes(invoiceSearch.toLowerCase()) ||
-    (inv.payment_id && inv.payment_id.toLowerCase().includes(invoiceSearch.toLowerCase()))
-  );
-
-  const maxRevenueBar = (revenueData?.daily_sales || []).reduce((max: number, d: any) => Math.max(max, d.gross_revenue), 100);
-
   return (
     <div className="space-y-5 sm:space-y-8 max-w-6xl mx-auto animate-fade-in pb-28">
       {/* Header with Navigation */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 sm:gap-4">
         <PageHeader 
           title="Product Analytics & Sales"
-          subtitle="Real-time order revenue, item popularity ranking, commission settlements, and invoice records."
+          subtitle="Real-time order revenue, item popularity ranking, payment gateway charges, and invoice records."
           className="mb-0"
         />
 
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <div className="bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl flex items-center gap-1 border border-slate-200/60 dark:border-slate-700/60 w-full sm:w-auto">
+        <div className="flex items-center gap-2 w-full lg:w-auto shrink-0">
+          <div className="bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl flex items-center gap-1 border border-slate-200/60 dark:border-slate-700/60 w-full lg:w-auto shrink-0">
             <button
               onClick={() => setActiveTab('revenue')}
-              className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+              className={`flex-1 lg:flex-none flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
                 activeTab === 'revenue' 
                   ? 'bg-white dark:bg-slate-900 text-primary shadow-sm' 
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
@@ -141,7 +207,7 @@ export function AnalyticsPage() {
             </button>
             <button
               onClick={() => setActiveTab('scans')}
-              className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+              className={`flex-1 lg:flex-none flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
                 activeTab === 'scans' 
                   ? 'bg-white dark:bg-slate-900 text-primary shadow-sm' 
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
@@ -152,6 +218,23 @@ export function AnalyticsPage() {
           </div>
         </div>
       </div>
+
+      {isLocked && (
+        <div className="bg-gradient-to-r from-red-50 to-orange-50 dark:from-red-950/40 dark:to-orange-950/40 border-2 border-red-500/50 p-6 sm:p-8 rounded-3xl text-center space-y-4 shadow-xl">
+          <div className="w-16 h-16 rounded-2xl bg-red-500/10 text-red-500 flex items-center justify-center mx-auto shadow-inner">
+            <Lock size={32} />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-xl font-black text-slate-900 dark:text-white">Product Analytics & Sales Locked</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+              Your subscription has ended. Access to real-time order revenue, sales reports, item popularity rankings, and invoices is locked by the backend. Please renew your subscription to access analytics.
+            </p>
+          </div>
+          <Button onClick={() => navigate('/subscription')} className="bg-primary hover:bg-primary/90 text-white font-extrabold text-xs uppercase tracking-wider px-6 py-3.5 shadow-md">
+            Renew Subscription Now →
+          </Button>
+        </div>
+      )}
 
       {/* Date Range Selector with Custom Date Option */}
       <div className="relative z-30 flex flex-col gap-3 bg-white dark:bg-slate-900 p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
@@ -229,6 +312,50 @@ export function AnalyticsPage() {
             )}
           </div>
         )}
+        {/* Payment Mode Filter Bar (Online / Offline / All) */}
+        <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2">
+            <Filter size={16} className="text-primary shrink-0" />
+            <span className="text-xs font-bold text-slate-800 dark:text-slate-200">Payment Mode:</span>
+          </div>
+
+          <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl w-full sm:w-auto">
+            <button
+              onClick={() => setPaymentModeFilter('all')}
+              className={`flex-1 sm:flex-none px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                paymentModeFilter === 'all'
+                  ? 'bg-white dark:bg-slate-900 text-primary shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              All Payments
+            </button>
+
+            <button
+              onClick={() => setPaymentModeFilter('online')}
+              className={`flex-1 sm:flex-none px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                paymentModeFilter === 'online'
+                  ? 'bg-purple-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-purple-600'
+              }`}
+            >
+              <CreditCard size={12} />
+              <span>Online</span>
+            </button>
+
+            <button
+              onClick={() => setPaymentModeFilter('offline')}
+              className={`flex-1 sm:flex-none px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                paymentModeFilter === 'offline'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-emerald-600'
+              }`}
+            >
+              <Banknote size={12} />
+              <span>Offline (Cash)</span>
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* TAB 1: REVENUE & ORDER ANALYTICS */}
@@ -243,7 +370,7 @@ export function AnalyticsPage() {
                   <div className="min-w-0">
                     <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider mb-0.5">Gross Sales Revenue</p>
                     <h3 className="text-xl sm:text-2xl lg:text-3xl font-black text-emerald-600 dark:text-emerald-400 font-heading">
-                      {currencySymbol}{revenueData?.total_gross_revenue?.toLocaleString() || '0'}
+                      {currencySymbol}{displayedGross.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                     </h3>
                   </div>
                   <div className="p-2 sm:p-2.5 rounded-xl bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 shrink-0">
@@ -274,7 +401,7 @@ export function AnalyticsPage() {
                   <div className="min-w-0">
                     <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider mb-0.5">Net Settled Revenue</p>
                     <h3 className="text-xl sm:text-2xl lg:text-3xl font-black text-blue-600 dark:text-blue-400 font-heading">
-                      {currencySymbol}{revenueData?.total_settled_amount?.toLocaleString() || '0'}
+                      {currencySymbol}{displayedSettled.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                     </h3>
                   </div>
                   <div className="p-2 sm:p-2.5 rounded-xl bg-blue-100 dark:bg-blue-900/40 text-blue-600 shrink-0">
@@ -282,7 +409,7 @@ export function AnalyticsPage() {
                   </div>
                 </div>
                 <p className="text-[10px] text-slate-500 mt-2.5 font-medium">
-                  After {currencySymbol}{revenueData?.total_commission_paid || 0} commissions
+                  After {currencySymbol}{displayedPgCharges.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} PG charges
                 </p>
               </CardContent>
             </Card>
@@ -381,12 +508,12 @@ export function AnalyticsPage() {
             </CardContent>
           </Card>
 
-          {/* Product Level Popularity & Top Ordered Food Items */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 sm:gap-6">
+          {/* Product Level Popularity & Top Customer Searches */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
                 <CardTitle className="text-sm font-bold flex items-center gap-2">
-                  <Trophy size={16} className="text-amber-500 shrink-0" /> Top Ordered Dishes (Quantity)
+                  <Trophy size={16} className="text-amber-500 shrink-0" /> Top Ordered Dishes
                 </CardTitle>
                 <span className="text-[11px] font-bold text-slate-400">Total Units</span>
               </CardHeader>
@@ -408,10 +535,10 @@ export function AnalyticsPage() {
                           </div>
                           
                           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-                            <div className="w-16 sm:w-32 h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                            <div className="w-12 sm:w-20 h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                               <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${pct}%` }} />
                             </div>
-                            <span className="font-bold text-slate-900 dark:text-white text-[11px] sm:text-xs w-12 text-right">{item.total_quantity} pcs</span>
+                            <span className="font-bold text-slate-900 dark:text-white text-[11px] sm:text-xs w-10 text-right">{item.total_quantity} pcs</span>
                           </div>
                         </div>
                       );
@@ -448,10 +575,10 @@ export function AnalyticsPage() {
                           </div>
                           
                           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-                            <div className="w-16 sm:w-32 h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                            <div className="w-12 sm:w-20 h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                               <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
                             </div>
-                            <span className="font-black text-emerald-600 dark:text-emerald-400 text-[11px] sm:text-xs w-16 text-right">{currencySymbol}{item.total_revenue}</span>
+                            <span className="font-black text-emerald-600 dark:text-emerald-400 text-[11px] sm:text-xs w-12 text-right">{currencySymbol}{item.total_revenue}</span>
                           </div>
                         </div>
                       );
@@ -459,6 +586,55 @@ export function AnalyticsPage() {
                   </div>
                 ) : (
                   <p className="text-xs text-slate-400 text-center py-6">No revenue breakdown records yet.</p>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Top Customer Searches */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                <CardTitle className="text-sm font-bold flex items-center gap-2">
+                  <Search size={16} className="text-orange-500 shrink-0" /> Top Customer Searches
+                </CardTitle>
+                <span className="text-[10px] font-bold bg-orange-100 dark:bg-orange-950/40 text-orange-600 dark:text-orange-400 px-2 py-0.5 rounded-full uppercase">
+                  Module Add-on
+                </span>
+              </CardHeader>
+              <CardContent className="pt-4">
+                {isSearchDataLocked ? (
+                  <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/40 dark:to-orange-950/40 border border-amber-200 dark:border-amber-800/80 p-4 rounded-xl text-center space-y-2">
+                    <div className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-600 flex items-center justify-center mx-auto">
+                      <Lock size={16} />
+                    </div>
+                    <h5 className="font-extrabold text-xs text-slate-900 dark:text-white">Customer Search Analytics Locked</h5>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Subscribe to Search Data module to see live search terms.
+                    </p>
+                    <Button onClick={() => navigate('/subscription')} size="sm" className="bg-primary text-white text-[11px] font-extrabold py-1 h-7 cursor-pointer">
+                      Unlock Module →
+                    </Button>
+                  </div>
+                ) : topSearchesList.length > 0 ? (
+                  <div className="space-y-3">
+                    {topSearchesList.map((search: any, i: number) => (
+                      <div key={i} className="flex items-center justify-between gap-2.5 text-xs">
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <div className="bg-slate-100 dark:bg-slate-800 p-1.5 rounded-lg text-slate-500 shrink-0">
+                            <Search size={12} />
+                          </div>
+                          <span className="font-bold text-slate-800 dark:text-slate-200 capitalize truncate">{search.term}</span>
+                        </div>
+                        <span className="text-[11px] font-black bg-primary/10 text-primary px-2 py-0.5 rounded-full shrink-0">
+                          {search.count} searches
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-6 text-slate-400">
+                    <Search size={28} className="mx-auto mb-2 opacity-50" />
+                    <p className="text-xs">No search data recorded yet.</p>
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -474,15 +650,50 @@ export function AnalyticsPage() {
                 <p className="text-[11px] text-slate-500 mt-0.5">Click any Order ID to navigate to order details.</p>
               </div>
 
-              <div className="relative w-full sm:w-64">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search invoice or order ID..."
-                  value={invoiceSearch}
-                  onChange={(e) => setInvoiceSearch(e.target.value)}
-                  className="w-full h-8 pl-8 pr-3 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/50"
-                />
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full sm:w-auto">
+                <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl shrink-0">
+                  <button
+                    onClick={() => setPaymentModeFilter('all')}
+                    className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                      paymentModeFilter === 'all'
+                        ? 'bg-white dark:bg-slate-900 text-primary shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    All
+                  </button>
+                  <button
+                    onClick={() => setPaymentModeFilter('online')}
+                    className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                      paymentModeFilter === 'online'
+                        ? 'bg-purple-600 text-white shadow-xs'
+                        : 'text-slate-500 hover:text-purple-600'
+                    }`}
+                  >
+                    Online
+                  </button>
+                  <button
+                    onClick={() => setPaymentModeFilter('offline')}
+                    className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                      paymentModeFilter === 'offline'
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'text-slate-500 hover:text-emerald-600'
+                    }`}
+                  >
+                    Offline
+                  </button>
+                </div>
+
+                <div className="relative w-full sm:w-56">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search invoice or order ID..."
+                    value={invoiceSearch}
+                    onChange={(e) => setInvoiceSearch(e.target.value)}
+                    className="w-full h-8 pl-8 pr-3 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  />
+                </div>
               </div>
             </CardHeader>
 
@@ -497,8 +708,8 @@ export function AnalyticsPage() {
                         <th className="py-3 px-4">Payment Ref / ID</th>
                         <th className="py-3 px-4">Customer</th>
                         <th className="py-3 px-4 text-right">Gross Amt</th>
-                        <th className="py-3 px-4 text-center">Comm. Rate</th>
-                        <th className="py-3 px-4 text-right">Commission</th>
+                        <th className="py-3 px-4 text-center">Method</th>
+                        <th className="py-3 px-4 text-right">PG Charge</th>
                         <th className="py-3 px-4 text-right">Net Settled</th>
                         <th className="py-3 px-4">Date & Time</th>
                       </tr>
@@ -530,10 +741,10 @@ export function AnalyticsPage() {
                             {currencySymbol}{inv.total_order_amt}
                           </td>
                           <td className="py-3 px-4 text-center">
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                              inv.payment_method === 'online' ? 'bg-purple-50 text-purple-700 border border-purple-200' : 'bg-slate-100 text-slate-600'
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                              isOnlinePm(inv.payment_method) ? 'bg-purple-50 text-purple-700 border border-purple-200' : 'bg-slate-100 text-slate-600'
                             }`}>
-                              {inv.commission_rate}% ({inv.payment_method})
+                              {inv.payment_method}
                             </span>
                           </td>
                           <td className="py-3 px-4 text-right text-rose-500 font-bold">

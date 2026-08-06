@@ -22,12 +22,18 @@ export interface ShopSettings {
   is_discoverable: boolean;
   show_menus_in_discovery: boolean;
   delivery_enabled?: boolean;
+  base_delivery_charge?: number;
+  base_delivery_distance?: number;
+  extra_delivery_distance_step?: number;
+  extra_delivery_charge_per_step?: number;
   takeaway_enabled?: boolean;
   dinein_enabled?: boolean;
   auto_accept_orders?: boolean;
   cashfree_app_id?: string;
   cashfree_secret_key?: string;
   cashfree_sandbox?: boolean;
+  upi_id?: string;
+  online_payments_enabled?: boolean;
 }
 
 export interface ThemeSettings {
@@ -106,6 +112,8 @@ export interface MenuItemVariant {
   name: string;
   price: string;
   offer_price?: string | null;
+  online_price?: string | null;
+  online_offer_price?: string | null;
 }
 
 export interface MenuItemAddon {
@@ -120,6 +128,8 @@ export interface MenuItem {
   description: string | null;
   price: string;
   offer_price: string | null;
+  online_price?: string | null;
+  online_offer_price?: string | null;
   food_types: ('veg' | 'non-veg' | 'egg' | 'drink' | 'none' | 'dessert')[];
   allow_ice_preference: boolean;
   is_bestseller: boolean;

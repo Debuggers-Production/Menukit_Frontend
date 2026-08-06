@@ -53,7 +53,7 @@ export function DashboardPage() {
         setTopReviews(analyticsRes.data.top_reviews || []);
 
         if (currentShopId) {
-          const mStats = await membershipService.getAnalytics(currentShopId);
+          const mStats = await membershipService.getAnalytics(currentShopId).catch(() => ({ total_members: 0 }));
           setMemberStats(mStats);
         }
       } catch (error) {
@@ -230,56 +230,11 @@ export function DashboardPage() {
             )}
           </CardContent>
         </Card>
-
-        {/* Top Searches */}
-        <Card className="flex flex-col h-[300px] sm:h-[450px]">
-          <CardHeader className="shrink-0 pb-3 sm:pb-4">
-            <CardTitle>Top Customer Searches</CardTitle>
-            <CardDescription>
-              What people are looking for
-            </CardDescription>
-          </CardHeader>
-
-          <CardContent className="flex-1 overflow-y-auto pr-4 custom-scrollbar">
-            {topSearches.length > 0 ? (
-              <div className="space-y-4">
-                {topSearches.map((search, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center justify-between"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="bg-slate-100 dark:bg-slate-800 p-2 rounded-lg text-slate-500">
-                        <Search size={14} />
-                      </div>
-
-                      <span className="text-sm font-medium capitalize">
-                        {search.term}
-                      </span>
-                    </div>
-
-                    <span className="text-xs font-semibold bg-primary-100 text-primary-700 px-2 py-1 rounded-full dark:bg-primary-900/30 dark:text-primary-400">
-                      {search.count}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-6 text-slate-500">
-                <Search
-                  size={32}
-                  className="mx-auto mb-3 text-slate-300"
-                />
-                <p className="text-sm">No search data yet.</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </div>
     </div>
 
     {/* FIXED FAB - OUTSIDE ANIMATED CONTAINER */}
-    <div className="fixed bottom-6 right-6 z-[9999] flex flex-col items-end gap-3">
+    <div className="fixed bottom-20 lg:bottom-8 right-4 lg:right-8 z-50 flex flex-col items-end gap-3">
       {/* Expanded Actions */}
       <div
         className={`flex flex-col items-end gap-3 transition-all duration-300 ${

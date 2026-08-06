@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { 
   Mail, Store, Shield, Smartphone, ChevronRight, Sliders, Globe, 
-  Coins, Truck, ShoppingBag, QrCode, Eye, Tag, MapPin, Zap, CheckCircle2, Lock
+  Coins, Truck, ShoppingBag, QrCode, Eye, Tag, MapPin, Zap, CheckCircle2, Lock, Info
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { useAuthStore } from '@/store/authStore';
@@ -65,6 +65,9 @@ export function SettingsPage() {
   const [newEmailOtp, setNewEmailOtp] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Delivery Preview Test State
+  const [testDistance, setTestDistance] = useState<number>(2);
+
   // Shop Settings State
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [settingsData, setSettingsData] = useState({
@@ -75,10 +78,31 @@ export function SettingsPage() {
     is_discoverable: shop?.settings?.is_discoverable !== false,
     show_menus_in_discovery: shop?.settings?.show_menus_in_discovery !== false,
     delivery_enabled: shop?.settings?.delivery_enabled || false,
+    base_delivery_charge: shop?.settings?.base_delivery_charge ?? 0,
+    base_delivery_distance: shop?.settings?.base_delivery_distance ?? 0,
+    extra_delivery_distance_step: shop?.settings?.extra_delivery_distance_step ?? 1,
+    extra_delivery_charge_per_step: shop?.settings?.extra_delivery_charge_per_step ?? 0,
     takeaway_enabled: shop?.settings?.takeaway_enabled || false,
     dinein_enabled: shop?.settings?.dinein_enabled || false,
     auto_accept_orders: shop?.settings?.auto_accept_orders || false,
+    online_payments_enabled: shop?.settings?.online_payments_enabled !== false,
+    upi_id: shop?.settings?.upi_id || '',
   });
+
+  // Fetch shop settings on mount
+  useEffect(() => {
+    const fetchShop = async () => {
+      try {
+        const res = await api.get('/shops/me');
+        if (res.data && res.data.id) {
+          setShop(res.data);
+        }
+      } catch (err) {
+        console.error("Failed to fetch shop settings", err);
+      }
+    };
+    fetchShop();
+  }, [setShop]);
 
   useEffect(() => {
     if (shop?.settings) {
@@ -90,9 +114,15 @@ export function SettingsPage() {
         is_discoverable: shop.settings.is_discoverable !== false,
         show_menus_in_discovery: shop.settings.show_menus_in_discovery !== false,
         delivery_enabled: shop.settings.delivery_enabled || false,
+        base_delivery_charge: shop.settings.base_delivery_charge ?? 0,
+        base_delivery_distance: shop.settings.base_delivery_distance ?? 0,
+        extra_delivery_distance_step: shop.settings.extra_delivery_distance_step ?? 1,
+        extra_delivery_charge_per_step: shop.settings.extra_delivery_charge_per_step ?? 0,
         takeaway_enabled: shop.settings.takeaway_enabled || false,
         dinein_enabled: shop.settings.dinein_enabled || false,
         auto_accept_orders: shop.settings.auto_accept_orders || false,
+        online_payments_enabled: shop.settings.online_payments_enabled !== false,
+        upi_id: shop.settings.upi_id || '',
       });
     }
   }, [shop]);
@@ -103,6 +133,9 @@ export function SettingsPage() {
       const res = await api.put('/shops/me/settings', settingsData);
       if (shop) {
         setShop({ ...shop, settings: res.data });
+      } else {
+        const freshShop = await api.get('/shops/me');
+        setShop(freshShop.data);
       }
       toast.success('Shop settings updated successfully!');
     } catch (error: any) {
@@ -266,43 +299,25 @@ export function SettingsPage() {
               </div>
             </div>
 
-            {/* 2. MENU DISPLAY PREFERENCES */}
+            {/* 2. STORE DISCOVERY */}
             <div>
               <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1.5">
-                <Eye size={14} className="text-purple-500" /> Customer Menu Display
+                <MapPin size={14} className="text-purple-500" /> Public Discovery & Map
               </h4>
 
               <div className="divide-y divide-slate-100 dark:divide-slate-800">
                 <SettingRow
-                  icon={Coins}
-                  title="Show Prices on Menu"
-                  description="Display item prices on public menu. If disabled, prices will be hidden."
-                  checked={settingsData.show_prices}
-                  onChange={(c) => setSettingsData(prev => ({ ...prev, show_prices: c }))}
-                />
-
-                <SettingRow
-                  icon={Tag}
-                  title="Show Offers & Discounts"
-                  description="Display original price crossed out next to active offer price."
-                  checked={settingsData.show_offers}
-                  onChange={(c) => setSettingsData(prev => ({ ...prev, show_offers: c }))}
-                />
-
-                <SettingRow
                   icon={MapPin}
                   title="Enable Store Discovery"
-                  description="Allow customers to find your restaurant on public discovery map."
+                  description="Allow customers to discover your restaurant on the public map, view menu links, prices, and active offers."
                   checked={settingsData.is_discoverable}
-                  onChange={(c) => setSettingsData(prev => ({ ...prev, is_discoverable: c }))}
-                />
-
-                <SettingRow
-                  icon={Eye}
-                  title="Show Menu Link on Map"
-                  description="Display direct 'Shop Menu' button on discovery page."
-                  checked={settingsData.show_menus_in_discovery}
-                  onChange={(c) => setSettingsData(prev => ({ ...prev, show_menus_in_discovery: c }))}
+                  onChange={(c) => setSettingsData(prev => ({
+                    ...prev,
+                    is_discoverable: c,
+                    show_prices: c,
+                    show_offers: c,
+                    show_menus_in_discovery: c,
+                  }))}
                 />
               </div>
             </div>
@@ -345,6 +360,212 @@ export function SettingsPage() {
                   checked={settingsData.auto_accept_orders}
                   onChange={(c) => setSettingsData(prev => ({ ...prev, auto_accept_orders: c }))}
                 />
+              </div>
+            </div>
+
+            {/* 4. DELIVERY PRICING & DISTANCE RULES */}
+            {settingsData.delivery_enabled && (
+              <div>
+                <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1.5">
+                  <Truck size={14} className="text-amber-500" /> Delivery Pricing & Distance Rules
+                </h4>
+
+                <div className="p-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/60 rounded-2xl space-y-4 animate-in fade-in duration-200">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Truck className="w-4 h-4 text-primary" />
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">
+                        Distance-Based Pricing Configuration
+                      </h4>
+                    </div>
+                    <span className="text-[11px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-md">
+                      Auto Calculated
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">
+                        Base Delivery Cost ({settingsData.currency})
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        placeholder="e.g. 100"
+                        value={settingsData.base_delivery_charge}
+                        onChange={(e) => setSettingsData(prev => ({ ...prev, base_delivery_charge: parseFloat(e.target.value) || 0 }))}
+                        className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-primary font-semibold text-slate-800 dark:text-slate-100"
+                      />
+                      <span className="text-[10px] text-slate-400 block mt-0.5">Base delivery fee</span>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">
+                        Included Base Distance (km)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.5"
+                        placeholder="e.g. 5"
+                        value={settingsData.base_delivery_distance}
+                        onChange={(e) => setSettingsData(prev => ({ ...prev, base_delivery_distance: parseFloat(e.target.value) || 0 }))}
+                        className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-primary font-semibold text-slate-800 dark:text-slate-100"
+                      />
+                      <span className="text-[10px] text-slate-400 block mt-0.5">Covered in base cost</span>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">
+                        Extra Distance Step (km)
+                      </label>
+                      <input
+                        type="number"
+                        min="0.1"
+                        step="0.5"
+                        placeholder="e.g. 1, 2 or 3"
+                        value={settingsData.extra_delivery_distance_step}
+                        onChange={(e) => setSettingsData(prev => ({ ...prev, extra_delivery_distance_step: Math.max(0.1, parseFloat(e.target.value) || 1) }))}
+                        className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-primary font-semibold text-slate-800 dark:text-slate-100"
+                      />
+                      <span className="text-[10px] text-slate-400 block mt-0.5">Every N extra km</span>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">
+                        Extra Rate Per Step ({settingsData.currency})
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        placeholder="e.g. 10"
+                        value={settingsData.extra_delivery_charge_per_step}
+                        onChange={(e) => setSettingsData(prev => ({ ...prev, extra_delivery_charge_per_step: parseFloat(e.target.value) || 0 }))}
+                        className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-primary font-semibold text-slate-800 dark:text-slate-100"
+                      />
+                      <span className="text-[10px] text-slate-400 block mt-0.5">Add per extra step</span>
+                    </div>
+                  </div>
+
+                  {/* Dynamic Formula Calculation Preview */}
+                  <div className="p-3 bg-white dark:bg-slate-900/80 rounded-xl border border-slate-200/60 dark:border-slate-700/50 text-xs text-slate-600 dark:text-slate-300 space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/60 dark:border-slate-800 pb-2">
+                      <p className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
+                        Live Calculation Preview
+                      </p>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-semibold text-slate-500">Test Order Distance:</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={testDistance}
+                          onChange={(e) => setTestDistance(Math.max(0, parseFloat(e.target.value) || 0))}
+                          className="w-16 px-2 py-0.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-center font-bold text-primary focus:outline-none focus:border-primary"
+                        />
+                        <span className="text-[11px] font-bold text-slate-500">km</span>
+                      </div>
+                    </div>
+
+                    {(() => {
+                      const dist = testDistance;
+                      const baseDist = settingsData.base_delivery_distance || 0;
+                      const baseCharge = settingsData.base_delivery_charge || 0;
+                      const step = settingsData.extra_delivery_distance_step || 1;
+                      const rate = settingsData.extra_delivery_charge_per_step || 0;
+
+                      if (dist <= baseDist) {
+                        return (
+                          <p className="text-[11px] leading-relaxed">
+                            For a test order from <span className="font-bold text-primary">{dist} km</span> away:
+                            Distance is within included base distance (<span className="font-bold">{baseDist} km</span>).
+                            Total Delivery Fee = <span className="font-black text-emerald-600 dark:text-emerald-400">{settingsData.currency}{baseCharge}</span>.
+                          </p>
+                        );
+                      }
+
+                      const extraKm = dist - baseDist;
+                      const steps = Math.ceil(extraKm / step);
+                      const extraFee = steps * rate;
+                      const totalFee = baseCharge + extraFee;
+
+                      return (
+                        <p className="text-[11px] leading-relaxed">
+                          For a test order from <span className="font-bold text-primary">{dist} km</span> away:
+                          Base {baseDist} km = <span className="font-bold">{settingsData.currency}{baseCharge}</span>.
+                          Remaining {extraKm.toFixed(1)} km ({steps} step{steps > 1 ? 's' : ''} of {step} km @ {settingsData.currency}{rate}/step) = <span className="font-bold">{settingsData.currency}{extraFee}</span> extra.
+                          Total Delivery Fee = <span className="font-black text-emerald-600 dark:text-emerald-400">{settingsData.currency}{totalFee}</span>.
+                        </p>
+                      );
+                    })()}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 5. ONLINE PAYMENT GATEWAY */}
+            <div>
+              <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1.5">
+                <Zap size={14} className="text-indigo-500" /> Online Payment Gateway
+              </h4>
+
+              <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                <SettingRow
+                  icon={Zap}
+                  title="Accept Online Payments"
+                  description="Enable online payment gateway checkout (UPI, Cards, Netbanking) for Takeaway & Delivery orders."
+                  checked={settingsData.online_payments_enabled}
+                  onChange={(c) => setSettingsData(prev => ({ ...prev, online_payments_enabled: c }))}
+                />
+
+                {settingsData.online_payments_enabled && (
+                  <div className="ml-0 sm:ml-12 p-3.5 bg-blue-50/80 dark:bg-blue-950/30 border border-blue-200/80 dark:border-blue-800 rounded-2xl space-y-1 my-2 text-xs animate-in fade-in duration-200">
+                    <div className="flex items-center gap-1.5 font-bold text-blue-900 dark:text-blue-200">
+                      <Info size={14} className="text-blue-600 dark:text-blue-400 shrink-0" />
+                      <span>Online Payment Rules</span>
+                    </div>
+                    <p className="text-blue-700 dark:text-blue-300 text-[11px] leading-relaxed">
+                      • <strong>Takeaway & Delivery:</strong> Customers pay online securely before order placement.<br />
+                      • <strong>Dine-In:</strong> Supports Pay at Counter (Cash) and Direct Shop UPI.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 6. DIRECT SHOP UPI PAYMENTS */}
+            <div>
+              <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1.5">
+                <Coins size={14} className="text-green-500" /> Direct Shop UPI Payments
+              </h4>
+
+              <div className="p-4 bg-slate-50/60 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800">
+                <div className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-green-50 dark:bg-green-900/20 flex items-center justify-center shrink-0 mt-0.5">
+                    <span className="text-green-600 font-black text-sm">₹</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold text-slate-800 dark:text-slate-100">Shop UPI ID</p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2 leading-tight">
+                      Customers scanning your QR code can pay directly via UPI. Enter your shop UPI ID below.
+                    </p>
+                    <input
+                      type="text"
+                      placeholder="e.g. shop@okaxis or 9876543210@paytm"
+                      value={settingsData.upi_id || ''}
+                      onChange={(e) => setSettingsData(prev => ({ ...prev, upi_id: e.target.value }))}
+                      className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-green-500 font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400"
+                    />
+                    {settingsData.upi_id && (
+                      <p className="text-[10px] text-green-600 dark:text-green-400 font-bold mt-1.5 flex items-center gap-1">
+                        ✓ Direct UPI payments configured ({settingsData.upi_id})
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
           </CardContent>

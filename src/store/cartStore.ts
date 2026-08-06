@@ -14,12 +14,15 @@ interface CartState {
   items: CartItem[];
   shopId: string | null;
   manualDiscountId: string | null;
+  orderType: 'dine_in' | 'takeaway' | 'delivery';
+  isOrderTypeSet: boolean;
 
   addToCart: (shopId: string, item: Omit<CartItem, 'id'>) => void;
   updateQuantity: (id: string, delta: number) => void;
   removeFromCart: (id: string) => void;
   clearCart: () => void;
   setManualDiscount: (discountId: string | null) => void;
+  setOrderType: (type: 'dine_in' | 'takeaway' | 'delivery', isSet?: boolean) => void;
 }
 
 export const useCartStore = create<CartState>()(
@@ -28,6 +31,10 @@ export const useCartStore = create<CartState>()(
       items: [],
       shopId: null,
       manualDiscountId: null,
+      orderType: 'takeaway',
+      isOrderTypeSet: false,
+
+      setOrderType: (type, isSet = true) => set({ orderType: type, isOrderTypeSet: isSet }),
 
       addToCart: (shopId, item) => set((state) => {
         // If adding to a new shop, clear the existing cart

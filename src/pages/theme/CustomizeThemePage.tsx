@@ -1,20 +1,25 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router';
 import { 
-  Palette, Check, Save, Smartphone, Monitor, Layers, Sliders, Sparkles, X, Minimize2, Maximize2, Flame, AppWindow, ZoomIn, ZoomOut 
+  Palette, Check, Save, Smartphone, Monitor, Layers, Sliders, Sparkles, X, Minimize2, Maximize2, Flame, AppWindow, ZoomIn, ZoomOut, Lock
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { useShopStore } from '@/store/shopStore';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { useHeaderStore } from '@/store/useHeaderStore';
+import { api } from '@/services/api';
 
 export function CustomizeThemePage() {
+  const navigate = useNavigate();
   const { shop, updateTheme } = useShopStore();
   const [isSaving, setIsSaving] = useState(false);
+  const [subStatus, setSubStatus] = useState<any>(null);
   const setHeaderTitle = useHeaderStore((state) => state.setTitle);
 
   useEffect(() => {
     setHeaderTitle('Customize Theme');
+    api.get('/subscription/current').then(res => setSubStatus(res.data)).catch(console.error);
   }, [setHeaderTitle]);
   
   // Navigation Tabs State
@@ -145,9 +150,29 @@ export function CustomizeThemePage() {
     pill: 'rounded-2xl'
   };
 
+  const isModuleLocked = subStatus && (subStatus.is_expired || (!subStatus.is_all_access && Array.isArray(subStatus.active_modules) && !subStatus.active_modules.includes('custom-theme')));
+
   return (
     <div className="max-w-5xl mx-auto space-y-6 p-4 md:p-6 pb-28 min-h-[calc(100vh-7rem)] animate-fade-in relative select-none">
       
+      {/* Module Lock Banner */}
+      {isModuleLocked && (
+        <div className="bg-gradient-to-r from-red-50 to-orange-50 dark:from-red-950/40 dark:to-orange-950/40 border-2 border-red-200 dark:border-red-800/80 p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-red-500/10 text-red-500 flex items-center justify-center shrink-0">
+              <Lock size={20} />
+            </div>
+            <div>
+              <h4 className="font-black text-sm text-slate-900 dark:text-white">Custom Theme Studio Module Locked</h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Subscribe to the Custom Theme module or renew your subscription to save brand themes.</p>
+            </div>
+          </div>
+          <Button onClick={() => navigate('/subscription')} className="bg-primary hover:bg-primary/90 text-white shrink-0 text-xs font-extrabold uppercase tracking-wider">
+            Unlock Module →
+          </Button>
+        </div>
+      )}
+
       {/* ================= HEADER APPLICATION HEADER CONTROLS ================= */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-white dark:bg-slate-950 p-4 rounded-2xl border border-slate-100 dark:border-slate-900 shadow-xs gap-4">
         <div>

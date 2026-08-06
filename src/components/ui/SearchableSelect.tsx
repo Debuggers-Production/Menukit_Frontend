@@ -66,7 +66,7 @@ export function SearchableSelect({ options, value, onChange, placeholder = "Sele
       <div 
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
-          "flex items-center justify-between h-11 w-full rounded-xl border border-input bg-transparent px-3 py-2 text-sm shadow-sm cursor-pointer dark:bg-slate-900 transition-colors focus-within:ring-2 focus-within:ring-ring",
+          "flex items-center justify-between min-h-[36px] h-9 w-full rounded-xl border border-input bg-transparent px-3 py-1.5 text-xs shadow-xs cursor-pointer dark:bg-slate-900 transition-colors focus-within:ring-2 focus-within:ring-ring",
           className
         )}
       >

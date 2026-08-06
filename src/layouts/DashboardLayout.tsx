@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Outlet, NavLink, useLocation } from 'react-router';
+import { useState, useEffect } from 'react';
+import { Outlet, NavLink, useLocation, useNavigate } from 'react-router';
 import { 
   LayoutDashboard, 
   Store, 
@@ -14,7 +14,11 @@ import {
   Users,
   ShoppingBag,
   Trophy,
-  MoreHorizontal
+  MoreHorizontal,
+  Sparkles,
+  Wallet,
+  ArrowRight,
+  Lock
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { cn } from '@/utils/cn';
@@ -23,18 +27,33 @@ import { LanguageSelectorModal } from '@/components/LanguageSelectorModal';
 import { useHeaderStore } from '@/store/useHeaderStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { NotificationBell } from '@/components/ui/NotificationBell';
+import { api } from '@/services/api';
 import logo from "@/assets/menukit-logo.svg";
 
 export function DashboardLayout() {
+  const navigate = useNavigate();
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const [isSignOutModalOpen, setIsSignOutModalOpen] = useState(false);
   const [isLanguageModalOpen, setIsLanguageModalOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
+  const [subStatus, setSubStatus] = useState<any>(null);
   const headerTitle = useHeaderStore((state) => state.title);
   const { user, logout } = useAuthStore();
   const location = useLocation();
 
   useWebSocket();
+
+  useEffect(() => {
+    const fetchSub = async () => {
+      try {
+        const res = await api.get('/subscription/current');
+        setSubStatus(res.data);
+      } catch (e) {
+        console.error('Failed to fetch subscription in layout', e);
+      }
+    };
+    fetchSub();
+  }, [location.pathname]);
 
   interface NavItem {
     name: string;
@@ -129,6 +148,19 @@ export function DashboardLayout() {
           text: 'text-fuchsia-950 dark:text-fuchsia-200'
         };
       case '/settings':
+        return {
+          icon: 'text-teal-600 dark:text-teal-400',
+          bg: 'bg-teal-50/80 hover:bg-teal-100/80 dark:bg-teal-950/40 dark:hover:bg-teal-900/50',
+          border: 'border-teal-200/80 dark:border-teal-800/60',
+          text: 'text-teal-950 dark:text-teal-200'
+        };
+      case '/settlements':
+        return {
+          icon: 'text-emerald-600 dark:text-emerald-400',
+          bg: 'bg-emerald-50/80 hover:bg-emerald-100/80 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/50',
+          border: 'border-emerald-200/80 dark:border-emerald-800/60',
+          text: 'text-emerald-950 dark:text-emerald-200'
+        };
       default:
         return {
           icon: 'text-teal-600 dark:text-teal-400',
@@ -169,6 +201,8 @@ export function DashboardLayout() {
         { name: 'Shop', path: '/shop-setup', icon: Store },
         { name: 'Members', path: '/members', icon: Users },
         { name: 'Customize Theme', path: '/customize', icon: Palette },
+        { name: 'Subscription', path: '/subscription', icon: Sparkles },
+        { name: 'Settlements', path: '/settlements', icon: Wallet },
         { name: 'Settings', path: '/settings', icon: SettingsIcon },
       ]
     }
@@ -297,9 +331,57 @@ export function DashboardLayout() {
           </div>
         </div>
 
+        {/* TOP APP BAR SUBSCRIPTION ALERT BANNER */}
+        {subStatus && subStatus.is_expired && (
+          <div 
+            onClick={() => navigate('/subscription')}
+            className="bg-gradient-to-r from-red-600 via-rose-600 to-red-700 text-white px-4 py-2 text-xs font-black flex items-center justify-between cursor-pointer shadow-md hover:brightness-110 transition-all z-30 shrink-0"
+            title="Click to open subscription renewal page"
+          >
+            <div className="flex items-center gap-2">
+              <span className="animate-pulse text-base">🚨</span>
+              <span>Your subscription has ended. Please renew to restore full feature access.</span>
+            </div>
+            <div className="flex items-center gap-1 bg-white/20 px-2.5 py-1 rounded-lg hover:bg-white/30 transition-colors uppercase tracking-wider text-[10px] font-black shrink-0">
+              <span>Renew Subscription</span>
+              <ArrowRight size={12} />
+            </div>
+          </div>
+        )}
+
+        {subStatus && !subStatus.is_expired && subStatus.is_grace_period && (
+          <div 
+            onClick={() => navigate('/subscription')}
+            className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white px-4 py-2 text-xs font-black flex items-center justify-between cursor-pointer shadow-md hover:brightness-110 transition-all z-30 shrink-0"
+            title="Click to open subscription renewal page"
+          >
+            <div className="flex items-center gap-2">
+              <span className="animate-bounce text-base">⚠️</span>
+              <span>Subscription Ended: Grace Period Active ({subStatus.grace_days_left} day{subStatus.grace_days_left !== 1 ? 's' : ''} left). Please renew now.</span>
+            </div>
+            <div className="flex items-center gap-1 bg-black/20 px-2.5 py-1 rounded-lg hover:bg-black/30 transition-colors uppercase tracking-wider text-[10px] font-black shrink-0">
+              <span>Renew Now</span>
+              <ArrowRight size={12} />
+            </div>
+          </div>
+        )}
+
+        {subStatus && !subStatus.is_expired && !subStatus.is_grace_period && subStatus.days_left <= 3 && (
+          <div 
+            onClick={() => navigate('/subscription')}
+            className="bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white px-4 py-1.5 text-[11px] font-bold flex items-center justify-between cursor-pointer shadow-sm hover:brightness-110 transition-all z-30 shrink-0"
+            title="Click to view subscription plans"
+          >
+            <div className="flex items-center gap-1.5">
+              <span>⏳ <strong>{subStatus.is_trial ? 'Free Trial Ending Soon' : 'Subscription Ending Soon'}:</strong> Only {subStatus.days_left} day{subStatus.days_left !== 1 ? 's' : ''} remaining. Renew now to avoid interruption.</span>
+            </div>
+            <span className="underline text-[10px] font-black uppercase tracking-wider shrink-0">Renew Plan →</span>
+          </div>
+        )}
+
         {/* Scrollable Main Content View */}
         <main 
-          className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8 pb-20 lg:pb-8"
+          className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8 pb-20 lg:pb-8 relative"
           onScroll={(e) => setIsScrolled(e.currentTarget.scrollTop > 20)}
         >
           <Outlet />

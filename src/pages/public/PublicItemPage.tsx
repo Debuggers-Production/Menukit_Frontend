@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { ChevronLeft, Star, Loader2, Send, Gift, ShoppingCart, Plus, Minus, Trash2 } from 'lucide-react';
+import { ChevronLeft, Star, Loader2, Send, Gift, ShoppingCart, Plus, Minus, Trash2, AlertCircle } from 'lucide-react';
 import { api } from '@/services/api';
 import { Shop, MenuItem, ReviewSummary, Discount } from '@/types';
 import { Lightbox } from '@/components/ui/Lightbox';
@@ -30,7 +30,7 @@ export function PublicItemPage() {
   // Interaction state
   const [selectedVariantIdx, setSelectedVariantIdx] = useState(0);
   const [selectedAddons, setSelectedAddons] = useState<number[]>([]);
-    const { addToCart, items: cartItems, removeFromCart, updateQuantity } = useCartStore();
+  const { addToCart, items: cartItems, removeFromCart, updateQuantity, orderType } = useCartStore();
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
 
   const existingCartItem = useMemo(() => {
@@ -255,21 +255,28 @@ export function PublicItemPage() {
                 id="product-main-image"
                 src={item.images[0].image_url}
                 alt={item.name}
-                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                className={`w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 ${!item.is_available ? 'grayscale-[40%]' : ''}`}
               />
+              {!item.is_available && (
+                <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-[2px] flex items-center justify-center z-10 pointer-events-none">
+                  <span className="bg-red-600 text-white text-xs sm:text-sm font-black uppercase tracking-widest px-4 py-1.5 rounded-full shadow-xl">
+                    Out of Stock
+                  </span>
+                </div>
+              )}
             </div>
             {item.images.length > 1 && (
               <div className="flex gap-2 mt-2 overflow-x-auto pb-2 snap-x hide-scrollbar">
                 {item.images.slice(1).map((img, idx) => (
                   <div
                     key={idx}
-                    className="w-20 h-20 rounded-xl overflow-hidden bg-slate-100 shrink-0 snap-start cursor-pointer border border-slate-200"
+                    className="w-20 h-20 rounded-xl overflow-hidden bg-slate-100 shrink-0 snap-start cursor-pointer border border-slate-200 relative"
                     onClick={() => setLightboxImage(img.image_url)}
                   >
                     <img
                       src={img.thumbnail_url || img.image_url}
                       alt=""
-                      className="w-full h-full object-cover"
+                      className={`w-full h-full object-cover ${!item.is_available ? 'grayscale-[40%]' : ''}`}
                     />
                   </div>
                 ))}
@@ -282,12 +289,27 @@ export function PublicItemPage() {
               id="product-main-image"
               src={item.image_url}
               alt={item.name}
-              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+              className={`w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 ${!item.is_available ? 'grayscale-[40%]' : ''}`}
             />
+            {!item.is_available && (
+              <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-[2px] flex items-center justify-center z-10 pointer-events-none">
+                <span className="bg-red-600 text-white text-xs sm:text-sm font-black uppercase tracking-widest px-4 py-1.5 rounded-full shadow-xl">
+                  Out of Stock
+                </span>
+              </div>
+            )}
           </div>
         ) : null}
 
         <div className="mb-6">
+          {!item.is_available && (
+            <div className="mb-2">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-red-100 dark:bg-red-950/50 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800 text-[11px] font-black uppercase tracking-wider rounded-full">
+                <AlertCircle size={13} />
+                Currently Out of Stock
+              </span>
+            </div>
+          )}
           <div className="flex items-start justify-between gap-4 mb-2">
             <h2 className="text-2xl font-bold font-heading leading-tight">{item.name}</h2>
             {item.food_types && item.food_types.filter(t => t !== 'drink' && t !== 'none').map((type) => (
@@ -309,16 +331,23 @@ export function PublicItemPage() {
           <div className="flex items-center gap-3">
             <span className="text-xl font-bold" style={{ color: primaryColor }}>
               {(() => {
+                const isDelivery = orderType === 'delivery';
                 let basePrice = 0;
                 if (item.variants && item.variants.length > 0) {
                   const v = item.variants[selectedVariantIdx];
-                  basePrice = Number(v.offer_price || v.price);
+                  basePrice = isDelivery 
+                    ? Number(v.online_offer_price || v.online_price || v.offer_price || v.price)
+                    : Number(v.offer_price || v.price);
                 } else {
-                  basePrice = Number(item.offer_price || item.price);
+                  basePrice = isDelivery 
+                    ? Number(item.online_offer_price || item.online_price || item.offer_price || item.price)
+                    : Number(item.offer_price || item.price);
                 }
 
                 let isDiscounted = false;
-                let originalPrice = item.variants && item.variants.length > 0 ? Number(item.variants[selectedVariantIdx].price) : Number(item.price);
+                let originalPrice = isDelivery
+                  ? (item.variants && item.variants.length > 0 ? Number(item.variants[selectedVariantIdx].online_price || item.variants[selectedVariantIdx].price) : Number(item.online_price || item.price))
+                  : (item.variants && item.variants.length > 0 ? Number(item.variants[selectedVariantIdx].price) : Number(item.price));
 
                 if (!item.offer_price && (!item.variants || !item.variants.length || !item.variants[selectedVariantIdx].offer_price)) {
                   const disc = discounts.find(d => {
@@ -631,7 +660,15 @@ export function PublicItemPage() {
           isScrollingDown ? 'translate-y-full' : 'translate-y-0'
         }`}>
           <div className="max-w-md mx-auto flex items-center gap-3 transition-all duration-300">
-            {existingCartItem ? (
+            {!item.is_available ? (
+              <button
+                disabled
+                className="w-full py-3.5 px-5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-sm font-bold flex items-center justify-center gap-2 cursor-not-allowed opacity-80"
+              >
+                <AlertCircle size={18} />
+                Out of Stock
+              </button>
+            ) : existingCartItem ? (
               <>
                 {/* Cart Item Quantity Selector */}
                 <div className="flex items-center gap-2 px-2 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-xl animate-[fadeIn_0.3s_ease-out]">

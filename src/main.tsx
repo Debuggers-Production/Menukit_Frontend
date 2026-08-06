@@ -5,12 +5,19 @@ import { Toaster } from 'react-hot-toast'
 import './index.css'
 import App from './App.tsx'
 
-// Clear google translate cookie on hard refresh so it defaults to English
 if (!sessionStorage.getItem('lang_reloading')) {
   document.cookie = "googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
   document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname}`;
 }
 sessionStorage.removeItem('lang_reloading');
+
+// Prevent mouse wheel from scrolling and altering number inputs globally
+document.addEventListener('wheel', () => {
+  if (document.activeElement && (document.activeElement as HTMLInputElement).type === 'number') {
+    (document.activeElement as HTMLInputElement).blur();
+  }
+}, { passive: true });
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {

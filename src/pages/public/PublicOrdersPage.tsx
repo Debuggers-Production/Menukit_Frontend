@@ -130,15 +130,79 @@ export function PublicOrdersPage() {
 
   const [payingOrderId, setPayingOrderId] = useState<string | null>(null);
 
+  const loadRazorpaySDK = (): Promise<boolean> => {
+    return new Promise((resolve) => {
+      if ((window as any).Razorpay) { resolve(true); return; }
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
+
   const handlePayNow = async (orderId: string) => {
     setPayingOrderId(orderId);
     try {
+      const sdkLoaded = await loadRazorpaySDK();
+      if (!sdkLoaded) {
+        toast.error("Could not load payment gateway SDK. Please try again.");
+        setPayingOrderId(null);
+        return;
+      }
+
       const res = await api.post(`/public/shop/${id}/orders/${orderId}/pay`);
-      const { payment_session_id } = res.data;
-      toast.loading("Redirecting to Cashfree secure checkout...", { duration: 1500 });
-      setTimeout(() => {
-        window.location.href = payment_session_id;
-      }, 1500);
+      const payData = res.data;
+
+      if (payData.mock_mode) {
+        await api.post(`/public/shop/${id}/orders/${orderId}/verify`, {
+          razorpay_order_id: payData.razorpay_order_id,
+          razorpay_payment_id: `pay_mock_${Date.now()}`,
+          razorpay_signature: 'mock_signature'
+        });
+        toast.success("Payment successful!");
+        if (token) fetchOrders(token);
+        return;
+      }
+
+      const baseTotal = payData.base_total || (payData.amount / 100).toFixed(2);
+      const platFee = payData.platform_fee || 0;
+      const pgFee = payData.pg_fee || 0;
+      const gstFee = payData.gst_on_fee || 0;
+      const grandTotal = payData.grand_total || (payData.amount / 100).toFixed(2);
+
+      const rzpOptions = {
+        key: payData.razorpay_key,
+        amount: payData.amount,
+        currency: payData.currency || 'INR',
+        name: shop?.name || 'Restaurant Order',
+        description: `Items: ₹${baseTotal} | Platform Fee: ₹${platFee} | PG Fee (3%): ₹${pgFee} | GST: ₹${gstFee} = ₹${grandTotal}`,
+        order_id: payData.razorpay_order_id,
+        notes: {
+          "1_Items_Subtotal": `₹${baseTotal}`,
+          "2_Platform_Fee_1%": `₹${platFee}`,
+          "3_Payment_Gateway_Fee_3%": `₹${pgFee}`,
+          "4_GST_on_Fee_18%": `₹${gstFee}`,
+          "5_Grand_Total": `₹${grandTotal}`
+        },
+        handler: async (response: any) => {
+          try {
+            await api.post(`/public/shop/${id}/orders/${orderId}/verify`, {
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+            });
+            toast.success("Payment successful!");
+            if (token) fetchOrders(token);
+          } catch {
+            toast.error("Payment verification failed. Please contact support.");
+          }
+        },
+        theme: { color: '#f97316' },
+      };
+
+      const rzp = new (window as any).Razorpay(rzpOptions);
+      rzp.open();
     } catch (err: any) {
       console.error("Failed to initiate payment", err);
       toast.error(err.response?.data?.detail || "Failed to initiate online payment. Please try again.");
@@ -497,8 +561,8 @@ export function PublicOrdersPage() {
                         </div>
                       </div>
 
-                      {/* Warning notice for pending payment - only when order is NOT cancelled */}
-                      {isUnpaid && !isCancelled && (
+                      {/* Warning notice for pending payment - only when order is NOT cancelled AND online payments enabled */}
+                      {isUnpaid && !isCancelled && shop?.settings?.online_payments_enabled !== false && (
                         <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2 text-[10px] text-amber-800 dark:text-amber-300 font-bold mb-3.5 flex items-center gap-1.5">
                           <AlertCircle size={12} className="text-amber-600 dark:text-amber-400 animate-pulse" />
                           <span>Payment is pending. Pay now to confirm your order details.</span>
@@ -537,8 +601,8 @@ export function PublicOrdersPage() {
                           <span className="font-black text-lg text-slate-850 dark:text-white mt-1.5 block">{shop?.settings?.currency || '₹'}{Number(order.total_amount).toFixed(2)}</span>
                         </div>
                         <div className="flex gap-2">
-                          {/* Pay Now only when unpaid AND order is not cancelled */}
-                          {isUnpaid && !isCancelled && (
+                          {/* Pay Now only when unpaid AND order is delivery AND order is not cancelled AND online payments enabled */}
+                          {isUnpaid && !isCancelled && order.order_type === 'delivery' && shop?.settings?.online_payments_enabled !== false && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();

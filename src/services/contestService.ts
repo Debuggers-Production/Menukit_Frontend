@@ -47,13 +47,13 @@ export const contestService = {
     return response.data;
   },
 
-  payContest: async (mobileNumber: string, shopId: string): Promise<{ link_url: string; link_id: string }> => {
+  payContest: async (mobileNumber: string, shopId: string): Promise<{ order_id: string; base_amount: number; pg_fee: number; gst_on_fee: number; final_total: number; amount: number; currency: string; mock_mode: boolean; key: string }> => {
     const response = await api.post('/contests/pay', { mobile_number: mobileNumber, shop_id: shopId });
     return response.data;
   },
 
-  verifyPayContest: async (linkId: string, mobileNumber: string): Promise<{ customer_id: string; credits: number }> => {
-    const response = await api.post('/contests/pay/verify', { link_id: linkId, mobile_number: mobileNumber });
+  verifyPayContest: async (data: { razorpay_order_id?: string; razorpay_payment_id?: string; razorpay_signature?: string; link_id?: string; mobile_number: string }): Promise<{ customer_id: string; credits: number }> => {
+    const response = await api.post('/contests/pay/verify', data);
     return response.data;
   },
 

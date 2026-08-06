@@ -182,9 +182,12 @@
 .delay-200 { animation-delay: 200ms; }
 .delay-300 { animation-delay: 300ms; }
 
-/* OTP Input specific override to hide arrows */
+/* Hide number input spin buttons and block scroll behavior */
 input[type='number']::-webkit-inner-spin-button,
 input[type='number']::-webkit-outer-spin-button {
   -webkit-appearance: none;
   margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
 }

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { RefreshCw, ShoppingBag, Clock, XCircle, ChevronDown, Check, List, User, MapPin, Phone, Share2, Copy, ExternalLink, Navigation } from 'lucide-react';
+import { useNavigate } from 'react-router';
+import { RefreshCw, ShoppingBag, Clock, XCircle, ChevronDown, Check, List, User, MapPin, Phone, Share2, Copy, ExternalLink, Navigation, Lock } from 'lucide-react';
 import { api } from '@/services/api';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Button } from '@/components/ui/Button';
@@ -18,6 +19,17 @@ function formatDateTime(dateStr: string) {
 }
 
 function generateGoogleMapsUrl(address: string) {
+  if (!address) return '#';
+  // Check for [loc=lat,lng] format
+  const locMatch = address.match(/\[loc=([-?\d.]+),([-?\d.]+)\]/);
+  if (locMatch) {
+    return `https://www.google.com/maps?q=${locMatch[1]},${locMatch[2]}`;
+  }
+  // Check for Lat: X, Lon: Y format
+  const latLonMatch = address.match(/Lat:\s*([-?\d.]+),\s*Lon:\s*([-?\d.]+)/i);
+  if (latLonMatch) {
+    return `https://www.google.com/maps?q=${latLonMatch[1]},${latLonMatch[2]}`;
+  }
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
 }
 
@@ -119,7 +131,7 @@ function PayDropdown({ orderId, paymentStatus, paymentMethod, orderStatus, onSel
     if (opt.value === paymentStatus) return;
     const isRefundable = opt.value === 'refunded' && paymentMethod === 'online';
     const msg = isRefundable
-      ? 'This will process an automatic Cashfree refund to the customer. Continue?'
+      ? 'This will process an automatic online refund to the customer. Continue?'
       : `Change payment status to "${opt.label}"?`;
     if (confirm(msg)) onSelect(orderId, opt.value);
   };
@@ -274,8 +286,10 @@ function OrderStatusDropdown({ orderId, orderStatus, onSelect }: OrderStatusDrop
 
 /* ── Main Page ───────────────────────────────────────────────────────────── */
 export function OrdersPage() {
+  const navigate = useNavigate();
   const [orders, setOrders] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLocked, setIsLocked] = useState(false);
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [itemsModalOrder, setItemsModalOrder] = useState<any | null>(null);
   const [customerModalOrder, setCustomerModalOrder] = useState<any | null>(null);
@@ -284,9 +298,14 @@ export function OrdersPage() {
     try {
       const res = await api.get('/orders');
       setOrders(res.data || []);
+      setIsLocked(false);
     } catch (err: any) {
-      console.error(err);
-      toast.error('Failed to load orders');
+      if (err.response?.status === 403) {
+        setIsLocked(true);
+      } else {
+        console.error(err);
+        toast.error('Failed to load orders');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -341,6 +360,23 @@ export function OrdersPage() {
           Refresh
         </Button>
       </div>
+
+      {isLocked && (
+        <div className="bg-gradient-to-r from-red-50 to-orange-50 dark:from-red-950/40 dark:to-orange-950/40 border-2 border-red-500/50 p-6 rounded-3xl text-center space-y-4 shadow-xl mb-4">
+          <div className="w-14 h-14 rounded-2xl bg-red-500/10 text-red-500 flex items-center justify-center mx-auto shadow-inner">
+            <Lock size={28} />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-lg font-black text-slate-900 dark:text-white">Orders Management Locked</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+              Your subscription has ended. Orders management and live order queue data features are locked by the backend. Please renew your subscription to access orders.
+            </p>
+          </div>
+          <Button onClick={() => navigate('/subscription')} className="bg-primary hover:bg-primary/90 text-white font-extrabold text-xs uppercase tracking-wider px-6 py-3 shadow-md">
+            Renew Subscription Now →
+          </Button>
+        </div>
+      )}
 
       {/* Tabs — sticky top with zero gap and full backdrop blur */}
       <div className="sticky top-[-16px] sm:top-[-24px] lg:top-[-32px] z-20 bg-[#f8fafc]/95 dark:bg-slate-950/95 backdrop-blur-md pt-3 pb-3 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 border-b border-slate-200 dark:border-slate-800 mb-4 shadow-xs">
@@ -629,7 +665,7 @@ export function OrdersPage() {
                   </a>
                 </div>
                 <p className="text-slate-700 dark:text-slate-200 font-medium leading-relaxed bg-white dark:bg-slate-950 p-2.5 rounded-lg border border-slate-150 dark:border-slate-800">
-                  {customerModalOrder.delivery_address}
+                  {customerModalOrder.delivery_address.replace(/\s*\[loc=.*?\]/, '')}
                 </p>
               </div>
             )}

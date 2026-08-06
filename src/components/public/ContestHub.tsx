@@ -22,7 +22,15 @@ import { loadFull } from 'tsparticles';
 import { BrushReplayCanvas } from './BrushReplayCanvas';
 import { Excalidraw, exportToBlob, MainMenu } from '@excalidraw/excalidraw';
 import { cn } from '@/utils/cn';
-import '@excalidraw/excalidraw/index.css';
+const loadRazorpayScript = () => {
+  return new Promise((resolve) => {
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+};
 
 const formatNumberCompact = (num: number) => {
   if (num >= 1000000) {
@@ -737,7 +745,7 @@ export const ContestHub: React.FC<ContestHubProps> = ({
 
     if (paymentSuccess === 'true' && payLinkId && payMobileNumber) {
       const verifyPayment = async () => {
-        const verifyToast = toast.loading("Verifying Cashfree payment...");
+        const verifyToast = toast.loading("Verifying online payment...");
         try {
           // Normalize URL-encoded or spaced phone strings back to '+' prefix format
           let cleanedMobile = decodeURIComponent(payMobileNumber).trim();
@@ -954,20 +962,88 @@ export const ContestHub: React.FC<ContestHubProps> = ({
         return;
       }
 
-      const loadingToast = toast.loading("Creating Cashfree secure payment link...");
+      const loadingToast = toast.loading("Preparing secure Razorpay order...");
 
       try {
         const res = await contestService.payContest(savedMobile, shopId);
         toast.dismiss(loadingToast);
-        toast.loading("Redirecting to Cashfree secure checkout...", { duration: 1500 });
 
-        setTimeout(() => {
-          window.location.href = res.link_url;
-        }, 1500);
-      } catch (err) {
+        // If Mock Gateway Mode
+        if (res.mock_mode) {
+          try {
+            await contestService.verifyPayContest({
+              razorpay_order_id: res.order_id,
+              mobile_number: savedMobile,
+            });
+            confetti({ particleCount: 120, spread: 90, origin: { y: 0.5 } });
+            toast.success("Payment successful! Contest Token added.");
+            setIsPayOpen(false);
+            const token = localStorage.getItem('customer_token');
+            if (token) {
+              const creds = await contestService.getCredits(token);
+              setCredits(creds);
+            }
+          } catch (err) {
+            toast.error("Payment verification failed");
+          }
+          return;
+        }
+
+        // Real Razorpay Mode
+        const isLoaded = await loadRazorpayScript();
+        if (!isLoaded) {
+          toast.error("Razorpay SDK failed to load. Are you online?");
+          return;
+        }
+
+        const basePrice = res.base_amount || 5.00;
+        const pgFee = res.pg_fee || 0.15;
+        const gstFee = res.gst_on_fee || 0.03;
+        const totalAmt = res.final_total || 5.18;
+
+        const options = {
+          key: res.key,
+          amount: res.amount,
+          currency: res.currency || "INR",
+          name: "Menukit - 1 Contest Credit",
+          description: `1 Credit: ₹${basePrice} | PG Fee (3%): ₹${pgFee} | GST (18%): ₹${gstFee} = ₹${totalAmt}`,
+          order_id: res.order_id,
+          notes: {
+            "1_Contest_Credit": `₹${basePrice}`,
+            "2_Payment_Gateway_Fee_3pct": `₹${pgFee}`,
+            "3_GST_18pct": `₹${gstFee}`,
+            "4_Total_Payable": `₹${totalAmt}`
+          },
+          handler: async function (response: any) {
+            try {
+              await contestService.verifyPayContest({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+                mobile_number: savedMobile,
+              });
+              confetti({ particleCount: 120, spread: 90, origin: { y: 0.5 } });
+              toast.success("Payment successful! Contest Token added.");
+              setIsPayOpen(false);
+              const token = localStorage.getItem('customer_token');
+              if (token) {
+                const creds = await contestService.getCredits(token);
+                setCredits(creds);
+              }
+            } catch (error) {
+              toast.error("Payment verification failed. Please contact support.");
+            }
+          },
+          theme: { color: primaryColor || "#f97316" }
+        };
+
+        const paymentObject = new (window as any).Razorpay(options);
+        paymentObject.open();
+
+      } catch (err: any) {
         toast.dismiss(loadingToast);
         console.error(err);
-        toast.error("Failed to generate payment link. Please try again.");
+        toast.error(err.response?.data?.detail || "Failed to create payment order. Please try again.");
       }
     } catch (error) {
       console.error(error);
@@ -2693,7 +2769,7 @@ export const ContestHub: React.FC<ContestHubProps> = ({
               </div>
 
               {/* Scrollable body */}
-              <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4 pb-24">
+              <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4 pb-36">
 
                 {/* Don't Miss Out — Offer Card */}
                 <div className="bg-gradient-to-r from-amber-500/10 via-primary/10 to-orange-500/10 dark:from-amber-500/15 dark:via-primary/15 dark:to-orange-500/15 border border-primary/30 dark:border-primary/25 rounded-2xl p-4 relative overflow-hidden group">
@@ -2708,14 +2784,14 @@ export const ContestHub: React.FC<ContestHubProps> = ({
                       Get 1 Token Instantly!
                     </h4>
                     <p className="text-[11px] text-slate-600 dark:text-slate-400 font-medium leading-relaxed">
-                      Pay ₹5 to unlock your entry token — compete, get likes, win rewards!
+                      Pay ₹5.18 to unlock your entry token (₹5 entry + 3% PG fee + 18% GST) — compete & win!
                     </p>
                   </div>
                 </div>
 
                 {/* What You Get — Benefits Grid */}
                 <div className="space-y-2">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 px-0.5">What you get for ₹5</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 px-0.5">What you get for ₹5.18</p>
                   <div className="grid grid-cols-1 gap-2">
                     {[
                       { icon: <Ticket size={15} />, title: '1 Contest Entry Token', desc: 'Participate in this live challenge immediately with 1 entry credit', highlight: true },
@@ -2732,7 +2808,7 @@ export const ContestHub: React.FC<ContestHubProps> = ({
                         isWinnerReward: true
                       },
                       { icon: <Gift size={15} />, title: 'Consolation Reward Too!', desc: "Even if you don't win, we still give you something special", highlight: false },
-                      { icon: <ShieldCheck size={15} />, title: '100% Refund Guarantee', desc: 'If the contest is cancelled for any reason (e.g. minimum targets not reached), your ₹5 credit will be automatically refunded back to your account!', highlight: true, isRefundPolicy: true },
+                      { icon: <ShieldCheck size={15} />, title: '100% Refund Guarantee', desc: 'If the contest is cancelled for any reason (e.g. minimum targets not reached), your credit will be automatically refunded back to your account!', highlight: true, isRefundPolicy: true },
                     ].map((item, idx) => (
                       <div
                         key={idx}
@@ -2800,6 +2876,26 @@ export const ContestHub: React.FC<ContestHubProps> = ({
                   </div>
                 </div>
 
+                {/* Itemized Bill Breakdown */}
+                <div className="bg-slate-50 dark:bg-slate-800/40 p-3.5 rounded-2xl border border-slate-200/60 dark:border-slate-800 space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
+                  <div className="flex justify-between font-medium">
+                    <span>Base Entry Fee:</span>
+                    <span className="font-bold text-slate-900 dark:text-white">₹5.00</span>
+                  </div>
+                  <div className="flex justify-between text-[11px] text-slate-500">
+                    <span>Gateway Fee (3%):</span>
+                    <span>+₹0.15</span>
+                  </div>
+                  <div className="flex justify-between text-[11px] text-slate-500">
+                    <span>GST on Gateway Fee (18%):</span>
+                    <span>+₹0.03</span>
+                  </div>
+                  <div className="flex justify-between items-baseline pt-2 border-t border-slate-200/60 dark:border-slate-700/60">
+                    <span className="font-black text-xs uppercase tracking-wider text-slate-700 dark:text-slate-300">Total Payable:</span>
+                    <span className="text-xl font-black text-slate-900 dark:text-white">₹5.18</span>
+                  </div>
+                </div>
+
                 {/* Contest & Shop details */}
                 <div className="bg-slate-50 dark:bg-slate-800/30 p-4 rounded-2xl border border-slate-100 dark:border-slate-850 space-y-3 font-sans">
                   {/* Shop & Logo row */}
@@ -2838,18 +2934,30 @@ export const ContestHub: React.FC<ContestHubProps> = ({
                 </div>
               </div>
 
-              {/* Fixed Bottom CTA Button */}
-              <div className="absolute bottom-0 left-0 right-0 bg-white dark:bg-[#0f1623] border-t border-slate-100 dark:border-slate-800 px-5 pt-3 pb-[calc(12px+env(safe-area-inset-bottom))] shrink-0">
+              {/* Fixed Bottom CTA Button with Itemized Fee Breakdown Pill */}
+              <div className="absolute bottom-0 left-0 right-0 bg-white/95 dark:bg-[#0f1623]/95 backdrop-blur-md border-t border-slate-100 dark:border-slate-800 px-5 pt-2.5 pb-[calc(10px+env(safe-area-inset-bottom))] shrink-0 space-y-2">
+                {/* Itemized Fee Breakdown Summary Pill */}
+                <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800/80 px-3 py-1 rounded-xl border border-slate-200/50 dark:border-slate-700/50">
+                  <span className="font-bold text-slate-700 dark:text-slate-300">Fee Breakdown:</span>
+                  <div className="flex items-center gap-1 font-medium">
+                    <span>Base: <strong className="text-slate-900 dark:text-white">₹5.00</strong></span>
+                    <span>+</span>
+                    <span>PG: <strong className="text-slate-900 dark:text-white">₹0.15</strong></span>
+                    <span>+</span>
+                    <span>GST: <strong className="text-slate-900 dark:text-white">₹0.03</strong></span>
+                  </div>
+                </div>
+
                 <button
                   onClick={handlePay}
                   className="w-full py-3 rounded-2xl font-black text-sm uppercase tracking-widest text-white shadow-lg transition-all active:scale-[0.98] hover:brightness-110 flex items-center justify-center gap-2"
                   style={{ background: `linear-gradient(135deg, ${primaryColor}, #f97316)` }}
                 >
                   <Zap size={15} />
-                  <span>Pay ₹5 — Get Big Wins!</span>
+                  <span>Pay ₹5.18 — Unlock Contest Token</span>
                 </button>
-                <p className="text-center text-[9px] text-slate-400 dark:text-slate-500 mt-2 font-medium flex items-center justify-center gap-1">
-                  <ShieldCheck size={10} className="text-slate-400" /> Secure payment via Cashfree
+                <p className="text-center text-[9px] text-slate-400 dark:text-slate-500 mt-1 font-medium flex items-center justify-center gap-1">
+                  <ShieldCheck size={10} className="text-slate-400" /> Secure payment powered by Razorpay
                 </p>
               </div>
             </div>

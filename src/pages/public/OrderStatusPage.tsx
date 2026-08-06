@@ -42,15 +42,83 @@ export function OrderStatusPage() {
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [isReceiptSheetOpen, setIsReceiptSheetOpen] = useState(false);
 
+  const loadRazorpaySDK = (): Promise<boolean> => {
+    return new Promise((resolve) => {
+      if ((window as any).Razorpay) { resolve(true); return; }
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
+
   const handlePayOnline = async () => {
     setIsRedirecting(true);
     try {
+      const sdkLoaded = await loadRazorpaySDK();
+      if (!sdkLoaded) {
+        toast.error("Could not load payment gateway SDK. Please try again.");
+        setIsRedirecting(false);
+        return;
+      }
+
       const res = await api.post(`/public/shop/${id}/orders/${orderId}/pay`);
-      const { payment_session_id } = res.data;
-      toast.loading("Redirecting to Cashfree secure checkout...", { duration: 1500 });
-      setTimeout(() => {
-        window.location.href = payment_session_id;
-      }, 1500);
+      const payData = res.data;
+
+      if (payData.mock_mode) {
+        await api.post(`/public/shop/${id}/orders/${orderId}/verify`, {
+          razorpay_order_id: payData.razorpay_order_id,
+          razorpay_payment_id: `pay_mock_${Date.now()}`,
+          razorpay_signature: 'mock_signature'
+        });
+        toast.success("Payment successful! Order marked as paid.");
+        setOrder((prev: any) => ({ ...prev, payment_status: 'paid' }));
+        return;
+      }
+
+      const baseTotal = payData.base_total || (payData.amount / 100).toFixed(2);
+      const platFee = payData.platform_fee || 0;
+      const pgFee = payData.pg_fee || 0;
+      const gstFee = payData.gst_on_fee || 0;
+      const grandTotal = payData.grand_total || (payData.amount / 100).toFixed(2);
+
+      const rzpOptions = {
+        key: payData.razorpay_key,
+        amount: payData.amount,
+        currency: payData.currency || 'INR',
+        name: shop?.name || 'Restaurant Order',
+        description: `Items: ₹${baseTotal} | Platform Fee: ₹${platFee} | PG Fee (3%): ₹${pgFee} | GST: ₹${gstFee} = ₹${grandTotal}`,
+        order_id: payData.razorpay_order_id,
+        notes: {
+          "1_Items_Subtotal": `₹${baseTotal}`,
+          "2_Platform_Fee_1%": `₹${platFee}`,
+          "3_Payment_Gateway_Fee_3%": `₹${pgFee}`,
+          "4_GST_on_Fee_18%": `₹${gstFee}`,
+          "5_Grand_Total": `₹${grandTotal}`
+        },
+        handler: async (response: any) => {
+          try {
+            await api.post(`/public/shop/${id}/orders/${orderId}/verify`, {
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+            });
+            toast.success("Payment successful! Order marked as paid.");
+            setOrder((prev: any) => ({ ...prev, payment_status: 'paid' }));
+          } catch {
+            toast.error("Payment verification failed. Please contact support.");
+          }
+        },
+        prefill: {
+          name: order?.customer_name || '',
+          contact: order?.customer_phone || ''
+        },
+        theme: { color: shop?.theme?.primary_color || '#f97316' },
+      };
+
+      const rzp = new (window as any).Razorpay(rzpOptions);
+      rzp.open();
     } catch (err: any) {
       console.error("Failed to initiate payment", err);
       toast.error(err.response?.data?.detail || "Failed to initiate online payment. Please try again.");
@@ -450,7 +518,7 @@ export function OrderStatusPage() {
           {/* Authentic Payment Stamp overlay */}
           {order.payment_status === 'paid' && (
             <div className="absolute right-6 top-10 receipt-stamp px-4 py-1.5 rounded text-sm font-bold tracking-widest text-center select-none z-20 pointer-events-none">
-              <div className="text-[7px] tracking-normal font-medium leading-none opacity-80 border-b border-emerald-500/20 pb-0.5 mb-0.5">CASHFREE SECURE</div>
+              <div className="text-[7px] tracking-normal font-medium leading-none opacity-80 border-b border-emerald-500/20 pb-0.5 mb-0.5">PAYMENT SECURE</div>
               <span>PAID</span>
             </div>
           )}
@@ -503,7 +571,9 @@ export function OrderStatusPage() {
             {order.delivery_address && (
               <div className="col-span-2">
                 <span className="text-[9px] text-slate-450 block uppercase tracking-wider">Delivery Address</span>
-                <span className="font-semibold text-slate-800 dark:text-slate-350 block leading-tight">{order.delivery_address}</span>
+                <span className="font-semibold text-slate-800 dark:text-slate-350 block leading-tight">
+                  {order.delivery_address.replace(/\s*\[loc=.*?\]/, '')}
+                </span>
               </div>
             )}
           </div>
@@ -549,19 +619,33 @@ export function OrderStatusPage() {
 
           {/* Thermal QR Code Stamp */}
           <div className="flex flex-col items-center justify-center pt-4 border-t border-dashed border-slate-300">
-            <div className="bg-white p-1.5 rounded-lg border border-slate-200/60 shadow-sm mb-1.5 pointer-events-none select-none">
+            <div 
+              onClick={() => {
+                const trackUrl = `${window.location.origin}/shop/${id}/order/${orderId}`;
+                navigator.clipboard.writeText(trackUrl);
+                toast.success("Live tracking link copied!");
+              }}
+              className="bg-white p-1.5 rounded-lg border border-slate-200/60 shadow-sm mb-1.5 cursor-pointer hover:scale-105 transition-transform active:scale-95 group relative"
+              title="Click to copy live order tracking link"
+            >
               <QRCodeCanvas 
                 id="receipt-qr-canvas"
-                value={window.location.href} 
+                value={`${window.location.origin}/shop/${id}/order/${orderId}`} 
                 size={70} 
                 level="M" 
                 fgColor="#1e293b" 
                 bgColor="#ffffff"
               />
             </div>
-            <span className="font-mono text-[7px] text-slate-400 uppercase tracking-widest select-none leading-none">
-              *SCAN TO TRACK LIVE STATUS*
-            </span>
+            <button
+              onClick={() => {
+                window.open(`${window.location.origin}/shop/${id}/order/${orderId}`, '_blank');
+              }}
+              className="font-mono text-[7px] text-slate-500 hover:text-primary uppercase tracking-widest leading-none flex items-center gap-1 cursor-pointer transition-colors"
+              title="Click to open tracking link in new tab"
+            >
+              *SCAN OR CLICK TO TRACK LIVE STATUS*
+            </button>
           </div>
 
           {/* Print button footer */}
@@ -579,25 +663,39 @@ export function OrderStatusPage() {
           )}
         </motion.div>
 
-        {/* Pay Online Action Trigger (Disabled for rejected / cancelled orders) */}
-        {order.payment_status === 'pending' && order.order_status !== 'rejected' && order.order_status !== 'cancelled' && (
-          <motion.button
-            whileHover={{ scale: 1.01 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={handlePayOnline}
-            disabled={isRedirecting}
-            className="w-full py-4 rounded-2xl text-white font-extrabold shadow-md hover:brightness-110 active:scale-[0.98] transition-all text-center flex items-center justify-center gap-2 bg-gradient-to-r from-orange-500 to-amber-500 cursor-pointer"
-            style={{ boxShadow: `0 4px 15px ${primaryColor}40` }}
-          >
-            {isRedirecting ? (
-              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
-            ) : (
-              <>
-                <CreditCard size={18} />
-                <span>Pay Online Instantly ({shop?.settings?.currency || '₹'}{Number(order.total_amount).toFixed(2)})</span>
-              </>
-            )}
-          </motion.button>
+        {/* Pay Online Action Trigger — Only when online payments are enabled */}
+        {order.payment_status === 'pending' && order.order_status !== 'rejected' && order.order_status !== 'cancelled' && shop?.settings?.online_payments_enabled !== false && (
+          order.order_type === 'delivery' ? (
+            <motion.button
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={handlePayOnline}
+              disabled={isRedirecting}
+              className="w-full py-4 rounded-2xl text-white font-extrabold shadow-md hover:brightness-110 active:scale-[0.98] transition-all text-center flex items-center justify-center gap-2 bg-gradient-to-r from-orange-500 to-amber-500 cursor-pointer"
+              style={{ boxShadow: `0 4px 15px ${primaryColor}40` }}
+            >
+              {isRedirecting ? (
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
+              ) : (
+                <>
+                  <CreditCard size={18} />
+                  <span>Pay Online Instantly ({shop?.settings?.currency || '₹'}{Number(order.total_amount).toFixed(2)})</span>
+                </>
+              )}
+            </motion.button>
+          ) : (
+            <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 text-amber-800 dark:text-amber-300 text-xs font-medium flex items-center gap-3">
+              <Clock size={18} className="text-amber-600 shrink-0" />
+              <div>
+                <p className="font-bold text-amber-900 dark:text-amber-200">Awaiting Merchant Payment Confirmation</p>
+                <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-0.5">
+                  {order.payment_method === 'upi'
+                    ? 'Payment via UPI initiated. The shopkeeper will verify and update your payment status.'
+                    : 'Pay physically at the counter/cash. The shopkeeper will update your payment status.'}
+                </p>
+              </div>
+            </div>
+          )
         )}
 
         {/* Cancelled / Rejected Order Notice */}

@@ -32,8 +32,33 @@ function MapLocationSelector({
   const [mapTarget, setMapTarget] = useState<[number, number]>(
     latitude && longitude ? [parseFloat(latitude), parseFloat(longitude)] : [20.5937, 78.9629] // India center
   );
+  const [isLocating, setIsLocating] = useState(false);
 
   const markerRef = useRef<L.Marker>(null);
+
+  const handleDetectLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error("Geolocation is not supported by your browser");
+      return;
+    }
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude.toFixed(6);
+        const lng = position.coords.longitude.toFixed(6);
+        onChange(lat, lng);
+        setMapTarget([parseFloat(lat), parseFloat(lng)]);
+        toast.success("Location auto-detected!");
+        setIsLocating(false);
+      },
+      (error) => {
+        console.error("Geolocation error", error);
+        toast.error("Failed to access location. Please pick your location manually on the map.");
+        setIsLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
 
   const eventHandlers = {
     dragend() {
@@ -59,26 +84,50 @@ function MapLocationSelector({
   function MapCenterUpdater({ center }: { center: [number, number] }) {
     const map = useMap();
     useEffect(() => {
-      map.flyTo(center, map.getZoom(), { duration: 0.5 });
+      map.flyTo(center, map.getZoom() < 12 ? 15 : map.getZoom(), { duration: 0.5 });
+      setTimeout(() => map.invalidateSize(), 200);
     }, [center, map]);
     return null;
   }
 
   return (
-    <div className="relative h-64 w-full rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 z-10">
-      <MapContainer center={mapTarget} zoom={latitude && longitude ? 15 : 5} style={{ height: '100%', width: '100%' }} scrollWheelZoom={true} attributionControl={false}>
-        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-        <MapClickEvent />
-        <MapCenterUpdater center={mapTarget} />
-        {(latitude && longitude) ? (
-          <Marker
-            draggable={true}
-            eventHandlers={eventHandlers}
-            position={[parseFloat(latitude), parseFloat(longitude)]}
-            ref={markerRef}
-          />
-        ) : null}
-      </MapContainer>
+    <div className="space-y-2">
+      <div className="flex justify-between items-center">
+        <button
+          type="button"
+          onClick={handleDetectLocation}
+          disabled={isLocating}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 hover:bg-primary/20 border border-primary/30 rounded-lg text-xs font-bold text-primary transition-all active:scale-95"
+        >
+          <Navigation size={13} className={isLocating ? "animate-spin" : ""} />
+          <span>{isLocating ? "Locating Store..." : "Detect Current Location"}</span>
+        </button>
+
+        {latitude && longitude && (
+          <span className="text-[11px] font-mono text-slate-500 font-semibold">
+            Lat: {latitude}, Lng: {longitude}
+          </span>
+        )}
+      </div>
+
+      <div className="relative h-64 w-full rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 z-10">
+        <MapContainer center={mapTarget} zoom={latitude && longitude ? 15 : 5} style={{ height: '100%', width: '100%' }} scrollWheelZoom={true} attributionControl={false}>
+          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+          <MapClickEvent />
+          <MapCenterUpdater center={mapTarget} />
+          {(latitude && longitude) ? (
+            <Marker
+              draggable={true}
+              eventHandlers={eventHandlers}
+              position={[parseFloat(latitude), parseFloat(longitude)]}
+              ref={markerRef}
+            />
+          ) : null}
+        </MapContainer>
+        <div className="absolute bottom-2 left-2 z-[1000] bg-white/90 dark:bg-slate-900/90 backdrop-blur px-2.5 py-1 rounded shadow text-[10px] font-bold text-slate-650 dark:text-slate-300 pointer-events-none">
+          Click map or drag pin to adjust store location
+        </div>
+      </div>
     </div>
   );
 }
@@ -184,11 +233,7 @@ export function ShopSetupPage() {
       setFormData(prev => ({ ...prev, [`${type}_url`]: newUrl }));
       
       if (shop?.id) {
-        const payload: any = { ...formData, [`${type}_url`]: newUrl };
-        payload.latitude = payload.latitude ? parseFloat(payload.latitude) : null;
-        payload.longitude = payload.longitude ? parseFloat(payload.longitude) : null;
-        
-        const updateRes = await api.put('/shops/me', payload);
+        const updateRes = await api.put('/shops/me', { [`${type}_url`]: newUrl });
         setShop(updateRes.data);
       }
       
@@ -428,22 +473,16 @@ export function ShopSetupPage() {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Opening Time</label>
-                    <TimePicker
-                      value={formData.opening_time}
-                      onChange={(t) => setFormData(prev => ({ ...prev, opening_time: t }))}
-                      label="Opening Time"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Closing Time</label>
-                    <TimePicker
-                      value={formData.closing_time}
-                      onChange={(t) => setFormData(prev => ({ ...prev, closing_time: t }))}
-                      label="Closing Time"
-                    />
-                  </div>
+                  <TimePicker
+                    value={formData.opening_time}
+                    onChange={(t) => setFormData(prev => ({ ...prev, opening_time: t }))}
+                    label="Opening Time"
+                  />
+                  <TimePicker
+                    value={formData.closing_time}
+                    onChange={(t) => setFormData(prev => ({ ...prev, closing_time: t }))}
+                    label="Closing Time"
+                  />
                 </div>
 
                 <div className="space-y-1.5">

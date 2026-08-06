@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router';
 import { useAuthStore } from '@/store/authStore';
 import { ThemeProvider } from '@/components/ThemeProvider';
@@ -9,38 +9,39 @@ import { DashboardLayout } from '@/layouts/DashboardLayout';
 import { ProtectedRoute } from '@/routes/ProtectedRoute';
 
 // Auth Pages
-import { LoginPage } from '@/pages/auth/LoginPage';
-import { OTPVerifyPage } from '@/pages/auth/OTPVerifyPage';
+const LoginPage = lazy(() => import('@/pages/auth/LoginPage').then(m => ({ default: m.LoginPage })));
+const OTPVerifyPage = lazy(() => import('@/pages/auth/OTPVerifyPage').then(m => ({ default: m.OTPVerifyPage })));
 
 // Dashboard Pages
-import { DashboardPage } from '@/pages/dashboard/DashboardPage';
-import { ShopSetupPage } from '@/pages/shop/ShopSetupPage';
-import { CategoriesPage } from '@/pages/menu/CategoriesPage';
-import { MenuItemsPage } from '@/pages/menu/MenuItemsPage';
-import { BulkUploadPage } from '@/pages/menu/BulkUploadPage';
-import { JsonBulkUploadPage } from '@/pages/menu/JsonBulkUploadPage';
-import { CustomizeThemePage } from '@/pages/theme/CustomizeThemePage';
-import { QRCodePage } from '@/pages/qr/QRCodePage';
-import { AnalyticsPage } from '@/pages/analytics/AnalyticsPage';
-import { DiscountsPage } from '@/pages/discounts/DiscountsPage';
-import { ContestsPage } from '@/pages/contests/ContestsPage';
-import { InternalBulkPage } from '@/pages/admin/InternalBulkPage';
-import { MembersPage } from '@/pages/members/MembersPage';
-import { SettingsPage } from '@/pages/settings/SettingsPage';
-import { SubscriptionMarketplacePage } from '@/pages/subscription/SubscriptionMarketplacePage';
-import { NotificationsPage } from '@/pages/notifications/NotificationsPage';
-import { OrdersPage } from '@/pages/orders/OrdersPage';
+const DashboardPage = lazy(() => import('@/pages/dashboard/DashboardPage').then(m => ({ default: m.DashboardPage })));
+const ShopSetupPage = lazy(() => import('@/pages/shop/ShopSetupPage').then(m => ({ default: m.ShopSetupPage })));
+const CategoriesPage = lazy(() => import('@/pages/menu/CategoriesPage').then(m => ({ default: m.CategoriesPage })));
+const MenuItemsPage = lazy(() => import('@/pages/menu/MenuItemsPage').then(m => ({ default: m.MenuItemsPage })));
+const BulkUploadPage = lazy(() => import('@/pages/menu/BulkUploadPage').then(m => ({ default: m.BulkUploadPage })));
+const JsonBulkUploadPage = lazy(() => import('@/pages/menu/JsonBulkUploadPage').then(m => ({ default: m.JsonBulkUploadPage })));
+const CustomizeThemePage = lazy(() => import('@/pages/theme/CustomizeThemePage').then(m => ({ default: m.CustomizeThemePage })));
+const QRCodePage = lazy(() => import('@/pages/qr/QRCodePage').then(m => ({ default: m.QRCodePage })));
+const AnalyticsPage = lazy(() => import('@/pages/analytics/AnalyticsPage').then(m => ({ default: m.AnalyticsPage })));
+const DiscountsPage = lazy(() => import('@/pages/discounts/DiscountsPage').then(m => ({ default: m.DiscountsPage })));
+const ContestsPage = lazy(() => import('@/pages/contests/ContestsPage').then(m => ({ default: m.ContestsPage })));
+const InternalBulkPage = lazy(() => import('@/pages/admin/InternalBulkPage').then(m => ({ default: m.InternalBulkPage })));
+const MembersPage = lazy(() => import('@/pages/members/MembersPage').then(m => ({ default: m.MembersPage })));
+const SettingsPage = lazy(() => import('@/pages/settings/SettingsPage').then(m => ({ default: m.SettingsPage })));
+const SettlementsPage = lazy(() => import('@/pages/settlements/SettlementsPage').then(m => ({ default: m.SettlementsPage })));
+const SubscriptionMarketplacePage = lazy(() => import('@/pages/subscription/SubscriptionMarketplacePage').then(m => ({ default: m.SubscriptionMarketplacePage })));
+const NotificationsPage = lazy(() => import('@/pages/notifications/NotificationsPage').then(m => ({ default: m.NotificationsPage })));
+const OrdersPage = lazy(() => import('@/pages/orders/OrdersPage').then(m => ({ default: m.OrdersPage })));
 
 // Public Pages
-import { PublicMenuPage } from '@/pages/public/PublicMenuPage';
-import { PublicItemPage } from '@/pages/public/PublicItemPage';
-import { PublicCartPage } from '@/pages/public/PublicCartPage';
-import { OrderStatusPage } from '@/pages/public/OrderStatusPage';
-import { PublicOrdersPage } from '@/pages/public/PublicOrdersPage';
-import { TermsPage } from '@/pages/public/TermsPage';
-import { StoreDiscoveryPage } from '@/pages/public/StoreDiscoveryPage';
-import { PublicContestPage } from './pages/public/PublicContestPage';
-import { CustomerProfilePage } from './pages/public/CustomerProfilePage';
+const PublicMenuPage = lazy(() => import('@/pages/public/PublicMenuPage').then(m => ({ default: m.PublicMenuPage })));
+const PublicItemPage = lazy(() => import('@/pages/public/PublicItemPage').then(m => ({ default: m.PublicItemPage })));
+const PublicCartPage = lazy(() => import('@/pages/public/PublicCartPage').then(m => ({ default: m.PublicCartPage })));
+const OrderStatusPage = lazy(() => import('@/pages/public/OrderStatusPage').then(m => ({ default: m.OrderStatusPage })));
+const PublicOrdersPage = lazy(() => import('@/pages/public/PublicOrdersPage').then(m => ({ default: m.PublicOrdersPage })));
+const TermsPage = lazy(() => import('@/pages/public/TermsPage').then(m => ({ default: m.TermsPage })));
+const StoreDiscoveryPage = lazy(() => import('@/pages/public/StoreDiscoveryPage').then(m => ({ default: m.StoreDiscoveryPage })));
+const PublicContestPage = lazy(() => import('./pages/public/PublicContestPage').then(m => ({ default: m.PublicContestPage })));
+const CustomerProfilePage = lazy(() => import('./pages/public/CustomerProfilePage').then(m => ({ default: m.CustomerProfilePage })));
 
 const AdminPlaceholder = () => (
   <div className="flex items-center justify-center min-h-[60vh]">
@@ -67,7 +68,8 @@ function App() {
   }
 
   return (
-    <Routes>
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div></div>}>
+      <Routes>
       {/* Auth Routes */}
       <Route element={<AuthLayout />}>
         <Route path="/login" element={<LoginPage />} />
@@ -91,6 +93,7 @@ function App() {
           <Route path="/contests" element={<ContestsPage />} />
           <Route path="/members" element={<MembersPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/settlements" element={<SettlementsPage />} />
           <Route path="/subscription" element={<SubscriptionMarketplacePage />} />
           <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/internal-bulk" element={<InternalBulkPage />} />
@@ -104,6 +107,7 @@ function App() {
       <Route path="/discover/scan" element={<StoreDiscoveryPage />} />
       <Route path="/shop/:id" element={<PublicMenuPage />} />
       <Route path="/shop/:id/item/:itemId" element={<PublicItemPage />} />
+      <Route path="/shop/:id/cart" element={<PublicCartPage />} />
       <Route path="/shop/:id/contest" element={<PublicContestPage />} />
       <Route path="/shop/:id/contest/:contestId" element={<PublicContestPage />} />
 
@@ -117,6 +121,7 @@ function App() {
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
+      </Suspense>
   )
 }
 

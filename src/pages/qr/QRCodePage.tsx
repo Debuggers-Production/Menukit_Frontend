@@ -63,14 +63,21 @@ export function QRCodePage() {
     }
   }, [shop?.logo_url, includeLogo]);
 
+  const getQrUrlWithType = (url?: string) => {
+    if (!url) return '';
+    if (url.includes('type=qr')) return url;
+    return url.includes('?') ? `${url}&type=qr` : `${url}?type=qr`;
+  };
+
   useEffect(() => {
-    if (!qrCode?.qr_url) return;
+    const qrTargetUrl = getQrUrlWithType(qrCode?.qr_url);
+    if (!qrTargetUrl) return;
 
     if (!qrCodeInstance.current) {
       qrCodeInstance.current = new QRCodeStyling({
         width: 240,
         height: 240,
-        data: qrCode.qr_url,
+        data: qrTargetUrl,
         dotsOptions: {
           type: dotType as any,
           color: qrColor,
@@ -99,7 +106,7 @@ export function QRCodePage() {
       }
     } else {
       qrCodeInstance.current.update({
-        data: qrCode.qr_url,
+        data: qrTargetUrl,
         dotsOptions: {
           type: dotType as any,
           color: qrColor,
@@ -191,7 +198,7 @@ export function QRCodePage() {
     }
   };
 
-  const publicLink = qrCode?.qr_url || '';
+  const publicLink = getQrUrlWithType(qrCode?.qr_url);
 
   const handleCopyLink = () => {
     if (!publicLink) return;
@@ -677,8 +684,8 @@ export function QRCodePage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
-          <Card className="md:col-span-2 flex flex-col items-center p-8 text-center bg-white border border-slate-100 shadow-lg rounded-2xl relative overflow-hidden">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-6 items-start">
+          <Card className="md:col-span-2 md:sticky md:top-6 self-start flex flex-col items-center p-8 text-center bg-white border border-slate-100 shadow-lg rounded-2xl relative overflow-hidden">
             {/* Elegant Header Accent */}
             <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-orange-500 to-amber-500"></div>
             
