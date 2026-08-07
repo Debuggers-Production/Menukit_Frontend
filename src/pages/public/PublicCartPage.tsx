@@ -15,6 +15,8 @@ import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
+import { triggerHaptic, HAPTIC_PATTERNS } from '@/utils/haptic';
+
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
@@ -82,6 +84,7 @@ export function PublicCartPage() {
   const [poppingId, setPoppingId] = useState<string | null>(null);
   
   const handleBalloonClick = (disc: Discount) => {
+    triggerHaptic(HAPTIC_PATTERNS.balloonClick);
     if (manualDiscountId === disc.id) {
       setSelectedBalloonDiscount(disc);
       return;
@@ -354,6 +357,7 @@ export function PublicCartPage() {
       // ── UPI Deep Link (Dine-in) ──
       if (apiPaymentMethod === 'upi' && shop?.settings?.upi_id) {
         useCartStore.getState().clearCart();
+        triggerHaptic(HAPTIC_PATTERNS.successUnlock);
         confetti({ particleCount: 100, spread: 65, origin: { y: 0.6 }, colors: [primaryColor, '#22c55e', '#3b82f6'], zIndex: 9999 });
         const upiUrl = `upi://pay?pa=${encodeURIComponent(shop.settings.upi_id)}&pn=${encodeURIComponent(shop.name || 'Restaurant')}&am=${finalTotal.toFixed(2)}&cu=INR&tn=${encodeURIComponent(`Order #${order.id.slice(0,8)}`)}` ;
         toast.success("Opening UPI app to complete payment...");
@@ -384,6 +388,7 @@ export function PublicCartPage() {
             razorpay_signature: 'mock_signature'
           });
           useCartStore.getState().clearCart();
+          triggerHaptic(HAPTIC_PATTERNS.successUnlock);
           confetti({ particleCount: 120, spread: 70, origin: { y: 0.6 }, colors: [primaryColor, '#eab308', '#22c55e'], zIndex: 9999 });
           toast.success("Payment successful! Order confirmed.");
           setTimeout(() => navigate(`/shop/${id}/order/${order.id}`), 1200);
@@ -418,6 +423,7 @@ export function PublicCartPage() {
                 razorpay_signature: response.razorpay_signature,
               });
               useCartStore.getState().clearCart();
+              triggerHaptic(HAPTIC_PATTERNS.successUnlock);
               confetti({ particleCount: 120, spread: 70, origin: { y: 0.6 }, colors: [primaryColor, '#eab308', '#22c55e'], zIndex: 9999 });
               toast.success("Payment successful! Order confirmed.");
               setTimeout(() => navigate(`/shop/${id}/order/${order.id}`), 1200);
@@ -443,6 +449,7 @@ export function PublicCartPage() {
       }
 
       // ── Cash on Delivery / Counter ──
+      triggerHaptic(HAPTIC_PATTERNS.successUnlock);
       confetti({ particleCount: 120, spread: 70, origin: { y: 0.6 }, colors: [primaryColor, '#eab308', '#22c55e', '#3b82f6', '#ec4899'], zIndex: 9999 });
       useCartStore.getState().clearCart();
       toast.success("Order placed successfully!");
@@ -1240,12 +1247,7 @@ export function PublicCartPage() {
 
                     <div className="flex justify-between text-xs font-semibold text-slate-700">
                       <span className="underline underline-offset-2 decoration-slate-300 decoration-dashed">Payment gateway fee</span>
-                      <span className="text-slate-900 font-bold">{currencySymbol}{pgFee.toFixed(2)}</span>
-                    </div>
-
-                    <div className="flex justify-between text-xs font-semibold text-slate-700">
-                      <span className="underline underline-offset-2 decoration-slate-300 decoration-dashed">GST on PG fee</span>
-                      <span className="text-slate-900 font-bold">{currencySymbol}{gstOnFee.toFixed(2)}</span>
+                      <span className="text-slate-900 font-bold">{currencySymbol}{(pgFee + gstOnFee).toFixed(2)}</span>
                     </div>
                   </>
                 )}
@@ -1447,7 +1449,7 @@ export function PublicCartPage() {
                 </label>
                 <input
                   type="tel"
-                  placeholder="e.g. 9876543210"
+                  placeholder="Enter mobile number"
                   value={customerPhone}
                   disabled={!!token}
                   onChange={(e) => setCustomerPhone(e.target.value)}
@@ -1559,12 +1561,7 @@ export function PublicCartPage() {
 
                       <div className="flex justify-between font-semibold text-slate-700 dark:text-slate-300">
                         <span className="underline underline-offset-2 decoration-slate-300 decoration-dashed">Payment gateway fee</span>
-                        <span className="text-slate-900 dark:text-white font-bold">{currencySymbol}{pgFee.toFixed(2)}</span>
-                      </div>
-
-                      <div className="flex justify-between font-semibold text-slate-700 dark:text-slate-300">
-                        <span className="underline underline-offset-2 decoration-slate-300 decoration-dashed">GST on PG fee</span>
-                        <span className="text-slate-900 dark:text-white font-bold">{currencySymbol}{gstOnFee.toFixed(2)}</span>
+                        <span className="text-slate-900 dark:text-white font-bold">{currencySymbol}{(pgFee + gstOnFee).toFixed(2)}</span>
                       </div>
                     </>
                   )}

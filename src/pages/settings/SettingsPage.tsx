@@ -554,7 +554,7 @@ export function SettingsPage() {
                     </p>
                     <input
                       type="text"
-                      placeholder="e.g. shop@okaxis or 9876543210@paytm"
+                      placeholder="e.g. shop@okaxis or merchant@paytm"
                       value={settingsData.upi_id || ''}
                       onChange={(e) => setSettingsData(prev => ({ ...prev, upi_id: e.target.value }))}
                       className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-green-500 font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400"

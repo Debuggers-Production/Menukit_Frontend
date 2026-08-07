@@ -3286,6 +3286,25 @@ export const ContestHub: React.FC<ContestHubProps> = ({
         .excalidraw div[data-testid="embeddable"] {
           display: none !important;
         }
+
+        /* Fix Excalidraw UI scaling issues caused by Tailwind CSS */
+        .excalidraw svg {
+          max-width: 1.5rem !important;
+          max-height: 1.5rem !important;
+        }
+
+        /* Restore Excalidraw accessibility hidden elements that Tailwind resets */
+        .excalidraw .visually-hidden {
+          position: absolute !important;
+          height: 1px !important;
+          width: 1px !important;
+          overflow: hidden !important;
+          clip: rect(1px, 1px, 1px, 1px) !important;
+          white-space: nowrap !important;
+          border: 0 !important;
+          padding: 0 !important;
+          margin: -1px !important;
+        }
       `}</style>
     </div>
   );

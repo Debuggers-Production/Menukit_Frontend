@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useHeaderStore } from '@/store/useHeaderStore';
-import { Check, ShoppingCart, Sparkles, Zap, PackageOpen, Award, Layers, ShieldCheck, ArrowRight, HelpCircle, CheckCircle2, Clock, ChevronDown, ChevronUp } from 'lucide-react';
+import { Check, ShoppingCart, Sparkles, Zap, PackageOpen, Award, Layers, ShieldCheck, ArrowRight, HelpCircle, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, AlertTriangle, Gift, FileText, Printer } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import toast from 'react-hot-toast';
 import confetti from 'canvas-confetti';
@@ -85,6 +85,18 @@ export function SubscriptionMarketplacePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeSubscription, setActiveSubscription] = useState<any>(null);
   const [showSubscribedDetails, setShowSubscribedDetails] = useState(false);
+  const [historyList, setHistoryList] = useState<any[]>([]);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+
+  const fetchBillingHistory = async () => {
+    try {
+      const res = await api.get('/subscription/history');
+      setHistoryList(res.data.history || []);
+      setShowHistoryModal(true);
+    } catch (err) {
+      toast.error('Failed to load invoice history');
+    }
+  };
 
   const subscribedAddons = useMemo(() => {
     if (!activeSubscription) return [];
@@ -311,21 +323,21 @@ export function SubscriptionMarketplacePage() {
               : activeSubscription.is_grace_period
               ? "bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/15 border-amber-500/30"
               : activeSubscription.is_trial
-              ? "bg-gradient-to-r from-indigo-500/15 via-blue-500/10 to-purple-500/15 border-indigo-500/30"
+              ? "bg-gradient-to-r from-indigo-500/15 via-blue-500/10 to-purple-500/15 border-indigo-500/40 shadow-indigo-500/5"
               : "bg-gradient-to-r from-emerald-500/15 via-emerald-600/10 to-teal-500/15 border-emerald-500/30"
           )}>
             <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
               <div className="flex items-center gap-3.5">
                 <div className={cn(
                   "w-12 h-12 rounded-2xl text-white flex items-center justify-center shrink-0 shadow-md font-black text-lg",
-                  activeSubscription.is_expired ? "bg-red-500" : activeSubscription.is_grace_period ? "bg-amber-500" : activeSubscription.is_trial ? "bg-indigo-600" : "bg-emerald-500"
+                  activeSubscription.is_expired ? "bg-red-500" : activeSubscription.is_grace_period ? "bg-amber-500" : activeSubscription.is_trial ? "bg-gradient-to-br from-indigo-600 to-purple-600" : "bg-emerald-500"
                 )}>
-                  {activeSubscription.is_expired ? '🚨' : activeSubscription.is_grace_period ? '⚠️' : activeSubscription.is_trial ? '✨' : '🟢'}
+                  {activeSubscription.is_expired ? <AlertCircle className="w-6 h-6" /> : activeSubscription.is_grace_period ? <AlertTriangle className="w-6 h-6" /> : activeSubscription.is_trial ? <Gift className="w-6 h-6" /> : <ShieldCheck className="w-6 h-6" />}
                 </div>
                 <div className="space-y-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="font-black text-base sm:text-lg text-slate-900 dark:text-white tracking-tight">
-                      {activeSubscription.is_trial ? '1-Month Free Trial' : activeSubscription.is_all_access ? 'All-Access Pack' : 'Custom Modular Plan'}
+                      {activeSubscription.is_trial ? 'Free Trial Active' : activeSubscription.is_all_access ? 'All-Access Pack' : 'Custom Modular Plan'}
                     </h3>
                     <span className={cn(
                       "text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider shadow-xs",
@@ -339,6 +351,8 @@ export function SubscriptionMarketplacePage() {
                       ? 'Subscription has ended. Renew now to unlock features.'
                       : activeSubscription.is_grace_period
                       ? `Grace Period Active: ${activeSubscription.grace_days_left} day${activeSubscription.grace_days_left !== 1 ? 's' : ''} left`
+                      : activeSubscription.is_trial
+                      ? `Free Trial Active: ${activeSubscription.days_left ?? 30} Day${(activeSubscription.days_left ?? 30) !== 1 ? 's' : ''} Remaining (${activeSubscription.current_period_end ? `Expires ${new Date(activeSubscription.current_period_end).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''})`
                       : `Expires on ${activeSubscription.current_period_end ? new Date(activeSubscription.current_period_end).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Active'}`
                     }
                   </p>
@@ -346,14 +360,28 @@ export function SubscriptionMarketplacePage() {
               </div>
 
               <div className="flex flex-col items-start md:items-end gap-1 shrink-0 w-full md:w-auto pt-2 md:pt-0 border-t md:border-t-0 border-slate-200/50 dark:border-slate-800">
-                {!activeSubscription.is_expired && (
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800 shadow-xs">
-                    <Clock size={14} className="text-primary" />
-                    <span className="text-xs font-black text-slate-800 dark:text-slate-200">
-                      {activeSubscription.days_left !== undefined ? `${activeSubscription.days_left} Days Remaining` : 'Active'}
-                    </span>
-                  </div>
-                )}
+                <div className="flex items-center gap-2">
+                  {!activeSubscription.is_expired && (
+                    <div className={cn(
+                      "flex items-center gap-1.5 px-3 py-1.5 rounded-xl border shadow-xs font-black text-xs",
+                      activeSubscription.is_trial 
+                        ? "bg-indigo-600 text-white border-indigo-500" 
+                        : "bg-white/80 dark:bg-slate-900/80 border-slate-200/80 dark:border-slate-800 text-slate-800 dark:text-slate-200"
+                    )}>
+                      <Clock size={14} className={activeSubscription.is_trial ? "text-indigo-200" : "text-primary"} />
+                      <span>
+                        {activeSubscription.days_left !== undefined ? `${activeSubscription.days_left} Days Remaining` : 'Active'}
+                      </span>
+                    </div>
+                  )}
+                  <button 
+                    onClick={fetchBillingHistory}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all text-xs font-bold shadow-xs cursor-pointer"
+                  >
+                    <FileText size={14} className="text-orange-500" />
+                    <span>Invoices & Billing</span>
+                  </button>
+                </div>
                 <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
                   {activeSubscription.is_all_access ? '✨ All 8 Modules Unlocked' : `${activeSubscription.active_modules?.length || 0} Modules Active`}
                 </span>
@@ -456,6 +484,12 @@ export function SubscriptionMarketplacePage() {
           <p className="text-slate-500 dark:text-slate-400 max-w-md mx-auto text-sm sm:text-base px-2">
             Start with our powerful core system for free. Scale your dynamic business with precision modular updates.
           </p>
+          {activeSubscription?.is_trial && (
+            <div className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 text-xs font-black shadow-xs">
+              <Sparkles size={14} className="text-indigo-500 animate-pulse" />
+              Free Trial Active: {activeSubscription.days_left ?? 30} Days Remaining
+            </div>
+          )}
         </div>
 
         {/* Monthly vs Yearly Billing Cycle Switch */}
@@ -559,6 +593,18 @@ export function SubscriptionMarketplacePage() {
                 <span className="text-3xl font-black text-emerald-600 dark:text-emerald-400">₹0</span>
                 <span className="text-xs text-slate-500 font-medium">/ forever</span>
               </div>
+
+              {activeSubscription?.is_trial && (
+                <div className="mb-3 p-2.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/80 dark:border-indigo-900/60 text-indigo-800 dark:text-indigo-200 text-xs font-extrabold flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Sparkles size={13} className="text-indigo-600 dark:text-indigo-400 shrink-0" />
+                    Free Trial Active
+                  </span>
+                  <span className="bg-indigo-600 text-white text-[10px] font-black px-2 py-0.5 rounded-md shadow-xs">
+                    {activeSubscription.days_left ?? 30}d Left
+                  </span>
+                </div>
+              )}
               <ul className="space-y-2 border-t border-emerald-500/20 pt-3">
                 {['Hotel Profile System', 'Dynamic QR Generation', 'Menu Core Dashboard', 'Basic Analytics', 'Unlimited Menus & Categories', 'Unlimited Discounts'].map((item, i) => (
                   <li key={i} className="flex items-center text-slate-700 dark:text-slate-300 text-xs font-medium">
@@ -842,12 +888,8 @@ export function SubscriptionMarketplacePage() {
                       <span className="font-bold">₹{baseTotal.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between text-slate-500">
-                      <span>Gateway Fee:</span>
-                      <span className="font-semibold">+₹{pgFee.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between text-slate-500">
-                      <span>GST on PG Fee:</span>
-                      <span className="font-semibold">+₹{gstFee.toFixed(2)}</span>
+                      <span>Gateway Fee (3% + 18% GST):</span>
+                      <span className="font-semibold">+₹{(pgFee + gstFee).toFixed(2)}</span>
                     </div>
                   </div>
 
@@ -878,6 +920,56 @@ export function SubscriptionMarketplacePage() {
 
               <div className="text-center pt-2">
                 <span className="text-[9px] text-slate-400 font-medium leading-none">🔒 Secure Payment Transaction</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Billing & Invoices History Modal */}
+        {showHistoryModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
+            <div className="bg-white dark:bg-[#111827] rounded-3xl p-6 max-w-2xl w-full border border-slate-200 dark:border-slate-800 shadow-2xl space-y-5 relative">
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 pb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2.5 rounded-xl bg-orange-500/10 text-orange-500">
+                    <FileText size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black text-slate-900 dark:text-white">Billing & Invoices</h3>
+                    <p className="text-xs text-slate-400">View and print past subscription payment invoices</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowHistoryModal(false)} className="p-2 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 text-sm font-bold">✕</button>
+              </div>
+
+              <div className="max-h-[60vh] overflow-y-auto space-y-3 pr-1">
+                {historyList.length === 0 ? (
+                  <div className="text-center py-10 text-slate-400 text-xs font-medium">No past invoice transactions found.</div>
+                ) : (
+                  historyList.map((tx: any) => (
+                    <div key={tx.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800/60 gap-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-xs text-slate-900 dark:text-white">{tx.invoice_number}</span>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 uppercase">{tx.billing_cycle}</span>
+                        </div>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          {tx.is_all_access ? 'All-Access Pack' : `${tx.purchased_modules?.length || 0} Modules`} • Paid on {new Date(tx.paid_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+                        <span className="font-black text-sm text-slate-900 dark:text-white">₹{tx.amount?.toFixed(2)}</span>
+                        <button
+                          onClick={() => window.open(`${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api/v1'}/subscription/invoices/${tx.id}`, '_blank')}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+                        >
+                          <Printer size={13} />
+                          <span>View / Print Invoice</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>

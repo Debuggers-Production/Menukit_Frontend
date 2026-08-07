@@ -19,6 +19,7 @@ export function MembersPage() {
   const [shopId, setShopId] = useState<string | null>(shop?.id || null);
   const [subStatus, setSubStatus] = useState<any>(null);
   const [isLocked, setIsLocked] = useState(false);
+  const [isDetailsLocked, setIsDetailsLocked] = useState(false);
 
   useEffect(() => {
     api.get('/subscription/current').then(res => setSubStatus(res.data)).catch(console.error);
@@ -59,14 +60,22 @@ export function MembersPage() {
     setIsLoading(true);
     try {
       const data = await membershipService.getAnalytics(id);
-      const membersData = await membershipService.getMembers(id);
-      const autoData = await membershipService.getAutoRegisteredMembers(id);
-      const repeatedData = await membershipService.getRepeatedCustomers(id, minVisits);
       setAnalytics(data);
-      setMembers(membersData);
-      setAutoMembers(autoData);
-      setRepeatedMembers(repeatedData);
       setIsLocked(false);
+
+      try {
+        const membersData = await membershipService.getMembers(id);
+        const autoData = await membershipService.getAutoRegisteredMembers(id);
+        const repeatedData = await membershipService.getRepeatedCustomers(id, minVisits);
+        setMembers(membersData);
+        setAutoMembers(autoData);
+        setRepeatedMembers(repeatedData);
+        setIsDetailsLocked(false);
+      } catch (detErr: any) {
+        if (detErr.response?.status === 403) {
+          setIsDetailsLocked(true);
+        }
+      }
     } catch (err: any) {
       if (err.response?.status === 403) {
         setIsLocked(true);
@@ -379,83 +388,103 @@ export function MembersPage() {
         </div>
       </div>
 
-      {/* Members List */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-24">
-        <div className="overflow-x-auto w-full">
-          {isLoading ? (
-            <div className="py-8 text-center text-slate-500">Loading members...</div>
-          ) : filteredMembers.length === 0 ? (
-            <div className="py-8 text-center text-slate-500 border-b border-slate-100">
-              {searchQuery ? 'No members match your search.' : (activeTab === 'existing' ? 'No manually verified members yet.' : activeTab === 'repeated' ? 'No repeated customers found.' : 'No auto-registered customers yet.')}
-            </div>
-          ) : (
-            <table className="w-full text-left border-collapse">
-              <thead className="sticky top-0 bg-white z-10 shadow-sm">
-                <tr className="border-b border-slate-200">
-                  <th className="py-3 px-4 font-semibold text-sm text-slate-600 bg-slate-50/80 backdrop-blur">Name</th>
-                  <th className="py-3 px-4 font-semibold text-sm text-slate-600 bg-slate-50/80 backdrop-blur">Mobile Number</th>
-                  <th className="py-3 px-4 font-semibold text-sm text-slate-600 bg-slate-50/80 backdrop-blur">Joined On</th>
-                  {activeTab === 'repeated' && (
-                    <th className="py-3 px-4 font-semibold text-sm text-slate-600 bg-slate-50/80 backdrop-blur text-center">Visits</th>
-                  )}
-                  <th className="py-3 px-4 font-semibold text-sm text-slate-600 text-right bg-slate-50/80 backdrop-blur">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredMembers.map(member => (
-                    <tr key={member.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
-                      <td className="py-3 px-4 text-sm font-medium text-slate-800">
-                        {member.name || 'N/A'}
-                      </td>
-                      <td className="py-3 px-4 text-sm text-slate-600">
-                        {member.mobile_number}
-                      </td>
-                      <td className="py-3 px-4 text-sm text-slate-500">
-                        {new Date(member.joined_at).toLocaleDateString()}
-                      </td>
-                      {activeTab === 'repeated' && (
-                        <td className="py-3 px-4 text-sm font-semibold text-indigo-600 text-center">
-                          <span className="bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-100">
-                            {(member as RepeatedCustomer).visit_count}
-                          </span>
-                        </td>
-                      )}
-                      <td className="py-3 px-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          {activeTab === 'new' && (
-                            <button
-                              onClick={() => handleConvertToMember(member.id)}
-                              disabled={isConverting}
-                              className="px-3 py-1.5 text-xs font-semibold bg-amber-100 text-amber-700 hover:bg-amber-200 rounded-lg transition-colors whitespace-nowrap"
-                            >
-                              Convert to Member
-                            </button>
-                          )}
-                          {activeTab === 'existing' && (
-                            <button
-                              onClick={() => openEditModal(member)}
-                              className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                              title="Edit"
-                            >
-                              <Edit2 size={16} />
-                            </button>
-                          )}
-                          <button
-                            onClick={() => setMemberToDelete(member.id)}
-                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            title="Remove"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-            </table>
-          )}
+      {/* Members List or Locked Card */}
+      {isDetailsLocked ? (
+        <div className="bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/15 border border-amber-500/30 rounded-2xl p-8 text-center space-y-4 shadow-xs mb-24">
+          <div className="w-14 h-14 bg-amber-500 text-white rounded-2xl flex items-center justify-center mx-auto shadow-md">
+            <Lock size={28} />
+          </div>
+          <div className="max-w-md mx-auto space-y-2">
+            <h3 className="text-lg font-black text-slate-900 dark:text-white">Customer Details Locked</h3>
+            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed font-medium">
+              You currently have access to <strong>New Member Count</strong> metrics above! Upgrade to <strong>New Member + Details</strong> to view customer names, phone numbers, search members, and manage your member list.
+            </p>
+          </div>
+          <Button
+            onClick={() => navigate('/subscription/marketplace')}
+            className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold px-6 py-2.5 rounded-xl shadow-md transition-all text-xs uppercase tracking-wider cursor-pointer"
+          >
+            Upgrade to View Details →
+          </Button>
         </div>
-      </div>
+      ) : (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-24">
+          <div className="overflow-x-auto w-full">
+            {isLoading ? (
+              <div className="py-8 text-center text-slate-500">Loading members...</div>
+            ) : filteredMembers.length === 0 ? (
+              <div className="py-8 text-center text-slate-500 border-b border-slate-100">
+                {searchQuery ? 'No members match your search.' : (activeTab === 'existing' ? 'No manually verified members yet.' : activeTab === 'repeated' ? 'No repeated customers found.' : 'No auto-registered customers yet.')}
+              </div>
+            ) : (
+              <table className="w-full text-left border-collapse">
+                <thead className="sticky top-0 bg-white z-10 shadow-sm">
+                  <tr className="border-b border-slate-200">
+                    <th className="py-3 px-4 font-semibold text-sm text-slate-600 bg-slate-50/80 backdrop-blur">Name</th>
+                    <th className="py-3 px-4 font-semibold text-sm text-slate-600 bg-slate-50/80 backdrop-blur">Mobile Number</th>
+                    <th className="py-3 px-4 font-semibold text-sm text-slate-600 bg-slate-50/80 backdrop-blur">Joined On</th>
+                    {activeTab === 'repeated' && (
+                      <th className="py-3 px-4 font-semibold text-sm text-slate-600 bg-slate-50/80 backdrop-blur text-center">Visits</th>
+                    )}
+                    <th className="py-3 px-4 font-semibold text-sm text-slate-600 text-right bg-slate-50/80 backdrop-blur">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredMembers.map(member => (
+                      <tr key={member.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
+                        <td className="py-3 px-4 text-sm font-medium text-slate-800">
+                          {member.name || 'N/A'}
+                        </td>
+                        <td className="py-3 px-4 text-sm text-slate-600">
+                          {member.mobile_number}
+                        </td>
+                        <td className="py-3 px-4 text-sm text-slate-500">
+                          {new Date(member.joined_at).toLocaleDateString()}
+                        </td>
+                        {activeTab === 'repeated' && (
+                          <td className="py-3 px-4 text-sm font-semibold text-indigo-600 text-center">
+                            <span className="bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-100">
+                              {(member as RepeatedCustomer).visit_count}
+                            </span>
+                          </td>
+                        )}
+                        <td className="py-3 px-4 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            {activeTab === 'new' && (
+                              <button
+                                onClick={() => handleConvertToMember(member.id)}
+                                disabled={isConverting}
+                                className="px-3 py-1.5 text-xs font-semibold bg-amber-100 text-amber-700 hover:bg-amber-200 rounded-lg transition-colors whitespace-nowrap"
+                              >
+                                Convert to Member
+                              </button>
+                            )}
+                            {activeTab === 'existing' && (
+                              <button
+                                onClick={() => openEditModal(member)}
+                                className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                title="Edit"
+                              >
+                                <Edit2 size={16} />
+                              </button>
+                            )}
+                            <button
+                              onClick={() => setMemberToDelete(member.id)}
+                              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Remove"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Add Member Modal */}
       <Modal
@@ -476,7 +505,7 @@ export function MembersPage() {
             label="Customer Mobile Number *"
             value={formData.mobile_number}
             onChange={e => setFormData({ ...formData, mobile_number: e.target.value })}
-            placeholder="e.g. 9876543210"
+            placeholder="Enter mobile number"
             required
           />
 
@@ -517,7 +546,7 @@ export function MembersPage() {
             label="Customer Mobile Number *"
             value={formData.mobile_number}
             onChange={e => setFormData({ ...formData, mobile_number: e.target.value })}
-            placeholder="e.g. 9876543210"
+            placeholder="Enter mobile number"
             required
           />
 

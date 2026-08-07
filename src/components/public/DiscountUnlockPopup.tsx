@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Gift, Phone, ShieldCheck, User, ChevronDown } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { triggerHaptic, HAPTIC_PATTERNS } from '@/utils/haptic';
 import { customerService } from '../../services/customers';
 
 const COUNTRY_CODES = [
@@ -61,8 +62,9 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
   }, []);
 
   useEffect(() => {
-    // Only fire confetti on intro if we actually started there
+    // Only fire confetti and vibration on intro if we actually started there
     if (step === 'intro' && initialStep === 'intro') {
+      triggerHaptic(HAPTIC_PATTERNS.popupOpen);
       confetti({
         particleCount: 100,
         spread: 80,
@@ -84,6 +86,7 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
   };
 
   const triggerConfetti = () => {
+    triggerHaptic(HAPTIC_PATTERNS.successUnlock);
     const duration = 3000;
     const end = Date.now() + duration;
 
@@ -348,7 +351,6 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
                 </div>
                 <h2 className="text-xl font-bold text-gray-900 mb-1">Verify OTP</h2>
                 <p className="text-sm text-gray-500">Code sent to {countryCode} {mobileNumber}</p>
-                <p className="text-xs text-amber-600 mt-1 font-medium bg-amber-50 p-1.5 rounded inline-block">Hint: Dev mode - use 123456</p>
               </div>
 
               <form onSubmit={handleOtpSubmit} className="space-y-5">

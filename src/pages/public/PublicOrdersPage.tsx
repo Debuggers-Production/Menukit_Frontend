@@ -12,6 +12,7 @@ import { useActiveOrders } from '@/hooks/useActiveOrders';
 import { contestService } from '@/services/contestService';
 import { motion } from 'framer-motion';
 import { BottomSheet } from '@/components/ui/BottomSheet';
+import { triggerHaptic, HAPTIC_PATTERNS } from '@/utils/haptic';
 
 export function PublicOrdersPage() {
   const { id } = useParams();
@@ -669,13 +670,13 @@ export function PublicOrdersPage() {
           <div className="grid grid-cols-6 gap-1 items-center text-center">
 
             {/* Menu Button */}
-            <button onClick={() => navigate(`/shop/${id}`)} className="col-span-1 flex flex-col items-center justify-center gap-1">
+            <button onClick={() => { triggerHaptic(HAPTIC_PATTERNS.tap); navigate(`/shop/${id}`); }} className="col-span-1 flex flex-col items-center justify-center gap-1">
               <UtensilsCrossed size={19} className="text-slate-400 group-hover:text-slate-650" />
               <span className="text-[10px] font-bold text-slate-400">Menu</span>
             </button>
 
             {/* Cart Button */}
-            <button onClick={() => navigate(`/shop/${id}/cart`)} className="col-span-1 flex flex-col items-center justify-center gap-1 relative">
+            <button onClick={() => { triggerHaptic(HAPTIC_PATTERNS.tap); navigate(`/shop/${id}/cart`); }} className="col-span-1 flex flex-col items-center justify-center gap-1 relative">
               <ShoppingBag size={19} className="text-slate-400" />
               {cartItemCount > 0 && (
                 <span className="absolute top-0 right-2 bg-red-500 text-white text-[9px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center">
@@ -686,7 +687,7 @@ export function PublicOrdersPage() {
             </button>
 
             {/* Games Button */}
-            <button onClick={() => navigate(`/shop/${id}?games=true`)} className="col-span-1 flex flex-col items-center justify-center gap-1">
+            <button onClick={() => { triggerHaptic(HAPTIC_PATTERNS.tap); navigate(`/shop/${id}?games=true`); }} className="col-span-1 flex flex-col items-center justify-center gap-1">
               <Gamepad2 size={19} className="text-slate-400" />
               <span className="text-[10px] font-bold text-slate-400">Games</span>
             </button>
@@ -695,7 +696,7 @@ export function PublicOrdersPage() {
             <div className="col-span-1 flex flex-col items-center justify-center gap-1 relative">
               <div className="relative">
                 <button
-                  onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                  onClick={() => { triggerHaptic(HAPTIC_PATTERNS.tap); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
                   className="flex items-center justify-center"
                 >
                   <History size={19} style={{ color: primaryColor }} />
@@ -703,7 +704,7 @@ export function PublicOrdersPage() {
                 {totalActiveCount > 0 && currentOrder && (
                   <button
                     key={currentOrder.id}
-                    onClick={() => navigate(`/shop/${id}/order/${currentOrder.id}`)}
+                    onClick={() => { triggerHaptic(HAPTIC_PATTERNS.tap); navigate(`/shop/${id}/order/${currentOrder.id}`); }}
                     className={`absolute -top-4 left-1/2 -translate-x-1/2 whitespace-nowrap text-white text-[8px] font-black px-1.5 py-0.5 rounded-full shadow-md flex items-center gap-1 border border-white dark:border-slate-900 transition-all duration-300 cursor-pointer hover:brightness-110 active:scale-95 ${
                       currentOrder.order_status === 'pending'
                         ? 'bg-gradient-to-r from-amber-500 to-amber-600 animate-pulse'
@@ -721,7 +722,7 @@ export function PublicOrdersPage() {
 
             {/* 🏆 Asymmetric Extra-Wide Contest Button */}
             <button
-              onClick={() => navigate(`/shop/${id}/contest`)}
+              onClick={() => { triggerHaptic(HAPTIC_PATTERNS.balloonClick); navigate(`/shop/${id}/contest`); }}
               className="col-span-2 relative flex items-center justify-center gap-1.5 h-[46px] text-white font-black shadow-md transition-all active:scale-[0.97] hover:brightness-110 tracking-wider px-3 rounded-r-2xl rounded-l-none overflow-hidden" 
               style={{ 
                 background: `linear-gradient(135deg, ${primaryColor} 0%, #ff8c00 100%)`,
