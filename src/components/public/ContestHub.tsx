@@ -21,6 +21,7 @@ import Particles, { ParticlesProvider } from '@tsparticles/react';
 import { loadFull } from 'tsparticles';
 import { BrushReplayCanvas } from './BrushReplayCanvas';
 import { Excalidraw, exportToBlob, MainMenu } from '@excalidraw/excalidraw';
+import '@excalidraw/excalidraw/index.css';
 import { cn } from '@/utils/cn';
 const loadRazorpayScript = () => {
   return new Promise((resolve) => {
@@ -3274,7 +3275,18 @@ export const ContestHub: React.FC<ContestHubProps> = ({
           100% { transform: scale(1.3); opacity: 0; }
         }
 
-        /* Hide Image and Web-Embed/Embeddable tools from Excalidraw toolbar */
+        /* Excalidraw Clean Overrides */
+        .excalidraw {
+          --ui-font: Inter, system-ui, -apple-system, sans-serif !important;
+        }
+
+        .excalidraw .encrypted-icon,
+        .excalidraw [title*="Encrypted"],
+        .excalidraw [aria-label*="Encrypted"],
+        .excalidraw .lock-icon {
+          display: none !important;
+        }
+
         .excalidraw button[data-testid="image"],
         .excalidraw button[data-testid="web-embed"],
         .excalidraw button[data-testid="embeddable"],
@@ -3285,25 +3297,6 @@ export const ContestHub: React.FC<ContestHubProps> = ({
         .excalidraw div[data-testid="image"],
         .excalidraw div[data-testid="embeddable"] {
           display: none !important;
-        }
-
-        /* Fix Excalidraw UI scaling issues caused by Tailwind CSS */
-        .excalidraw svg {
-          max-width: 1.5rem !important;
-          max-height: 1.5rem !important;
-        }
-
-        /* Restore Excalidraw accessibility hidden elements that Tailwind resets */
-        .excalidraw .visually-hidden {
-          position: absolute !important;
-          height: 1px !important;
-          width: 1px !important;
-          overflow: hidden !important;
-          clip: rect(1px, 1px, 1px, 1px) !important;
-          white-space: nowrap !important;
-          border: 0 !important;
-          padding: 0 !important;
-          margin: -1px !important;
         }
       `}</style>
     </div>

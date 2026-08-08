@@ -191,3 +191,27 @@ input[type='number']::-webkit-outer-spin-button {
 input[type='number'] {
   -moz-appearance: textfield;
 }
+
+/* Global Excalidraw Clean Overrides */
+.excalidraw {
+  --ui-font: Inter, system-ui, -apple-system, sans-serif !important;
+}
+
+.excalidraw .encrypted-icon,
+.excalidraw [title*="Encrypted"],
+.excalidraw [aria-label*="Encrypted"],
+.excalidraw .lock-icon {
+  display: none !important;
+}
+
+.excalidraw button[data-testid="image"],
+.excalidraw button[data-testid="web-embed"],
+.excalidraw button[data-testid="embeddable"],
+.excalidraw button[title*="Image"],
+.excalidraw button[title*="image"],
+.excalidraw button[title*="Embed"],
+.excalidraw button[title*="embed"],
+.excalidraw div[data-testid="image"],
+.excalidraw div[data-testid="embeddable"] {
+  display: none !important;
+}

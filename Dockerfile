@@ -11,10 +11,10 @@ RUN npm install
 
 COPY . .
 
-ARG VITE_API_URL
+ARG VITE_API_URL=https://api.menukit.debuggerstechnologies.com
 ENV VITE_API_URL=${VITE_API_URL}
 
-ARG VITE_CUSTOMER_PROFILE_URL
+ARG VITE_CUSTOMER_PROFILE_URL=https://menukit.debuggerstechnologies.com/customer
 ENV VITE_CUSTOMER_PROFILE_URL=${VITE_CUSTOMER_PROFILE_URL}
 
 RUN npm run build

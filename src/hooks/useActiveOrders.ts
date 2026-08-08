@@ -49,7 +49,9 @@ export function useActiveOrders(shopId: string | undefined) {
       });
       const orders = res.data || [];
       const active = orders.filter((o: any) => 
-        o.order_status === 'pending' || o.order_status === 'accepted'
+        (o.order_status === 'pending' || o.order_status === 'accepted') &&
+        o.order_status !== 'payment_pending' &&
+        !(o.payment_method === 'online' && o.payment_status !== 'paid')
       );
       setActiveOrders(active);
     } catch (err) {

@@ -434,7 +434,12 @@ export function PublicCartPage() {
           prefill: { name: customerName, contact: finalPhone },
           theme: { color: primaryColor },
           modal: {
-            ondismiss: () => {
+            ondismiss: async () => {
+              try {
+                await api.post(`/public/shop/${id}/orders/${order.id}/cancel`);
+              } catch (e) {
+                console.error("Failed to cancel unpaid order", e);
+              }
               toast.error("Payment was cancelled. Order not placed.");
               setIsPlacingOrder(false);
             }

@@ -14,13 +14,13 @@ declare global {
 
 const getEnv = (key: string, viteFallback: string | undefined, defaultVal: string = ""): string => {
   const windowVal = typeof window !== 'undefined' && window.APP_CONFIG ? window.APP_CONFIG[key] : undefined;
-  if (windowVal && !windowVal.startsWith("$")) {
-    return windowVal;
+  if (windowVal && windowVal.trim() !== "" && !windowVal.startsWith("$")) {
+    return windowVal.replace(/\/+$/, "");
   }
-  if (viteFallback && !viteFallback.startsWith("$")) {
-    return viteFallback;
+  if (viteFallback && viteFallback.trim() !== "" && !viteFallback.startsWith("$")) {
+    return viteFallback.replace(/\/+$/, "");
   }
-  return defaultVal;
+  return defaultVal.replace(/\/+$/, "");
 };
 
 export const APP_CONFIG = {

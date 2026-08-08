@@ -421,7 +421,7 @@ export function PublicOrdersPage() {
 
         <button
           onClick={() => {
-            const profileAppUrl = APP_CONFIG.CUSTOMER_PROFILE_URL;
+            const profileAppUrl = APP_CONFIG.CUSTOMER_PROFILE_URL.replace(/\/+$/, '');
             window.location.href = `${profileAppUrl}/shop/${id}/profile`;
           }}
           className="p-2.5 bg-orange-50 text-orange-600 hover:bg-orange-100 rounded-full transition-all cursor-pointer flex items-center justify-center border border-orange-200/60"

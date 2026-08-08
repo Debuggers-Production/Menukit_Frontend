@@ -23,6 +23,7 @@ import {
 import { useAuthStore } from '@/store/authStore';
 import { cn } from '@/utils/cn';
 import { Modal } from '@/components/ui/Modal';
+import { triggerHaptic, HAPTIC_PATTERNS } from '@/utils/haptic';
 import { LanguageSelectorModal } from '@/components/LanguageSelectorModal';
 import { useHeaderStore } from '@/store/useHeaderStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
@@ -398,6 +399,7 @@ export function DashboardLayout() {
             <NavLink
               key={item.path}
               to={item.path}
+              onClick={() => triggerHaptic(HAPTIC_PATTERNS.tap)}
               className={cn(
                 "flex flex-col items-center justify-center w-full h-full space-y-1 transition-all",
                 isActive ? "text-primary font-bold scale-105" : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
@@ -411,7 +413,10 @@ export function DashboardLayout() {
         
         {/* More Button */}
         <button
-          onClick={() => setIsMoreMenuOpen(true)}
+          onClick={() => {
+            triggerHaptic(HAPTIC_PATTERNS.tap);
+            setIsMoreMenuOpen(true);
+          }}
           className="flex flex-col items-center justify-center w-full h-full space-y-1 transition-all text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
         >
           <MoreHorizontal size={20} className="text-slate-500 dark:text-slate-400" />
@@ -442,7 +447,10 @@ export function DashboardLayout() {
                     <NavLink
                       key={item.path}
                       to={item.path}
-                      onClick={() => setIsMoreMenuOpen(false)}
+                      onClick={() => {
+                        triggerHaptic(HAPTIC_PATTERNS.tap);
+                        setIsMoreMenuOpen(false);
+                      }}
                       className={cn(
                         "flex flex-col items-center justify-center p-3 rounded-2xl border transition-all text-center gap-1.5 shadow-2xs",
                         theme.bg,

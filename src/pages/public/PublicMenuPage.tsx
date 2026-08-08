@@ -22,6 +22,7 @@ import { contestService } from '@/services/contestService';
 import { triggerHaptic, HAPTIC_PATTERNS } from '@/utils/haptic';
 
 const triggerWelcomeEffect = () => {
+  triggerHaptic(HAPTIC_PATTERNS.successUnlock);
   const defaults = {
     spread: 360,
     ticks: 80,
@@ -140,7 +141,7 @@ export function PublicMenuPage() {
 
   const handleProfileClick = () => {
     const token = localStorage.getItem('customer_token');
-    const profileAppUrl = APP_CONFIG.CUSTOMER_PROFILE_URL;
+    const profileAppUrl = APP_CONFIG.CUSTOMER_PROFILE_URL.replace(/\/+$/, '');
     if (token) {
       window.location.href = `${profileAppUrl}/shop/${id}/profile`;
     } else {
@@ -398,8 +399,10 @@ export function PublicMenuPage() {
         sessionStorage.setItem(`welcome_${id}`, 'true');
         setShowWelcome(true);
         setWelcomePhase('entering');
+        triggerHaptic(HAPTIC_PATTERNS.balloonUnlock);
         setTimeout(() => {
           setWelcomePhase('visible');
+          triggerHaptic(HAPTIC_PATTERNS.balloonClick);
           triggerWelcomeEffect();
         }, 600);
       } else {
@@ -763,6 +766,7 @@ export function PublicMenuPage() {
 
                 <button
                   onClick={() => {
+                    triggerHaptic(HAPTIC_PATTERNS.tap);
                     setWelcomePhase('exiting');
                     setTimeout(() => {
                       setShowWelcome(false);
@@ -2110,7 +2114,7 @@ export function PublicMenuPage() {
           onClose={() => setShowProfileVerifyPopup(false)}
           onUnlock={() => {
             setShowProfileVerifyPopup(false);
-            const profileAppUrl = APP_CONFIG.CUSTOMER_PROFILE_URL;
+            const profileAppUrl = APP_CONFIG.CUSTOMER_PROFILE_URL.replace(/\/+$/, '');
             window.location.href = `${profileAppUrl}/shop/${id}/profile`;
           }}
         />
