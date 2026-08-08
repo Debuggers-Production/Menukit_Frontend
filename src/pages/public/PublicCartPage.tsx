@@ -1464,6 +1464,14 @@ export function PublicCartPage() {
                       : 'bg-slate-50 text-slate-800 border-slate-200'
                   }`}
                 />
+                {!token && (
+                  <p className="text-[10px] text-slate-500 mt-2">
+                    By continuing, you accept our{' '}
+                    <a href="https://menukit.debuggerstechnologies.com/terms" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium">
+                      Terms and Conditions
+                    </a>
+                  </p>
+                )}
               </div>
 
               {orderType === 'dine_in' && (
