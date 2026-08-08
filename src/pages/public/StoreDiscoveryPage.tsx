@@ -24,7 +24,7 @@ const BrandFooter = ({ mode }: { mode: 'landing' | 'scanner' | 'map' }) => {
         display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, flexShrink: 0
       }}>
         <span style={{ fontSize: 10, color: '#94a3b8', fontWeight: 500 }}>Powered by</span>
-        <a href="https://menukit.debuggers.co.in/landing" target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, fontWeight: 800, background: 'linear-gradient(90deg, #f97316, #f59e0b)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
+        <a href="https://debuggerstechnologies.com/menukit/" target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, fontWeight: 800, background: 'linear-gradient(90deg, #f97316, #f59e0b)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
           Menukit
           <ExternalLink size={10} color="#f97316" />
         </a>
@@ -36,7 +36,7 @@ const BrandFooter = ({ mode }: { mode: 'landing' | 'scanner' | 'map' }) => {
     return (
       <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
         <div className="flex items-center gap-2.5 px-5 py-2 bg-white/60 backdrop-blur-xl border border-white/80 rounded-full shadow-[0_8px_30px_rgba(0,0,0,0.06)] hover:bg-white/80 transition-colors">
-          <a href="https://menukit.debuggers.co.in/landing" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-[15px] font-black no-underline hover:opacity-80 transition-opacity">
+          <a href="https://debuggerstechnologies.com/menukit/" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-[15px] font-black no-underline hover:opacity-80 transition-opacity">
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-500 to-amber-500">Menukit</span>
             <ExternalLink size={14} className="text-orange-500" />
           </a>
@@ -51,7 +51,7 @@ const BrandFooter = ({ mode }: { mode: 'landing' | 'scanner' | 'map' }) => {
       display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, zIndex: 40
     }}>
       <span style={{ fontSize: 10, color: 'rgba(255,255,255,.5)', fontWeight: 500 }}>Powered by</span>
-      <a href="https://menukit.debuggers.co.in/landing" target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, fontWeight: 800, background: 'linear-gradient(90deg, #f97316, #f59e0b)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
+      <a href="https://debuggerstechnologies.com/menukit/" target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, fontWeight: 800, background: 'linear-gradient(90deg, #f97316, #f59e0b)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
         Menukit
         <ExternalLink size={10} color="#f97316" />
       </a>

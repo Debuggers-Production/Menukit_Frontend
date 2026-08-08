@@ -3095,7 +3095,7 @@ export const ContestHub: React.FC<ContestHubProps> = ({
                 <div className="flex items-center justify-center gap-1.5 px-3 py-1 bg-slate-50 dark:bg-slate-800/80 rounded-full border border-slate-200/60 dark:border-slate-700/60">
                   <span className="text-[10px] text-slate-400 font-medium">Powered by</span>
                   <a
-                    href="https://menukit.debuggers.co.in/landing"
+                    href="https://debuggerstechnologies.com/menukit/"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-xs font-black bg-gradient-to-r from-orange-500 to-amber-500 bg-clip-text text-transparent no-underline flex items-center gap-1 hover:opacity-90 transition-opacity"

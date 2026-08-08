@@ -54,7 +54,7 @@ export function DashboardLayout() {
       }
     };
     fetchSub();
-  }, [location.pathname]);
+  }, []);
 
   interface NavItem {
     name: string;

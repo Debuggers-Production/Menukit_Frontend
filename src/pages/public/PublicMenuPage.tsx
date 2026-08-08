@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router';
 import { Search, Flame, MapPin, Phone, Info, UtensilsCrossed, X, Star, LayoutGrid, List as ListIcon, Clock, Sparkles, ExternalLink, SlidersHorizontal, Check, Languages, Tag, Crown, Calendar, ShoppingBag, ArrowUpRight, ChevronDown, QrCode, Download, History, Trophy, ChefHat, User, Truck } from 'lucide-react';
 import { api } from '@/services/api';
@@ -20,6 +20,7 @@ import QRCodeStyling from 'qr-code-styling';
 import confetti from 'canvas-confetti';
 import { contestService } from '@/services/contestService';
 import { triggerHaptic, HAPTIC_PATTERNS } from '@/utils/haptic';
+import { publicCache } from '@/utils/publicCache';
 
 const triggerWelcomeEffect = () => {
   triggerHaptic(HAPTIC_PATTERNS.successUnlock);
@@ -94,15 +95,15 @@ export function PublicMenuPage() {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const [shop, setShop] = useState<Shop | null>(null);
+  const [shop, setShop] = useState<Shop | null>(() => (id && menuCache[id]) ? menuCache[id].shop : null);
   const { currentOrder, totalActiveCount } = useActiveOrders(id);
-  const [categories, setCategories] = useState<PublicCategory[]>([]);
+  const [categories, setCategories] = useState<PublicCategory[]>(() => (id && menuCache[id]) ? menuCache[id].categories : []);
   const [categoriesOffset, setCategoriesOffset] = useState(0);
   const [hasMoreCategories, setHasMoreCategories] = useState(true);
   const [isLoadingMoreCategories, setIsLoadingMoreCategories] = useState(false);
   const CATEGORIES_LIMIT = 5;
 
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(() => !id || !menuCache[id]);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategoryId, setActiveCategoryId] = useState<string>('all');
   const [foodFilter, setFoodFilter] = useState<'all' | 'veg' | 'non-veg' | 'egg' | 'drink' | 'dessert'>('all');
@@ -383,6 +384,7 @@ export function PublicMenuPage() {
           categories: data,
           timestamp: Date.now()
         };
+        publicCache.set(`shop_${id}`, shopRes.data);
       }
 
       setShop(shopRes.data);
@@ -542,13 +544,17 @@ export function PublicMenuPage() {
     };
   }, [shop?.theme]);
 
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+
   const filteredCategories = useMemo(() => {
     if (!categories) return [];
 
+    const lowerSearch = deferredSearchQuery.toLowerCase();
+
     return categories.map(cat => {
       const filteredItems = cat.items.filter(item => {
-        const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()));
+        const matchesSearch = !lowerSearch || item.name.toLowerCase().includes(lowerSearch) ||
+          (item.description && item.description.toLowerCase().includes(lowerSearch));
         const matchesFood = foodFilter === 'all' ||
           (item.food_types && item.food_types.map((t: string) => t.toLowerCase().replace('_', '-')).includes(foodFilter));
 
@@ -598,7 +604,7 @@ export function PublicMenuPage() {
         items: filteredItems
       };
     }).filter(cat => cat.items.length > 0 && (activeCategoryId === 'all' || cat.id === activeCategoryId));
-  }, [categories, searchQuery, activeCategoryId, foodFilter, sortOrder, extraFilters, activeDiscountFilter, activeDiscounts]);
+  }, [categories, deferredSearchQuery, activeCategoryId, foodFilter, sortOrder, extraFilters, activeDiscountFilter, activeDiscounts]);
 
   const toggleExtraFilter = (filter: string) => {
     setExtraFilters(prev =>
@@ -1420,6 +1426,8 @@ export function PublicMenuPage() {
                             <img 
                               src={primaryImage} 
                               alt={item.name} 
+                              loading="lazy"
+                              decoding="async"
                               className="w-full h-full object-cover transition-transform duration-500 hover:scale-105" 
                             />
                           ) : (
@@ -1733,7 +1741,7 @@ export function PublicMenuPage() {
 
           <div className="pt-4 mt-4 border-t border-slate-200 flex flex-col items-center gap-1">
             <span className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Powered by</span>
-            <a href="https://menukit.debuggers.co.in/landing" target="_blank" rel="noopener noreferrer" className="text-xs font-extrabold bg-gradient-to-r from-orange-600 to-amber-500 bg-clip-text text-transparent hover:opacity-80 transition-opacity flex items-center gap-1">
+            <a href="https://debuggerstechnologies.com/menukit/" target="_blank" rel="noopener noreferrer" className="text-xs font-extrabold bg-gradient-to-r from-orange-600 to-amber-500 bg-clip-text text-transparent hover:opacity-80 transition-opacity flex items-center gap-1">
               Menukit <ExternalLink size={10} className="text-orange-500" />
             </a>
           </div>

@@ -274,11 +274,22 @@ export function OrderStatusPage() {
 
   useEffect(() => {
     fetchOrderStatus();
+
+    const isFinal = order && ['completed', 'cancelled', 'delivered', 'rejected'].includes(order.order_status);
+    if (isFinal) return;
     
-    // Poll status every 8 seconds
-    const interval = setInterval(fetchOrderStatus, 8000);
-    return () => clearInterval(interval);
-  }, [id, orderId]);
+    const handleRealtimeUpdate = () => {
+      fetchOrderStatus();
+    };
+
+    window.addEventListener('menukit-realtime-update', handleRealtimeUpdate);
+    const interval = setInterval(fetchOrderStatus, 30000);
+
+    return () => {
+      window.removeEventListener('menukit-realtime-update', handleRealtimeUpdate);
+      clearInterval(interval);
+    };
+  }, [id, orderId, order?.order_status]);
 
   // If online and payment is pending, check payment status once on mount
   useEffect(() => {
@@ -593,8 +604,53 @@ export function OrderStatusPage() {
             ))}
           </div>
 
+          {/* Order Bill Breakdown */}
+          <div className="pt-2 space-y-2 text-xs font-mono border-b border-dashed border-slate-350 pb-4">
+            <p className="text-[9px] font-bold text-slate-450 uppercase tracking-widest mb-3">Order Bill Breakdown</p>
+            
+            <div className="flex justify-between text-slate-700 dark:text-slate-350">
+              <span>Item total</span>
+              <span className="font-black text-slate-900 dark:text-white">
+                {shop?.settings?.currency || '₹'}{(order.items.reduce((acc: number, it: any) => acc + (it.price * it.quantity), 0)).toFixed(2)}
+              </span>
+            </div>
+            
+            {Number(order.total_amount) > order.items.reduce((acc: number, it: any) => acc + (it.price * it.quantity), 0) && (
+              <div className="flex justify-between text-slate-700 dark:text-slate-350">
+                <span>Delivery partner fee</span>
+                <span className="font-black text-slate-900 dark:text-white">
+                  {shop?.settings?.currency || '₹'}{(Number(order.total_amount) - order.items.reduce((acc: number, it: any) => acc + (it.price * it.quantity), 0)).toFixed(2)}
+                </span>
+              </div>
+            )}
+            
+            {order.payment_method === 'online' && (
+              <>
+                <div className="flex justify-between text-slate-700 dark:text-slate-350">
+                  <span>Platform fee</span>
+                  <span className="font-black text-slate-900 dark:text-white">
+                    {shop?.settings?.currency || '₹'}{(Number(order.total_amount) * 0.01).toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-slate-700 dark:text-slate-350">
+                  <span>Payment gateway fee</span>
+                  <span className="font-black text-slate-900 dark:text-white">
+                    {shop?.settings?.currency || '₹'}{(Number(order.total_amount) * 0.03 + (Number(order.total_amount) * 0.03) * 0.18).toFixed(2)}
+                  </span>
+                </div>
+              </>
+            )}
+
+            {Number(order.total_amount) < order.items.reduce((acc: number, it: any) => acc + (it.price * it.quantity), 0) && (
+              <div className="flex justify-between font-bold text-emerald-600 dark:text-emerald-400">
+                <span>Auto Discount</span>
+                <span>-{shop?.settings?.currency || '₹'}{(order.items.reduce((acc: number, it: any) => acc + (it.price * it.quantity), 0) - Number(order.total_amount)).toFixed(2)}</span>
+              </div>
+            )}
+          </div>
+
           {/* Payment info */}
-          <div className="flex justify-between items-center text-xs font-mono border-b border-dashed border-slate-350 pb-4">
+          <div className="flex justify-between items-center text-xs font-mono border-b border-dashed border-slate-350 pb-4 pt-2">
             <div>
               <span className="text-[9px] text-slate-450 block uppercase tracking-wider">Payment Method</span>
               <span className="font-extrabold capitalize text-slate-800 dark:text-slate-250">{order.payment_method}</span>
@@ -611,11 +667,29 @@ export function OrderStatusPage() {
 
           {/* Grand Total */}
           <div className="flex justify-between items-center py-2">
-            <span className="font-mono font-black text-slate-850 dark:text-white text-sm uppercase">Grand Total</span>
+            <span className="font-mono font-black text-slate-850 dark:text-white text-sm uppercase">Total Payable</span>
             <span className="font-black text-2xl tracking-tight text-orange-600">
-              {shop?.settings?.currency || '₹'}{Number(order.total_amount).toFixed(2)}
+              {shop?.settings?.currency || '₹'}{(
+                order.payment_method === 'online' 
+                  ? (Number(order.total_amount) + Number(order.total_amount) * 0.01 + Number(order.total_amount) * 0.03 + (Number(order.total_amount) * 0.03) * 0.18) 
+                  : Number(order.total_amount)
+              ).toFixed(2)}
             </span>
           </div>
+
+          {/* Credits Message */}
+          {(
+            order.payment_method === 'online' 
+              ? (Number(order.total_amount) + Number(order.total_amount) * 0.01 + Number(order.total_amount) * 0.03 + (Number(order.total_amount) * 0.03) * 0.18) 
+              : Number(order.total_amount)
+          ) >= 100 && (
+            <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800 rounded px-3 py-2 text-center mt-2 mb-2">
+              <span className="text-emerald-600 dark:text-emerald-400 font-bold text-[10px] uppercase tracking-wider">
+                🎉 You earned 0.15 credits
+              </span>
+            </div>
+          )}
+
 
           {/* Thermal QR Code Stamp */}
           <div className="flex flex-col items-center justify-center pt-4 border-t border-dashed border-slate-300">

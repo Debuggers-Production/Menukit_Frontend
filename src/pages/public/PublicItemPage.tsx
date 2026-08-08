@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { ChevronLeft, Star, Loader2, Send, Gift, ShoppingCart, Plus, Minus, Trash2, AlertCircle } from 'lucide-react';
+import { triggerHaptic, HAPTIC_PATTERNS } from '@/utils/haptic';
+import { publicCache } from '@/utils/publicCache';
 import { api } from '@/services/api';
 import { Shop, MenuItem, ReviewSummary, Discount } from '@/types';
 import { Lightbox } from '@/components/ui/Lightbox';
@@ -101,14 +103,30 @@ export function PublicItemPage() {
     setSelectedAddons([]);
     const fetchData = async () => {
       try {
-        const [shopRes, itemRes, discountsRes] = await Promise.all([
-          api.get(`/public/shop/${id}`),
-          api.get(`/public/shop/${id}/items/${itemId}`),
-          api.get(`/public/shop/${id}/discounts`)
-        ]);
-        setShop(shopRes.data);
+        const cachedShop = id ? publicCache.get(`shop_${id}`) : null;
+        const cachedDiscounts = id ? publicCache.get(`discounts_${id}`) : null;
+
+        if (cachedShop) setShop(cachedShop);
+        if (cachedDiscounts) setDiscounts(cachedDiscounts);
+
+        const promises: Promise<any>[] = [api.get(`/public/shop/${id}/items/${itemId}`)];
+        if (!cachedShop) promises.push(api.get(`/public/shop/${id}`));
+        if (!cachedDiscounts) promises.push(api.get(`/public/shop/${id}/discounts`));
+
+        const results = await Promise.all(promises);
+        const itemRes = results[0];
         setItem(itemRes.data);
-        setDiscounts(discountsRes.data);
+
+        let idx = 1;
+        if (!cachedShop && results[idx]) {
+          setShop(results[idx].data);
+          if (id) publicCache.set(`shop_${id}`, results[idx].data);
+          idx++;
+        }
+        if (!cachedDiscounts && results[idx]) {
+          setDiscounts(results[idx].data);
+          if (id) publicCache.set(`discounts_${id}`, results[idx].data);
+        }
       } catch (err) {
         console.error('Failed to load item page', err);
       } finally {

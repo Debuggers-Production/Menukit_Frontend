@@ -26,9 +26,9 @@ export function DashboardPage() {
   const [activities, setActivities] = useState<any[]>([]);
   const [topSearches, setTopSearches] = useState<any[]>([]);
   const [topReviews, setTopReviews] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isFabOpen, setIsFabOpen] = useState(false);
   const { shop, setShop } = useShopStore();
+  const [isLoading, setIsLoading] = useState(() => !shop);
+  const [isFabOpen, setIsFabOpen] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {

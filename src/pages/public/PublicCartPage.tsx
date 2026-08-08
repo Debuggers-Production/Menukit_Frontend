@@ -599,7 +599,7 @@ export function PublicCartPage() {
 
     // Online payment fees (Razorpay — delivery/takeaway) — NOT for dine_in/cash/UPI
     const isOnlineFeeApplicable = paymentMethod === 'online';
-    const platformFee = isOnlineFeeApplicable ? parseFloat((finalTotal * 0.02).toFixed(2)) : 0;
+    const platformFee = isOnlineFeeApplicable ? parseFloat((finalTotal * 0.01).toFixed(2)) : 0;
     const pgFee = isOnlineFeeApplicable ? parseFloat((finalTotal * 0.03).toFixed(2)) : 0;
     const gstOnFee = isOnlineFeeApplicable ? parseFloat((pgFee * 0.18).toFixed(2)) : 0;
     const grandTotal = isOnlineFeeApplicable
@@ -649,6 +649,8 @@ export function PublicCartPage() {
             <img 
               src={menuItem.image_url || menuItem.images![0].image_url} 
               alt={menuItem.name} 
+              loading="lazy"
+              decoding="async"
               className="w-full h-full object-cover"
             />
           ) : (

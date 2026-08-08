@@ -62,8 +62,14 @@ export function useActiveOrders(shopId: string | undefined) {
   useEffect(() => {
     if (!shopId) return;
     fetchActiveOrders();
-    const interval = setInterval(fetchActiveOrders, 30000); // refresh orders list every 30 seconds as fallback
-    return () => clearInterval(interval);
+
+    window.addEventListener('menukit-realtime-update', fetchActiveOrders);
+    const interval = setInterval(fetchActiveOrders, 60000); // 60s fallback
+
+    return () => {
+      window.removeEventListener('menukit-realtime-update', fetchActiveOrders);
+      clearInterval(interval);
+    };
   }, [shopId]);
 
   useEffect(() => {

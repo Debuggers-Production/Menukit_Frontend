@@ -55,11 +55,13 @@ export function useWebSocket() {
       };
 
       ws.onmessage = (event) => {
-        if (typeof event.data === 'string' && (event.data === 'ping' || event.data === 'pong')) {
+        if (typeof event.data !== 'string') return;
+        const trimmed = event.data.trim();
+        if (trimmed === 'ping' || trimmed === 'pong' || !trimmed.startsWith('{')) {
           return;
         }
         try {
-          const message = JSON.parse(event.data);
+          const message = JSON.parse(trimmed);
           
           if (message.type === 'UNREAD_HISTORY') {
             // Bulk unread notifications loaded on connect
@@ -67,6 +69,9 @@ export function useWebSocket() {
           } else if (message.type === 'NEW_NOTIFICATION') {
             const notif = message.data;
             addNotification(notif);
+            
+            // Broadcast real-time update event so pages refresh instantly without HTTP polling
+            window.dispatchEvent(new CustomEvent('menukit-realtime-update', { detail: notif }));
             
             // Play notification chime sound
             playChimeNotificationSound();

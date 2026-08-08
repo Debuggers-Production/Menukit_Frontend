@@ -383,7 +383,7 @@ export function QRCodePage() {
       // Draw Site Link
       ctx.fillStyle = '#94a3b8';
       ctx.font = 'bold 24px system-ui, -apple-system, sans-serif';
-      ctx.fillText('menukit.debuggers.co.in/landing', canvas.width / 2, currentY);
+      ctx.fillText('debuggerstechnologies.com/menukit/', canvas.width / 2, currentY);
 
       // 9. Export and Download
       const dataUrl = canvas.toDataURL('image/png');
@@ -628,7 +628,7 @@ export function QRCodePage() {
               <div class="branding">
                 <p class="powered-by">Powered By</p>
                 <h2 class="brand-name">MenuKit</h2>
-                <a href="https://menukit.debuggers.co.in/landing" class="site-link" target="_blank" rel="noopener noreferrer">menukit.debuggers.co.in/landing</a>
+                <a href="https://debuggerstechnologies.com/menukit/" class="site-link" target="_blank" rel="noopener noreferrer">debuggerstechnologies.com/menukit/</a>
               </div>
             </div>
             <script>
@@ -711,12 +711,12 @@ export function QRCodePage() {
               <span className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Powered By</span>
               <span className="text-sm font-extrabold bg-gradient-to-r from-orange-600 to-amber-500 bg-clip-text text-transparent mt-0.5">MenuKit</span>
               <a
-                href="https://menukit.debuggers.co.in/landing"
+                href="https://debuggerstechnologies.com/menukit/"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-[10px] text-slate-400 hover:text-orange-500 transition-colors mt-1 flex items-center gap-1"
               >
-                menukit.debuggers.co.in/landing
+                debuggerstechnologies.com/menukit/
                 <ExternalLink size={8} />
               </a>
             </div>

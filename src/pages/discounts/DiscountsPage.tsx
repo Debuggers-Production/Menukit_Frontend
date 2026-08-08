@@ -126,6 +126,8 @@ const defaultForm = {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
+let cachedDiscounts: Discount[] = [];
+
 export function DiscountsPage() {
   const formatDays = (days: string[]) => {
     if (!days || days.length === 0) return '';
@@ -143,10 +145,10 @@ export function DiscountsPage() {
   const currencySymbol = shop?.settings?.currency || '₹';
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [discounts, setDiscounts] = useState<Discount[]>([]);
+  const [discounts, setDiscounts] = useState<Discount[]>(cachedDiscounts);
   const [categories, setCategories] = useState<Category[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(() => cachedDiscounts.length === 0);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [currentStep, setCurrentStep] = useState(1);
@@ -188,8 +190,9 @@ export function DiscountsPage() {
 
     // Load discounts separately — if this fails (e.g. migration not run), the page still works
     try {
-      const discRes = await api.get('/discounts');
-      setDiscounts(discRes.data);
+      const discountRes = await api.get('/discounts');
+      cachedDiscounts = discountRes.data || [];
+      setDiscounts(cachedDiscounts);
     } catch {
       // Silently ignore — discounts table may not exist yet
     }

@@ -63,7 +63,7 @@ const SortableMenuItem = ({ children, item }: { children: React.ReactNode, item:
 };
 export function MenuItemsPage() {
   const { menuItems, setMenuItems, categories, setCategories } = useShopStore();
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(() => menuItems.length === 0);
   
   // Filters
   const [activeTab, setActiveTab] = useState<string>('all');

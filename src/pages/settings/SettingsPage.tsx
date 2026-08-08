@@ -92,6 +92,7 @@ export function SettingsPage() {
   // Fetch shop settings on mount
   useEffect(() => {
     const fetchShop = async () => {
+      if (shop) return;
       try {
         const res = await api.get('/shops/me');
         if (res.data && res.data.id) {
@@ -102,7 +103,7 @@ export function SettingsPage() {
       }
     };
     fetchShop();
-  }, [setShop]);
+  }, [shop, setShop]);
 
   useEffect(() => {
     if (shop?.settings) {

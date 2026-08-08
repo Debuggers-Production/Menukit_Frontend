@@ -102,7 +102,7 @@ const SortableCategoryItem = ({
 
 export function CategoriesPage() {
   const { categories, setCategories } = useShopStore();
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(() => categories.length === 0);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCat, setEditingCat] = useState<Category | null>(null);
 

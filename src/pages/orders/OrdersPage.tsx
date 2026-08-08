@@ -284,11 +284,13 @@ function OrderStatusDropdown({ orderId, orderStatus, onSelect }: OrderStatusDrop
   );
 }
 
+let cachedOrders: any[] = [];
+
 /* ── Main Page ───────────────────────────────────────────────────────────── */
 export function OrdersPage() {
   const navigate = useNavigate();
-  const [orders, setOrders] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [orders, setOrders] = useState<any[]>(cachedOrders);
+  const [isLoading, setIsLoading] = useState(() => cachedOrders.length === 0);
   const [isLocked, setIsLocked] = useState(false);
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [itemsModalOrder, setItemsModalOrder] = useState<any | null>(null);
@@ -297,7 +299,8 @@ export function OrdersPage() {
   const fetchOrders = async () => {
     try {
       const res = await api.get('/orders');
-      setOrders(res.data || []);
+      cachedOrders = res.data || [];
+      setOrders(cachedOrders);
       setIsLocked(false);
     } catch (err: any) {
       if (err.response?.status === 403) {
@@ -313,8 +316,16 @@ export function OrdersPage() {
 
   useEffect(() => {
     fetchOrders();
-    const interval = setInterval(fetchOrders, 10000);
-    return () => clearInterval(interval);
+
+    const handleRealtimeUpdate = (e: any) => {
+      const notif = e.detail;
+      if (!notif || notif.type === 'NEW_ORDER' || notif.type === 'ORDER_STATUS') {
+        fetchOrders();
+      }
+    };
+
+    window.addEventListener('menukit-realtime-update', handleRealtimeUpdate);
+    return () => window.removeEventListener('menukit-realtime-update', handleRealtimeUpdate);
   }, []);
 
   const handleUpdateStatus = async (orderId: string, newStatus: string) => {
