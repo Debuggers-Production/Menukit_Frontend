@@ -52,7 +52,7 @@ interface SettlementSummary {
   total_transactions_count: number;
   settled_count: number;
   pending_count: number;
-  payout_upi_id?: string;
+  bank_account_last4?: string;
   settlement_policy_notice: string;
   contest_participants_count: number;
   contest_settlement_amount: number;
@@ -147,10 +147,10 @@ export function SettlementsPage() {
                 <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-snug max-w-2xl">
                   Online payments received for Takeaway & Delivery orders are settled within <strong>7 working days</strong> to your registered payout account.
                 </p>
-                {summary?.payout_upi_id ? (
-                  <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 pt-0.5">
-                    <ShieldCheck size={13} /> Registered Payout UPI: <span className="font-mono bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800 text-[10px]">{summary.payout_upi_id}</span>
-                  </p>
+                {summary?.bank_account_last4 ? (
+                  <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 mt-2">
+                    <ShieldCheck size={13} /> Registered Bank Account: <span className="font-mono bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800 text-[10px]">•••• {summary.bank_account_last4}</span>
+                  </div>
                 ) : (
                   <p className="text-[10px] font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1 pt-0.5">
                     <AlertCircle size={13} /> No Shop UPI ID configured. <button onClick={() => navigate('/settings')} className="underline hover:text-amber-700">Add UPI in Settings</button>
@@ -212,7 +212,7 @@ export function SettlementsPage() {
                 <h3 className="text-xl font-black text-slate-900 dark:text-white">
                   {currency}{summary?.total_settled_amount.toFixed(2) || '0.00'}
                 </h3>
-                <p className="text-[10px] text-emerald-700 dark:text-emerald-400 font-semibold mt-0.5">
+                <p className="text-[10px] text-emerald-700 dark:emerald-400 font-semibold mt-0.5">
                   {summary?.settled_count || 0} payout(s) completed
                 </p>
               </div>
@@ -281,11 +281,14 @@ export function SettlementsPage() {
               <Skeleton className="h-6 w-24" />
             ) : (
               <div>
-                <h3 className="text-sm font-extrabold text-slate-900 dark:text-white truncate" title={summary?.payout_upi_id || ''}>
-                  {summary?.payout_upi_id || 'Not Configured'}
-                </h3>
-                <p className="text-[10px] text-purple-700 dark:text-purple-400 font-semibold mt-0.5">
-                  {summary?.payout_upi_id ? 'Direct UPI Payout active' : 'Click settings to configure'}
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-extrabold text-slate-900 dark:text-white truncate" title={summary?.bank_account_last4 ? `•••• ${summary.bank_account_last4}` : ''}>
+                    {summary?.bank_account_last4 ? `•••• ${summary.bank_account_last4}` : 'Not Configured'}
+                  </h3>
+                  <CheckCircle2 size={16} className={summary?.bank_account_last4 ? "text-emerald-500" : "text-slate-300"} />
+                </div>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                  {summary?.bank_account_last4 ? 'Direct Bank Settlement active' : 'Click settings to configure'}
                 </p>
               </div>
             )}
@@ -446,8 +449,8 @@ export function SettlementsPage() {
                     <th className="py-3 px-4">Invoice / Ref ID</th>
                     <th className="py-3 px-4">Customer</th>
                     <th className="py-3 px-4">Method</th>
-                    <th className="py-3 px-4 text-right">Gross Amt</th>
-                    <th className="py-3 px-4 text-right">Gateway Fee</th>
+                    <th className="py-3 px-4 text-right">Gross Amount</th>
+                    <th className="py-3 px-4 text-right">Gateway Fee (1%)</th>
                     <th className="py-3 px-4 text-right">Net Settlement</th>
                     <th className="py-3 px-4">Settlement Status</th>
                     <th className="py-3 px-4 text-center">Est. Payout Date</th>

@@ -214,12 +214,9 @@ export function PublicCartPage() {
           } catch (e) {}
         }
 
-        // Fetch fresh shop if not in cache
-        if (!shop) {
-          const shopRes = await api.get(`/public/shop/${id}`);
-          setShop(shopRes.data);
-        }
-
+        // Always fetch fresh shop to override cache and get latest settings
+        const shopRes = await api.get(`/public/shop/${id}`);
+        setShop(shopRes.data);
         // Fetch discounts
         const discountRes = await api.get(`/public/shop/${id}/discounts`);
         const now = new Date();
@@ -410,7 +407,7 @@ export function PublicCartPage() {
           order_id: payData.razorpay_order_id,
           notes: {
             "1_Items_Subtotal": `₹${baseTotal}`,
-            "2_Platform_Fee_1%": `₹${platFee}`,
+            "2_Platform_Fee_2%": `₹${platFee}`,
             "3_Payment_Gateway_Fee_3%": `₹${pgFee}`,
             "4_GST_on_Fee_18%": `₹${gstFee}`,
             "5_Grand_Total": `₹${grandTotal}`
@@ -599,7 +596,7 @@ export function PublicCartPage() {
 
     // Online payment fees (Razorpay — delivery/takeaway) — NOT for dine_in/cash/UPI
     const isOnlineFeeApplicable = paymentMethod === 'online';
-    const platformFee = isOnlineFeeApplicable ? parseFloat((finalTotal * 0.01).toFixed(2)) : 0;
+    const platformFee = isOnlineFeeApplicable ? parseFloat((finalTotal * 0.02).toFixed(2)) : 0;
     const pgFee = isOnlineFeeApplicable ? parseFloat((finalTotal * 0.03).toFixed(2)) : 0;
     const gstOnFee = isOnlineFeeApplicable ? parseFloat((pgFee * 0.18).toFixed(2)) : 0;
     const grandTotal = isOnlineFeeApplicable

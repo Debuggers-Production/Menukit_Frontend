@@ -31,9 +31,13 @@ export interface ShopSettings {
   auto_accept_orders?: boolean;
   cashfree_app_id?: string;
   cashfree_secret_key?: string;
-  cashfree_sandbox?: boolean;
+  cashfree_sandbox: boolean;
   upi_id?: string;
-  online_payments_enabled?: boolean;
+  beneficiary_name?: string;
+  bank_account_last4?: string;
+  bank_account_number?: string;
+  ifsc_code?: string;
+  online_payments_enabled: boolean;
 }
 
 export interface ThemeSettings {

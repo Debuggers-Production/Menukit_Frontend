@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { 
   Mail, Store, Shield, Smartphone, ChevronRight, Sliders, Globe, 
-  Coins, Truck, ShoppingBag, QrCode, Eye, Tag, MapPin, Zap, CheckCircle2, Lock, Info
+  Coins, Truck, ShoppingBag, QrCode, Eye, Tag, MapPin, Zap, CheckCircle2, Lock, Info, AlertCircle
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { useAuthStore } from '@/store/authStore';
@@ -23,15 +23,17 @@ function SettingRow({
   description,
   checked,
   onChange,
+  disabled,
 }: {
   icon?: any;
   title: string;
   description: string;
   checked: boolean;
   onChange: (checked: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between py-3 px-3.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors border border-transparent hover:border-slate-200/60 dark:hover:border-slate-700/60">
+    <div className={`flex items-center justify-between py-3 px-3.5 rounded-xl transition-colors border border-transparent ${disabled ? 'opacity-60 cursor-not-allowed' : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:border-slate-200/60 dark:hover:border-slate-700/60'}`}>
       <div className="flex items-start gap-3 min-w-0 pr-4">
         {Icon && (
           <div className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 shrink-0 mt-0.5">
@@ -46,6 +48,7 @@ function SettingRow({
       <Switch
         checked={checked}
         onChange={onChange}
+        disabled={disabled}
         className="shrink-0 ml-2"
       />
     </div>
@@ -64,6 +67,7 @@ export function SettingsPage() {
   const [newEmail, setNewEmail] = useState('');
   const [newEmailOtp, setNewEmailOtp] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [liveRazorpayStatus, setLiveRazorpayStatus] = useState<string | null>(null);
 
   // Delivery Preview Test State
   const [testDistance, setTestDistance] = useState<number>(2);
@@ -86,7 +90,9 @@ export function SettingsPage() {
     dinein_enabled: shop?.settings?.dinein_enabled || false,
     auto_accept_orders: shop?.settings?.auto_accept_orders || false,
     online_payments_enabled: shop?.settings?.online_payments_enabled !== false,
-    upi_id: shop?.settings?.upi_id || '',
+    bank_account_number: '',
+    ifsc_code: shop?.settings?.ifsc_code || '',
+    beneficiary_name: shop?.settings?.beneficiary_name || '',
   });
 
   // Fetch shop settings on mount
@@ -123,15 +129,44 @@ export function SettingsPage() {
         dinein_enabled: shop.settings.dinein_enabled || false,
         auto_accept_orders: shop.settings.auto_accept_orders || false,
         online_payments_enabled: shop.settings.online_payments_enabled !== false,
-        upi_id: shop.settings.upi_id || '',
+        bank_account_number: '',
+        ifsc_code: shop.settings.ifsc_code || '',
+        beneficiary_name: shop.settings.beneficiary_name || '',
       });
     }
   }, [shop]);
 
+  useEffect(() => {
+    // Auto-sync Razorpay Route activation status if an account exists
+    const syncRazorpayStatus = async () => {
+      if (shop?.settings?.razorpay_account_id) {
+        try {
+          const res = await api.get('/shops/me/razorpay/status');
+          // If status returned, update the live status state
+          if (res.data?.status) {
+            setLiveRazorpayStatus(res.data.status);
+          }
+        } catch (err) {
+          console.error("Failed to sync Razorpay status on load", err);
+        }
+      }
+    };
+    syncRazorpayStatus();
+  }, [shop?.settings?.razorpay_account_id]);
+
   const handleSaveShopSettings = async () => {
     setIsSavingSettings(true);
     try {
-      const res = await api.put('/shops/me/settings', settingsData);
+      const status = liveRazorpayStatus || shop?.settings?.razorpay_route_status;
+      const isVerified = status === 'activated' || status === 'active';
+      
+      const payload = {
+        ...settingsData,
+        // Forcefully disable if not verified to prevent backend 400 errors if it was previously enabled
+        online_payments_enabled: isVerified ? settingsData.online_payments_enabled : false
+      };
+      
+      const res = await api.put('/shops/me/settings', payload);
       if (shop) {
         setShop({ ...shop, settings: res.data });
       } else {
@@ -514,15 +549,41 @@ export function SettingsPage() {
               </h4>
 
               <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                <SettingRow
-                  icon={Zap}
-                  title="Accept Online Payments"
-                  description="Enable online payment gateway checkout (UPI, Cards, Netbanking) for Takeaway & Delivery orders."
-                  checked={settingsData.online_payments_enabled}
-                  onChange={(c) => setSettingsData(prev => ({ ...prev, online_payments_enabled: c }))}
-                />
+                {(() => {
+                  const status = liveRazorpayStatus || shop?.settings?.razorpay_route_status;
+                  const isVerified = status === 'activated' || status === 'active';
+                  
+                  return (
+                    <>
+                      <SettingRow
+                        icon={Zap}
+                        title="Accept Online Payments"
+                        description="Enable online payment gateway checkout (UPI, Cards, Netbanking) for Takeaway & Delivery orders."
+                        checked={settingsData.online_payments_enabled && isVerified}
+                        onChange={(c) => {
+                          if (isVerified) {
+                            setSettingsData(prev => ({ ...prev, online_payments_enabled: c }));
+                          }
+                        }}
+                        disabled={!isVerified}
+                      />
+                      
+                      {!isVerified && (
+                        <div className="ml-0 sm:ml-12 p-3.5 bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800 rounded-2xl space-y-1 my-2 text-xs">
+                          <div className="flex items-center gap-1.5 font-bold text-amber-900 dark:text-amber-200">
+                            <AlertCircle size={14} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                            <span>Verification Required</span>
+                          </div>
+                          <p className="text-amber-700 dark:text-amber-300 text-[11px] leading-relaxed">
+                            You cannot accept online payments until your Settlement Bank Account is fully verified by Razorpay.
+                          </p>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
 
-                {settingsData.online_payments_enabled && (
+                {settingsData.online_payments_enabled && (liveRazorpayStatus || shop?.settings?.razorpay_route_status) === 'activated' && (
                   <div className="ml-0 sm:ml-12 p-3.5 bg-blue-50/80 dark:bg-blue-950/30 border border-blue-200/80 dark:border-blue-800 rounded-2xl space-y-1 my-2 text-xs animate-in fade-in duration-200">
                     <div className="flex items-center gap-1.5 font-bold text-blue-900 dark:text-blue-200">
                       <Info size={14} className="text-blue-600 dark:text-blue-400 shrink-0" />
@@ -537,33 +598,112 @@ export function SettingsPage() {
               </div>
             </div>
 
-            {/* 6. DIRECT SHOP UPI PAYMENTS */}
+            {/* 6. DIRECT SHOP UPI SETTINGS */}
             <div>
               <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1.5">
-                <Coins size={14} className="text-green-500" /> Direct Shop UPI Payments
+                <Coins size={14} className="text-emerald-500" /> Direct Shop UPI
               </h4>
 
-              <div className="p-4 bg-slate-50/60 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800">
+              <div className="p-4 bg-slate-50/60 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800 space-y-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center shrink-0 mt-0.5">
+                    <span className="text-emerald-600 font-black text-sm">UPI</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold text-slate-800 dark:text-slate-100">Shop UPI ID</p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3 leading-tight">
+                      Enter your store's UPI ID (e.g. shopname@upi). This enables customers dining in to pay you directly via their UPI apps without gateway fees.
+                    </p>
+                    
+                    <div>
+                      <input
+                        type="text"
+                        placeholder="e.g. 9876543210@ybl"
+                        value={settingsData.upi_id || ''}
+                        onChange={(e) => setSettingsData(prev => ({ ...prev, upi_id: e.target.value.toLowerCase() }))}
+                        className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-emerald-500 font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 7. DIRECT SHOP SETTLEMENT ACCOUNT */}
+            <div>
+              <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1.5">
+                <Coins size={14} className="text-green-500" /> Settlement Bank Account
+              </h4>
+
+              <div className="p-4 bg-slate-50/60 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800 space-y-3">
                 <div className="flex items-start gap-3">
                   <div className="w-9 h-9 rounded-xl bg-green-50 dark:bg-green-900/20 flex items-center justify-center shrink-0 mt-0.5">
                     <span className="text-green-600 font-black text-sm">₹</span>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-bold text-slate-800 dark:text-slate-100">Shop UPI ID</p>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2 leading-tight">
-                      Customers scanning your QR code can pay directly via UPI. Enter your shop UPI ID below.
+                    <p className="text-xs font-bold text-slate-800 dark:text-slate-100">Bank Account Details</p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3 leading-tight">
+                      Provide your bank details to receive automatic settlements for online orders.
                     </p>
-                    <input
-                      type="text"
-                      placeholder="e.g. shop@okaxis or merchant@paytm"
-                      value={settingsData.upi_id || ''}
-                      onChange={(e) => setSettingsData(prev => ({ ...prev, upi_id: e.target.value }))}
-                      className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-green-500 font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400"
-                    />
-                    {settingsData.upi_id && (
-                      <p className="text-[10px] text-green-600 dark:text-green-400 font-bold mt-1.5 flex items-center gap-1">
-                        ✓ Direct UPI payments configured ({settingsData.upi_id})
-                      </p>
+                    
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-[10px] font-semibold text-slate-500 uppercase mb-1 block">Beneficiary Name</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Siva Store"
+                          value={settingsData.beneficiary_name || ''}
+                          onChange={(e) => setSettingsData(prev => ({ ...prev, beneficiary_name: e.target.value }))}
+                          className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-green-500 font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[10px] font-semibold text-slate-500 uppercase mb-1 block">Account Number</label>
+                          <input
+                            type="text"
+                            placeholder={shop?.settings?.bank_account_last4 ? `•••• •••• ${shop.settings.bank_account_last4}` : "Account Number"}
+                            value={settingsData.bank_account_number || ''}
+                            onChange={(e) => setSettingsData(prev => ({ ...prev, bank_account_number: e.target.value }))}
+                            className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-green-500 font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-semibold text-slate-500 uppercase mb-1 block">IFSC Code</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. HDFC0001234"
+                            value={settingsData.ifsc_code || ''}
+                            onChange={(e) => setSettingsData(prev => ({ ...prev, ifsc_code: e.target.value.toUpperCase() }))}
+                            className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-green-500 font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {shop?.settings?.bank_account_last4 && (
+                      <div className="flex items-center gap-3 mt-2.5">
+                        <p className="text-[10px] text-green-600 dark:text-green-400 font-bold flex items-center gap-1">
+                          ✓ Bank Account configured (ending in {shop.settings.bank_account_last4})
+                        </p>
+                        
+                        {(liveRazorpayStatus || shop.settings.razorpay_route_status) && (() => {
+                          const status = liveRazorpayStatus || shop.settings.razorpay_route_status;
+                          return (
+                            <div className={`px-2 py-0.5 rounded flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider ${
+                              (status === 'activated' || status === 'active')
+                                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                : status === 'under_review'
+                                ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                                : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                            }`}>
+                              {(status === 'activated' || status === 'active') && '✓ Verified & Active'}
+                              {status === 'under_review' && '⏳ Waiting for Verification'}
+                              {status !== 'activated' && status !== 'active' && status !== 'under_review' && `⚠️ ${status}`}
+                            </div>
+                          );
+                        })()}
+                      </div>
                     )}
                   </div>
                 </div>

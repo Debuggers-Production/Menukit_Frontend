@@ -92,7 +92,7 @@ export function OrderStatusPage() {
         order_id: payData.razorpay_order_id,
         notes: {
           "1_Items_Subtotal": `₹${baseTotal}`,
-          "2_Platform_Fee_1%": `₹${platFee}`,
+          "2_Platform_Fee_2%": `₹${platFee}`,
           "3_Payment_Gateway_Fee_3%": `₹${pgFee}`,
           "4_GST_on_Fee_18%": `₹${gstFee}`,
           "5_Grand_Total": `₹${grandTotal}`
