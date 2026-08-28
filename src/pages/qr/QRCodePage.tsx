@@ -6,7 +6,7 @@ import { useShopStore } from '@/store/shopStore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { PageHeader } from '@/components/ui/PageHeader';
+import { useHeaderStore } from '@/store/useHeaderStore';
 import { QRCodeInfo } from '@/types';
 import QRCodeStyling from 'qr-code-styling';
 import { SearchableSelect } from '@/components/ui/SearchableSelect';
@@ -28,6 +28,12 @@ export function QRCodePage() {
 
   const qrRef = useRef<HTMLDivElement>(null);
   const qrCodeInstance = useRef<any>(null);
+
+  const { setTitle: setHeaderTitle } = useHeaderStore();
+
+  useEffect(() => {
+    setHeaderTitle('QR Code Generator', 'Download and print your unique menu QR code.');
+  }, [setHeaderTitle]);
 
   useEffect(() => {
     fetchQRCode();
@@ -64,17 +70,26 @@ export function QRCodePage() {
   }, [shop?.logo_url, includeLogo]);
 
   const getQrUrlWithType = (url?: string) => {
-    if (!url) return '';
-    if (url.includes('type=qr')) return url;
-    return url.includes('?') ? `${url}&type=qr` : `${url}?type=qr`;
+    let targetUrl = url;
+    if (!targetUrl && shop?.id) {
+      targetUrl = `${window.location.origin}/shop/${shop.id}?type=qr`;
+    }
+    if (targetUrl && shop?.id && targetUrl.includes('/brand/')) {
+      targetUrl = targetUrl.replace(/\/brand\/[^?]+/, `/shop/${shop.id}`);
+    }
+    if (!targetUrl) return '';
+    if (targetUrl.includes('type=qr')) return targetUrl;
+    return targetUrl.includes('?') ? `${targetUrl}&type=qr` : `${targetUrl}?type=qr`;
   };
 
   useEffect(() => {
     const qrTargetUrl = getQrUrlWithType(qrCode?.qr_url);
     if (!qrTargetUrl) return;
 
-    if (!qrCodeInstance.current) {
-      qrCodeInstance.current = new QRCodeStyling({
+    const timer = setTimeout(() => {
+      if (!qrRef.current) return;
+
+      const qrOptions = {
         width: 240,
         height: 240,
         data: qrTargetUrl,
@@ -99,30 +114,23 @@ export function QRCodePage() {
           margin: 6,
           imageSize: 0.35,
         }
-      });
-      if (qrRef.current) {
+      };
+
+      if (!qrCodeInstance.current) {
+        qrCodeInstance.current = new QRCodeStyling(qrOptions);
         qrRef.current.innerHTML = '';
         qrCodeInstance.current.append(qrRef.current);
+      } else {
+        qrCodeInstance.current.update(qrOptions);
+        if (!qrRef.current.hasChildNodes()) {
+          qrRef.current.innerHTML = '';
+          qrCodeInstance.current.append(qrRef.current);
+        }
       }
-    } else {
-      qrCodeInstance.current.update({
-        data: qrTargetUrl,
-        dotsOptions: {
-          type: dotType as any,
-          color: qrColor,
-        },
-        cornersSquareOptions: {
-          type: cornersSquareType as any,
-          color: qrColor,
-        },
-        cornersDotOptions: {
-          type: cornersDotType as any,
-          color: qrColor,
-        },
-        image: includeLogo && roundedLogoUrl ? roundedLogoUrl : undefined,
-      });
-    }
-  }, [qrCode?.qr_url, dotType, cornersSquareType, cornersDotType, qrColor, includeLogo, roundedLogoUrl]);
+    }, 50);
+
+    return () => clearTimeout(timer);
+  }, [qrCode?.qr_url, dotType, cornersSquareType, cornersDotType, qrColor, includeLogo, roundedLogoUrl, shop?.id]);
 
   const [isSavingStyle, setIsSavingStyle] = useState(false);
 
@@ -662,11 +670,6 @@ export function QRCodePage() {
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto animate-fade-in">
-      <PageHeader 
-        title="QR Code Generator"
-        subtitle="Download and print your unique menu QR code."
-        className="mb-0"
-      />
 
       {!qrCode ? (
         <Card className="border-dashed text-center">

@@ -1,27 +1,39 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
+import { loadGoogleFont } from '@/utils/fontLoader';
 import { 
-  Palette, Check, Save, Smartphone, Monitor, Layers, Sliders, Sparkles, X, Minimize2, Maximize2, Flame, AppWindow, ZoomIn, ZoomOut, Lock
+  Palette, Check, Save, Smartphone, Monitor, Layers, Sliders, Sparkles, X, Minimize2, Maximize2, Flame, AppWindow, ZoomIn, ZoomOut, Lock, RotateCcw
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { useShopStore } from '@/store/shopStore';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { useHeaderStore } from '@/store/useHeaderStore';
+import { HeaderActions } from '@/components/HeaderActions';
 import { api } from '@/services/api';
 
 export function CustomizeThemePage() {
   const navigate = useNavigate();
-  const { shop, updateTheme } = useShopStore();
+  const { shop, updateTheme, setShop } = useShopStore();
   const [isSaving, setIsSaving] = useState(false);
   const [subStatus, setSubStatus] = useState<any>(null);
-  const setHeaderTitle = useHeaderStore((state) => state.setTitle);
+  const { setTitle: setHeaderTitle } = useHeaderStore();
 
   useEffect(() => {
-    setHeaderTitle('Customize Theme');
+    setHeaderTitle('Customize Theme', 'Configure layout engines, border properties, typography, and brand palettes.');
     api.get('/subscription/current').then(res => setSubStatus(res.data)).catch(console.error);
-  }, [setHeaderTitle]);
-  
+    
+    if (!shop) {
+      api.get('/shops/me').then(res => {
+        if (res.data?.id) {
+          setShop(res.data);
+        }
+      }).catch(console.error);
+    }
+  }, [setHeaderTitle, shop, setShop]);
+
+  const isLocked = subStatus && (subStatus.is_expired || (!subStatus.is_all_access && Array.isArray(subStatus.active_modules) && !subStatus.active_modules.includes('custom-theme')));
+
   // Navigation Tabs State
   const [activeTab, setActiveTab] = useState<'branding' | 'geometry' | 'visibility'>('branding');
 
@@ -54,6 +66,12 @@ export function CustomizeThemePage() {
       setBorderRadius((shop.theme as any).border_radius || 'smooth');
     }
   }, [shop?.theme]);
+
+  useEffect(() => {
+    if (fontFamily) {
+      loadGoogleFont(fontFamily);
+    }
+  }, [fontFamily]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -132,34 +150,38 @@ export function CustomizeThemePage() {
     }
   };
 
-  const handleReset = async () => {
-    setThemeScope('public');
+  const handleReset = () => {
     setPrimaryColor('#f97316');
-    setDiscountCardStyle('modern');
-    setMenuItemStyle('default');
     setFontFamily('Inter');
-    setBorderRadius('smooth');
+    setBorderRadius('0.75rem');
+    setButtonStyle('rounded');
+    setCardStyle('shadow');
+    setShowItemImages(true);
+    setShowDescriptions(true);
+    setShowPrice(true);
+    setShowBadges(true);
+    toast.success('Reset to default brand theme!');
   };
 
-  const colorPresets = ['#f97316', '#3b82f6', '#e11d48', '#10b981', '#8b5cf6', '#000000'];
-  const fontOptions = ['Inter', 'Outfit', 'Poppins', 'Jakarta Sans'];
-
-  const radiusClasses = {
+  const colorPresets = ['#f97316', '#ef4444', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#0f172a'];
+  const fontOptions = ['Inter', 'Outfit', 'Poppins', 'Jakarta Sans', 'Roboto', 'Playfair Display', 'Montserrat', 'Lato', 'Oswald', 'Raleway', 'Nunito', 'Ubuntu', 'Merriweather', 'Noto Sans', 'Bubblegum Sans', 'Fredoka'];
+  const radiusClasses: Record<string, string> = {
     sharp: 'rounded-none',
     smooth: 'rounded-lg',
-    pill: 'rounded-2xl'
+    pill: 'rounded-2xl',
+    '0rem': 'rounded-none',
+    '0.5rem': 'rounded-md',
+    '0.75rem': 'rounded-xl',
+    '1rem': 'rounded-2xl',
   };
 
-  const isModuleLocked = subStatus && (subStatus.is_expired || (!subStatus.is_all_access && Array.isArray(subStatus.active_modules) && !subStatus.active_modules.includes('custom-theme')));
-
   return (
-    <div className="max-w-5xl mx-auto space-y-6 p-4 md:p-6 pb-28 min-h-[calc(100vh-7rem)] animate-fade-in relative select-none">
-      
+    <div className="space-y-6 max-w-6xl mx-auto pb-24 animate-fade-in relative">
       {/* Module Lock Banner */}
-      {isModuleLocked && (
-        <div className="bg-gradient-to-r from-red-50 to-orange-50 dark:from-red-950/40 dark:to-orange-950/40 border-2 border-red-200 dark:border-red-800/80 p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
+      {isLocked && (
+        <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/40 dark:to-orange-950/40 border-2 border-amber-200 dark:border-amber-800/80 p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-red-500/10 text-red-500 flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0">
               <Lock size={20} />
             </div>
             <div>
@@ -167,45 +189,77 @@ export function CustomizeThemePage() {
               <p className="text-xs text-slate-500 dark:text-slate-400">Subscribe to the Custom Theme module or renew your subscription to save brand themes.</p>
             </div>
           </div>
-          <Button onClick={() => navigate('/subscription')} className="bg-primary hover:bg-primary/90 text-white shrink-0 text-xs font-extrabold uppercase tracking-wider">
+          <Button onClick={() => navigate('/subscription')} className="bg-primary hover:bg-primary/90 text-white shrink-0 text-xs font-bold">
             Unlock Module →
           </Button>
         </div>
       )}
 
       {/* ================= HEADER APPLICATION HEADER CONTROLS ================= */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-white dark:bg-slate-950 p-4 rounded-2xl border border-slate-100 dark:border-slate-900 shadow-xs gap-4">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
-            <Sparkles size={18} className="text-primary" />
-            Studio Customization Suite
-          </h1>
-          <p className="text-xs text-slate-500">Configure layout engines, border properties, typography, and brand palettes.</p>
-        </div>
-        <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+      <HeaderActions>
+        <div className="flex items-center gap-2">
           <Button 
             variant="outline"
             onClick={handleReset}
-            className="flex-1 sm:flex-none border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 gap-2 text-xs font-semibold uppercase tracking-wider hover:bg-slate-50 dark:hover:bg-slate-900"
+            size="sm"
+            className="border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 gap-1.5 font-bold hover:bg-slate-50 dark:hover:bg-slate-900"
           >
+            <RotateCcw size={14} />
             Reset
           </Button>
           {!isPiPOpen && (
             <Button 
               variant="outline" 
+              size="sm"
               onClick={() => { setIsPiPOpen(true); setIsPiPMinimized(false); }}
-              className="flex-1 sm:flex-none h-11 px-4 gap-2 text-xs font-semibold uppercase tracking-wider"
+              className="gap-1.5 font-bold"
             >
-              <Smartphone size={15} />
-              Open Preview
+              <Smartphone size={14} />
+              Preview Theme
             </Button>
           )}
           <Button 
             onClick={handleSave} 
             disabled={isSaving} 
-            className="flex-1 sm:flex-none h-11 px-5 gap-2 text-xs font-semibold uppercase tracking-wider shadow-sm"
+            size="sm"
+            className="gap-1.5 font-bold shadow-xs"
           >
-            <Save size={15} />
+            <Save size={14} />
+            {isSaving ? 'Saving...' : 'Publish Theme'}
+          </Button>
+        </div>
+      </HeaderActions>
+
+      {/* Mobile-Only Action Bar */}
+      <div className="flex lg:hidden items-center justify-between gap-2 p-3 mb-3 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm shrink-0">
+        <Button 
+          variant="outline"
+          onClick={handleReset}
+          size="sm"
+          className="border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 gap-1.5 font-bold"
+        >
+          <RotateCcw size={14} />
+          Reset
+        </Button>
+        <div className="flex items-center gap-2">
+          {!isPiPOpen && (
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => { setIsPiPOpen(true); setIsPiPMinimized(false); }}
+              className="gap-1.5 font-bold"
+            >
+              <Smartphone size={14} />
+              Preview
+            </Button>
+          )}
+          <Button 
+            onClick={handleSave} 
+            disabled={isSaving} 
+            size="sm"
+            className="gap-1.5 font-bold shadow-xs"
+          >
+            <Save size={14} />
             {isSaving ? 'Saving...' : 'Publish Theme'}
           </Button>
         </div>
@@ -215,8 +269,9 @@ export function CustomizeThemePage() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 items-start">
         
         {/* Navigation Sidebar Controls */}
-        <div className="flex flex-row md:flex-col gap-1 p-1 bg-slate-100 dark:bg-slate-900 rounded-xl overflow-x-auto md:overflow-x-visible shrink-0">
-          <button
+        <div className="sticky top-0 z-20 md:static py-1 bg-slate-50/95 dark:bg-slate-950/95 backdrop-blur-md rounded-xl">
+          <div className="flex flex-row md:flex-col gap-1 p-1 bg-slate-100 dark:bg-slate-900 rounded-xl overflow-x-auto md:overflow-x-visible shrink-0 shadow-xs">
+            <button
             type="button"
             onClick={() => setActiveTab('branding')}
             className={`flex items-center justify-center md:justify-start gap-2 px-4 py-2.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap flex-1 md:flex-none ${
@@ -255,6 +310,7 @@ export function CustomizeThemePage() {
             Scope Visibility
           </button>
         </div>
+      </div>
 
         {/* Dynamic Context Card Content Panes */}
         <div className="md:col-span-3">

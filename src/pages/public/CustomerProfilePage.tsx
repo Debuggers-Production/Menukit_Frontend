@@ -50,15 +50,17 @@ export function CustomerProfilePage() {
       setIsLoading(true);
       try {
         if (id) {
-          // Fetch Shop details & active theme
-          const shopRes = await api.get(`/public/shop/${id}`);
-          setShop(shopRes.data);
-
           // Fetch full customer profile data from backend API
           const storedToken = localStorage.getItem('customer_token');
-          const profileRes = await api.get(`/public/shop/${id}/customer-profile`, {
-            headers: storedToken ? { Authorization: `Bearer ${storedToken}` } : {}
-          });
+          
+          const [shopRes, profileRes] = await Promise.all([
+            api.get(`/public/shop/${id}`),
+            api.get(`/public/shop/${id}/customer-profile`, {
+              headers: storedToken ? { Authorization: `Bearer ${storedToken}` } : {}
+            })
+          ]);
+          
+          setShop(shopRes.data);
 
           const data = profileRes.data;
           if (data) {

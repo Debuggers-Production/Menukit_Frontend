@@ -4,6 +4,7 @@ export interface MembershipAnalytics {
   total_members: number;
   manually_added: number;
   auto_registered: number;
+  repeated_count?: number;
 }
 
 export interface Member {
@@ -11,10 +12,21 @@ export interface Member {
   name: string | null;
   mobile_number: string;
   joined_at: string;
+  is_retailer_added?: boolean;
+  visit_count?: number;
 }
 
 export interface RepeatedCustomer extends Member {
   visit_count: number;
+}
+
+export interface PaginatedMembersResponse {
+  total_count: number;
+  has_more: boolean;
+  skip: number;
+  limit: number;
+  tab: string;
+  items: Member[];
 }
 
 export const membershipService = {
@@ -25,6 +37,20 @@ export const membershipService = {
 
   getAnalytics: async (shop_id: string): Promise<MembershipAnalytics> => {
     const response = await api.get(`/memberships/retailer/${shop_id}/analytics`);
+    return response.data;
+  },
+
+  getPaginatedMembers: async (
+    shop_id: string,
+    tab: 'existing' | 'new' | 'repeated' = 'existing',
+    skip: number = 0,
+    limit: number = 20,
+    search?: string,
+    min_visits: number = 2
+  ): Promise<PaginatedMembersResponse> => {
+    const response = await api.get(`/memberships/retailer/${shop_id}/members-list`, {
+      params: { tab, skip, limit, search, min_visits }
+    });
     return response.data;
   },
 

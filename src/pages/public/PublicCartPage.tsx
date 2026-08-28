@@ -16,6 +16,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
 import { triggerHaptic, HAPTIC_PATTERNS } from '@/utils/haptic';
+import { loadGoogleFont } from '@/utils/fontLoader';
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -214,11 +215,14 @@ export function PublicCartPage() {
           } catch (e) {}
         }
 
-        // Always fetch fresh shop to override cache and get latest settings
-        const shopRes = await api.get(`/public/shop/${id}`);
+        // Always fetch fresh shop and discounts in parallel to speed up loading
+        const [shopRes, discountRes] = await Promise.all([
+          api.get(`/public/shop/${id}`),
+          api.get(`/public/shop/${id}/discounts`)
+        ]);
+
         setShop(shopRes.data);
-        // Fetch discounts
-        const discountRes = await api.get(`/public/shop/${id}/discounts`);
+
         const now = new Date();
         const currentDay = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][now.getDay()];
         const currentTime = now.getHours() * 60 + now.getMinutes();
@@ -252,6 +256,12 @@ export function PublicCartPage() {
     
     fetchData();
   }, [id, memberStatus]);
+
+  useEffect(() => {
+    if (shop?.theme?.font_family) {
+      loadGoogleFont(shop.theme.font_family);
+    }
+  }, [shop?.theme?.font_family]);
 
   // Set default order type once shop settings are loaded if not already set
   useEffect(() => {
@@ -351,120 +361,20 @@ export function PublicCartPage() {
       const res = await api.post(`/public/shop/${id}/orders`, payload);
       const order = res.data;
 
-      // ── UPI Deep Link (Dine-in) ──
-      if (apiPaymentMethod === 'upi' && shop?.settings?.upi_id) {
-        useCartStore.getState().clearCart();
-        triggerHaptic(HAPTIC_PATTERNS.successUnlock);
-        confetti({ particleCount: 100, spread: 65, origin: { y: 0.6 }, colors: [primaryColor, '#22c55e', '#3b82f6'], zIndex: 9999 });
-        const upiUrl = `upi://pay?pa=${encodeURIComponent(shop.settings.upi_id)}&pn=${encodeURIComponent(shop.name || 'Restaurant')}&am=${finalTotal.toFixed(2)}&cu=INR&tn=${encodeURIComponent(`Order #${order.id.slice(0,8)}`)}` ;
-        toast.success("Opening UPI app to complete payment...");
-        setTimeout(() => {
-          window.open(upiUrl, '_blank');
-          navigate(`/shop/${id}/order/${order.id}`);
-        }, 1000);
-        return;
-      }
-
-      // ── Razorpay (Online Delivery/Takeaway) ──
-      if (apiPaymentMethod === 'online') {
-        const sdkLoaded = await loadRazorpaySDK();
-        if (!sdkLoaded) {
-          toast.error("Could not load payment gateway. Please try again.");
-          setIsPlacingOrder(false);
-          return;
-        }
-
-        const payRes = await api.post(`/public/shop/${id}/orders/${order.id}/pay`);
-        const payData = payRes.data;
-
-        if (payData.mock_mode) {
-          // Mock payment — auto-verify
-          await api.post(`/public/shop/${id}/orders/${order.id}/verify`, {
-            razorpay_order_id: payData.razorpay_order_id,
-            razorpay_payment_id: `pay_mock_${Date.now()}`,
-            razorpay_signature: 'mock_signature'
-          });
-          useCartStore.getState().clearCart();
-          triggerHaptic(HAPTIC_PATTERNS.successUnlock);
-          confetti({ particleCount: 120, spread: 70, origin: { y: 0.6 }, colors: [primaryColor, '#eab308', '#22c55e'], zIndex: 9999 });
-          toast.success("Payment successful! Order confirmed.");
-          setTimeout(() => navigate(`/shop/${id}/order/${order.id}`), 1200);
-          return;
-        }
-
-        const baseTotal = payData.base_total || (payData.amount / 100).toFixed(2);
-        const platFee = payData.platform_fee || 0;
-        const pgFee = payData.pg_fee || 0;
-        const gstFee = payData.gst_on_fee || 0;
-        const grandTotal = payData.grand_total || (payData.amount / 100).toFixed(2);
-
-        const rzpOptions = {
-          key: payData.razorpay_key,
-          amount: payData.amount,
-          currency: payData.currency || 'INR',
-          name: shop?.name || 'Restaurant Order',
-          description: `Items: ₹${baseTotal} | Platform Fee: ₹${platFee} | PG Fee (3%): ₹${pgFee} | GST: ₹${gstFee} = ₹${grandTotal}`,
-          order_id: payData.razorpay_order_id,
-          notes: {
-            "1_Items_Subtotal": `₹${baseTotal}`,
-            "2_Platform_Fee_2%": `₹${platFee}`,
-            "3_Payment_Gateway_Fee_3%": `₹${pgFee}`,
-            "4_GST_on_Fee_18%": `₹${gstFee}`,
-            "5_Grand_Total": `₹${grandTotal}`
-          },
-          handler: async (response: any) => {
-            try {
-              await api.post(`/public/shop/${id}/orders/${order.id}/verify`, {
-                razorpay_order_id: response.razorpay_order_id,
-                razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_signature: response.razorpay_signature,
-              });
-              useCartStore.getState().clearCart();
-              triggerHaptic(HAPTIC_PATTERNS.successUnlock);
-              confetti({ particleCount: 120, spread: 70, origin: { y: 0.6 }, colors: [primaryColor, '#eab308', '#22c55e'], zIndex: 9999 });
-              toast.success("Payment successful! Order confirmed.");
-              setTimeout(() => navigate(`/shop/${id}/order/${order.id}`), 1200);
-            } catch {
-              toast.error("Payment verification failed. Please contact support.");
-            }
-          },
-          prefill: { name: customerName, contact: finalPhone },
-          theme: { color: primaryColor },
-          modal: {
-            ondismiss: async () => {
-              try {
-                await api.post(`/public/shop/${id}/orders/${order.id}/cancel`);
-              } catch (e) {
-                console.error("Failed to cancel unpaid order", e);
-              }
-              toast.error("Payment was cancelled. Order not placed.");
-              setIsPlacingOrder(false);
-            }
-          }
-        };
-
-        setIsCheckoutOpen(false);
-        const rzp = new (window as any).Razorpay(rzpOptions);
-        rzp.open();
-        setIsPlacingOrder(false);
-        return;
-      }
-
-      // ── Cash on Delivery / Counter ──
-      triggerHaptic(HAPTIC_PATTERNS.successUnlock);
-      confetti({ particleCount: 120, spread: 70, origin: { y: 0.6 }, colors: [primaryColor, '#eab308', '#22c55e', '#3b82f6', '#ec4899'], zIndex: 9999 });
+      // Navigate immediately to the order tracking page.
+      // Payment will happen there ONLY AFTER the shop accepts the order.
       useCartStore.getState().clearCart();
-      toast.success("Order placed successfully!");
-      setTimeout(() => navigate(`/shop/${id}/order/${order.id}`), 1500);
-
-    } catch (err: any) {
-      console.error(err);
-      const errorMsg = typeof err.response?.data?.detail === 'string'
-        ? err.response.data.detail
-        : Array.isArray(err.response?.data?.detail)
-          ? "Validation failed. Please check your input fields."
-          : "Failed to place order. Please try again.";
-      toast.error(errorMsg);
+      triggerHaptic(HAPTIC_PATTERNS.successUnlock);
+      confetti({ particleCount: 100, spread: 65, origin: { y: 0.6 }, colors: [primaryColor, '#22c55e', '#3b82f6'], zIndex: 9999 });
+      toast.success("Order sent! Waiting for shop to accept...");
+      setTimeout(() => {
+        navigate(`/shop/${id}/order/${order.id}`);
+      }, 1000);
+      
+    } catch (e: any) {
+      console.error(e);
+      const msg = e.response?.data?.detail || "Failed to place order. Please try again.";
+      toast.error(msg);
     } finally {
       setIsPlacingOrder(false);
     }
@@ -1689,6 +1599,14 @@ export function PublicCartPage() {
                       </label>
                     )
                   )}
+                </div>
+                
+                {/* Payment Delay Note */}
+                <div className="mt-4 p-3 bg-blue-50/50 border border-blue-100 rounded-xl flex gap-2">
+                  <Info size={16} className="text-blue-500 shrink-0 mt-0.5" />
+                  <p className="text-[11px] text-blue-700 font-medium leading-snug">
+                    <span className="font-bold">Payment Option Unlocks Later:</span> You can pay only after {shop?.name || 'the shop'} accepts your order. This reduces cancellation rates and guarantees your order is prepared!
+                  </p>
                 </div>
               </div>
             </div>

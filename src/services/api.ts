@@ -28,6 +28,11 @@ api.interceptors.request.use(
       if (token && token !== 'undefined' && token !== 'null') {
         config.headers.set('Authorization', `Bearer ${token}`);
       }
+      
+      const shopId = localStorage.getItem('current_shop_id');
+      if (shopId) {
+        config.headers.set('X-Shop-Id', shopId);
+      }
     }
     return config;
   },

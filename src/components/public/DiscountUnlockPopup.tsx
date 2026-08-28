@@ -35,10 +35,27 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
   const [isVerified, setIsVerified] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  
+  const [resendTimer, setResendTimer] = useState(30);
+  const [resendCount, setResendCount] = useState(0);
+  const [isResending, setIsResending] = useState(false);
 
   useEffect(() => {
-    // Detect IP country
-    fetch('https://ipapi.co/json/')
+    let interval: NodeJS.Timeout;
+    if (step === 'otp' && resendTimer > 0) {
+      interval = setInterval(() => {
+        setResendTimer(prev => prev - 1);
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [step, resendTimer]);
+
+  useEffect(() => {
+    // Detect IP country with a 3s timeout signal so it never hangs
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+    fetch('https://ipapi.co/json/', { signal: controller.signal })
       .then(res => res.json())
       .then(data => {
         if (data.country_calling_code) {
@@ -47,7 +64,8 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
       })
       .catch(() => {
         // ignore error, default remains +91
-      });
+      })
+      .finally(() => clearTimeout(timeoutId));
   }, []);
 
   useEffect(() => {
@@ -151,6 +169,23 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
       setError(err.response?.data?.detail || 'Failed to send OTP');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    if (resendCount >= 2) return;
+    
+    setError('');
+    setIsResending(true);
+    try {
+      await customerService.verifyMobile(`${countryCode}${mobileNumber}`, shopId);
+      
+      setResendTimer(30);
+      setResendCount(prev => prev + 1);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to resend OTP. Please try again.');
+    } finally {
+      setIsResending(false);
     }
   };
 
@@ -375,13 +410,38 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
                   {error && <p className="text-red-500 text-sm mt-1 text-center">{error}</p>}
                 </div>
                 
-                <button 
-                  type="submit"
-                  disabled={loading || otpCode.length !== 6}
-                  className="w-full py-3 bg-gray-900 text-white rounded-xl font-semibold hover:bg-black transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                >
-                  {loading ? 'Verifying...' : 'Verify & Unlock'}
-                </button>
+                <div className="space-y-3">
+                  <button 
+                    type="submit"
+                    disabled={loading || isResending || otpCode.length !== 6}
+                    className="w-full py-3 bg-gray-900 text-white rounded-xl font-semibold hover:bg-black transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                  >
+                    {loading ? 'Verifying...' : 'Verify & Unlock'}
+                  </button>
+
+                  {resendCount < 2 && (
+                    <button
+                      type="button"
+                      onClick={handleResendOtp}
+                      disabled={resendTimer > 0 || loading || isResending}
+                      className="w-full py-3 bg-gray-100 text-gray-700 rounded-xl font-semibold hover:bg-gray-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                    >
+                      {isResending ? 'Sending...' : resendTimer > 0 ? `Resend OTP in ${resendTimer}s` : 'Resend OTP'}
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStep('mobile');
+                      setResendTimer(30);
+                      setResendCount(0);
+                    }}
+                    className="w-full py-2 text-sm font-medium text-gray-500 hover:text-gray-900 transition-colors"
+                  >
+                    Change Mobile Number
+                  </button>
+                </div>
               </form>
             </motion.div>
           )}

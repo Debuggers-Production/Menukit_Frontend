@@ -54,18 +54,24 @@ export function LanguageSelectorModal({ isOpen, onClose, primaryColor }: Languag
   const handleSelect = (code: string) => {
     setCurrentLang(code);
     
-    // Set the cookie directly as a fallback
-    document.cookie = `googtrans=/en/${code}; path=/`;
-    document.cookie = `googtrans=/en/${code}; path=/; domain=${window.location.hostname}`;
+    if (code === 'en') {
+      document.cookie = "googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+      document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname}`;
+    } else {
+      document.cookie = `googtrans=/en/${code}; path=/;`;
+      document.cookie = `googtrans=/en/${code}; path=/; domain=${window.location.hostname}`;
+    }
     
     const select = document.querySelector('.goog-te-combo') as HTMLSelectElement;
     if (select) {
       select.value = code;
       select.dispatchEvent(new Event('change', { bubbles: true }));
-    } else {
-      sessionStorage.setItem('lang_reloading', 'true');
-      window.location.reload();
     }
+    
+    // Smooth reload to apply language cleanly without React DOM glitches
+    setTimeout(() => {
+      window.location.reload();
+    }, 150);
     
     onClose();
   };

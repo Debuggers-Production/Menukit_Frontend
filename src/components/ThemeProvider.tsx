@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useLocation } from 'react-router';
 import { useShopStore } from '@/store/shopStore';
+import { loadGoogleFont } from '@/utils/fontLoader';
 
 // Helper to calculate a contrasting foreground color (black or white) based on hex background
 function getContrastColor(hexColor: string) {
@@ -24,48 +25,36 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const location = useLocation();
 
   useEffect(() => {
-    if (!shop?.theme) return;
+    const root = document.documentElement;
+    const isPublicMenu = location.pathname.startsWith('/m/') || location.pathname.startsWith('/menu/');
+
+    if (!shop?.theme) {
+      if (!isPublicMenu) {
+        root.classList.remove('dark');
+      }
+      return;
+    }
 
     const theme = shop.theme;
-    const isPublicMenu = location.pathname.startsWith('/m/') || location.pathname.startsWith('/menu/');
-    const isApp = !isPublicMenu;
 
-    // Determine if we should apply the theme based on the scope
-    let shouldApplyTheme = false;
-    if (theme.theme_scope === 'all') {
-      shouldApplyTheme = true;
-    } else if (theme.theme_scope === 'public' && isPublicMenu) {
-      shouldApplyTheme = true;
-    } else if (theme.theme_scope === 'app' && isApp) {
-      shouldApplyTheme = true;
+    // Only apply custom dark mode from shop theme settings on PUBLIC DINER MENU routes (/m/...)
+    if (isPublicMenu && theme.theme === 'dark') {
+      root.classList.add('dark');
+    } else {
+      // Merchant Dashboard routes must ALWAYS remain clean light mode
+      root.classList.remove('dark');
     }
 
-    const root = document.documentElement;
-
-    if (shouldApplyTheme) {
-      // Apply primary color
+    // Apply primary brand accent color & Google Fonts
+    if (theme.primary_color) {
       root.style.setProperty('--primary', theme.primary_color);
       root.style.setProperty('--primary-foreground', getContrastColor(theme.primary_color));
-      
-      // Apply font family if supported (we might need to load it dynamically if it's from Google Fonts, 
-      // but for now we apply what's selected)
-      if (theme.font_family) {
-        root.style.setProperty('--font-sans', `"${theme.font_family}", system-ui, -apple-system, sans-serif`);
-        root.style.setProperty('--font-heading', `"${theme.font_family}", system-ui, -apple-system, sans-serif`);
-      }
-    } else {
-      // Revert to default theme (orange)
-      root.style.removeProperty('--primary');
-      root.style.removeProperty('--primary-foreground');
-      root.style.removeProperty('--font-sans');
-      root.style.removeProperty('--font-heading');
     }
 
-    // Handle dark/light mode if applicable
-    if (theme.theme === 'dark' && shouldApplyTheme) {
-      root.classList.add('dark');
-    } else if (theme.theme === 'light' && shouldApplyTheme) {
-      root.classList.remove('dark');
+    if (theme.font_family) {
+      loadGoogleFont(theme.font_family);
+      root.style.setProperty('--font-sans', `"${theme.font_family}", system-ui, -apple-system, sans-serif`);
+      root.style.setProperty('--font-heading', `"${theme.font_family}", system-ui, -apple-system, sans-serif`);
     }
 
   }, [shop?.theme, location.pathname]);

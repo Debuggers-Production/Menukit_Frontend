@@ -3,9 +3,10 @@ import { createPortal } from 'react-dom';
 import { ChevronDown, Search } from 'lucide-react';
 import { cn } from '@/utils/cn';
 
-interface Option {
+export interface Option {
   id: string;
   name: string;
+  icon?: React.ReactNode;
 }
 
 interface SearchableSelectProps {
@@ -15,6 +16,7 @@ interface SearchableSelectProps {
   placeholder?: string;
   showSearch?: boolean;
   className?: string;
+  minWidth?: number;
 }
 
 export function SearchableSelect({
@@ -23,7 +25,8 @@ export function SearchableSelect({
   onChange,
   placeholder = "Select an option",
   showSearch = true,
-  className
+  className,
+  minWidth
 }: SearchableSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -61,13 +64,20 @@ export function SearchableSelect({
       const shouldFlipUpward = spaceBelow < 180 && spaceAbove > spaceBelow;
       const availableSpace = shouldFlipUpward ? spaceAbove : spaceBelow;
       const maxHeight = Math.max(120, Math.min(260, availableSpace));
+      const calculatedWidth = Math.max(rect.width, minWidth || 160);
+
+      // Prevent overflow off right edge of viewport
+      let left = rect.left;
+      if (left + calculatedWidth > window.innerWidth - 12) {
+        left = Math.max(12, window.innerWidth - calculatedWidth - 12);
+      }
 
       if (shouldFlipUpward) {
         setPos({
           bottom: viewportHeight - rect.top + 4,
           top: undefined,
-          left: rect.left,
-          width: rect.width,
+          left,
+          width: calculatedWidth,
           maxHeight,
           openUpward: true
         });
@@ -75,8 +85,8 @@ export function SearchableSelect({
         setPos({
           top: rect.bottom + 4,
           bottom: undefined,
-          left: rect.left,
-          width: rect.width,
+          left,
+          width: calculatedWidth,
           maxHeight,
           openUpward: false
         });
@@ -115,20 +125,21 @@ export function SearchableSelect({
       <div 
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
-          "flex items-center justify-between min-h-[38px] h-9 w-full rounded-xl border border-input bg-transparent px-3 py-1.5 text-xs shadow-xs cursor-pointer dark:bg-slate-900 transition-colors focus-within:ring-2 focus-within:ring-ring",
+          "flex items-center justify-between min-h-[40px] h-10 w-full rounded-xl border border-input bg-background px-3.5 py-2 text-sm font-medium shadow-sm cursor-pointer transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:border-ring",
           className
         )}
       >
-        <span className={`block truncate ${!selectedOption ? 'text-slate-500' : 'text-slate-900 dark:text-slate-100 font-medium'}`}>
-          {selectedOption ? selectedOption.name : placeholder}
-        </span>
-        <ChevronDown size={16} className={`text-slate-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <div className={`flex items-center gap-2 truncate ${!selectedOption ? 'text-muted-foreground' : 'text-foreground font-medium'}`}>
+          {selectedOption?.icon}
+          <span className="truncate">{selectedOption ? selectedOption.name : placeholder}</span>
+        </div>
+        <ChevronDown size={16} className={`text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </div>
 
       {isOpen && createPortal(
         <div 
           ref={dropdownRef}
-          className="fixed z-[999999] bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col transition-all duration-100 ease-out"
+          className="fixed z-[999999] bg-popover text-popover-foreground rounded-xl shadow-lg border border-border overflow-hidden flex flex-col transition-all duration-100 ease-out"
           style={{
             top: pos.top !== undefined ? `${pos.top}px` : 'auto',
             bottom: pos.bottom !== undefined ? `${pos.bottom}px` : 'auto',
@@ -138,11 +149,11 @@ export function SearchableSelect({
           }}
         >
           {showSearch && (
-            <div className="flex items-center px-3 py-2 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 shrink-0">
-              <Search size={14} className="text-slate-400 mr-2 shrink-0" />
+            <div className="flex items-center px-3 py-2 border-b border-border bg-muted/30 shrink-0">
+              <Search size={14} className="text-muted-foreground mr-2 shrink-0" />
               <input
                 type="text"
-                className="w-full bg-transparent text-xs focus:outline-none dark:text-white"
+                className="w-full bg-transparent text-sm focus:outline-none placeholder:text-muted-foreground"
                 placeholder="Search..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -153,13 +164,13 @@ export function SearchableSelect({
           )}
           <div className="flex-1 overflow-y-auto overscroll-contain py-1 scrollbar-thin">
             {filteredOptions.length === 0 ? (
-              <div className="px-3 py-3 text-xs text-center text-slate-500">No results found</div>
+              <div className="px-3 py-3 text-sm text-center text-muted-foreground">No results found</div>
             ) : (
               filteredOptions.map((opt) => (
                 <div
                   key={opt.id}
-                  className={`px-3 py-2 text-xs cursor-pointer hover:bg-primary/10 hover:text-primary transition-colors ${
-                    value?.toString() === opt.id.toString() ? 'bg-primary/10 text-primary font-bold' : 'text-slate-700 dark:text-slate-300'
+                  className={`px-3 py-2.5 text-sm cursor-pointer flex items-center gap-2 hover:bg-accent hover:text-accent-foreground transition-colors ${
+                    value?.toString() === opt.id.toString() ? 'bg-primary/10 text-primary font-semibold' : 'text-foreground'
                   }`}
                   onClick={() => {
                     onChange(opt.id);
@@ -167,7 +178,8 @@ export function SearchableSelect({
                     setSearch('');
                   }}
                 >
-                  {opt.name}
+                  {opt.icon}
+                  <span>{opt.name}</span>
                 </div>
               ))
             )}

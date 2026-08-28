@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
 import {
-  Plus, Tag, Trash2, Edit2, ToggleLeft, ToggleRight, Calendar, Percent,
-  ShoppingBag, Layers, Clock, CheckCircle2, AlertCircle, Timer, Sparkles, X, Search, Crown, ChevronLeft, ChevronRight
+ Plus, Tag, Trash2, Edit2, ToggleLeft, ToggleRight, Calendar, Percent,
+ ShoppingBag, Layers, Clock, CheckCircle2, AlertCircle, Timer, Sparkles, X, Search, Crown, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { api } from '@/services/api';
 import { Discount, Category, MenuItem } from '@/types';
@@ -12,116 +12,118 @@ import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
-import { PageHeader } from '@/components/ui/PageHeader';
+import { useHeaderStore } from '@/store/useHeaderStore';
+import { HeaderActions } from '@/components/HeaderActions';
 import { useShopStore } from '@/store/shopStore';
+import { usePermissions } from '@/hooks/usePermissions';
 import { GripVertical } from 'lucide-react';
 import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent,
+ DndContext,
+ closestCenter,
+ KeyboardSensor,
+ PointerSensor,
+ useSensor,
+ useSensors,
+ DragEndEvent,
 } from '@dnd-kit/core';
 import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-  useSortable,
+ arrayMove,
+ SortableContext,
+ sortableKeyboardCoordinates,
+ verticalListSortingStrategy,
+ useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
 const SortableDiscountItem = ({ children, id }: { children: React.ReactNode, id: string }) => {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id });
+ const {
+ attributes,
+ listeners,
+ setNodeRef,
+ transform,
+ transition,
+ isDragging,
+ } = useSortable({ id });
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    zIndex: isDragging ? 10 : 1,
-    position: 'relative' as const,
-  };
+ const style = {
+ transform: CSS.Transform.toString(transform),
+ transition,
+ zIndex: isDragging ? 10 : 1,
+ position: 'relative'as const,
+ };
 
-  return (
-    <div ref={setNodeRef} style={style} className={`flex items-stretch gap-2 ${isDragging ? 'opacity-50' : ''}`}>
-      <div className="flex items-center justify-center touch-none cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600 px-1 py-4 mt-2 mb-2 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-colors" {...attributes} {...listeners}>
-        <GripVertical size={20} />
-      </div>
-      <div className="flex-1 min-w-0">
-        {children}
-      </div>
-    </div>
-  );
+ return (
+ <div ref={setNodeRef} style={style} className={`flex items-stretch gap-2 ${isDragging ? 'opacity-50': ''}`}>
+ <div className="flex items-center justify-center touch-none cursor-grab active:cursor-grabbing text-muted-foreground hover:text-muted-foreground px-1 py-4 mt-2 mb-2 bg-muted/50 rounded-xl border border-transparent hover:border-border dark:hover:border-slate-700 transition-colors" {...attributes} {...listeners}>
+ <GripVertical size={20} />
+ </div>
+ <div className="flex-1 min-w-0">
+ {children}
+ </div>
+ </div>
+ );
 };
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-type DiscountStatus = 'active' | 'scheduled' | 'expired' | 'inactive';
+type DiscountStatus = 'active'| 'scheduled'| 'expired'| 'inactive';
 
 function getDiscountStatus(d: Discount): DiscountStatus {
-  if (!d.is_active) return 'inactive';
-  const now = new Date();
-  if (d.start_date && new Date(d.start_date) > now) return 'scheduled';
-  if (d.end_date && new Date(d.end_date) < now) return 'expired';
-  return 'active';
+ if (!d.is_active) return 'inactive';
+ const now = new Date();
+ if (d.start_date && new Date(d.start_date) > now) return 'scheduled';
+ if (d.end_date && new Date(d.end_date) < now) return 'expired';
+ return 'active';
 }
 
 const STATUS_CONFIG: Record<DiscountStatus, { label: string; color: string; icon: React.ReactNode }> = {
-  active: {
-    label: 'Active',
-    color: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
-    icon: <CheckCircle2 size={12} />,
-  },
-  scheduled: {
-    label: 'Scheduled',
-    color: 'bg-blue-50 text-blue-700 ring-1 ring-blue-200',
-    icon: <Timer size={12} />,
-  },
-  expired: {
-    label: 'Expired',
-    color: 'bg-slate-100 text-slate-500 ring-1 ring-slate-200',
-    icon: <AlertCircle size={12} />,
-  },
-  inactive: {
-    label: 'Inactive',
-    color: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
-    icon: <AlertCircle size={12} />,
-  },
+ active: {
+ label: 'Active',
+ color: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
+ icon: <CheckCircle2 size={12} />,
+ },
+ scheduled: {
+ label: 'Scheduled',
+ color: 'bg-blue-50 text-blue-700 ring-1 ring-blue-200',
+ icon: <Timer size={12} />,
+ },
+ expired: {
+ label: 'Expired',
+ color: 'bg-muted text-muted-foreground ring-1 ring-slate-200',
+ icon: <AlertCircle size={12} />,
+ },
+ inactive: {
+ label: 'Inactive',
+ color: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
+ icon: <AlertCircle size={12} />,
+ },
 };
 
 function formatDateTime(iso: string | null) {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleString([], {
-    year: 'numeric', month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  });
+ if (!iso) return '—';
+ return new Date(iso).toLocaleString([], {
+ year: 'numeric', month: 'short', day: 'numeric',
+ hour: '2-digit', minute: '2-digit',
+ });
 }
 
 // ─── Default form ────────────────────────────────────────────────────────────
 
 const defaultForm = {
-  title: '',
-  description: '',
-  discount_type: 'percentage' as 'percentage' | 'flat' | 'bogo' | 'combo',
-  discount_value: '',
-  buy_quantity: '',
-  get_quantity: '',
-  reward_target_ids: [] as string[],
-  applies_to: 'all' as 'all' | 'category' | 'items',
-  target_ids: [] as string[],
-  start_date: '',
-  end_date: '',
-  available_days: [] as string[],
-  available_time_presets: [] as string[],
-  is_active: true,
-  visibility_type: 'everyone' as 'everyone' | 'unlock_required' | 'members_only_hidden' | 'members_only_visible',
+ title: '',
+ description: '',
+ discount_type: 'percentage'as 'percentage'| 'flat'| 'bogo'| 'combo',
+ discount_value: '',
+ buy_quantity: '',
+ get_quantity: '',
+ reward_target_ids: [] as string[],
+ applies_to: 'all'as 'all'| 'category'| 'items',
+ target_ids: [] as string[],
+ start_date: '',
+ end_date: '',
+ available_days: [] as string[],
+ available_time_presets: [] as string[],
+ is_active: true,
+ visibility_type: 'everyone'as 'everyone'| 'unlock_required'| 'members_only_hidden'| 'members_only_visible',
 };
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -129,1050 +131,1104 @@ const defaultForm = {
 let cachedDiscounts: Discount[] = [];
 
 export function DiscountsPage() {
-  const formatDays = (days: string[]) => {
-    if (!days || days.length === 0) return '';
-    const dayOrder = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    const sortedDays = [...days].sort((a, b) => dayOrder.indexOf(a) - dayOrder.indexOf(b));
-    
-    if (sortedDays.length === 7) return 'Everyday';
-    if (sortedDays.length === 5 && sortedDays.join(',') === 'Mon,Tue,Wed,Thu,Fri') return 'Weekdays';
-    if (sortedDays.length === 2 && sortedDays.join(',') === 'Sat,Sun') return 'Weekends';
-    
-    return sortedDays.join(', ');
-  };
+ const formatDays = (days: string[]) => {
+ if (!days || days.length === 0) return '';
+ const dayOrder = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+ const sortedDays = [...days].sort((a, b) => dayOrder.indexOf(a) - dayOrder.indexOf(b));
+ 
+ if (sortedDays.length === 7) return 'Everyday';
+ if (sortedDays.length === 5 && sortedDays.join(',') === 'Mon,Tue,Wed,Thu,Fri') return 'Weekdays';
+ if (sortedDays.length === 2 && sortedDays.join(',') === 'Sat,Sun') return 'Weekends';
+ 
+ return sortedDays.join(', ');
+ };
 
-  const { shop } = useShopStore();
-  const currencySymbol = shop?.settings?.currency || '₹';
+ const { shop } = useShopStore();
+ const { canWrite } = usePermissions('discounts');
+ const currencySymbol = shop?.settings?.currency || '₹';
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [discounts, setDiscounts] = useState<Discount[]>(cachedDiscounts);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
-  const [isLoading, setIsLoading] = useState(() => cachedDiscounts.length === 0);
+ const [searchQuery, setSearchQuery] = useState('');
+ const [discounts, setDiscounts] = useState<Discount[]>(cachedDiscounts);
+ const [categories, setCategories] = useState<Category[]>([]);
+ const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+ const [isLoading, setIsLoading] = useState(() => cachedDiscounts.length === 0);
+ 
+ // Pagination
+ const [skip, setSkip] = useState(0);
+ const [hasMore, setHasMore] = useState(true);
+ const [isLoadingMore, setIsLoadingMore] = useState(false);
+ const limit = 100;
 
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [currentStep, setCurrentStep] = useState(1);
-  const [editingDiscount, setEditingDiscount] = useState<Discount | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [formData, setFormData] = useState(defaultForm);
-  const [discountToDelete, setDiscountToDelete] = useState<string | null>(null);
-  const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
-  const [isDeletingAll, setIsDeletingAll] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [isFabOpen, setIsFabOpen] = useState(false);
-  const [modalCategory, setModalCategory] = useState<'discount' | 'combo'>('discount');
-  const [itemSearchQuery, setItemSearchQuery] = useState('');
-  const [rewardSearchQuery, setRewardSearchQuery] = useState('');
+ const [isModalOpen, setIsModalOpen] = useState(false);
+ const [currentStep, setCurrentStep] = useState(1);
+ const [editingDiscount, setEditingDiscount] = useState<Discount | null>(null);
+ const [isSubmitting, setIsSubmitting] = useState(false);
+ const [formData, setFormData] = useState(defaultForm);
+ const [discountToDelete, setDiscountToDelete] = useState<string | null>(null);
+ const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
+ const [isDeletingAll, setIsDeletingAll] = useState(false);
+ const [isDeleting, setIsDeleting] = useState(false);
+ const [isFabOpen, setIsFabOpen] = useState(false);
+ const [modalCategory, setModalCategory] = useState<'discount'| 'combo'>('discount');
+ const [itemSearchQuery, setItemSearchQuery] = useState('');
+ const [rewardSearchQuery, setRewardSearchQuery] = useState('');
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-  );
+ const sensors = useSensors(
+ useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+ useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+ );
 
-  useEffect(() => {
-    fetchAll();
-  }, []);
+ useEffect(() => {
+ fetchAll(true);
+ }, []);
 
-  const fetchAll = async () => {
-    try {
-      // Always load categories and items — these are needed for the modal selectors
-      const [catRes, itemRes] = await Promise.all([
-        api.get('/categories'),
-        api.get('/menu-items'),
-      ]);
-      setCategories(catRes.data);
-      setMenuItems(itemRes.data);
-    } catch {
-      toast.error('Failed to load categories and items');
-    } finally {
-      setIsLoading(false);
-    }
+ const { setTitle } = useHeaderStore();
 
-    // Load discounts separately — if this fails (e.g. migration not run), the page still works
-    try {
-      const discountRes = await api.get('/discounts');
-      cachedDiscounts = discountRes.data || [];
-      setDiscounts(cachedDiscounts);
-    } catch {
-      // Silently ignore — discounts table may not exist yet
-    }
-  };
+ useEffect(() => {
+ setTitle('Discounts & Offers', 'Create promotions that appear as banners on your public menu.');
+ }, [setTitle]);
+
+ const fetchAll = async (reset = false) => {
+ const currentSkip = reset ? 0 : skip;
+ if (reset) {
+ setIsLoading(true);
+ setHasMore(true);
+ } else {
+ setIsLoadingMore(true);
+ }
+
+ try {
+ // Always load categories and items — these are needed for the modal selectors
+ if (reset) {
+ const [catRes, itemRes] = await Promise.all([
+ api.get('/categories'),
+ api.get('/menu-items'),
+ ]);
+ setCategories(catRes.data);
+ setMenuItems(itemRes.data);
+ }
+ } catch {
+ toast.error('Failed to load categories and items');
+ }
+
+ // Load discounts separately — if this fails (e.g. migration not run), the page still works
+ try {
+ const discountRes = await api.get(`/discounts?skip=${currentSkip}&limit=${limit}`);
+ const newItems = discountRes.data || [];
+ if (newItems.length < limit) {
+ setHasMore(false);
+ }
+ 
+ if (reset) {
+ cachedDiscounts = newItems;
+ setDiscounts(newItems);
+ setSkip(limit);
+ } else {
+ cachedDiscounts = [...discounts, ...newItems];
+ setDiscounts(cachedDiscounts);
+ setSkip(currentSkip + limit);
+ }
+ } catch {
+ // Silently ignore — discounts table may not exist yet
+ } finally {
+ setIsLoading(false);
+ setIsLoadingMore(false);
+ }
+ };
 
 
-  // ── Modal helpers ──────────────────────────────────────────────────────────
+ // ── Modal helpers ──────────────────────────────────────────────────────────
 
-  const openModal = (defaultType?: 'percentage' | 'flat' | 'bogo' | 'combo' | Discount, discount?: Discount) => {
-    // If the first argument is a discount object (editing mode)
-    const isEditing = defaultType && typeof defaultType === 'object';
-    const targetDiscount = isEditing ? (defaultType as Discount) : discount;
+ const openModal = (defaultType?: 'percentage'| 'flat'| 'bogo'| 'combo'| Discount, discount?: Discount) => {
+ // If the first argument is a discount object (editing mode)
+ const isEditing = defaultType && typeof defaultType === 'object';
+ const targetDiscount = isEditing ? (defaultType as Discount) : discount;
 
-    if (targetDiscount) {
-      setModalCategory(['percentage', 'flat'].includes(targetDiscount.discount_type) ? 'discount' : 'combo');
-      setEditingDiscount(targetDiscount);
-      setFormData({
-        title: targetDiscount.title,
-        description: targetDiscount.description || '',
-        discount_type: targetDiscount.discount_type,
-        discount_value: targetDiscount.discount_value?.toString() || '',
-        buy_quantity: targetDiscount.buy_quantity?.toString() || '',
-        get_quantity: targetDiscount.get_quantity?.toString() || '',
-        reward_target_ids: targetDiscount.reward_target_ids || [],
-        applies_to: targetDiscount.applies_to,
-        target_ids: targetDiscount.target_ids || [],
-        start_date: targetDiscount.start_date
-          ? new Date(targetDiscount.start_date).toISOString().slice(0, 16)
-          : '',
-        end_date: targetDiscount.end_date
-          ? new Date(targetDiscount.end_date).toISOString().slice(0, 16)
-          : '',
-        available_days: targetDiscount.available_days || [],
-        available_time_presets: targetDiscount.available_time_presets || [],
-        is_active: targetDiscount.is_active,
-        visibility_type: targetDiscount.visibility_type || 'everyone',
-      });
-    } else {
-      const type = typeof defaultType === 'string' ? defaultType : 'percentage';
-      setModalCategory(['percentage', 'flat'].includes(type) ? 'discount' : 'combo');
-      setEditingDiscount(null);
-      setFormData({
-        ...defaultForm,
-        discount_type: type,
-        applies_to: (type === 'bogo' || type === 'combo') ? 'items' : 'all'
-      });
-    }
-    setItemSearchQuery('');
-    setRewardSearchQuery('');
-    setCurrentStep(1);
-    setIsModalOpen(true);
-  };
+ if (targetDiscount) {
+ setModalCategory(['percentage', 'flat'].includes(targetDiscount.discount_type) ? 'discount': 'combo');
+ setEditingDiscount(targetDiscount);
+ setFormData({
+ title: targetDiscount.title,
+ description: targetDiscount.description || '',
+ discount_type: targetDiscount.discount_type,
+ discount_value: targetDiscount.discount_value?.toString() || '',
+ buy_quantity: targetDiscount.buy_quantity?.toString() || '',
+ get_quantity: targetDiscount.get_quantity?.toString() || '',
+ reward_target_ids: targetDiscount.reward_target_ids || [],
+ applies_to: targetDiscount.applies_to,
+ target_ids: targetDiscount.target_ids || [],
+ start_date: targetDiscount.start_date
+ ? new Date(targetDiscount.start_date).toISOString().slice(0, 16)
+ : '',
+ end_date: targetDiscount.end_date
+ ? new Date(targetDiscount.end_date).toISOString().slice(0, 16)
+ : '',
+ available_days: targetDiscount.available_days || [],
+ available_time_presets: targetDiscount.available_time_presets || [],
+ is_active: targetDiscount.is_active,
+ visibility_type: targetDiscount.visibility_type || 'everyone',
+ });
+ } else {
+ const type = typeof defaultType === 'string'? defaultType : 'percentage';
+ setModalCategory(['percentage', 'flat'].includes(type) ? 'discount': 'combo');
+ setEditingDiscount(null);
+ setFormData({
+ ...defaultForm,
+ discount_type: type,
+ applies_to: (type === 'bogo'|| type === 'combo') ? 'items': 'all'
+ });
+ }
+ setItemSearchQuery('');
+ setRewardSearchQuery('');
+ setCurrentStep(1);
+ setIsModalOpen(true);
+ };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.title.trim()) {
-      toast.error('Please enter a title');
-      return;
-    }
-    if (['percentage', 'flat', 'combo'].includes(formData.discount_type) && !formData.discount_value) {
-      toast.error('Please enter a value/price');
-      return;
-    }
-    if (formData.discount_type === 'bogo' && (!formData.buy_quantity || !formData.get_quantity)) {
-      toast.error('Please specify buy and get quantities');
-      return;
-    }
+ const handleSubmit = async (e: React.FormEvent) => {
+ e.preventDefault();
+ if (!formData.title.trim()) {
+ toast.error('Please enter a title');
+ return;
+ }
+ if (['percentage', 'flat', 'combo'].includes(formData.discount_type) && !formData.discount_value) {
+ toast.error('Please enter a value/price');
+ return;
+ }
+ if (formData.discount_type === 'bogo'&& (!formData.buy_quantity || !formData.get_quantity)) {
+ toast.error('Please specify buy and get quantities');
+ return;
+ }
 
-    setIsSubmitting(true);
-    try {
-      const payload = {
-        ...formData,
-        discount_value: formData.discount_value ? parseFloat(formData.discount_value) : null,
-        buy_quantity: formData.buy_quantity ? parseInt(formData.buy_quantity) : null,
-        get_quantity: formData.get_quantity ? parseInt(formData.get_quantity) : null,
-        reward_target_ids: formData.reward_target_ids.length > 0 ? formData.reward_target_ids : null,
-        description: formData.description || null,
-        start_date: formData.start_date ? new Date(formData.start_date).toISOString() : null,
-        end_date: formData.end_date ? new Date(formData.end_date).toISOString() : null,
-        available_days: formData.available_days.length > 0 ? formData.available_days : null,
-        available_time_presets: formData.available_time_presets.length > 0 ? formData.available_time_presets : null,
-        target_ids: formData.applies_to === 'all' ? null : formData.target_ids,
-      };
+ setIsSubmitting(true);
+ try {
+ const payload = {
+ ...formData,
+ discount_value: formData.discount_value ? parseFloat(formData.discount_value) : null,
+ buy_quantity: formData.buy_quantity ? parseInt(formData.buy_quantity) : null,
+ get_quantity: formData.get_quantity ? parseInt(formData.get_quantity) : null,
+ reward_target_ids: formData.reward_target_ids.length > 0 ? formData.reward_target_ids : null,
+ description: formData.description || null,
+ start_date: formData.start_date ? new Date(formData.start_date).toISOString() : null,
+ end_date: formData.end_date ? new Date(formData.end_date).toISOString() : null,
+ available_days: formData.available_days.length > 0 ? formData.available_days : null,
+ available_time_presets: formData.available_time_presets.length > 0 ? formData.available_time_presets : null,
+ target_ids: formData.applies_to === 'all'? null : formData.target_ids,
+ };
 
-      if (editingDiscount) {
-        await api.put(`/discounts/${editingDiscount.id}`, payload);
-        toast.success('Discount updated');
-      } else {
-        await api.post('/discounts', payload);
-        toast.success('Discount created');
-      }
+ if (editingDiscount) {
+ await api.put(`/discounts/${editingDiscount.id}`, payload);
+ toast.success('Discount updated');
+ } else {
+ await api.post('/discounts', payload);
+ toast.success('Discount created');
+ }
 
-      setIsModalOpen(false);
-      fetchAll();
-    } catch (err: any) {
-      toast.error(err.response?.data?.detail || 'Failed to save discount');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+ setIsModalOpen(false);
+ fetchAll(true);
+ } catch (err: any) {
+ toast.error(err.response?.data?.detail || 'Failed to save discount');
+ } finally {
+ setIsSubmitting(false);
+ }
+ };
 
-  const handleDelete = async () => {
-    if (!discountToDelete) return;
-    setIsDeleting(true);
-    try {
-      await api.delete(`/discounts/${discountToDelete}`);
-      toast.success('Discount deleted');
-      setDiscounts(discounts.filter(d => d.id !== discountToDelete));
-      setDiscountToDelete(null);
-    } catch {
-      toast.error('Failed to delete discount');
-    } finally {
-      setIsDeleting(false);
-    }
-  };
+ const handleDelete = async () => {
+ if (!discountToDelete) return;
+ setIsDeleting(true);
+ try {
+ await api.delete(`/discounts/${discountToDelete}`);
+ toast.success('Discount deleted');
+ setDiscounts(discounts.filter(d => d.id !== discountToDelete));
+ setDiscountToDelete(null);
+ } catch {
+ toast.error('Failed to delete discount');
+ } finally {
+ setIsDeleting(false);
+ }
+ };
 
-  const handleDeleteAll = async () => {
-    setIsDeletingAll(true);
-    try {
-      await api.delete('/discounts/all');
-      setDiscounts([]);
-      setShowDeleteAllConfirm(false);
-      toast.success('All discounts deleted successfully');
-    } catch {
-      toast.error('Failed to delete all discounts');
-    } finally {
-      setIsDeletingAll(false);
-    }
-  };
+ const handleDeleteAll = async () => {
+ setIsDeletingAll(true);
+ try {
+ await api.delete('/discounts/all');
+ setDiscounts([]);
+ setShowDeleteAllConfirm(false);
+ toast.success('All discounts deleted successfully');
+ } catch {
+ toast.error('Failed to delete all discounts');
+ } finally {
+ setIsDeletingAll(false);
+ }
+ };
 
-  const handleToggleActive = async (d: Discount) => {
-    try {
-      await api.put(`/discounts/${d.id}`, { is_active: !d.is_active });
-      setDiscounts(discounts.map(x => x.id === d.id ? { ...x, is_active: !x.is_active } : x));
-      toast.success(d.is_active ? 'Discount deactivated' : 'Discount activated');
-    } catch {
-      toast.error('Failed to update discount');
-    }
-  };
+ const handleToggleActive = async (d: Discount) => {
+ try {
+ await api.put(`/discounts/${d.id}`, { is_active: !d.is_active });
+ setDiscounts(discounts.map(x => x.id === d.id ? { ...x, is_active: !x.is_active } : x));
+ toast.success(d.is_active ? 'Discount deactivated': 'Discount activated');
+ } catch {
+ toast.error('Failed to update discount');
+ }
+ };
 
-  const toggleTargetId = (id: string) => {
-    setFormData(prev => ({
-      ...prev,
-      target_ids: prev.target_ids.includes(id)
-        ? prev.target_ids.filter(t => t !== id)
-        : [...prev.target_ids, id],
-    }));
-  };
+ const toggleTargetId = (id: string) => {
+ setFormData(prev => ({
+ ...prev,
+ target_ids: prev.target_ids.includes(id)
+ ? prev.target_ids.filter(t => t !== id)
+ : [...prev.target_ids, id],
+ }));
+ };
 
-  // ── Stats ──────────────────────────────────────────────────────────────────
+ // ── Stats ──────────────────────────────────────────────────────────────────
 
-  const activeCount = discounts.filter(d => getDiscountStatus(d) === 'active').length;
-  const scheduledCount = discounts.filter(d => getDiscountStatus(d) === 'scheduled').length;
+ const activeCount = discounts.filter(d => getDiscountStatus(d) === 'active').length;
+ const scheduledCount = discounts.filter(d => getDiscountStatus(d) === 'scheduled').length;
 
-  const filteredDiscounts = discounts.filter(d => 
-    d.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    (d.description && d.description.toLowerCase().includes(searchQuery.toLowerCase()))
-  ).sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+ const filteredDiscounts = discounts.filter(d => 
+ d.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+ (d.description && d.description.toLowerCase().includes(searchQuery.toLowerCase()))
+ ).sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
 
-  const handleDragEnd = async (event: DragEndEvent) => {
-    const { active, over } = event;
+ const handleDragEnd = async (event: DragEndEvent) => {
+ const { active, over } = event;
 
-    if (active.id !== over?.id) {
-      const oldIndex = filteredDiscounts.findIndex((d) => d.id === active.id);
-      const newIndex = filteredDiscounts.findIndex((d) => d.id === over?.id);
-      
-      if (oldIndex !== -1 && newIndex !== -1) {
-        const newFilteredDiscounts = arrayMove(filteredDiscounts, oldIndex, newIndex);
-        
-        const newDiscounts = [...discounts];
-        newFilteredDiscounts.forEach((item, index) => {
-          const globalItem = newDiscounts.find(i => i.id === item.id);
-          if (globalItem) {
-            globalItem.display_order = index;
-          }
-        });
-        setDiscounts(newDiscounts);
-        
-        const order = newFilteredDiscounts.map((item, index) => ({
-          id: item.id,
-          display_order: index,
-        }));
-        
-        api.put('/discounts/reorder/batch', { order }).catch(() => {
-          toast.error('Failed to reorder discounts');
-          fetchAll();
-        });
-      }
-    }
-  };
+ if (active.id !== over?.id) {
+ const oldIndex = filteredDiscounts.findIndex((d) => d.id === active.id);
+ const newIndex = filteredDiscounts.findIndex((d) => d.id === over?.id);
+ 
+ if (oldIndex !== -1 && newIndex !== -1) {
+ const newFilteredDiscounts = arrayMove(filteredDiscounts, oldIndex, newIndex);
+ 
+ const newDiscounts = discounts.map(i => ({ ...i }));
+ newFilteredDiscounts.forEach((item, index) => {
+ const globalItem = newDiscounts.find(i => i.id === item.id);
+ if (globalItem) {
+ globalItem.display_order = index;
+ }
+ });
+ setDiscounts(newDiscounts);
+ 
+ const order = newFilteredDiscounts.map((item, index) => ({
+ id: item.id,
+ display_order: index,
+ }));
+ 
+ api.put('/discounts/reorder/batch', { order }).catch(() => {
+ toast.error('Failed to reorder discounts');
+ fetchAll(true);
+ });
+ }
+ }
+ };
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+ // ── Render ─────────────────────────────────────────────────────────────────
 
-  return (
-    <div className="space-y-6 max-w-4xl mx-auto animate-fade-in pb-24 lg:pb-12">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <PageHeader 
-          title="Discounts & Offers"
-          subtitle="Create promotions that appear as banners on your public menu."
-          className="mb-0"
-        />
-      </div>
+ return (
+ <div className="space-y-6 max-w-4xl mx-auto animate-fade-in pb-24 lg:pb-12">
+ {canWrite && (
+ <HeaderActions>
+ <Button size="sm" onClick={() => openModal('percentage')} leftIcon={<Plus size={16} />}>
+ New Offer
+ </Button>
+ </HeaderActions>
+ )}
 
-      {/* Stats Row */}
-      <div className="grid grid-cols-3 gap-3">
-        {[
-          { label: 'Total', value: discounts.length, color: 'bg-slate-50 border-slate-200', textColor: 'text-slate-900' },
-          { label: 'Active Now', value: activeCount, color: 'bg-emerald-50 border-emerald-200', textColor: 'text-emerald-700' },
-          { label: 'Scheduled', value: scheduledCount, color: 'bg-blue-50 border-blue-200', textColor: 'text-blue-700' },
-        ].map(s => (
-          <div key={s.label} className={`rounded-xl border p-3 sm:p-4 text-center ${s.color}`}>
-            <p className={`text-2xl font-bold ${s.textColor}`}>{s.value}</p>
-            <p className="text-xs text-slate-500 mt-0.5">{s.label}</p>
-          </div>
-        ))}
-      </div>
+ {/* Stats Row */}
+ <div className="grid grid-cols-3 gap-3">
+ {[
+ { label: 'Total', value: discounts.length, color: 'bg-muted/50 border-border', textColor: 'text-foreground'},
+ { label: 'Active Now', value: activeCount, color: 'bg-emerald-50 border-emerald-200', textColor: 'text-emerald-700'},
+ { label: 'Scheduled', value: scheduledCount, color: 'bg-blue-50 border-blue-200', textColor: 'text-blue-700'},
+ ].map(s => (
+ <div key={s.label} className={`rounded-xl border p-3 sm:p-4 text-center ${s.color}`}>
+ <p className={`text-2xl font-bold ${s.textColor}`}>{s.value}</p>
+ <p className="text-xs text-muted-foreground mt-0.5">{s.label}</p>
+ </div>
+ ))}
+ </div>
 
-      {/* Sticky Search Bar */}
-      <div className="sticky top-[-16px] sm:top-[-24px] lg:top-[-32px] z-30 py-2 bg-[#f8fafc]/90 backdrop-blur-md -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 border-b border-slate-200 mb-6 flex gap-3">
-        <div className="relative w-full max-w-md flex-1">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-          <input
-            type="text"
-            placeholder="Search offers..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full h-10 pl-10 pr-4 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all dark:bg-slate-900 dark:border-slate-700"
-          />
-        </div>
-        {discounts.length > 0 && (
-          <button
-            onClick={() => setShowDeleteAllConfirm(true)}
-            className="flex items-center justify-center gap-2 px-4 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 font-medium text-sm transition-colors border border-red-200 dark:bg-red-900/20 dark:border-red-800 dark:hover:bg-red-900/40 shrink-0 h-10"
-            title="Delete All Discounts"
-          >
-            <Trash2 size={16} />
-            <span className="hidden sm:inline">Delete All</span>
-          </button>
-        )}
-      </div>
+ {/* Sticky Search Bar */}
+ <div className="sticky top-[-16px] sm:top-[-24px] lg:top-[-32px] z-30 py-2 bg-[#f8fafc]/90 backdrop-blur-md -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 border-b border-border mb-6 flex gap-3">
+ <div className="relative w-full max-w-md flex-1">
+ <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
+ <input
+ type="text"
+ placeholder="Search offers..."
+ value={searchQuery}
+ onChange={(e) => setSearchQuery(e.target.value)}
+ className="w-full h-10 pl-10 pr-4 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+ />
+ </div>
+ {discounts.length > 0 && (
+ <button
+ onClick={() => setShowDeleteAllConfirm(true)}
+ className="flex items-center justify-center gap-2 px-4 rounded-xl bg-destructive/10 hover:bg-destructive/20 text-destructive font-medium text-sm transition-colors border border-destructive/20 shrink-0 h-10"
+ title="Delete All Discounts"
+ >
+ <Trash2 size={16} />
+ <span className="hidden sm:inline">Delete All</span>
+ </button>
+ )}
+ </div>
 
-      {/* Discount List */}
-      {isLoading ? (
-        <div className="space-y-3">
-          {[1, 2, 3].map(i => <Skeleton key={i} className="h-28 rounded-xl" />)}
-        </div>
-      ) : discounts.length === 0 ? (
-        <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
-              <Sparkles className="text-primary" size={28} />
-            </div>
-            <h3 className="text-lg font-semibold mb-1">No discounts yet</h3>
-            <p className="text-slate-500 text-sm max-w-xs mb-6">
-              Create your first offer — it'll appear as a prominent banner when customers scan your QR code.
-            </p>
-            <Button onClick={() => openModal('percentage')}>
-              <Plus size={16} className="mr-2" /> Create First Offer
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <DndContext 
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext 
-            items={filteredDiscounts.map(d => d.id)}
-            strategy={verticalListSortingStrategy}
-          >
-            <div className="space-y-3">
-              {filteredDiscounts.length === 0 && searchQuery && (
-                <div className="py-12 text-center bg-white rounded-xl border border-dashed border-slate-200">
-                  <Search className="mx-auto text-slate-300 mb-3" size={32} />
-                  <p className="text-slate-500 font-medium text-sm">No discounts found matching "{searchQuery}"</p>
-                </div>
-              )}
-              {filteredDiscounts.map(d => {
-                const status = getDiscountStatus(d);
-                const statusCfg = STATUS_CONFIG[status];
+ {/* Discount List */}
+ {isLoading ? (
+ <div className="space-y-3">
+ {[1, 2, 3].map(i => <Skeleton key={i} className="h-28 rounded-xl" />)}
+ </div>
+ ) : discounts.length === 0 ? (
+ <Card className="border-dashed">
+ <CardContent className="flex flex-col items-center justify-center py-20 text-center">
+ <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
+ <Sparkles className="text-primary" size={28} />
+ </div>
+ <h3 className="text-lg font-semibold mb-1">No discounts yet</h3>
+ <p className="text-muted-foreground text-sm max-w-xs mb-6">
+ Create your first offer — it'll appear as a prominent banner when customers scan your QR code.
+ </p>
+ {canWrite && (
+ <Button onClick={() => openModal('percentage')}>
+ <Plus size={16} className="mr-2" /> Create First Offer
+ </Button>
+ )}
+ </CardContent>
+ </Card>
+ ) : (
+ <DndContext 
+ sensors={sensors}
+ collisionDetection={closestCenter}
+ onDragEnd={handleDragEnd}
+ >
+ <SortableContext 
+ items={filteredDiscounts.map(d => d.id)}
+ strategy={verticalListSortingStrategy}
+ >
+ <div className="space-y-3">
+ {filteredDiscounts.length === 0 && searchQuery && (
+ <div className="py-12 text-center bg-background rounded-xl border border-dashed border-border">
+ <Search className="mx-auto text-slate-300 mb-3" size={32} />
+ <p className="text-muted-foreground font-medium text-sm">No discounts found matching"{searchQuery}"</p>
+ </div>
+ )}
+ {filteredDiscounts.map(d => {
+ const status = getDiscountStatus(d);
+ const statusCfg = STATUS_CONFIG[status];
 
-                return (
-                  <SortableDiscountItem key={d.id} id={d.id}>
-                    <div
-                      className={`flex flex-col sm:flex-row p-3.5 sm:p-5 gap-3 sm:gap-4 bg-white rounded-2xl border transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 ${
-                        status === 'expired' || status === 'inactive' ? 'border-slate-200 opacity-75' : 'border-slate-100 shadow-[0_2px_10px_rgb(0,0,0,0.02)] hover:border-primary/20'
-                      }`}
-                    >
-                <div className="flex gap-3 sm:gap-4 flex-1 min-w-0">
-                  {/* Icon */}
-                  <div className={`w-12 h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0 shadow-sm ${
-                    d.discount_type === 'percentage' ? 'bg-primary/10 text-primary' : 
-                    d.discount_type === 'bogo' ? 'bg-indigo-100 text-indigo-600' :
-                    d.discount_type === 'combo' ? 'bg-emerald-100 text-emerald-600' :
-                    'bg-violet-50 text-violet-600'
-                  }`}>
-                    {d.discount_type === 'percentage' && <Percent size={20} className="sm:w-6 sm:h-6" strokeWidth={2.5} />}
-                    {d.discount_type === 'flat' && <span className="text-xl sm:text-2xl font-black">{currencySymbol}</span>}
-                    {d.discount_type === 'bogo' && <Sparkles size={20} className="sm:w-6 sm:h-6" strokeWidth={2.5} />}
-                    {d.discount_type === 'combo' && <Layers size={20} className="sm:w-6 sm:h-6" strokeWidth={2.5} />}
-                  </div>
+ return (
+ <SortableDiscountItem key={d.id} id={d.id}>
+ <div
+ className={`flex flex-col sm:flex-row p-3.5 sm:p-5 gap-3 sm:gap-4 bg-background rounded-2xl border transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 ${
+ status === 'expired'|| status === 'inactive'? 'border-border opacity-75': 'border-border shadow-[0_2px_10px_rgb(0,0,0,0.02)] hover:border-primary/20'
+ }`}
+ >
+ <div className="flex gap-3 sm:gap-4 flex-1 min-w-0">
+ {/* Icon */}
+ <div className={`w-12 h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0 shadow-sm ${
+ d.discount_type === 'percentage'? 'bg-primary/10 text-primary': 
+ d.discount_type === 'bogo'? 'bg-indigo-100 text-indigo-600':
+ d.discount_type === 'combo'? 'bg-emerald-100 text-emerald-600':
+ 'bg-violet-50 text-violet-600'
+ }`}>
+ {d.discount_type === 'percentage'&& <Percent size={20} className="sm:w-6 sm:h-6" strokeWidth={2.5} />}
+ {d.discount_type === 'flat'&& <span className="text-xl sm:text-2xl font-black">{currencySymbol}</span>}
+ {d.discount_type === 'bogo'&& <Sparkles size={20} className="sm:w-6 sm:h-6" strokeWidth={2.5} />}
+ {d.discount_type === 'combo'&& <Layers size={20} className="sm:w-6 sm:h-6" strokeWidth={2.5} />}
+ </div>
 
-                  {/* Content */}
-                  <div className="flex-1 min-w-0 flex flex-col justify-center">
-                    <div className="flex flex-wrap items-center gap-2 mb-0.5">
-                      <h3 className="text-sm sm:text-base font-bold text-slate-800 truncate">{d.title}</h3>
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold uppercase tracking-wider ${statusCfg.color}`}>
-                        {statusCfg.icon} {statusCfg.label}
-                      </span>
-                      {(d.visibility_type === 'members_only_hidden' || d.visibility_type === 'members_only_visible') && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold uppercase tracking-wider bg-purple-50 text-purple-700 ring-1 ring-purple-200">
-                          <Crown size={12} /> Members Only
-                        </span>
-                      )}
-                      {d.visibility_type === 'unlock_required' && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold uppercase tracking-wider bg-blue-50 text-blue-700 ring-1 ring-blue-200">
-                          <Crown size={12} /> Unlock Required
-                        </span>
-                      )}
-                    </div>
+ {/* Content */}
+ <div className="flex-1 min-w-0 flex flex-col justify-center">
+ <div className="flex flex-wrap items-center gap-2 mb-0.5">
+ <h3 className="text-sm sm:text-base font-bold text-foreground truncate">{d.title}</h3>
+ <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold uppercase tracking-wider ${statusCfg.color}`}>
+ {statusCfg.icon} {statusCfg.label}
+ </span>
+ {(d.visibility_type === 'members_only_hidden'|| d.visibility_type === 'members_only_visible') && (
+ <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold uppercase tracking-wider bg-purple-50 text-purple-700 ring-1 ring-purple-200">
+ <Crown size={12} /> Members Only
+ </span>
+ )}
+ {d.visibility_type === 'unlock_required'&& (
+ <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold uppercase tracking-wider bg-blue-50 text-blue-700 ring-1 ring-blue-200">
+ <Crown size={12} /> Unlock Required
+ </span>
+ )}
+ </div>
 
-                    {d.description && (
-                      <p className="text-xs sm:text-sm text-slate-500 mb-2 line-clamp-1 font-medium">{d.description}</p>
-                    )}
+ {d.description && (
+ <p className="text-xs sm:text-sm text-muted-foreground mb-2 line-clamp-1 font-medium">{d.description}</p>
+ )}
 
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-2 text-[11px] sm:text-xs font-semibold text-slate-600">
-                      <span className="flex items-center gap-1 sm:gap-1.5 bg-slate-50 px-2 py-1 rounded-md border border-slate-100">
-                        {d.discount_type === 'percentage' && <><Percent size={12} className="text-slate-400" /> {d.discount_value}% off</>}
-                        {d.discount_type === 'flat' && <><span className="text-slate-400 text-[12px]">{currencySymbol}</span>{d.discount_value} off</>}
-                        {d.discount_type === 'bogo' && <><Sparkles size={12} className="text-slate-400" /> Buy {d.buy_quantity} Get {d.get_quantity}</>}
-                        {d.discount_type === 'combo' && <><Layers size={12} className="text-slate-400" /> {currencySymbol}{d.discount_value} Combo</>}
-                      </span>
-                      <span className="flex items-center gap-1 sm:gap-1.5 bg-slate-50 px-2 py-1 rounded-md border border-slate-100">
-                        {d.applies_to === 'all' && <><ShoppingBag size={12} className="text-slate-400" /> All items</>}
-                        {d.applies_to === 'category' && <><Layers size={12} className="text-slate-400" /> {(d.target_ids?.length || 0)} categor{(d.target_ids?.length === 1) ? 'y' : 'ies'}</>}
-                        {d.applies_to === 'items' && <><Tag size={12} className="text-slate-400" /> {(d.target_ids?.length || 0)} item{(d.target_ids?.length === 1) ? '' : 's'}</>}
-                      </span>
-                      {(d.start_date || d.end_date) && (
-                        <span className="flex items-center gap-1 sm:gap-1.5 text-slate-400 mt-0.5 sm:mt-0 w-full sm:w-auto font-medium">
-                          <Calendar size={12} />
-                          {d.start_date ? formatDateTime(d.start_date) : 'Now'}
-                          {' → '}
-                          {d.end_date ? formatDateTime(d.end_date) : 'No end'}
-                        </span>
-                      )}
-                      {(d.available_days && d.available_days.length > 0) && (
-                        <span className="flex items-center gap-1 sm:gap-1.5 text-slate-400 mt-0.5 sm:mt-0 w-full sm:w-auto font-medium">
-                          <Calendar size={12} />
-                          {formatDays(d.available_days)}
-                        </span>
-                      )}
-                      {(d.available_time_presets && d.available_time_presets.length > 0) && (
-                        <span className="flex items-center gap-1 sm:gap-1.5 text-slate-400 mt-0.5 sm:mt-0 w-full sm:w-auto font-medium">
-                          <Clock size={12} />
-                          {d.available_time_presets.join(', ')}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
+ <div className="flex flex-wrap items-center gap-x-2 gap-y-2 text-[11px] sm:text-xs font-semibold text-muted-foreground">
+ <span className="flex items-center gap-1 sm:gap-1.5 bg-muted/50 px-2 py-1 rounded-md border border-border">
+ {d.discount_type === 'percentage'&& <><Percent size={12} className="text-muted-foreground" /> {d.discount_value}% off</>}
+ {d.discount_type === 'flat'&& <><span className="text-muted-foreground text-[12px]">{currencySymbol}</span>{d.discount_value} off</>}
+ {d.discount_type === 'bogo'&& <><Sparkles size={12} className="text-muted-foreground" /> Buy {d.buy_quantity} Get {d.get_quantity}</>}
+ {d.discount_type === 'combo'&& <><Layers size={12} className="text-muted-foreground" /> {currencySymbol}{d.discount_value} Combo</>}
+ </span>
+ <span className="flex items-center gap-1 sm:gap-1.5 bg-muted/50 px-2 py-1 rounded-md border border-border">
+ {d.applies_to === 'all'&& <><ShoppingBag size={12} className="text-muted-foreground" /> All items</>}
+ {d.applies_to === 'category'&& <><Layers size={12} className="text-muted-foreground" /> {(d.target_ids?.length || 0)} categor{(d.target_ids?.length === 1) ? 'y': 'ies'}</>}
+ {d.applies_to === 'items'&& <><Tag size={12} className="text-muted-foreground" /> {(d.target_ids?.length || 0)} item{(d.target_ids?.length === 1) ? '': 's'}</>}
+ </span>
+ {(d.start_date || d.end_date) && (
+ <span className="flex items-center gap-1 sm:gap-1.5 text-muted-foreground mt-0.5 sm:mt-0 w-full sm:w-auto font-medium">
+ <Calendar size={12} />
+ {d.start_date ? formatDateTime(d.start_date) : 'Now'}
+ {'→ '}
+ {d.end_date ? formatDateTime(d.end_date) : 'No end'}
+ </span>
+ )}
+ {(d.available_days && d.available_days.length > 0) && (
+ <span className="flex items-center gap-1 sm:gap-1.5 text-muted-foreground mt-0.5 sm:mt-0 w-full sm:w-auto font-medium">
+ <Calendar size={12} />
+ {formatDays(d.available_days)}
+ </span>
+ )}
+ {(d.available_time_presets && d.available_time_presets.length > 0) && (
+ <span className="flex items-center gap-1 sm:gap-1.5 text-muted-foreground mt-0.5 sm:mt-0 w-full sm:w-auto font-medium">
+ <Clock size={12} />
+ {d.available_time_presets.join(', ')}
+ </span>
+ )}
+ </div>
+ </div>
+ </div>
 
-                {/* Actions */}
-                <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 justify-end sm:justify-start pt-2 sm:pt-0 mt-1 sm:mt-0 border-t sm:border-0 border-slate-100">
-                  <button
-                    onClick={() => handleToggleActive(d)}
-                    className={`flex items-center justify-center p-2 rounded-xl transition-all ${
-                      d.is_active
-                        ? 'text-emerald-600 bg-emerald-50 hover:bg-emerald-100 hover:scale-105'
-                        : 'text-slate-400 bg-slate-100 hover:bg-slate-200 hover:scale-105'
-                    }`}
-                    title={d.is_active ? 'Deactivate' : 'Activate'}
-                  >
-                    {d.is_active ? <ToggleRight size={20} strokeWidth={2.5} /> : <ToggleLeft size={20} strokeWidth={2.5} />}
-                  </button>
-                  <button
-                    onClick={() => openModal(d)}
-                    className="p-2 rounded-xl text-slate-400 hover:bg-blue-50 hover:text-blue-600 transition-all hover:scale-105"
-                    title="Edit"
-                  >
-                    <Edit2 size={18} strokeWidth={2.5} />
-                  </button>
-                  <button
-                    onClick={() => setDiscountToDelete(d.id)}
-                    className="p-2 rounded-xl text-slate-400 hover:bg-red-50 hover:text-red-600 transition-all hover:scale-105"
-                    title="Delete"
-                  >
-                    <Trash2 size={18} strokeWidth={2.5} />
-                  </button>
-                </div>
-                </div>
-              </SortableDiscountItem>
-            );
-          })}
-        </div>
-      </SortableContext>
-    </DndContext>
-  )}
+ {/* Actions */}
+ {canWrite && (
+ <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 justify-end sm:justify-start pt-2 sm:pt-0 mt-1 sm:mt-0 border-t sm:border-0 border-border">
+ <button
+ onClick={() => handleToggleActive(d)}
+ className={`flex items-center justify-center p-2 rounded-xl transition-all ${
+ d.is_active
+ ? 'text-emerald-600 bg-emerald-50 hover:bg-emerald-100 hover:scale-105'
+ : 'text-muted-foreground bg-muted hover:bg-slate-200 hover:scale-105'
+ }`}
+ title={d.is_active ? 'Deactivate': 'Activate'}
+ >
+ {d.is_active ? <ToggleRight size={20} strokeWidth={2.5} /> : <ToggleLeft size={20} strokeWidth={2.5} />}
+ </button>
+ <button
+ onClick={() => openModal(d)}
+ className="p-2 rounded-xl text-muted-foreground hover:bg-blue-50 hover:text-blue-600 transition-all hover:scale-105"
+ title="Edit"
+ >
+ <Edit2 size={18} strokeWidth={2.5} />
+ </button>
+ <button
+ onClick={() => setDiscountToDelete(d.id)}
+ className="p-2 rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-all hover:scale-105"
+ title="Delete"
+ >
+ <Trash2 size={18} strokeWidth={2.5} />
+ </button>
+ </div>
+ )}
+ </div>
+ </SortableDiscountItem>
+ );
+ })}
+ </div>
+ </SortableContext>
+ </DndContext>
+ )}
 
-      {/* Create / Edit Modal */}
-      <Modal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        title={editingDiscount ? 'Edit Offer' : 'Create New Offer'}
-        className="max-w-lg"
-        footer={
-          <div className="flex justify-between items-center w-full">
-            <Button 
-              variant="secondary" 
-              size="sm"
-              type="button" 
-              onClick={() => {
-                if (currentStep > 1) setCurrentStep(currentStep - 1);
-                else setIsModalOpen(false);
-              }}
-              leftIcon={currentStep > 1 ? <ChevronLeft size={14} /> : undefined}
-            >
-              {currentStep > 1 ? 'Back' : 'Cancel'}
-            </Button>
-            
-            {currentStep < 3 ? (
-              <Button 
-                type="button"
-                size="sm"
-                onClick={() => {
-                  if (currentStep === 1 && !formData.title.trim()) {
-                    toast.error('Please enter offer title');
-                    return;
-                  }
-                  setCurrentStep(currentStep + 1);
-                }}
-              >
-                Next Step <ChevronRight size={14} className="ml-1" />
-              </Button>
-            ) : (
-              <Button type="button" size="sm" onClick={handleSubmit} isLoading={isSubmitting}>
-                {editingDiscount ? 'Update Offer' : 'Create Offer'}
-              </Button>
-            )}
-          </div>
-        }
-      >
-        <div className="space-y-4">
-          {/* Step Indicator */}
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <button type="button" onClick={() => setCurrentStep(1)} className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm transition-all ${currentStep === 1 ? 'bg-primary text-white shadow-md scale-110' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>1</button>
-              <div className={`w-12 h-1 rounded-full ${currentStep > 1 ? 'bg-primary' : 'bg-slate-100'}`} />
-              <button type="button" onClick={() => setCurrentStep(2)} className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm transition-all ${currentStep === 2 ? 'bg-primary text-white shadow-md scale-110' : currentStep > 2 ? 'bg-primary text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>2</button>
-              <div className={`w-12 h-1 rounded-full ${currentStep > 2 ? 'bg-primary' : 'bg-slate-100'}`} />
-              <button type="button" onClick={() => setCurrentStep(3)} className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm transition-all ${currentStep === 3 ? 'bg-primary text-white shadow-md scale-110' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>3</button>
-            </div>
-            <span className="text-sm font-medium text-slate-500">
-              {currentStep === 1 ? 'Basics' : currentStep === 2 ? 'Details' : 'Availability'}
-            </span>
-          </div>
+ {hasMore && discounts.length > 0 && !isLoading && (
+ <div className="flex justify-center mt-6 mb-12">
+ <Button 
+ variant="outline" 
+ onClick={() => fetchAll(false)} 
+ disabled={isLoadingMore}
+ >
+ {isLoadingMore ? <Loader2 className="animate-spin mr-2" size={16} /> : null}
+ {isLoadingMore ? 'Loading...': 'Load More'}
+ </Button>
+ </div>
+ )}
 
-          <div className="space-y-5">
-            {/* Step 1: Basics */}
-            {currentStep === 1 && (
-              <>
-                <Input
-                  label="Offer Title *"
-                  value={formData.title}
-                  onChange={e => setFormData({ ...formData, title: e.target.value })}
-                  placeholder="e.g. Weekend Special 20% Off"
-                  required
-                />
+ {/* Create / Edit Modal */}
+ <Modal
+ isOpen={isModalOpen}
+ onClose={() => setIsModalOpen(false)}
+ title={editingDiscount ? 'Edit Offer': 'Create New Offer'}
+ className="max-w-lg"
+ footer={
+ <div className="flex justify-between items-center w-full">
+ <Button 
+ variant="secondary" 
+ size="sm"
+ type="button" 
+ onClick={() => {
+ if (currentStep > 1) setCurrentStep(currentStep - 1);
+ else setIsModalOpen(false);
+ }}
+ leftIcon={currentStep > 1 ? <ChevronLeft size={14} /> : undefined}
+ >
+ {currentStep > 1 ? 'Back': 'Cancel'}
+ </Button>
+ 
+ {currentStep < 3 ? (
+ <Button 
+ type="button"
+ size="sm"
+ onClick={() => {
+ if (currentStep === 1 && !formData.title.trim()) {
+ toast.error('Please enter offer title');
+ return;
+ }
+ setCurrentStep(currentStep + 1);
+ }}
+ >
+ Next Step <ChevronRight size={14} className="ml-1" />
+ </Button>
+ ) : (
+ <Button type="button" size="sm" onClick={handleSubmit} isLoading={isSubmitting}>
+ {editingDiscount ? 'Update Offer': 'Create Offer'}
+ </Button>
+ )}
+ </div>
+ }
+ >
+ <div className="space-y-4">
+ {/* Step Indicator */}
+ <div className="flex items-center justify-between mb-4">
+ <div className="flex items-center gap-2">
+ <button type="button" onClick={() => setCurrentStep(1)} className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm transition-all ${currentStep === 1 ? 'bg-primary text-white shadow-md scale-110': 'bg-muted text-muted-foreground hover:bg-slate-200'}`}>1</button>
+ <div className={`w-12 h-1 rounded-full ${currentStep > 1 ? 'bg-primary': 'bg-muted'}`} />
+ <button type="button" onClick={() => setCurrentStep(2)} className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm transition-all ${currentStep === 2 ? 'bg-primary text-white shadow-md scale-110': currentStep > 2 ? 'bg-primary text-white': 'bg-muted text-muted-foreground hover:bg-slate-200'}`}>2</button>
+ <div className={`w-12 h-1 rounded-full ${currentStep > 2 ? 'bg-primary': 'bg-muted'}`} />
+ <button type="button" onClick={() => setCurrentStep(3)} className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm transition-all ${currentStep === 3 ? 'bg-primary text-white shadow-md scale-110': 'bg-muted text-muted-foreground hover:bg-slate-200'}`}>3</button>
+ </div>
+ <span className="text-sm font-medium text-muted-foreground">
+ {currentStep === 1 ? 'Basics': currentStep === 2 ? 'Details': 'Availability'}
+ </span>
+ </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                    Description (shown on banner)
-                  </label>
-                  <textarea
-                    value={formData.description}
-                    onChange={e => setFormData({ ...formData, description: e.target.value })}
-                    placeholder="e.g. Enjoy 20% off on all items this weekend only!"
-                    className="flex w-full rounded-xl border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:bg-slate-900 min-h-[80px] resize-y"
-                  />
-                </div>
+ <div className="space-y-5">
+ {/* Step 1: Basics */}
+ {currentStep === 1 && (
+ <>
+ <Input
+ label="Offer Title *"
+ value={formData.title}
+ onChange={e => setFormData({ ...formData, title: e.target.value })}
+ placeholder="e.g. Weekend Special 20% Off"
+ required
+ />
 
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Offer Type *</label>
-                  <div className="grid grid-cols-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl gap-1">
-                    {(modalCategory === 'discount' ? ['percentage', 'flat'] : ['bogo', 'combo'] as const).map(type => (
-                      <button
-                        key={type}
-                        type="button"
-                        onClick={() => setFormData({ ...formData, discount_type: type as any, applies_to: (type === 'bogo' || type === 'combo') ? 'items' : formData.applies_to })}
-                        className={`py-2 rounded-lg text-xs font-semibold flex flex-col items-center justify-center gap-1 transition-colors ${
-                          formData.discount_type === type
-                            ? 'bg-white shadow text-slate-900 dark:bg-slate-700 dark:text-white'
-                            : 'text-slate-500 hover:text-slate-800'
-                        }`}
-                      >
-                        {type === 'percentage' && <Percent size={14} />}
-                        {type === 'flat' && <span className="font-semibold text-sm">{currencySymbol}</span>}
-                        {type === 'bogo' && <Sparkles size={14} />}
-                        {type === 'combo' && <Layers size={14} />}
-                        
-                        {type === 'percentage' && 'Percentage'}
-                        {type === 'flat' && 'Flat Amount'}
-                        {type === 'bogo' && 'BOGO'}
-                        {type === 'combo' && 'Combo'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
+ <div className="space-y-1.5">
+ <label className="text-sm font-medium text-foreground">
+ Description (shown on banner)
+ </label>
+ <textarea
+ value={formData.description}
+ onChange={e => setFormData({ ...formData, description: e.target.value })}
+ placeholder="e.g. Enjoy 20% off on all items this weekend only!"
+ className="flex w-full rounded-xl border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring min-h-[80px] resize-y"
+ />
+ </div>
 
-            {/* Step 2: Details */}
-            {currentStep === 2 && (
-              <>
-                {['percentage', 'flat'].includes(formData.discount_type) && (
-                  <Input
-                    label={formData.discount_type === 'percentage' ? 'Percentage (%) *' : `Amount (${currencySymbol}) *`}
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    max={formData.discount_type === 'percentage' ? '100' : undefined}
-                    value={formData.discount_value}
-                    onChange={e => setFormData({ ...formData, discount_value: e.target.value })}
-                    placeholder={formData.discount_type === 'percentage' ? '10' : '50'}
-                    required={['percentage', 'flat'].includes(formData.discount_type)}
-                  />
-                )}
+ <div className="space-y-1.5">
+ <label className="text-sm font-medium text-foreground">Offer Type *</label>
+ <div className="grid grid-cols-2 bg-muted p-1 rounded-xl gap-1">
+ {(modalCategory === 'discount'? ['percentage', 'flat'] : ['bogo', 'combo'] as const).map(type => (
+ <button
+ key={type}
+ type="button"
+ onClick={() => setFormData({ ...formData, discount_type: type as any, applies_to: (type === 'bogo'|| type === 'combo') ? 'items': formData.applies_to })}
+ className={`py-2 rounded-lg text-xs font-semibold flex flex-col items-center justify-center gap-1 transition-colors ${
+ formData.discount_type === type
+ ? 'bg-background shadow text-foreground dark:bg-slate-700 '
+ : 'text-muted-foreground hover:text-foreground'
+ }`}
+ >
+ {type === 'percentage'&& <Percent size={14} />}
+ {type === 'flat'&& <span className="font-semibold text-sm">{currencySymbol}</span>}
+ {type === 'bogo'&& <Sparkles size={14} />}
+ {type === 'combo'&& <Layers size={14} />}
+ 
+ {type === 'percentage'&& 'Percentage'}
+ {type === 'flat'&& 'Flat Amount'}
+ {type === 'bogo'&& 'BOGO'}
+ {type === 'combo'&& 'Combo'}
+ </button>
+ ))}
+ </div>
+ </div>
+ </>
+ )}
 
-                {formData.discount_type === 'bogo' && (
-                  <div className="grid grid-cols-2 gap-3 p-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/30 rounded-xl">
-                    <Input
-                      label="Buy Quantity *"
-                      type="number"
-                      min="1"
-                      value={formData.buy_quantity}
-                      onChange={e => setFormData({ ...formData, buy_quantity: e.target.value })}
-                      placeholder="e.g. 2"
-                      required={formData.discount_type === 'bogo'}
-                    />
-                    <Input
-                      label="Get Quantity (Free) *"
-                      type="number"
-                      min="1"
-                      value={formData.get_quantity}
-                      onChange={e => setFormData({ ...formData, get_quantity: e.target.value })}
-                      placeholder="e.g. 1"
-                      required={formData.discount_type === 'bogo'}
-                    />
-                  </div>
-                )}
+ {/* Step 2: Details */}
+ {currentStep === 2 && (
+ <>
+ {['percentage', 'flat'].includes(formData.discount_type) && (
+ <Input
+ label={formData.discount_type === 'percentage'? 'Percentage (%) *': `Amount (${currencySymbol}) *`}
+ type="number"
+ step="0.01"
+ min="0"
+ max={formData.discount_type === 'percentage'? '100': undefined}
+ value={formData.discount_value}
+ onChange={e => setFormData({ ...formData, discount_value: e.target.value })}
+ placeholder={formData.discount_type === 'percentage'? '10': '50'}
+ required={['percentage', 'flat'].includes(formData.discount_type)}
+ />
+ )}
 
-                {formData.discount_type === 'combo' && (
-                  <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800/30 rounded-xl">
-                    <Input
-                      label={`Combo Price (${currencySymbol}) *`}
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={formData.discount_value}
-                      onChange={e => setFormData({ ...formData, discount_value: e.target.value })}
-                      placeholder="e.g. 499"
-                      required={formData.discount_type === 'combo'}
-                    />
-                  </div>
-                )}
+ {formData.discount_type === 'bogo'&& (
+ <div className="grid grid-cols-2 gap-3 p-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/30 rounded-xl">
+ <Input
+ label="Buy Quantity *"
+ type="number"
+ min="1"
+ value={formData.buy_quantity}
+ onChange={e => setFormData({ ...formData, buy_quantity: e.target.value })}
+ placeholder="e.g. 2"
+ required={formData.discount_type === 'bogo'}
+ />
+ <Input
+ label="Get Quantity (Free) *"
+ type="number"
+ min="1"
+ value={formData.get_quantity}
+ onChange={e => setFormData({ ...formData, get_quantity: e.target.value })}
+ placeholder="e.g. 1"
+ required={formData.discount_type === 'bogo'}
+ />
+ </div>
+ )}
 
-                <div className="space-y-3">
-                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                    {formData.discount_type === 'bogo' ? 'Buy these items (Required Purchase) *' : 'Applies To'}
-                  </label>
-                  <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl gap-1">
-                    {([
-                      { v: 'all', label: 'All Items', icon: <ShoppingBag size={13} /> },
-                      { v: 'category', label: 'Categories', icon: <Layers size={13} /> },
-                      { v: 'items', label: 'Items', icon: <Tag size={13} /> },
-                    ] as const).map(opt => (
-                      <button
-                        key={opt.v}
-                        type="button"
-                        onClick={() => setFormData({ ...formData, applies_to: opt.v, target_ids: [] })}
-                        className={`flex-1 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors ${
-                          formData.applies_to === opt.v
-                            ? 'bg-white shadow text-slate-900 dark:bg-slate-700 dark:text-white'
-                            : 'text-slate-500 hover:text-slate-800'
-                        }`}
-                      >
-                        {opt.icon} {opt.label}
-                      </button>
-                    ))}
-                  </div>
+ {formData.discount_type === 'combo'&& (
+ <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800/30 rounded-xl">
+ <Input
+ label={`Combo Price (${currencySymbol}) *`}
+ type="number"
+ step="0.01"
+ min="0"
+ value={formData.discount_value}
+ onChange={e => setFormData({ ...formData, discount_value: e.target.value })}
+ placeholder="e.g. 499"
+ required={formData.discount_type === 'combo'}
+ />
+ </div>
+ )}
 
-                  {formData.applies_to === 'category' && (
-                    <div className="flex flex-wrap gap-2 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 max-h-40 overflow-y-auto">
-                      {categories.length === 0 ? (
-                        <p className="text-xs text-slate-500">No categories found</p>
-                      ) : categories.map(cat => (
-                        <button
-                          key={cat.id}
-                          type="button"
-                          onClick={() => toggleTargetId(cat.id)}
-                          className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                            formData.target_ids.includes(cat.id)
-                              ? 'bg-primary text-white shadow-sm'
-                              : 'bg-white text-slate-600 border border-slate-200 hover:border-primary/50'
-                          }`}
-                        >
-                          {formData.target_ids.includes(cat.id) && <X size={10} />}
-                          {cat.name}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+ <div className="space-y-3">
+ <label className="text-sm font-medium text-foreground">
+ {formData.discount_type === 'bogo'? 'Buy these items (Required Purchase) *': 'Applies To'}
+ </label>
+ <div className="flex bg-muted p-1 rounded-xl gap-1">
+ {([
+ { v: 'all', label: 'All Items', icon: <ShoppingBag size={13} /> },
+ { v: 'category', label: 'Categories', icon: <Layers size={13} /> },
+ { v: 'items', label: 'Items', icon: <Tag size={13} /> },
+ ] as const).map(opt => (
+ <button
+ key={opt.v}
+ type="button"
+ onClick={() => setFormData({ ...formData, applies_to: opt.v, target_ids: [] })}
+ className={`flex-1 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors ${
+ formData.applies_to === opt.v
+ ? 'bg-background shadow text-foreground dark:bg-slate-700 '
+ : 'text-muted-foreground hover:text-foreground'
+ }`}
+ >
+ {opt.icon} {opt.label}
+ </button>
+ ))}
+ </div>
 
-                  {formData.applies_to === 'items' && (
-                    <div className="flex flex-col gap-2 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
-                      <div className="relative">
-                        <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                        <input
-                          type="text"
-                          placeholder="Search items..."
-                          value={itemSearchQuery}
-                          onChange={e => setItemSearchQuery(e.target.value)}
-                          className="w-full pl-8 pr-3 py-1.5 text-sm rounded-lg border border-slate-200 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20 dark:bg-slate-900 dark:border-slate-700"
-                        />
-                      </div>
-                      <div className="flex flex-col gap-1 max-h-48 overflow-y-auto pr-1">
-                        {menuItems.length === 0 ? (
-                          <p className="text-xs text-slate-500">No items found</p>
-                        ) : menuItems.filter(i => i.name.toLowerCase().includes(itemSearchQuery.toLowerCase())).map(item => (
-                          <label
-                            key={item.id}
-                            className={`flex items-center gap-2.5 p-2 rounded-lg cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors ${
-                              formData.target_ids.includes(item.id) ? 'bg-primary/5' : ''
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={formData.target_ids.includes(item.id)}
-                              onChange={() => toggleTargetId(item.id)}
-                              className="w-4 h-4 rounded accent-primary"
-                            />
-                            <span className="text-sm text-slate-700 dark:text-slate-300 line-clamp-1">{item.name}</span>
-                            <span className="ml-auto text-xs text-slate-400">{currencySymbol}{item.price}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
+ {formData.applies_to === 'category'&& (
+ <div className="flex flex-wrap gap-2 p-3 bg-muted/50 rounded-xl border border-border max-h-40 overflow-y-auto">
+ {categories.length === 0 ? (
+ <p className="text-xs text-muted-foreground">No categories found</p>
+ ) : categories.map(cat => (
+ <button
+ key={cat.id}
+ type="button"
+ onClick={() => toggleTargetId(cat.id)}
+ className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+ formData.target_ids.includes(cat.id)
+ ? 'bg-primary text-white shadow-sm'
+ : 'bg-background text-muted-foreground border border-border hover:border-primary/50'
+ }`}
+ >
+ {formData.target_ids.includes(cat.id) && <X size={10} />}
+ {cat.name}
+ </button>
+ ))}
+ </div>
+ )}
 
-                {formData.discount_type === 'bogo' && (
-                  <div className="space-y-3 pt-2">
-                    <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Get these items (Reward) *</label>
-                    <div className="flex flex-col gap-2 p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl border border-indigo-100 dark:border-indigo-800/30">
-                      <div className="relative">
-                        <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                        <input
-                          type="text"
-                          placeholder="Search items..."
-                          value={rewardSearchQuery}
-                          onChange={e => setRewardSearchQuery(e.target.value)}
-                          className="w-full pl-8 pr-3 py-1.5 text-sm rounded-lg border border-indigo-200 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:bg-slate-900 dark:border-indigo-800"
-                        />
-                      </div>
-                      <div className="flex flex-col gap-1 max-h-48 overflow-y-auto pr-1">
-                        {menuItems.length === 0 ? (
-                          <p className="text-xs text-slate-500">No items found</p>
-                        ) : menuItems.filter(i => i.name.toLowerCase().includes(rewardSearchQuery.toLowerCase())).map(item => (
-                          <label
-                            key={`reward-${item.id}`}
-                            className={`flex items-center gap-2.5 p-2 rounded-lg cursor-pointer hover:bg-indigo-100/50 dark:hover:bg-indigo-800/30 transition-colors ${
-                              formData.reward_target_ids.includes(item.id) ? 'bg-indigo-100 dark:bg-indigo-800/50' : ''
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={formData.reward_target_ids.includes(item.id)}
-                              onChange={() => {
-                                const newTargets = formData.reward_target_ids.includes(item.id)
-                                  ? formData.reward_target_ids.filter(id => id !== item.id)
-                                  : [...formData.reward_target_ids, item.id];
-                                setFormData({ ...formData, reward_target_ids: newTargets });
-                              }}
-                              className="w-4 h-4 rounded accent-indigo-600"
-                            />
-                            <span className="text-sm text-slate-700 dark:text-slate-300 line-clamp-1">{item.name}</span>
-                            <span className="ml-auto text-xs text-slate-400">{currencySymbol}{item.price}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
+ {formData.applies_to === 'items'&& (
+ <div className="flex flex-col gap-2 p-3 bg-muted/50 rounded-xl border border-border">
+ <div className="relative">
+ <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+ <input
+ type="text"
+ placeholder="Search items..."
+ value={itemSearchQuery}
+ onChange={e => setItemSearchQuery(e.target.value)}
+ className="w-full pl-8 pr-3 py-1.5 text-sm rounded-lg border border-border bg-background shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+ />
+ </div>
+ <div className="flex flex-col gap-1 max-h-48 overflow-y-auto pr-1">
+ {menuItems.length === 0 ? (
+ <p className="text-xs text-muted-foreground">No items found</p>
+ ) : menuItems.filter(i => i.name.toLowerCase().includes(itemSearchQuery.toLowerCase())).map(item => (
+ <label
+ key={item.id}
+ className={`flex items-center gap-2.5 p-2 rounded-lg cursor-pointer hover:bg-muted dark:hover:bg-slate-700 transition-colors ${
+ formData.target_ids.includes(item.id) ? 'bg-primary/5': ''
+ }`}
+ >
+ <input
+ type="checkbox"
+ checked={formData.target_ids.includes(item.id)}
+ onChange={() => toggleTargetId(item.id)}
+ className="w-4 h-4 rounded accent-primary"
+ />
+ <span className="text-sm text-foreground line-clamp-1">{item.name}</span>
+ <span className="ml-auto text-xs text-muted-foreground">{currencySymbol}{item.price}</span>
+ </label>
+ ))}
+ </div>
+ </div>
+ )}
+ </div>
 
-                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 mt-4 transition-all">
-                  <div className="flex items-center gap-1.5 mb-4">
-                    <Crown size={16} className="text-purple-500" />
-                    <p className="text-sm font-medium text-slate-900 dark:text-white">Who can see and use this offer?</p>
-                  </div>
+ {formData.discount_type === 'bogo'&& (
+ <div className="space-y-3 pt-2">
+ <label className="text-sm font-medium text-foreground">Get these items (Reward) *</label>
+ <div className="flex flex-col gap-2 p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl border border-indigo-100 dark:border-indigo-800/30">
+ <div className="relative">
+ <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+ <input
+ type="text"
+ placeholder="Search items..."
+ value={rewardSearchQuery}
+ onChange={e => setRewardSearchQuery(e.target.value)}
+ className="w-full pl-8 pr-3 py-1.5 text-sm rounded-lg border border-indigo-200 bg-background shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-indigo-800"
+ />
+ </div>
+ <div className="flex flex-col gap-1 max-h-48 overflow-y-auto pr-1">
+ {menuItems.length === 0 ? (
+ <p className="text-xs text-muted-foreground">No items found</p>
+ ) : menuItems.filter(i => i.name.toLowerCase().includes(rewardSearchQuery.toLowerCase())).map(item => (
+ <label
+ key={`reward-${item.id}`}
+ className={`flex items-center gap-2.5 p-2 rounded-lg cursor-pointer hover:bg-indigo-100/50 dark:hover:bg-indigo-800/30 transition-colors ${
+ formData.reward_target_ids.includes(item.id) ? 'bg-indigo-100 dark:bg-indigo-800/50': ''
+ }`}
+ >
+ <input
+ type="checkbox"
+ checked={formData.reward_target_ids.includes(item.id)}
+ onChange={() => {
+ const newTargets = formData.reward_target_ids.includes(item.id)
+ ? formData.reward_target_ids.filter(id => id !== item.id)
+ : [...formData.reward_target_ids, item.id];
+ setFormData({ ...formData, reward_target_ids: newTargets });
+ }}
+ className="w-4 h-4 rounded accent-indigo-600"
+ />
+ <span className="text-sm text-foreground line-clamp-1">{item.name}</span>
+ <span className="ml-auto text-xs text-muted-foreground">{currencySymbol}{item.price}</span>
+ </label>
+ ))}
+ </div>
+ </div>
+ </div>
+ )}
 
-                  <div className="flex flex-col gap-3">
-                    <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${formData.visibility_type === 'everyone' ? 'bg-purple-50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-800' : 'bg-white border-slate-200 dark:bg-slate-900 dark:border-slate-700'}`}>
-                      <input 
-                        type="radio" 
-                        name="visibility" 
-                        className="mt-1 w-4 h-4 text-purple-600 focus:ring-purple-500 border-slate-300"
-                        checked={formData.visibility_type === 'everyone'}
-                        onChange={() => setFormData({ ...formData, visibility_type: 'everyone' })}
-                      />
-                      <div>
-                        <p className="text-sm font-medium text-slate-900 dark:text-white">Show to Everyone (No verification required)</p>
-                        <p className="text-xs text-slate-500 mt-0.5">Visible to all visitors. They can apply this discount immediately without entering a phone number.</p>
-                      </div>
-                    </label>
+ <div className="p-4 rounded-xl border border-border bg-muted/50 mt-4 transition-all">
+ <div className="flex items-center gap-1.5 mb-4">
+ <Crown size={16} className="text-purple-500" />
+ <p className="text-sm font-medium text-foreground">Who can see and use this offer?</p>
+ </div>
 
-                    <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${formData.visibility_type === 'unlock_required' ? 'bg-purple-50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-800' : 'bg-white border-slate-200 dark:bg-slate-900 dark:border-slate-700'}`}>
-                      <input 
-                        type="radio" 
-                        name="visibility" 
-                        className="mt-1 w-4 h-4 text-purple-600 focus:ring-purple-500 border-slate-300"
-                        checked={formData.visibility_type === 'unlock_required'}
-                        onChange={() => setFormData({ ...formData, visibility_type: 'unlock_required' })}
-                      />
-                      <div>
-                        <p className="text-sm font-medium text-slate-900 dark:text-white">Offer Unlock Required</p>
-                        <p className="text-xs text-slate-500 mt-0.5">Visible to all visitors, but requires them to enter their mobile number (OTP) to unlock. Auto-registers them.</p>
-                      </div>
-                    </label>
+ <div className="flex flex-col gap-3">
+ <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${formData.visibility_type === 'everyone'? 'bg-purple-50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-800': 'bg-background border-border '}`}>
+ <input 
+ type="radio" 
+ name="visibility" 
+ className="mt-1 w-4 h-4 text-purple-600 focus:ring-purple-500 border-border"
+ checked={formData.visibility_type === 'everyone'}
+ onChange={() => setFormData({ ...formData, visibility_type: 'everyone'})}
+ />
+ <div>
+ <p className="text-sm font-medium text-foreground">Show to Everyone (No verification required)</p>
+ <p className="text-xs text-muted-foreground mt-0.5">Visible to all visitors. They can apply this discount immediately without entering a phone number.</p>
+ </div>
+ </label>
 
-                    <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${formData.visibility_type === 'members_only_hidden' ? 'bg-purple-50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-800' : 'bg-white border-slate-200 dark:bg-slate-900 dark:border-slate-700'}`}>
-                      <input 
-                        type="radio" 
-                        name="visibility" 
-                        className="mt-1 w-4 h-4 text-purple-600 focus:ring-purple-500 border-slate-300"
-                        checked={formData.visibility_type === 'members_only_hidden'}
-                        onChange={() => setFormData({ ...formData, visibility_type: 'members_only_hidden' })}
-                      />
-                      <div>
-                        <p className="text-sm font-medium text-slate-900 dark:text-white">Strict Members Only (Hidden)</p>
-                        <p className="text-xs text-slate-500 mt-0.5">Hidden from the public. Only visible and unlockable if the customer is already on your shop's Member List.</p>
-                      </div>
-                    </label>
+ <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${formData.visibility_type === 'unlock_required'? 'bg-purple-50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-800': 'bg-background border-border '}`}>
+ <input 
+ type="radio" 
+ name="visibility" 
+ className="mt-1 w-4 h-4 text-purple-600 focus:ring-purple-500 border-border"
+ checked={formData.visibility_type === 'unlock_required'}
+ onChange={() => setFormData({ ...formData, visibility_type: 'unlock_required'})}
+ />
+ <div>
+ <p className="text-sm font-medium text-foreground">Offer Unlock Required</p>
+ <p className="text-xs text-muted-foreground mt-0.5">Visible to all visitors, but requires them to enter their mobile number (OTP) to unlock. Auto-registers them.</p>
+ </div>
+ </label>
 
-                    <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${formData.visibility_type === 'members_only_visible' ? 'bg-purple-50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-800' : 'bg-white border-slate-200 dark:bg-slate-900 dark:border-slate-700'}`}>
-                      <input 
-                        type="radio" 
-                        name="visibility" 
-                        className="mt-1 w-4 h-4 text-purple-600 focus:ring-purple-500 border-slate-300"
-                        checked={formData.visibility_type === 'members_only_visible'}
-                        onChange={() => setFormData({ ...formData, visibility_type: 'members_only_visible' })}
-                      />
-                      <div>
-                        <p className="text-sm font-medium text-slate-900 dark:text-white">Strict Members Only (Visible)</p>
-                        <p className="text-xs text-slate-500 mt-0.5">Visible to the public as "Member Required". Instructs them to ask staff to become a member. Only unlockable by strict members.</p>
-                      </div>
-                    </label>
-                  </div>
-                </div>
-              </>
-            )}
+ <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${formData.visibility_type === 'members_only_hidden'? 'bg-purple-50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-800': 'bg-background border-border '}`}>
+ <input 
+ type="radio" 
+ name="visibility" 
+ className="mt-1 w-4 h-4 text-purple-600 focus:ring-purple-500 border-border"
+ checked={formData.visibility_type === 'members_only_hidden'}
+ onChange={() => setFormData({ ...formData, visibility_type: 'members_only_hidden'})}
+ />
+ <div>
+ <p className="text-sm font-medium text-foreground">Strict Members Only (Hidden)</p>
+ <p className="text-xs text-muted-foreground mt-0.5">Hidden from the public. Only visible and unlockable if the customer is already on your shop's Member List.</p>
+ </div>
+ </label>
 
-            {/* Step 3: Availability */}
-            {currentStep === 3 && (
-              <>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-2 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
-                    <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 mb-1.5">
-                      <Calendar size={14} className="text-primary" /> Start Date
-                    </label>
-                    <div className="flex flex-col gap-2">
-                      <input
-                        type="date"
-                        value={formData.start_date ? formData.start_date.split('T')[0] : ''}
-                        onChange={e => {
-                          const d = e.target.value;
-                          if (!d) setFormData({ ...formData, start_date: '' });
-                          else {
-                            const t = formData.start_date ? formData.start_date.split('T')[1] || '00:00' : '00:00';
-                            setFormData({ ...formData, start_date: `${d}T${t}` });
-                          }
-                        }}
-                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all dark:bg-slate-900 dark:border-slate-700"
-                      />
-                      <input
-                        type="time"
-                        value={formData.start_date ? formData.start_date.split('T')[1] || '' : ''}
-                        onChange={e => {
-                          const t = e.target.value;
-                          if (!t) return;
-                          const d = formData.start_date ? formData.start_date.split('T')[0] : new Date().toISOString().split('T')[0];
-                          setFormData({ ...formData, start_date: `${d}T${t}` });
-                        }}
-                        disabled={!formData.start_date}
-                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all dark:bg-slate-900 dark:border-slate-700 disabled:opacity-50 disabled:bg-slate-100"
-                      />
-                    </div>
-                  </div>
+ <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${formData.visibility_type === 'members_only_visible'? 'bg-purple-50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-800': 'bg-background border-border '}`}>
+ <input 
+ type="radio" 
+ name="visibility" 
+ className="mt-1 w-4 h-4 text-purple-600 focus:ring-purple-500 border-border"
+ checked={formData.visibility_type === 'members_only_visible'}
+ onChange={() => setFormData({ ...formData, visibility_type: 'members_only_visible'})}
+ />
+ <div>
+ <p className="text-sm font-medium text-foreground">Strict Members Only (Visible)</p>
+ <p className="text-xs text-muted-foreground mt-0.5">Visible to the public as"Member Required". Instructs them to ask staff to become a member. Only unlockable by strict members.</p>
+ </div>
+ </label>
+ </div>
+ </div>
+ </>
+ )}
 
-                  <div className="space-y-2 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
-                    <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 mb-1.5">
-                      <Clock size={14} className="text-amber-500" /> End Date
-                    </label>
-                    <div className="flex flex-col gap-2">
-                      <input
-                        type="date"
-                        value={formData.end_date ? formData.end_date.split('T')[0] : ''}
-                        onChange={e => {
-                          const d = e.target.value;
-                          if (!d) setFormData({ ...formData, end_date: '' });
-                          else {
-                            const t = formData.end_date ? formData.end_date.split('T')[1] || '00:00' : '00:00';
-                            setFormData({ ...formData, end_date: `${d}T${t}` });
-                          }
-                        }}
-                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all dark:bg-slate-900 dark:border-slate-700"
-                      />
-                      <input
-                        type="time"
-                        value={formData.end_date ? formData.end_date.split('T')[1] || '' : ''}
-                        onChange={e => {
-                          const t = e.target.value;
-                          if (!t) return;
-                          const d = formData.end_date ? formData.end_date.split('T')[0] : new Date().toISOString().split('T')[0];
-                          setFormData({ ...formData, end_date: `${d}T${t}` });
-                        }}
-                        disabled={!formData.end_date}
-                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all dark:bg-slate-900 dark:border-slate-700 disabled:opacity-50 disabled:bg-slate-100"
-                      />
-                    </div>
-                  </div>
-                </div>
+ {/* Step 3: Availability */}
+ {currentStep === 3 && (
+ <>
+ <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+ <div className="space-y-2 p-3 bg-muted/50 rounded-xl border border-border">
+ <label className="text-sm font-semibold text-foreground flex items-center gap-1.5 mb-1.5">
+ <Calendar size={14} className="text-primary" /> Start Date
+ </label>
+ <div className="flex flex-col gap-2">
+ <input
+ type="date"
+ value={formData.start_date ? formData.start_date.split('T')[0] : ''}
+ onChange={e => {
+ const d = e.target.value;
+ if (!d) setFormData({ ...formData, start_date: ''});
+ else {
+ const t = formData.start_date ? formData.start_date.split('T')[1] || '00:00': '00:00';
+ setFormData({ ...formData, start_date: `${d}T${t}` });
+ }
+ }}
+ className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+ />
+ <input
+ type="time"
+ value={formData.start_date ? formData.start_date.split('T')[1] || '': ''}
+ onChange={e => {
+ const t = e.target.value;
+ if (!t) return;
+ const d = formData.start_date ? formData.start_date.split('T')[0] : new Date().toISOString().split('T')[0];
+ setFormData({ ...formData, start_date: `${d}T${t}` });
+ }}
+ disabled={!formData.start_date}
+ className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all disabled:opacity-50 disabled:bg-muted"
+ />
+ </div>
+ </div>
 
-                <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
-                  <h4 className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">Available Days</h4>
-                  <div className="flex flex-wrap gap-2">
-                    {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => {
-                      const isSelected = formData.available_days.includes(day);
-                      return (
-                        <button
-                          key={day}
-                          type="button"
-                          onClick={() => {
-                            if (isSelected) {
-                              setFormData({ ...formData, available_days: formData.available_days.filter(d => d !== day) });
-                            } else {
-                              setFormData({ ...formData, available_days: [...formData.available_days, day] });
-                            }
-                          }}
-                          className={`w-11 h-11 rounded-xl text-xs font-medium transition-colors border flex items-center justify-center ${
-                            isSelected 
-                              ? 'bg-primary border-primary text-white shadow-sm' 
-                              : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300'
-                          }`}
-                        >
-                          {day}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <p className="text-xs text-slate-500 mt-2">Leave all unchecked if available every day.</p>
-                </div>
+ <div className="space-y-2 p-3 bg-muted/50 rounded-xl border border-border">
+ <label className="text-sm font-semibold text-foreground flex items-center gap-1.5 mb-1.5">
+ <Clock size={14} className="text-amber-500" /> End Date
+ </label>
+ <div className="flex flex-col gap-2">
+ <input
+ type="date"
+ value={formData.end_date ? formData.end_date.split('T')[0] : ''}
+ onChange={e => {
+ const d = e.target.value;
+ if (!d) setFormData({ ...formData, end_date: ''});
+ else {
+ const t = formData.end_date ? formData.end_date.split('T')[1] || '00:00': '00:00';
+ setFormData({ ...formData, end_date: `${d}T${t}` });
+ }
+ }}
+ className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+ />
+ <input
+ type="time"
+ value={formData.end_date ? formData.end_date.split('T')[1] || '': ''}
+ onChange={e => {
+ const t = e.target.value;
+ if (!t) return;
+ const d = formData.end_date ? formData.end_date.split('T')[0] : new Date().toISOString().split('T')[0];
+ setFormData({ ...formData, end_date: `${d}T${t}` });
+ }}
+ disabled={!formData.end_date}
+ className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all disabled:opacity-50 disabled:bg-muted"
+ />
+ </div>
+ </div>
+ </div>
 
-                <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
-                  <h4 className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">Timing Presets</h4>
-                  <div className="flex flex-wrap gap-2">
-                    {[
-                      { id: 'Early Morning', label: 'Early Morning (04:00 - 08:00)' },
-                      { id: 'Morning', label: 'Morning (08:00 - 12:00)' },
-                      { id: 'Afternoon', label: 'Afternoon (12:00 - 16:00)' },
-                      { id: 'Evening', label: 'Evening (16:00 - 20:00)' },
-                      { id: 'Night', label: 'Night (20:00 - 00:00)' },
-                      { id: 'Mid-night', label: 'Mid-night (00:00 - 04:00)' }
-                    ].map(preset => {
-                      const isSelected = formData.available_time_presets.includes(preset.id);
-                      return (
-                        <button
-                          key={preset.id}
-                          type="button"
-                          onClick={() => {
-                            if (isSelected) {
-                              setFormData({ ...formData, available_time_presets: formData.available_time_presets.filter(p => p !== preset.id) });
-                            } else {
-                              setFormData({ ...formData, available_time_presets: [...formData.available_time_presets, preset.id] });
-                            }
-                          }}
-                          className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors border ${
-                            isSelected 
-                              ? 'bg-primary border-primary text-white' 
-                              : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300'
-                          }`}
-                        >
-                          {preset.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <p className="text-xs text-slate-500 mt-2">Leave all unchecked if available all day.</p>
-                </div>
+ <div className="pt-2 border-t border-border">
+ <h4 className="text-sm font-medium text-foreground mb-3">Available Days</h4>
+ <div className="flex flex-wrap gap-2">
+ {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => {
+ const isSelected = formData.available_days.includes(day);
+ return (
+ <button
+ key={day}
+ type="button"
+ onClick={() => {
+ if (isSelected) {
+ setFormData({ ...formData, available_days: formData.available_days.filter(d => d !== day) });
+ } else {
+ setFormData({ ...formData, available_days: [...formData.available_days, day] });
+ }
+ }}
+ className={`w-11 h-11 rounded-xl text-xs font-medium transition-colors border flex items-center justify-center ${
+ isSelected 
+ ? 'bg-primary border-primary text-white shadow-sm'
+ : 'bg-background border-border text-muted-foreground hover:border-border '
+ }`}
+ >
+ {day}
+ </button>
+ );
+ })}
+ </div>
+ <p className="text-xs text-muted-foreground mt-2">Leave all unchecked if available every day.</p>
+ </div>
 
-                <label className="flex items-center justify-between p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors mt-2">
-                  <div>
-                    <p className="text-sm font-medium text-slate-900 dark:text-white">Enable Offer</p>
-                    <p className="text-xs text-slate-500">Publish this offer to the public menu now</p>
-                  </div>
-                  <div
-                    onClick={() => setFormData({ ...formData, is_active: !formData.is_active })}
-                    className={`w-12 h-6 rounded-full relative transition-colors duration-200 ${formData.is_active ? 'bg-primary' : 'bg-slate-300 dark:bg-slate-600'}`}
-                  >
-                    <div className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${formData.is_active ? 'translate-x-6' : ''}`} />
-                  </div>
-                </label>
-              </>
-            )}
-          </div>
-        </div>
-      </Modal>
+ <div className="pt-4 border-t border-border">
+ <h4 className="text-sm font-medium text-foreground mb-3">Timing Presets</h4>
+ <div className="flex flex-wrap gap-2">
+ {[
+ { id: 'Early Morning', label: 'Early Morning (04:00 - 08:00)'},
+ { id: 'Morning', label: 'Morning (08:00 - 12:00)'},
+ { id: 'Afternoon', label: 'Afternoon (12:00 - 16:00)'},
+ { id: 'Evening', label: 'Evening (16:00 - 20:00)'},
+ { id: 'Night', label: 'Night (20:00 - 00:00)'},
+ { id: 'Mid-night', label: 'Mid-night (00:00 - 04:00)'}
+ ].map(preset => {
+ const isSelected = formData.available_time_presets.includes(preset.id);
+ return (
+ <button
+ key={preset.id}
+ type="button"
+ onClick={() => {
+ if (isSelected) {
+ setFormData({ ...formData, available_time_presets: formData.available_time_presets.filter(p => p !== preset.id) });
+ } else {
+ setFormData({ ...formData, available_time_presets: [...formData.available_time_presets, preset.id] });
+ }
+ }}
+ className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors border ${
+ isSelected 
+ ? 'bg-primary border-primary text-white'
+ : 'bg-background border-border text-muted-foreground hover:border-border '
+ }`}
+ >
+ {preset.label}
+ </button>
+ );
+ })}
+ </div>
+ <p className="text-xs text-muted-foreground mt-2">Leave all unchecked if available all day.</p>
+ </div>
 
-      {/* Confirm Delete */}
-      <ConfirmModal
-        isOpen={!!discountToDelete}
-        onClose={() => setDiscountToDelete(null)}
-        onConfirm={handleDelete}
-        title="Delete Discount"
-        message="This offer will be permanently removed and will no longer appear on your public menu."
-        confirmText="Delete"
-        cancelText="Cancel"
-        isLoading={isDeleting}
-      />
-      
-      <ConfirmModal
-        isOpen={showDeleteAllConfirm}
-        onClose={() => setShowDeleteAllConfirm(false)}
-        onConfirm={handleDeleteAll}
-        title="Delete All Discounts"
-        message="Are you sure you want to delete ALL discounts? This action cannot be undone."
-        confirmText="Delete All"
-        cancelText="Cancel"
-        isLoading={isDeletingAll}
-      />
+ <label className="flex items-center justify-between p-4 rounded-xl border border-border bg-muted/50 cursor-pointer hover:bg-muted transition-colors mt-2">
+ <div>
+ <p className="text-sm font-medium text-foreground">Enable Offer</p>
+ <p className="text-xs text-muted-foreground">Publish this offer to the public menu now</p>
+ </div>
+ <div
+ onClick={() => setFormData({ ...formData, is_active: !formData.is_active })}
+ className={`w-12 h-6 rounded-full relative transition-colors duration-200 ${formData.is_active ? 'bg-primary': 'bg-slate-300 dark:bg-slate-600'}`}
+ >
+ <div className={`absolute top-0.5 left-0.5 w-5 h-5 bg-background rounded-full shadow transition-transform duration-200 ${formData.is_active ? 'translate-x-6': ''}`} />
+ </div>
+ </label>
+ </>
+ )}
+ </div>
+ </div>
+ </Modal>
 
-      {/* Floating Action Button with Menu */}
-      <div className="fixed bottom-20 lg:bottom-8 right-4 lg:right-8 z-50 flex flex-col items-end gap-3">
-        {/* Menu Options */}
-        <div className={`flex flex-col items-end gap-3 transition-all duration-200 ${isFabOpen ? 'opacity-100 translate-y-0 visible' : 'opacity-0 translate-y-4 invisible pointer-events-none'}`}>
-          <button
-            onClick={() => {
-              setIsFabOpen(false);
-              openModal('bogo');
-            }}
-            className="flex items-center gap-2 pr-2 hover:scale-105 transition-transform"
-          >
-            <span className="bg-white text-slate-700 text-sm font-medium px-3 py-1.5 rounded-lg shadow-sm border border-slate-100">Combos & Bogos</span>
-            <div className="w-10 h-10 rounded-full bg-white text-indigo-600 shadow-[0_4px_20px_rgb(0,0,0,0.1)] flex items-center justify-center border border-indigo-50">
-              <Sparkles size={18} />
-            </div>
-          </button>
-          <button
-            onClick={() => {
-              setIsFabOpen(false);
-              openModal('percentage');
-            }}
-            className="flex items-center gap-2 pr-2 hover:scale-105 transition-transform"
-          >
-            <span className="bg-white text-slate-700 text-sm font-medium px-3 py-1.5 rounded-lg shadow-sm border border-slate-100">Discount & Offer</span>
-            <div className="w-10 h-10 rounded-full bg-white text-primary shadow-[0_4px_20px_rgb(0,0,0,0.1)] flex items-center justify-center border border-primary/10">
-              <Percent size={18} />
-            </div>
-          </button>
-        </div>
+ {/* Confirm Delete */}
+ <ConfirmModal
+ isOpen={!!discountToDelete}
+ onClose={() => setDiscountToDelete(null)}
+ onConfirm={handleDelete}
+ title="Delete Discount"
+ message="This offer will be permanently removed and will no longer appear on your public menu."
+ confirmText="Delete"
+ cancelText="Cancel"
+ isLoading={isDeleting}
+ />
+ 
+ <ConfirmModal
+ isOpen={showDeleteAllConfirm}
+ onClose={() => setShowDeleteAllConfirm(false)}
+ onConfirm={handleDeleteAll}
+ title="Delete All Discounts"
+ message="Are you sure you want to delete ALL discounts? This action cannot be undone."
+ confirmText="Delete All"
+ cancelText="Cancel"
+ isLoading={isDeletingAll}
+ />
 
-        {/* Main FAB */}
-        <button
-          onClick={() => setIsFabOpen(!isFabOpen)}
-          className="w-14 h-14 rounded-full bg-primary shadow-[0_8px_30px_rgb(0,0,0,0.12)] flex items-center justify-center text-white transition-all duration-300 hover:scale-105"
-          title="New Offer"
-        >
-          {isFabOpen ? <X size={24} className="transition-transform duration-300 rotate-90" /> : <Plus size={24} className="transition-transform duration-300" />}
-        </button>
-      </div>
-    </div>
-  );
+ {/* Floating Action Button with Menu */}
+ {canWrite && (
+ <div className="fixed bottom-20 lg:bottom-8 right-4 lg:right-8 z-50 flex flex-col items-end gap-3">
+ {/* Menu Options */}
+ <div className={`flex flex-col items-end gap-3 transition-all duration-200 ${isFabOpen ? 'opacity-100 translate-y-0 visible': 'opacity-0 translate-y-4 invisible pointer-events-none'}`}>
+ <button
+ onClick={() => {
+ setIsFabOpen(false);
+ openModal('bogo');
+ }}
+ className="flex items-center gap-2 pr-2 hover:scale-105 transition-transform"
+ >
+ <span className="bg-background text-foreground text-sm font-medium px-3 py-1.5 rounded-lg shadow-sm border border-border">Combos & Bogos</span>
+ <div className="w-10 h-10 rounded-full bg-background text-indigo-600 shadow-[0_4px_20px_rgb(0,0,0,0.1)] flex items-center justify-center border border-indigo-50">
+ <Sparkles size={18} />
+ </div>
+ </button>
+ <button
+ onClick={() => {
+ setIsFabOpen(false);
+ openModal('percentage');
+ }}
+ className="flex items-center gap-2 pr-2 hover:scale-105 transition-transform"
+ >
+ <span className="bg-background text-foreground text-sm font-medium px-3 py-1.5 rounded-lg shadow-sm border border-border">Discount & Offer</span>
+ <div className="w-10 h-10 rounded-full bg-background text-primary shadow-[0_4px_20px_rgb(0,0,0,0.1)] flex items-center justify-center border border-primary/10">
+ <Percent size={18} />
+ </div>
+ </button>
+ </div>
+
+ {/* Main FAB */}
+ <button
+ onClick={() => setIsFabOpen(!isFabOpen)}
+ className="w-14 h-14 rounded-full bg-primary shadow-[0_8px_30px_rgb(0,0,0,0.12)] flex items-center justify-center text-white transition-all duration-300 hover:scale-105"
+ title="New Offer"
+ >
+ {isFabOpen ? <X size={24} className="transition-transform duration-300 rotate-90" /> : <Plus size={24} className="transition-transform duration-300" />}
+ </button>
+ </div>
+ )}
+ </div>
+ );
 }

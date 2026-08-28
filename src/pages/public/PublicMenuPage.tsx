@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router';
-import { Search, Flame, MapPin, Phone, Info, UtensilsCrossed, X, Star, LayoutGrid, List as ListIcon, Clock, Sparkles, ExternalLink, SlidersHorizontal, Check, Languages, Tag, Crown, Calendar, ShoppingBag, ArrowUpRight, ChevronDown, QrCode, Download, History, Trophy, ChefHat, User, Truck } from 'lucide-react';
+import { Search, Flame, MapPin, Phone, Info, UtensilsCrossed, X, Star, LayoutGrid, List as ListIcon, Clock, Sparkles, ExternalLink, SlidersHorizontal, Check, Languages, Tag, Crown, Calendar, ShoppingBag, ArrowUpRight, ChevronDown, QrCode, Download, History, Trophy, ChefHat, User, Truck, CheckCircle2, XCircle } from 'lucide-react';
 import { api } from '@/services/api';
 import { APP_CONFIG } from '@/config';
 import { Shop, Category, MenuItem, Discount } from '@/types';
@@ -21,6 +21,7 @@ import confetti from 'canvas-confetti';
 import { contestService } from '@/services/contestService';
 import { triggerHaptic, HAPTIC_PATTERNS } from '@/utils/haptic';
 import { publicCache } from '@/utils/publicCache';
+import { loadGoogleFont } from '@/utils/fontLoader';
 
 const triggerWelcomeEffect = () => {
   triggerHaptic(HAPTIC_PATTERNS.successUnlock);
@@ -98,14 +99,25 @@ export function PublicMenuPage() {
   const [shop, setShop] = useState<Shop | null>(() => (id && menuCache[id]) ? menuCache[id].shop : null);
   const { currentOrder, totalActiveCount } = useActiveOrders(id);
   const [categories, setCategories] = useState<PublicCategory[]>(() => (id && menuCache[id]) ? menuCache[id].categories : []);
-  const [categoriesOffset, setCategoriesOffset] = useState(0);
-  const [hasMoreCategories, setHasMoreCategories] = useState(true);
-  const [isLoadingMoreCategories, setIsLoadingMoreCategories] = useState(false);
-  const CATEGORIES_LIMIT = 5;
+  const [items, setItems] = useState<MenuItem[]>([]);
+  const [itemsOffset, setItemsOffset] = useState(0);
+  const [hasMoreItems, setHasMoreItems] = useState(true);
+  const [isLoadingMoreItems, setIsLoadingMoreItems] = useState(false);
+  const [isItemsLoading, setIsItemsLoading] = useState(false);
+  const ITEMS_LIMIT = 50;
 
   const [isLoading, setIsLoading] = useState(() => !id || !menuCache[id]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeCategoryId, setActiveCategoryId] = useState<string>('all');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  const [activeCategories, setActiveCategories] = useState<string[]>(['all']);
   const [foodFilter, setFoodFilter] = useState<'all' | 'veg' | 'non-veg' | 'egg' | 'drink' | 'dessert'>('all');
   const [sortOrder, setSortOrder] = useState<'default' | 'price_asc' | 'price_desc'>('default');
   const [extraFilters, setExtraFilters] = useState<string[]>([]);
@@ -303,6 +315,10 @@ export function PublicMenuPage() {
           },
           image: qrStyleData.include_logo && roundedPublicLogo ? roundedPublicLogo : undefined,
         });
+        if (!publicQrRef.current.hasChildNodes()) {
+          publicQrRef.current.innerHTML = '';
+          publicQrInstance.current.append(publicQrRef.current);
+        }
       }
     }, 100);
 
@@ -355,48 +371,17 @@ export function PublicMenuPage() {
     }
   }, [id, searchParams]);
 
-  const fetchMenu = async (currentOffset: number = 0, append = false) => {
-    if (append) setIsLoadingMoreCategories(true);
-    
-    if (id && menuCache[id] && Date.now() - menuCache[id].timestamp < 5 * 60 * 1000 && !append) {
-      setShop(menuCache[id].shop);
-      setCategories(menuCache[id].categories);
-      setIsLoading(false);
-      return;
-    }
-
+  const fetchCategories = async (retryCount = 0) => {
     try {
-      const [shopRes, menuRes] = await Promise.all([
+      const [shopRes, catRes] = await Promise.all([
         api.get(`/public/shop/${id}`),
-        api.get(`/public/shop/${id}/menu?limit=${CATEGORIES_LIMIT}&offset=${currentOffset}`)
+        api.get(`/public/shop/${id}/categories?limit=100`)
       ]);
-
-      const data = menuRes.data || [];
-      if (data.length < CATEGORIES_LIMIT) {
-        setHasMoreCategories(false);
-      } else {
-        setHasMoreCategories(true);
-      }
-
-      if (id && !append) {
-        menuCache[id] = {
-          shop: shopRes.data,
-          categories: data,
-          timestamp: Date.now()
-        };
-        publicCache.set(`shop_${id}`, shopRes.data);
-      }
-
       setShop(shopRes.data);
-      if (append) {
-        setCategories(prev => [...prev, ...data]);
-      } else {
-        setCategories(data);
-      }
-
+      setCategories(catRes.data);
+      
       const shopData = shopRes.data as Shop;
       const hasWelcome = Boolean(shopData.welcome_message && !sessionStorage.getItem(`welcome_${id}`));
-
       if (hasWelcome) {
         sessionStorage.setItem(`welcome_${id}`, 'true');
         setShowWelcome(true);
@@ -408,43 +393,157 @@ export function PublicMenuPage() {
           triggerWelcomeEffect();
         }, 600);
       } else {
-        // No welcome popup will be shown, prompt OrderTypeModal immediately if online/direct link
         const typeParam = searchParams.get('type')?.toLowerCase();
-        const tableParam = searchParams.get('table');
-        const qrParam = searchParams.get('qr');
-        const isQR = 
-          typeParam === 'qr' || 
-          typeParam === 'qrcode' || 
-          typeParam === 'offline' || 
-          Boolean(typeParam && typeParam.includes('qr')) || 
-          Boolean(tableParam) || 
-          qrParam === 'true';
-
-        if (!isQR) {
-          if (typeParam === 'online' || !isOrderTypeSet) {
-            setIsOrderTypeModalOpen(true);
-          }
+        const isQR = typeParam === 'qr' || typeParam === 'qrcode' || typeParam === 'offline' || Boolean(typeParam && typeParam.includes('qr')) || Boolean(searchParams.get('table')) || searchParams.get('qr') === 'true';
+        if (!isQR && (typeParam === 'online' || !isOrderTypeSet)) {
+          setIsOrderTypeModalOpen(true);
         }
       }
-
-      if (!append) api.post(`/public/shop/${id}/view`).catch(console.error);
-
+      
+      api.post(`/public/shop/${id}/view`).catch(console.error);
+      setIsLoading(false);
     } catch (error) {
-      console.error("Failed to load menu", error);
+      console.error(`Failed to load shop/categories (Attempt ${retryCount + 1})`, error);
+      if (retryCount < 3) {
+        setTimeout(() => fetchCategories(retryCount + 1), 1500);
+      } else {
+        setIsLoading(false);
+      }
+    }
+  };
+
+  const fetchItems = async (categoryId: string, search: string, currentOffset: number = 0, append = false) => {
+    if (append) {
+      setIsLoadingMoreItems(true);
+    } else {
+      setIsItemsLoading(true);
+    }
+    try {
+      const queryParams = new URLSearchParams({
+        limit: ITEMS_LIMIT.toString(),
+        offset: currentOffset.toString(),
+      });
+
+      if (categoryId !== 'all') {
+        queryParams.append('category_id', categoryId);
+      }
+      if (activeDiscountFilter) {
+        queryParams.append('discount_id', activeDiscountFilter);
+      }
+      if (search) {
+        queryParams.append('search', search);
+      }
+      if (foodFilter !== 'all') {
+        queryParams.append('food_type', foodFilter);
+      }
+      if (sortOrder !== 'default') {
+        queryParams.append('sort_by', sortOrder);
+      }
+      if (extraFilters.includes('chef_special')) {
+        queryParams.append('status', 'chef_special');
+      } else if (extraFilters.includes('bestseller')) {
+        queryParams.append('status', 'bestseller');
+      } else if (extraFilters.includes('out_of_stock') || extraFilters.includes('not_available')) {
+        queryParams.append('status', 'not_available');
+        queryParams.append('include_unavailable', 'true');
+      } else if (extraFilters.includes('in_stock') || extraFilters.includes('available')) {
+        queryParams.append('status', 'available');
+      }
+
+      const res = await api.get(`/public/shop/${id}/items?${queryParams.toString()}`);
+      const data = res.data || [];
+      
+      if (data.length < ITEMS_LIMIT) {
+        setHasMoreItems(false);
+      } else {
+        setHasMoreItems(true);
+      }
+      
+      if (append) {
+        setItems(prev => [...prev, ...data]);
+      } else {
+        setItems(data);
+      }
+    } catch (error) {
+      console.error("Failed to load items", error);
     } finally {
-      if (append) setIsLoadingMoreCategories(false);
-      else setIsLoading(false);
+      if (append) {
+        setIsLoadingMoreItems(false);
+      } else {
+        setIsItemsLoading(false);
+      }
+    }
+  };
+
+  // Fetch items for multiple specific categories in parallel
+  const fetchItemsForCategories = async (categoryIds: string[], search: string) => {
+    setIsItemsLoading(true);
+    try {
+      const results = await Promise.all(
+        categoryIds.map(catId => {
+          const queryParams = new URLSearchParams({
+            limit: '200',
+            offset: '0',
+            category_id: catId,
+          });
+          if (activeDiscountFilter) queryParams.append('discount_id', activeDiscountFilter);
+          if (search) queryParams.append('search', search);
+          if (foodFilter !== 'all') queryParams.append('food_type', foodFilter);
+          if (sortOrder !== 'default') queryParams.append('sort_by', sortOrder);
+          if (extraFilters.includes('chef_special')) {
+            queryParams.append('status', 'chef_special');
+          } else if (extraFilters.includes('bestseller')) {
+            queryParams.append('status', 'bestseller');
+          } else if (extraFilters.includes('out_of_stock') || extraFilters.includes('not_available')) {
+            queryParams.append('status', 'not_available');
+            queryParams.append('include_unavailable', 'true');
+          } else if (extraFilters.includes('in_stock') || extraFilters.includes('available')) {
+            queryParams.append('status', 'available');
+          }
+
+          return api.get(`/public/shop/${id}/items?${queryParams.toString()}`).then(r => r.data || []);
+        })
+      );
+      const merged = results.flat();
+      setItems(merged);
+      setHasMoreItems(false); // No pagination in multi-select mode
+    } catch (error) {
+      console.error("Failed to load items for categories", error);
+    } finally {
+      setIsItemsLoading(false);
     }
   };
 
   useEffect(() => {
-    if (id) fetchMenu(0, false);
+    if (id) {
+      fetchCategories();
+    }
   }, [id]);
 
-  const handleLoadMoreCategories = () => {
-    const newOffset = categoriesOffset + CATEGORIES_LIMIT;
-    setCategoriesOffset(newOffset);
-    fetchMenu(newOffset, true);
+  useEffect(() => {
+    if (id && activeCategories.length > 0 && !activeCategories.includes('all')) {
+      activeCategories.forEach(catId => {
+        api.post(`/public/shop/${id}/view`, { category_id: catId }).catch(console.error);
+      });
+    }
+  }, [id, activeCategories]);
+
+  useEffect(() => {
+    if (id) {
+      setItemsOffset(0);
+      if (activeCategories.includes('all')) {
+        fetchItems('all', debouncedSearchQuery, 0, false);
+      } else {
+        fetchItemsForCategories(activeCategories, debouncedSearchQuery);
+      }
+    }
+  }, [id, activeCategories, debouncedSearchQuery, foodFilter, sortOrder, extraFilters, activeDiscountFilter]);
+
+  const handleLoadMoreItems = () => {
+    if (!activeCategories.includes('all')) return; // No pagination in multi-select mode
+    const newOffset = itemsOffset + ITEMS_LIMIT;
+    setItemsOffset(newOffset);
+    fetchItems('all', debouncedSearchQuery, newOffset, true);
   };
 
   const fetchDiscounts = async (currentOffset: number = 0, append = false) => {
@@ -535,7 +634,10 @@ export function PublicMenuPage() {
 
     document.documentElement.style.setProperty('--primary', primary_color);
     document.documentElement.classList.remove('dark');
-    document.body.style.fontFamily = font_family;
+    if (font_family) {
+      loadGoogleFont(font_family);
+      document.body.style.fontFamily = font_family;
+    }
 
     return () => {
       document.documentElement.style.removeProperty('--primary');
@@ -544,15 +646,13 @@ export function PublicMenuPage() {
     };
   }, [shop?.theme]);
 
-  const deferredSearchQuery = useDeferredValue(searchQuery);
-
   const filteredCategories = useMemo(() => {
     if (!categories) return [];
 
-    const lowerSearch = deferredSearchQuery.toLowerCase();
+    const lowerSearch = debouncedSearchQuery.toLowerCase();
 
     return categories.map(cat => {
-      const filteredItems = cat.items.filter(item => {
+      const filteredItems = items.filter(item => item.category_id === cat.id).filter(item => {
         const matchesSearch = !lowerSearch || item.name.toLowerCase().includes(lowerSearch) ||
           (item.description && item.description.toLowerCase().includes(lowerSearch));
         const matchesFood = foodFilter === 'all' ||
@@ -561,8 +661,8 @@ export function PublicMenuPage() {
         let matchesExtra = true;
         if (extraFilters.includes('chef_special') && !item.is_highlighted) matchesExtra = false;
         if (extraFilters.includes('bestseller') && !item.is_bestseller) matchesExtra = false;
-        if (extraFilters.includes('in_stock') && !item.is_available) matchesExtra = false;
-        if (extraFilters.includes('out_of_stock') && item.is_available) matchesExtra = false;
+        if ((extraFilters.includes('in_stock') || extraFilters.includes('available')) && !item.is_available) matchesExtra = false;
+        if ((extraFilters.includes('out_of_stock') || extraFilters.includes('not_available')) && item.is_available) matchesExtra = false;
 
         const timingFilters = extraFilters.filter(f => f.startsWith('timing_')).map(f => f.replace('timing_', ''));
         if (timingFilters.length > 0) {
@@ -603,8 +703,8 @@ export function PublicMenuPage() {
         ...cat,
         items: filteredItems
       };
-    }).filter(cat => cat.items.length > 0 && (activeCategoryId === 'all' || cat.id === activeCategoryId));
-  }, [categories, deferredSearchQuery, activeCategoryId, foodFilter, sortOrder, extraFilters, activeDiscountFilter, activeDiscounts]);
+    }).filter(cat => cat.items.length > 0 && (activeCategories.includes('all') || activeCategories.includes(cat.id)));
+  }, [categories, items, debouncedSearchQuery, activeCategories, foodFilter, sortOrder, extraFilters, activeDiscountFilter, activeDiscounts]);
 
   const toggleExtraFilter = (filter: string) => {
     setExtraFilters(prev =>
@@ -944,14 +1044,15 @@ export function PublicMenuPage() {
         <div className="px-4 pb-3 flex gap-2 overflow-x-auto scrollbar-hide no-scrollbar max-w-3xl mx-auto items-center">
           <button
             onClick={() => {
-              setActiveCategoryId('all');
+              setActiveCategories(['all']);
               window.scrollTo({ top: 200, behavior: 'smooth' });
             }}
-            className={`px-4 py-1.5 ${categoryPillClass} whitespace-nowrap text-xs font-medium transition-all flex items-center gap-1.5 ${activeCategoryId === 'all'
-              ? 'text-white shadow-sm'
-              : 'bg-slate-100 text-slate-600 border border-slate-200'
-              }`}
-            style={activeCategoryId === 'all' ? { backgroundColor: primaryColor } : {}}
+            className={`px-4 py-1.5 ${categoryPillClass} whitespace-nowrap text-xs font-medium transition-all flex items-center gap-1.5 ${
+              activeCategories.includes('all')
+                ? 'text-white shadow-sm'
+                : 'bg-slate-100 text-slate-600 border border-slate-200'
+            }`}
+            style={activeCategories.includes('all') ? { backgroundColor: primaryColor } : {}}
           >
             <LayoutGrid size={14} />
             All Menu
@@ -960,14 +1061,18 @@ export function PublicMenuPage() {
             <button
               key={cat.id}
               onClick={() => {
-                setActiveCategoryId(cat.id);
+                setActiveCategories(prev => {
+                  const next = prev.filter(c => c !== 'all');
+                  return next.includes(cat.id) ? (next.length === 1 ? ['all'] : next.filter(c => c !== cat.id)) : [...next, cat.id];
+                });
                 window.scrollTo({ top: 200, behavior: 'smooth' });
               }}
-              className={`px-4 py-1.5 ${categoryPillClass} whitespace-nowrap text-xs font-medium transition-all ${activeCategoryId === cat.id
-                ? 'text-white shadow-sm'
-                : 'bg-slate-100 text-slate-600 border border-slate-200'
-                }`}
-              style={activeCategoryId === cat.id ? { backgroundColor: primaryColor } : {}}
+              className={`px-4 py-1.5 ${categoryPillClass} whitespace-nowrap text-xs font-medium transition-all ${
+                activeCategories.includes(cat.id)
+                  ? 'text-white shadow-sm'
+                  : 'bg-slate-100 text-slate-600 border border-slate-200'
+              }`}
+              style={activeCategories.includes(cat.id) ? { backgroundColor: primaryColor } : {}}
             >
               {cat.name}
             </button>
@@ -975,8 +1080,13 @@ export function PublicMenuPage() {
           {categories.length > 3 && (
             <button
               onClick={() => setIsCategoriesModalOpen(true)}
-              className="px-4 py-1.5 rounded-full whitespace-nowrap text-xs font-bold transition-all bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 flex items-center gap-1 shadow-sm"
+              className="px-4 py-1.5 rounded-full whitespace-nowrap text-xs font-bold transition-all bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 flex items-center gap-1 shadow-sm relative"
             >
+              {!activeCategories.includes('all') && activeCategories.some(c => !categories.slice(0, 3).find(cat => cat.id === c)) && (
+                <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full text-white text-[9px] font-bold flex items-center justify-center" style={{ backgroundColor: primaryColor }}>
+                  {activeCategories.filter(c => c !== 'all' && !categories.slice(0, 3).find(cat => cat.id === c)).length}
+                </span>
+              )}
               More <ChevronDown size={14} />
             </button>
           )}
@@ -1343,35 +1453,60 @@ export function PublicMenuPage() {
         `}</style>
 
         {/* Categories Tab */}
+        <div className="mt-6 mb-3">
+          <h2 className="text-lg font-extrabold text-slate-800 tracking-tight">Categories</h2>
+        </div>
         <div ref={categoriesRef} className="flex gap-2 overflow-x-auto pb-4 scrollbar-hide no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
           <button
-            onClick={() => setActiveCategoryId('all')}
-            className={`px-5 py-2 rounded-full whitespace-nowrap text-sm font-medium transition-all ${activeCategoryId === 'all'
-              ? 'text-white shadow-md scale-105'
-              : 'bg-white text-slate-600 border-slate-200 border opacity-80 hover:opacity-100'
-              }`}
-            style={{ backgroundColor: activeCategoryId === 'all' ? primaryColor : undefined }}
+            onClick={() => setActiveCategories(['all'])}
+            className={`px-5 py-2 rounded-full flex items-center gap-2 whitespace-nowrap text-sm font-medium transition-all ${
+              activeCategories.includes('all')
+                ? 'text-white shadow-md scale-105'
+                : 'bg-white text-slate-700 border-slate-200 border shadow-sm hover:border-slate-300'
+            }`}
+            style={{ backgroundColor: activeCategories.includes('all') ? primaryColor : undefined }}
           >
             All Menu
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+              activeCategories.includes('all') ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-500'
+            }`}>
+              {categories.reduce((sum, c) => sum + (c.item_count || 0), 0)}
+            </span>
           </button>
           {categories.slice(0, 4).map(cat => (
             <button
               key={cat.id}
-              onClick={() => setActiveCategoryId(cat.id)}
-              className={`px-5 py-2 rounded-full whitespace-nowrap text-sm font-medium transition-all ${activeCategoryId === cat.id
-                ? 'text-white shadow-md scale-105'
-                : 'bg-white text-slate-600 border-slate-200 border opacity-80 hover:opacity-100'
-                }`}
-              style={{ backgroundColor: activeCategoryId === cat.id ? primaryColor : undefined }}
+              onClick={() => {
+                setActiveCategories(prev => {
+                  const next = prev.filter(c => c !== 'all');
+                  return next.includes(cat.id) ? (next.length === 1 ? ['all'] : next.filter(c => c !== cat.id)) : [...next, cat.id];
+                });
+              }}
+              className={`px-5 py-2 rounded-full flex items-center gap-2 whitespace-nowrap text-sm font-medium transition-all ${
+                activeCategories.includes(cat.id)
+                  ? 'text-white shadow-md scale-105'
+                  : 'bg-white text-slate-700 border-slate-200 border shadow-sm hover:border-slate-300'
+              }`}
+              style={{ backgroundColor: activeCategories.includes(cat.id) ? primaryColor : undefined }}
             >
               {cat.name}
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                activeCategories.includes(cat.id) ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-500'
+              }`}>
+                {cat.item_count || 0}
+              </span>
             </button>
           ))}
           {categories.length > 4 && (
             <button
               onClick={() => setIsCategoriesModalOpen(true)}
-              className="px-5 py-2 rounded-full whitespace-nowrap text-sm font-medium transition-all bg-white text-slate-600 border-slate-200 border opacity-80 hover:opacity-100"
+              className="px-5 py-2 rounded-full flex items-center gap-2 whitespace-nowrap text-sm font-medium transition-all bg-white text-slate-700 border-slate-200 border shadow-sm hover:border-slate-300 relative"
             >
+              {!activeCategories.includes('all') && activeCategories.some(c => !categories.slice(0, 4).find(cat => cat.id === c)) && (
+                <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full text-white text-[9px] font-bold flex items-center justify-center" style={{ backgroundColor: primaryColor }}>
+                  {activeCategories.filter(c => c !== 'all' && !categories.slice(0, 4).find(cat => cat.id === c)).length}
+                </span>
+              )}
               + More
             </button>
           )}
@@ -1379,7 +1514,20 @@ export function PublicMenuPage() {
 
         {/* Menu Items */}
         <div className="mt-4 space-y-8">
-          {filteredCategories.length === 0 ? (
+          {isItemsLoading ? (
+            <div className={layoutStyle === 'grid' ? "grid grid-cols-2 gap-3 sm:gap-4 py-4" : "flex flex-col gap-3 sm:gap-4 py-4"}>
+              {[1, 2, 3, 4].map(i => (
+                <div key={i} className="bg-white dark:bg-slate-900 rounded-2xl p-4 shadow-sm border border-slate-100 dark:border-slate-800 animate-pulse flex gap-4">
+                  <div className="w-20 h-20 bg-slate-200 dark:bg-slate-800 rounded-xl shrink-0" />
+                  <div className="flex-1 space-y-2 py-1">
+                    <div className="h-4 bg-slate-200 dark:bg-slate-800 rounded w-3/4" />
+                    <div className="h-3 bg-slate-200 dark:bg-slate-800 rounded w-1/2" />
+                    <div className="h-4 bg-slate-200 dark:bg-slate-800 rounded w-1/4 pt-2" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : filteredCategories.length === 0 ? (
             <div className="text-center py-12">
               <Search className="w-12 h-12 mx-auto mb-4 opacity-20" />
               <p className="text-lg font-medium">No items found</p>
@@ -1600,9 +1748,9 @@ export function PublicMenuPage() {
           )}
 
           <InfiniteScrollTrigger 
-            onIntersect={handleLoadMoreCategories} 
-            isLoading={isLoadingMoreCategories} 
-            hasMore={hasMoreCategories && filteredCategories.length > 0} 
+            onIntersect={handleLoadMoreItems} 
+            isLoading={isLoadingMoreItems} 
+            hasMore={hasMoreItems && filteredCategories.length > 0} 
           />
         </div>
 
@@ -1829,8 +1977,8 @@ export function PublicMenuPage() {
               {[
                 { id: 'chef_special', label: "Chef's Specials", icon: <Flame size={18} className="text-orange-500" /> },
                 { id: 'bestseller', label: "Bestsellers", icon: <Star size={18} className="text-amber-500" /> },
-                { id: 'in_stock', label: "In Stock", icon: null },
-                { id: 'out_of_stock', label: "Out of Stock", icon: null }
+                { id: 'available', label: "Available", icon: <CheckCircle2 size={18} className="text-emerald-500" /> },
+                { id: 'not_available', label: "Not Available", icon: <XCircle size={18} className="text-rose-500" /> }
               ].map(filter => (
                 <label key={filter.id} className={`relative flex flex-col items-center justify-center gap-2 py-4 px-2 rounded-xl border cursor-pointer transition-all text-center ${extraFilters.includes(filter.id) ? 'shadow-sm' : 'border-slate-200 bg-white hover:bg-slate-50'}`} style={{ borderColor: extraFilters.includes(filter.id) ? primaryColor : undefined, backgroundColor: extraFilters.includes(filter.id) ? `${primaryColor}10` : undefined }}>
                   <input type="checkbox" className="hidden" checked={extraFilters.includes(filter.id)} onChange={() => toggleExtraFilter(filter.id)} />
@@ -2077,27 +2225,132 @@ export function PublicMenuPage() {
         </div>
       </Modal>
 
-      {/* Categories Bottom Sheet */}
+      {/* Categories Bottom Sheet — Multi-Select */}
       <BottomSheet
         isOpen={isCategoriesModalOpen}
         onClose={() => setIsCategoriesModalOpen(false)}
-        title="Menu Categories"
+        title="Filter by Category"
         footer={
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-            <input type="text" placeholder="Search categories..." className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-slate-300 text-slate-800" value={categorySearchQuery} onChange={(e) => setCategorySearchQuery(e.target.value)} />
+          <div className="flex flex-col gap-3">
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <input
+                type="text"
+                placeholder="Search categories..."
+                className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-slate-300 text-slate-800 text-sm"
+                value={categorySearchQuery}
+                onChange={(e) => setCategorySearchQuery(e.target.value)}
+              />
+            </div>
+            {/* Action Buttons */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setActiveCategories(['all']); setCategorySearchQuery(''); }}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-semibold transition-all hover:bg-slate-50"
+              >
+                Clear All
+              </button>
+              <button
+                onClick={() => setIsCategoriesModalOpen(false)}
+                className="flex-[2] py-2.5 rounded-xl text-white text-sm font-bold transition-all shadow-md"
+                style={{ backgroundColor: primaryColor }}
+              >
+                {activeCategories.includes('all')
+                  ? 'Show All'
+                  : `Show ${activeCategories.length} Categor${activeCategories.length === 1 ? 'y' : 'ies'}`}
+              </button>
+            </div>
           </div>
         }
       >
-        <div className="space-y-2">
-          <button onClick={() => { setActiveCategoryId('all'); setIsCategoriesModalOpen(false); window.scrollTo({ top: 200, behavior: 'smooth' }); }} className={`w-full flex items-center justify-between p-4 rounded-2xl transition-all border ${activeCategoryId === 'all' ? 'border-transparent shadow-md' : 'border-slate-100'}`} style={activeCategoryId === 'all' ? { backgroundColor: primaryColor, color: 'white' } : {}}>
-            <span className="font-bold text-base">All Menu</span>
-          </button>
-          {categories.filter(c => c.name.toLowerCase().includes(categorySearchQuery.toLowerCase())).map(cat => (
-            <button key={cat.id} onClick={() => { setActiveCategoryId(cat.id); setIsCategoriesModalOpen(false); window.scrollTo({ top: 200, behavior: 'smooth' }); }} className={`w-full flex items-center justify-between p-4 rounded-2xl transition-all border ${activeCategoryId === cat.id ? 'border-transparent shadow-md' : 'border-slate-100'}`} style={activeCategoryId === cat.id ? { backgroundColor: primaryColor, color: 'white' } : {}}>
-              <span className="font-bold text-base">{cat.name}</span>
+        <div className="pb-2">
+          <div className="flex flex-wrap gap-2">
+            {/* All Menu pill */}
+            <button
+              onClick={() => setActiveCategories(['all'])}
+              className="relative inline-flex items-center gap-2 px-4 py-2.5 rounded-full border-2 transition-all"
+              style={
+                activeCategories.includes('all')
+                  ? { backgroundColor: primaryColor, borderColor: primaryColor }
+                  : { backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }
+              }
+            >
+              {activeCategories.includes('all') && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-white rounded-full flex items-center justify-center shadow border border-slate-100">
+                  <svg width="9" height="7" viewBox="0 0 10 8" fill="none">
+                    <path d="M1 4L3.5 6.5L9 1" stroke={primaryColor} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </span>
+              )}
+              <LayoutGrid size={13} color={activeCategories.includes('all') ? 'white' : '#64748b'} />
+              <span className="text-sm font-bold" style={{ color: activeCategories.includes('all') ? 'white' : '#1e293b' }}>
+                All Menu
+              </span>
+              <span
+                className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
+                style={
+                  activeCategories.includes('all')
+                    ? { backgroundColor: 'rgba(255,255,255,0.25)', color: 'white' }
+                    : { backgroundColor: '#e2e8f0', color: '#64748b' }
+                }
+              >
+                {categories.reduce((sum, c) => sum + (c.item_count || 0), 0)}
+              </span>
             </button>
-          ))}
+
+            {/* Category pills */}
+            {categories
+              .filter(c => c.name.toLowerCase().includes(categorySearchQuery.toLowerCase()))
+              .map((cat, idx) => {
+                const isSelected = activeCategories.includes(cat.id);
+                const itemCount = cat.item_count || 0;
+                const palette = ['#f97316','#8b5cf6','#06b6d4','#10b981','#f59e0b','#ef4444','#3b82f6','#ec4899','#14b8a6','#a855f7'];
+                const accent = palette[idx % palette.length];
+                return (
+                  <button
+                    key={cat.id}
+                    onClick={() => {
+                      setActiveCategories(prev => {
+                        const next = prev.filter(c => c !== 'all');
+                        if (next.includes(cat.id)) {
+                          const result = next.filter(c => c !== cat.id);
+                          return result.length === 0 ? ['all'] : result;
+                        }
+                        return [...next, cat.id];
+                      });
+                    }}
+                    className="relative inline-flex items-center gap-2 px-4 py-2.5 rounded-full border-2 transition-all"
+                    style={
+                      isSelected
+                        ? { backgroundColor: primaryColor, borderColor: primaryColor }
+                        : { backgroundColor: accent + '12', borderColor: accent + '40' }
+                    }
+                  >
+                    {isSelected && (
+                      <span className="absolute -top-1 -right-1 w-4 h-4 bg-white rounded-full flex items-center justify-center shadow border border-slate-100">
+                        <svg width="9" height="7" viewBox="0 0 10 8" fill="none">
+                          <path d="M1 4L3.5 6.5L9 1" stroke={primaryColor} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </span>
+                    )}
+                    <span className="text-sm font-bold" style={{ color: isSelected ? 'white' : '#1e293b' }}>
+                      {cat.name}
+                    </span>
+                    <span
+                      className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
+                      style={
+                        isSelected
+                          ? { backgroundColor: 'rgba(255,255,255,0.25)', color: 'white' }
+                          : { backgroundColor: accent + '25', color: accent }
+                      }
+                    >
+                      {itemCount}
+                    </span>
+                  </button>
+                );
+              })}
+          </div>
         </div>
       </BottomSheet>
 
@@ -2136,6 +2389,11 @@ export function PublicMenuPage() {
         onSelectType={(type) => {
           setOrderType(type, true);
           setIsOrderTypeModalOpen(false);
+        }}
+        availableTypes={{
+          dine_in: shop?.settings?.dinein_enabled ?? true,
+          takeaway: shop?.settings?.takeaway_enabled ?? true,
+          delivery: shop?.settings?.delivery_enabled ?? true
         }}
       />
     </div>

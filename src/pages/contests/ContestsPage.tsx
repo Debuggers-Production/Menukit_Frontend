@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { toast } from 'react-hot-toast';
 import {
   Plus, Trophy, Award, Sparkles, Heart, RefreshCw, Download, ChevronLeft, ChevronRight, X, Search, User, Phone, ExternalLink, Flame, ShieldAlert, CheckCircle2, XCircle, Eye, MessageSquare, Palette, PenTool, Medal, Gift, AlertCircle
@@ -10,15 +11,21 @@ import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { useHeaderStore } from '@/store/useHeaderStore';
+import { HeaderActions } from '@/components/HeaderActions';
 import { Badge } from '@/components/ui/Badge';
 import { SearchableSelect } from '@/components/ui/SearchableSelect';
 import { contestService } from '@/services/contestService';
 import { Contest, ContestParticipation } from '@/types/contest';
 import { api } from '@/services/api';
 import { BottomSheet } from '@/components/ui/BottomSheet';
+import { InfiniteScrollTrigger } from '@/components/ui/InfiniteScrollTrigger';
+
+import { usePermissions } from '@/hooks/usePermissions';
 
 export function ContestsPage() {
   const { shop, setShop, menuItems, setMenuItems, categories, setCategories } = useShopStore();
+  const { canWrite } = usePermissions('contests');
   const [contests, setContests] = useState<Contest[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -57,6 +64,15 @@ export function ContestsPage() {
   const [cancelConfirmContestId, setCancelConfirmContestId] = useState<string | null>(null);
 
   const primaryColor = shop?.theme?.primary_color || '#ea580c';
+
+  const handleCreateClick = () => {
+    const hasActiveContest = statusCounts.ongoing > 0 || contests.some(c => c.status === 'active');
+    if (hasActiveContest) {
+      toast.error('You already have an active contest running! Please wait for it to complete or cancel it first.');
+      return;
+    }
+    setIsModalOpen(true);
+  };
 
   const handleCancelContest = (contestId: string) => {
     setCancelConfirmContestId(contestId);
@@ -125,23 +141,102 @@ export function ContestsPage() {
     }
   }, [shop?.id, menuItems.length, categories.length, setMenuItems, setCategories]);
 
-  const loadContests = async () => {
+  const { setTitle: setHeaderTitle } = useHeaderStore();
+
+  useEffect(() => {
+    setHeaderTitle('Contests Manager', 'Create customer drawing or Kavithai contests with minimum targets.');
+  }, [setHeaderTitle]);
+
+  // Search & Pagination State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [skip, setSkip] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [statusCounts, setStatusCounts] = useState<{ ongoing: number; completed: number; cancelled: number; all: number }>({
+    ongoing: 0, completed: 0, cancelled: 0, all: 0
+  });
+  const PAGE_SIZE = 20;
+
+  // Debounce search query input (350ms)
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 350);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
+
+  const fetchStatusCounts = useCallback(async () => {
     if (!shop?.id) return;
     try {
+      const counts = await contestService.getShopContestStatusCounts(shop.id);
+      if (counts) {
+        setStatusCounts(counts);
+      }
+    } catch (error) {
+      console.error("Failed to fetch contest status counts", error);
+    }
+  }, [shop?.id]);
+
+  const loadContestsData = useCallback(async (currentSkip: number, reset: boolean = false) => {
+    if (!shop?.id) return;
+    if (reset) {
       setLoading(true);
-      const data = await contestService.getShopContests(shop.id);
-      setContests(data);
-      
-      // Load participations for contests
-      data.forEach(c => {
-        loadParticipations(c.id);
+    } else {
+      setIsLoadingMore(true);
+    }
+
+    try {
+      const contestsReq = contestService.getShopContests(shop.id, {
+        skip: currentSkip,
+        limit: PAGE_SIZE,
+        status_filter: activeTab,
+        search: debouncedSearch.trim() || undefined,
       });
+
+      const countsReq = reset
+        ? contestService.getShopContestStatusCounts(shop.id)
+        : Promise.resolve(null);
+
+      const [res, counts] = await Promise.all([contestsReq, countsReq]);
+
+      if (counts) {
+        setStatusCounts(counts);
+      }
+
+      const newItems = res.data || [];
+      setHasMore(res.hasMore);
+      setSkip(currentSkip);
+
+      if (reset) {
+        setContests(newItems);
+      } else {
+        setContests(prev => [...prev, ...newItems]);
+      }
     } catch (error) {
       console.error(error);
       toast.error('Failed to load contests');
     } finally {
       setLoading(false);
+      setIsLoadingMore(false);
     }
+  }, [shop?.id, activeTab, debouncedSearch]);
+
+  useEffect(() => {
+    if (shop?.id) {
+      loadContestsData(0, true);
+    }
+  }, [shop?.id, activeTab, debouncedSearch, loadContestsData]);
+
+  const handleLoadMore = () => {
+    if (hasMore && !isLoadingMore && !loading) {
+      const nextSkip = skip + PAGE_SIZE;
+      loadContestsData(nextSkip, false);
+    }
+  };
+
+  const loadContests = async () => {
+    await loadContestsData(0, true);
   };
 
   const loadParticipations = async (contestId: string) => {
@@ -436,21 +531,22 @@ export function ContestsPage() {
 
   return (
     <div className="space-y-4 max-w-5xl mx-auto pb-36 lg:pb-24 animate-fade-in">
-      {/* Page Header */}
-      <div className="mb-2">
-        <PageHeader
-          title="Contests Manager"
-          subtitle="Create customer drawing or Kavithai contests with minimum targets."
-        />
-      </div>
+      
+      {canWrite && (
+      <HeaderActions>
+        <Button size="sm" onClick={handleCreateClick} leftIcon={<Plus size={16} />}>
+          New Contest
+        </Button>
+      </HeaderActions>
+      )}
 
       {/* 3 Main Sticky Tabs: Ongoing, Completed, Cancelled */}
-      <div className="sticky top-[-16px] sm:top-[-24px] lg:top-[-32px] z-20 bg-[#f8fafc]/95 dark:bg-slate-950/95 backdrop-blur-md pt-3 pb-3 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 border-b border-slate-200 dark:border-slate-800 mb-4 shadow-xs">
+      <div className="sticky top-[-16px] sm:top-[-24px] lg:top-[-32px] z-20 bg-background/95 backdrop-blur-md pb-4 pt-4 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 border-b border-border mb-6 space-y-3">
         <div className="flex overflow-x-auto gap-2 py-1 whitespace-nowrap scrollbar-hide no-scrollbar">
           {[
-            { id: 'ongoing',   label: 'Ongoing Contests',  count: contests.filter(c => c.status === 'active').length, icon: Flame, color: 'text-amber-500', activeBg: 'bg-amber-500 text-white shadow-md shadow-amber-500/20' },
-            { id: 'completed', label: 'Completed Contests', count: contests.filter(c => c.status === 'completed' || (c.status === 'ended' && !c.cancel_reason)).length, icon: CheckCircle2, color: 'text-emerald-500', activeBg: 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20' },
-            { id: 'cancelled', label: 'Cancelled Contests', count: contests.filter(c => c.status === 'cancelled' || !!c.cancel_reason).length, icon: XCircle, color: 'text-rose-500', activeBg: 'bg-rose-600 text-white shadow-md shadow-rose-600/20' },
+            { id: 'ongoing',   label: 'Ongoing Contests',  count: statusCounts.ongoing ?? 0, icon: Flame, color: 'text-amber-500', activeBg: 'bg-amber-500 text-white shadow-md shadow-amber-500/20' },
+            { id: 'completed', label: 'Completed Contests', count: statusCounts.completed ?? 0, icon: CheckCircle2, color: 'text-emerald-500', activeBg: 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20' },
+            { id: 'cancelled', label: 'Cancelled Contests', count: statusCounts.cancelled ?? 0, icon: XCircle, color: 'text-rose-500', activeBg: 'bg-rose-600 text-white shadow-md shadow-rose-600/20' },
           ].map(tab => {
             const Icon = tab.icon;
             const isSelected = activeTab === tab.id;
@@ -475,6 +571,18 @@ export function ContestsPage() {
             );
           })}
         </div>
+
+        {/* API Search Input */}
+        <div className="relative mt-2.5">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+          <input
+            type="text"
+            placeholder="Search contest title, reward, description, or type..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-primary font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400 shadow-xs"
+          />
+        </div>
       </div>
 
       {/* 2-Column Grid Layout for Contests */}
@@ -483,23 +591,24 @@ export function ContestsPage() {
           <Skeleton className="h-56 w-full rounded-2xl" />
           <Skeleton className="h-56 w-full rounded-2xl" />
         </div>
-      ) : filteredContests.length === 0 ? (
+      ) : contests.length === 0 ? (
         <Card className="p-12 text-center flex flex-col items-center justify-center rounded-3xl border-dashed border-2 border-slate-200 dark:border-slate-800">
           <Trophy size={48} className="text-slate-300 dark:text-slate-700 mb-3" />
           <h3 className="font-bold text-slate-700 dark:text-slate-300 text-base capitalize">No {activeTab} contests</h3>
           <p className="text-sm text-slate-400 max-w-sm mt-1">
-            {activeTab === 'ongoing' ? 'Click "Create Contest" to launch a new drawing or poetry contest.' : `No ${activeTab} contests recorded.`}
+            {debouncedSearch ? `No contests match "${debouncedSearch}".` : activeTab === 'ongoing' ? 'Click "Create Contest" to launch a new drawing or poetry contest.' : `No ${activeTab} contests recorded.`}
           </p>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {filteredContests.map((contest) => {
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {contests.map((contest) => {
             const isOngoing = contest.status === 'active';
             const isCompleted = contest.status === 'completed' || (contest.status === 'ended' && !contest.cancel_reason);
             const isCancelled = contest.status === 'cancelled' || !!contest.cancel_reason;
             
             const participations = participationsMap[contest.id] || [];
-            const livePartsCount = participations.length;
+            const livePartsCount = contest.total_reserved_participants ?? participations.length;
             const maxLikes = maxLikesCount(participations);
 
             const targetParts = contest.min_participants || 1;
@@ -663,6 +772,7 @@ export function ContestsPage() {
                         setSelectedContestForModal(contest);
                         setSubmissionsSearchQuery('');
                         setIsSubmissionsModalOpen(true);
+                        loadParticipations(contest.id);
                       }}
                       className="font-bold text-xs gap-1 cursor-pointer"
                     >
@@ -674,6 +784,12 @@ export function ContestsPage() {
               </Card>
             );
           })}
+          </div>
+          <InfiniteScrollTrigger
+            onIntersect={handleLoadMore}
+            isLoading={isLoadingMore}
+            hasMore={hasMore}
+          />
         </div>
       )}
 
@@ -1226,22 +1342,17 @@ export function ContestsPage() {
         </div>
       </Modal>
 
-      {/* Circular Floating Action Button (FAB) */}
-      <button
-        onClick={() => {
-          const hasActiveContest = contests.some(c => c.status === 'active');
-          if (hasActiveContest) {
-            toast.error('You already have an active contest running! Please wait for it to complete or cancel it first.');
-            return;
-          }
-          setIsModalOpen(true);
-        }}
-        className="fixed bottom-28 right-5 lg:bottom-8 lg:right-8 z-50 w-14 h-14 rounded-full text-white shadow-xl hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center justify-center border border-white/20"
-        style={{ backgroundColor: primaryColor }}
-        title="Create Contest"
-      >
-        <Plus size={26} strokeWidth={2.5} />
-      </button>
+      {/* Circular Floating Action Button (FAB) (Mobile) */}
+      {canWrite && !isModalOpen && createPortal(
+        <button
+          onClick={handleCreateClick}
+          className="lg:hidden fixed bottom-20 lg:bottom-8 right-4 lg:right-8 z-50 w-14 h-14 rounded-full bg-primary hover:bg-primary-600 hover:scale-105 shadow-xl flex items-center justify-center text-white transition-all duration-200 cursor-pointer"
+          title="Create Contest"
+        >
+          <Plus size={24} />
+        </button>,
+        document.body
+      )}
     </div>
   );
 }

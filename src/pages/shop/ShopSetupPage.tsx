@@ -1,13 +1,19 @@
 import { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router';
 import { toast } from 'react-hot-toast';
 import { Store, MapPin, Phone, UploadCloud, Save, ChevronRight, Check, Edit2, Clock, Star, Navigation } from 'lucide-react';
+import { compressImage } from '../../utils/imageCompression';
 import { api } from '@/services/api';
 import { useShopStore } from '@/store/shopStore';
 
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { TimePicker } from '@/components/ui/TimePicker';
-import { PageHeader } from '@/components/ui/PageHeader';
+import { Lightbox } from '@/components/ui/Lightbox';
+import { SearchableSelect } from '@/components/ui/SearchableSelect';
+import { useAuthStore } from '@/store/authStore';
+import { useHeaderStore } from '@/store/useHeaderStore';
+import { HeaderActions } from '@/components/HeaderActions';
 
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -15,238 +21,285 @@ import 'leaflet/dist/leaflet.css';
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+ iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+ iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+ shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 });
 
 function MapLocationSelector({ 
-  latitude, 
-  longitude, 
-  onChange 
+ latitude, 
+ longitude, 
+ onChange 
 }: { 
-  latitude: string, 
-  longitude: string, 
-  onChange: (lat: string, lng: string) => void 
+ latitude: string, 
+ longitude: string, 
+ onChange: (lat: string, lng: string) => void 
 }) {
-  const [mapTarget, setMapTarget] = useState<[number, number]>(
-    latitude && longitude ? [parseFloat(latitude), parseFloat(longitude)] : [20.5937, 78.9629] // India center
-  );
-  const [isLocating, setIsLocating] = useState(false);
+ const [mapTarget, setMapTarget] = useState<[number, number]>(
+ latitude && longitude ? [parseFloat(latitude), parseFloat(longitude)] : [20.5937, 78.9629] // India center
+ );
+ const [isLocating, setIsLocating] = useState(false);
 
-  const markerRef = useRef<L.Marker>(null);
+ const markerRef = useRef<L.Marker>(null);
 
-  const handleDetectLocation = () => {
-    if (!navigator.geolocation) {
-      toast.error("Geolocation is not supported by your browser");
-      return;
-    }
-    setIsLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const lat = position.coords.latitude.toFixed(6);
-        const lng = position.coords.longitude.toFixed(6);
-        onChange(lat, lng);
-        setMapTarget([parseFloat(lat), parseFloat(lng)]);
-        toast.success("Location auto-detected!");
-        setIsLocating(false);
-      },
-      (error) => {
-        console.error("Geolocation error", error);
-        toast.error("Failed to access location. Please pick your location manually on the map.");
-        setIsLocating(false);
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
-  };
+ const handleDetectLocation = () => {
+ if (!navigator.geolocation) {
+ toast.error("Geolocation is not supported by your browser");
+ return;
+ }
+ setIsLocating(true);
+ navigator.geolocation.getCurrentPosition(
+ (position) => {
+ const lat = position.coords.latitude.toFixed(6);
+ const lng = position.coords.longitude.toFixed(6);
+ onChange(lat, lng);
+ setMapTarget([parseFloat(lat), parseFloat(lng)]);
+ toast.success("Location auto-detected!");
+ setIsLocating(false);
+ },
+ (error) => {
+ console.error("Geolocation error", error);
+ toast.error("Failed to access location. Please pick your location manually on the map.");
+ setIsLocating(false);
+ },
+ { enableHighAccuracy: true, timeout: 10000 }
+ );
+ };
 
-  const eventHandlers = {
-    dragend() {
-      const marker = markerRef.current;
-      if (marker != null) {
-        const pos = marker.getLatLng();
-        onChange(pos.lat.toFixed(6), pos.lng.toFixed(6));
-        setMapTarget([pos.lat, pos.lng]);
-      }
-    },
-  };
+ const eventHandlers = {
+ dragend() {
+ const marker = markerRef.current;
+ if (marker != null) {
+ const pos = marker.getLatLng();
+ onChange(pos.lat.toFixed(6), pos.lng.toFixed(6));
+ setMapTarget([pos.lat, pos.lng]);
+ }
+ },
+ };
 
-  function MapClickEvent() {
-    useMapEvents({
-      click(e) {
-        onChange(e.latlng.lat.toFixed(6), e.latlng.lng.toFixed(6));
-        setMapTarget([e.latlng.lat, e.latlng.lng]);
-      },
-    });
-    return null;
-  }
+ function MapClickEvent() {
+ useMapEvents({
+ click(e) {
+ onChange(e.latlng.lat.toFixed(6), e.latlng.lng.toFixed(6));
+ setMapTarget([e.latlng.lat, e.latlng.lng]);
+ },
+ });
+ return null;
+ }
 
-  function MapCenterUpdater({ center }: { center: [number, number] }) {
-    const map = useMap();
-    useEffect(() => {
-      map.flyTo(center, map.getZoom() < 12 ? 15 : map.getZoom(), { duration: 0.5 });
-      setTimeout(() => map.invalidateSize(), 200);
-    }, [center, map]);
-    return null;
-  }
+ function MapCenterUpdater({ center }: { center: [number, number] }) {
+ const map = useMap();
+ useEffect(() => {
+ map.flyTo(center, map.getZoom() < 12 ? 15 : map.getZoom(), { duration: 0.5 });
+ setTimeout(() => map.invalidateSize(), 200);
+ }, [center, map]);
+ return null;
+ }
 
-  return (
-    <div className="space-y-2">
-      <div className="flex justify-between items-center">
-        <button
-          type="button"
-          onClick={handleDetectLocation}
-          disabled={isLocating}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 hover:bg-primary/20 border border-primary/30 rounded-lg text-xs font-bold text-primary transition-all active:scale-95"
-        >
-          <Navigation size={13} className={isLocating ? "animate-spin" : ""} />
-          <span>{isLocating ? "Locating Store..." : "Detect Current Location"}</span>
-        </button>
+ return (
+ <div className="space-y-2">
+ <div className="flex justify-between items-center">
+ <button
+ type="button"
+ onClick={handleDetectLocation}
+ disabled={isLocating}
+ className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 hover:bg-primary/20 border border-primary/30 rounded-lg text-xs font-bold text-primary transition-all active:scale-95"
+ >
+ <Navigation size={13} className={isLocating ?"animate-spin" :""} />
+ <span>{isLocating ?"Locating Store..." :"Detect Current Location"}</span>
+ </button>
 
-        {latitude && longitude && (
-          <span className="text-[11px] font-mono text-slate-500 font-semibold">
-            Lat: {latitude}, Lng: {longitude}
-          </span>
-        )}
-      </div>
+ {latitude && longitude && (
+ <span className="text-[11px] font-mono text-muted-foreground font-semibold">
+ Lat: {latitude}, Lng: {longitude}
+ </span>
+ )}
+ </div>
 
-      <div className="relative h-64 w-full rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 z-10">
-        <MapContainer center={mapTarget} zoom={latitude && longitude ? 15 : 5} style={{ height: '100%', width: '100%' }} scrollWheelZoom={true} attributionControl={false}>
-          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-          <MapClickEvent />
-          <MapCenterUpdater center={mapTarget} />
-          {(latitude && longitude) ? (
-            <Marker
-              draggable={true}
-              eventHandlers={eventHandlers}
-              position={[parseFloat(latitude), parseFloat(longitude)]}
-              ref={markerRef}
-            />
-          ) : null}
-        </MapContainer>
-        <div className="absolute bottom-2 left-2 z-[1000] bg-white/90 dark:bg-slate-900/90 backdrop-blur px-2.5 py-1 rounded shadow text-[10px] font-bold text-slate-650 dark:text-slate-300 pointer-events-none">
-          Click map or drag pin to adjust store location
-        </div>
-      </div>
-    </div>
-  );
+ <div className="relative h-64 w-full rounded-xl overflow-hidden border border-border z-10">
+ <MapContainer center={mapTarget} zoom={latitude && longitude ? 15 : 5} style={{ height: '100%', width: '100%'}} scrollWheelZoom={true} attributionControl={false}>
+ <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+ <MapClickEvent />
+ <MapCenterUpdater center={mapTarget} />
+ {(latitude && longitude) ? (
+ <Marker
+ draggable={true}
+ eventHandlers={eventHandlers}
+ position={[parseFloat(latitude), parseFloat(longitude)]}
+ ref={markerRef}
+ />
+ ) : null}
+ </MapContainer>
+ <div className="absolute bottom-2 left-2 z-[1000] bg-background/90 /90 backdrop-blur px-2.5 py-1 rounded shadow text-[10px] font-bold text-slate-650 pointer-events-none">
+ Click map or drag pin to adjust store location
+ </div>
+ </div>
+ </div>
+ );
 }
 
 export function ShopSetupPage() {
-  const { shop, setShop } = useShopStore();
-  const [isLoading, setIsLoading] = useState(false);
-  const [currentStep, setCurrentStep] = useState(1);
-  const [viewMode, setViewMode] = useState<'summary' | 'edit'>('edit');
+ const { shop, setShop } = useShopStore();
+ const { setTitle: setHeaderTitle } = useHeaderStore();
+ const [isLoading, setIsLoading] = useState(false);
+ const [currentStep, setCurrentStep] = useState(1);
+ const location = useLocation();
+ const isCreateNew = location.state?.createNew === true;
+ const [viewMode, setViewMode] = useState<'summary'| 'edit'>(isCreateNew ? 'edit': 'edit');
+ const [ownedShops, setOwnedShops] = useState<{id: string, name: string}[]>([]);
 
-  const formatTime = (timeStr: string) => {
-    if (!timeStr) return '';
-    const [h, m] = timeStr.split(':');
-    const date = new Date();
-    date.setHours(parseInt(h, 10));
-    date.setMinutes(parseInt(m, 10));
-    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
-  };
-  
-  const [formData, setFormData] = useState({
-    name: '',
-    description: '',
-    welcome_message: '',
-    phone: '',
-    whatsapp: '',
-    address: '',
-    logo_url: '',
-    banner_url: '',
-    opening_time: '',
-    closing_time: '',
-    latitude: '',
-    longitude: '',
-    google_review_link: '',
-  });
+ const formatTime = (timeStr: string) => {
+ if (!timeStr) return '';
+ const [h, m] = timeStr.split(':');
+ const date = new Date();
+ date.setHours(parseInt(h, 10));
+ date.setMinutes(parseInt(m, 10));
+ return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
+ };
+ 
+ const [formData, setFormData] = useState<FormData>({
+ name: '',
+ description: '',
+ welcome_message: '',
+ phone: '',
+ whatsapp: '',
+ address: '',
+ logo_url: '',
+ banner_url: '',
+ opening_time: '',
+ closing_time: '',
+ latitude: '',
+ longitude: '',
+ google_review_link: '',
+ clone_from_shop_id: '',
+ });
 
-  const logoInputRef = useRef<HTMLInputElement>(null);
-  const bannerInputRef = useRef<HTMLInputElement>(null);
-  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
-  const [isUploadingBanner, setIsUploadingBanner] = useState(false);
+ const logoInputRef = useRef<HTMLInputElement>(null);
+ const bannerInputRef = useRef<HTMLInputElement>(null);
+ const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+ const [isUploadingBanner, setIsUploadingBanner] = useState(false);
 
-  useEffect(() => {
-    const fetchShop = async () => {
-      try {
-        setIsLoading(true);
-        const res = await api.get('/shops/me');
-        if (res.data && res.data.id) {
-          setShop(res.data);
-          const loadedShop = res.data;
-          setFormData({
-            name: loadedShop.name || '',
-            description: loadedShop.description || '',
-            welcome_message: loadedShop.welcome_message || '',
-            phone: loadedShop.phone || '',
-            whatsapp: loadedShop.whatsapp || '',
-            address: loadedShop.address || '',
-            logo_url: loadedShop.logo_url || '',
-            banner_url: loadedShop.banner_url || '',
-            opening_time: loadedShop.opening_time || '',
-            closing_time: loadedShop.closing_time || '',
-            latitude: loadedShop.latitude?.toString() || '',
-            longitude: loadedShop.longitude?.toString() || '',
-            google_review_link: loadedShop.google_review_link || '',
-          });
-          setViewMode('summary');
-        }
-      } catch (error) {
-        console.error('Failed to load shop details', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+ useEffect(() => {
+ setHeaderTitle('Shop Setup', 'Configure your restaurant\'s digital presence');
+ }, [setHeaderTitle]);
 
-    fetchShop();
-  }, [setShop]);
+ useEffect(() => {
+ if (isCreateNew) {
+ setShop(null);
+ setFormData({
+ name: '',
+ description: '',
+ welcome_message: '',
+ phone: '',
+ whatsapp: '',
+ address: '',
+ logo_url: '',
+ banner_url: '',
+ opening_time: '',
+ closing_time: '',
+ latitude: '',
+ longitude: '',
+ google_review_link: '',
+ clone_from_shop_id: '',
+ });
+ setViewMode('edit');
+ 
+ const fetchOwnedShops = async () => {
+ try {
+ const res = await api.get('/shops/my-shops');
+ setOwnedShops(res.data.owned || []);
+ } catch (err) {
+ console.error("Failed to fetch owned shops for cloning dropdown", err);
+ }
+ };
+ fetchOwnedShops();
+ return;
+ }
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
+ const fetchShop = async () => {
+ try {
+ setIsLoading(true);
+ const res = await api.get('/shops/me');
+ if (res.data && res.data.id) {
+ setShop(res.data);
+ const loadedShop = res.data;
+ setFormData({
+ name: loadedShop.name || '',
+ description: loadedShop.description || '',
+ welcome_message: loadedShop.welcome_message || '',
+ phone: loadedShop.phone || '',
+ whatsapp: loadedShop.whatsapp || '',
+ address: loadedShop.address || '',
+ logo_url: loadedShop.logo_url || '',
+ banner_url: loadedShop.banner_url || '',
+ opening_time: loadedShop.opening_time || '',
+ closing_time: loadedShop.closing_time || '',
+ latitude: loadedShop.latitude?.toString() || '',
+ longitude: loadedShop.longitude?.toString() || '',
+ google_review_link: loadedShop.google_review_link || '',
+ clone_from_shop_id: '',
+ });
+ setViewMode('summary');
+ }
+ } catch (error) {
+ console.error('Failed to load shop details', error);
+ } finally {
+ setIsLoading(false);
+ }
+ };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'logo' | 'banner') => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+ fetchShop();
+ }, [setShop, isCreateNew]);
 
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('File size must be less than 5MB');
-      return;
+ const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+ const { name, value } = e.target;
+ setFormData(prev => ({ ...prev, [name]: value }));
+ };
+
+ const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'logo'| 'banner') => {
+ const file = e.target.files?.[0];
+ if (!file) return;
+
+ if (file.size > 5 * 1024 * 1024) {
+ toast.error('File size must be less than 5MB');
+ return;
+ }
+
+ const setUploading = type === 'logo'? setIsUploadingLogo : setIsUploadingBanner;
+ setUploading(true);
+
+ try {
+ const compressedFile = await compressImage(file);
+ const formDataObj = new FormData();
+ formDataObj.append('file', compressedFile);
+ formDataObj.append('folder', type === 'logo'? 'logos': 'banners');
+
+ const res = await api.post('/upload/image', formDataObj, {
+ headers: { 'Content-Type': 'multipart/form-data'}
+ });
+
+ const newUrl = res.data.url;
+ setFormData(prev => ({ ...prev, [`${type}_url`]: newUrl }));
+ 
+ if (shop?.id) {
+ const updateRes = await api.put('/shops/me', { [`${type}_url`]: newUrl });
+ setShop(updateRes.data);
+ }
+ 
+ toast.success(`${type === 'logo'? 'Logo': 'Banner'} uploaded successfully!`);
+ } catch (error) {
+ toast.error(`Failed to upload ${type}`);
+ console.error(error);
+ } finally {
+ setUploading(false);
+ }
+ };
+
+  const handleNext = (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
     }
-
-    const setUploading = type === 'logo' ? setIsUploadingLogo : setIsUploadingBanner;
-    setUploading(true);
-
-    try {
-      const formDataObj = new FormData();
-      formDataObj.append('file', file);
-      formDataObj.append('folder', type === 'logo' ? 'logos' : 'banners');
-
-      const res = await api.post('/upload/image', formDataObj, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-
-      const newUrl = res.data.url;
-      setFormData(prev => ({ ...prev, [`${type}_url`]: newUrl }));
-      
-      if (shop?.id) {
-        const updateRes = await api.put('/shops/me', { [`${type}_url`]: newUrl });
-        setShop(updateRes.data);
-      }
-      
-      toast.success(`${type === 'logo' ? 'Logo' : 'Banner'} uploaded successfully!`);
-    } catch (error) {
-      toast.error(`Failed to upload ${type}`);
-      console.error(error);
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handleNext = async () => {
     if (currentStep === 1 && !formData.name) {
       toast.error('Shop name is required');
       return;
@@ -257,7 +310,11 @@ export function ShopSetupPage() {
     }
   };
 
-  const handleBack = () => {
+  const handleBack = (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     if (currentStep > 1) {
       setCurrentStep(prev => prev - 1);
     }
@@ -276,369 +333,420 @@ export function ShopSetupPage() {
       return;
     }
 
-    setIsLoading(true);
-    try {
-      const payload: any = { ...formData };
-      payload.latitude = payload.latitude ? parseFloat(payload.latitude) : null;
-      payload.longitude = payload.longitude ? parseFloat(payload.longitude) : null;
+ setIsLoading(true);
+ try {
+ const payload: any = { ...formData };
+ payload.latitude = payload.latitude ? parseFloat(payload.latitude) : null;
+ payload.longitude = payload.longitude ? parseFloat(payload.longitude) : null;
 
-      let res;
-      if (shop?.id) {
-        res = await api.put('/shops/me', payload);
-      } else {
-        res = await api.post('/shops', payload);
-      }
-      
-      setShop(res.data);
-      toast.success('Shop profile updated successfully!');
-      setViewMode('summary');
-    } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Failed to save shop details');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+ let res;
+ if (shop?.id && !isCreateNew) {
+ res = await api.put('/shops/me', payload);
+ toast.success('Shop profile updated successfully!');
+ } else {
+ res = await api.post('/shops', payload);
+ localStorage.setItem('current_shop_id', res.data.id);
+ toast.success('Shop created successfully!');
+ }
+ 
+ setShop(res.data);
+ setViewMode('summary');
+ } catch (error: any) {
+ const detail = error.response?.data?.detail;
+ const errMsg = typeof detail === 'string' 
+   ? detail 
+   : (Array.isArray(detail) && detail[0]?.msg ? `${detail[0].loc?.[detail[0].loc.length - 1] || ''}: ${detail[0].msg}` : 'Failed to save shop details');
+ toast.error(errMsg);
+ } finally {
+ setIsLoading(false);
+ }
+ };
 
-  const steps = [
-    { num: 1, title: 'Basic Info', icon: <Store size={18} /> },
-    { num: 2, title: 'Contact', icon: <Phone size={18} /> },
-    { num: 3, title: 'Branding', icon: <UploadCloud size={18} /> },
-  ];
+ const steps = [
+ { num: 1, title: 'Basic Info', icon: <Store size={18} /> },
+ { num: 2, title: 'Contact', icon: <Phone size={18} /> },
+ { num: 3, title: 'Branding', icon: <UploadCloud size={18} /> },
+ ];
 
-  return (
-    <div className="space-y-6 max-w-4xl mx-auto animate-fade-in pb-12">
-      <div className="flex justify-between items-end">
-        <PageHeader 
-          title="Shop Setup"
-          subtitle="Configure your restaurant's digital presence"
-          className="mb-0"
-        />
-        {viewMode === 'summary' && (
-          <button 
-            onClick={() => setViewMode('edit')} 
-            className="w-10 h-10 rounded-full bg-green-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 transition-colors shrink-0 cursor-pointer"
-            title="Edit Shop Details"
-          >
-            <Edit2 size={18} color='green'/>
-          </button>
-        )}
-      </div>
+ return (
+ <div className="space-y-6 max-w-4xl mx-auto animate-fade-in pb-12">
+ <div className="mb-8">
+ <h1 className="text-2xl font-bold text-foreground">
+ {isCreateNew ? 'Create New Branch': 'Branch Setup'}
+ </h1>
+ <p className="text-muted-foreground mt-1">Configure your restaurant's digital presence</p>
+ </div>
 
-      {viewMode === 'summary' ? (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <div className="h-40 sm:h-48 w-full bg-slate-100 dark:bg-slate-800 relative">
-            {shop?.banner_url ? (
-              <img src={shop.banner_url} alt="Banner" className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-slate-400">
-                <Store size={48} className="opacity-20" />
-              </div>
-            )}
-            <div className="absolute -bottom-12 left-6 sm:left-8 p-1 bg-white dark:bg-slate-900 rounded-2xl">
-              <div className="w-24 h-24 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                {shop?.logo_url ? (
-                  <img src={shop.logo_url} alt="Logo" className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-slate-400">
-                    <Store size={32} />
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-          
-          <div className="pt-16 pb-6 px-6 sm:px-8">
-            <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">{shop?.name}</h3>
-            <p className="text-slate-600 dark:text-slate-400 mb-6">{shop?.description || 'No description provided.'}</p>
-            
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-8 text-sm">
-              <div className="flex items-start gap-3">
-                <MapPin className="text-slate-400 shrink-0 mt-0.5" size={18} />
-                <span className="text-slate-700 dark:text-slate-300">{shop?.address || 'No address set'}</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <Phone className="text-slate-400 shrink-0" size={18} />
-                <span className="text-slate-700 dark:text-slate-300">{shop?.phone || 'No phone set'}</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-green-500 font-bold shrink-0 text-center w-[18px]">W</span>
-                <span className="text-slate-700 dark:text-slate-300">{shop?.whatsapp || 'No WhatsApp set'}</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <Clock className="text-slate-400 shrink-0" size={18} />
-                <span className="text-slate-700 dark:text-slate-300">
-                  {shop?.opening_time ? formatTime(shop.opening_time) : '--:--'} to {shop?.closing_time ? formatTime(shop.closing_time) : '--:--'}
-                </span>
-              </div>
-            </div>
-            
-            {shop?.welcome_message && (
-              <div className="mt-6 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl text-sm italic text-slate-600 dark:text-slate-400 border border-slate-100 dark:border-slate-800">
-                "{shop.welcome_message}"
-              </div>
-            )}
-          </div>
-        </div>
-      ) : (
-        <>
-          {/* Progress Stepper - 3 Steps */}
-          <div className="flex items-center justify-between mb-8 relative">
-            <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-1 bg-slate-100 dark:bg-slate-800 rounded-full -z-10"></div>
-            <div 
-              className="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-primary transition-all duration-300 rounded-full -z-10"
-              style={{ width: `${((currentStep - 1) / (steps.length - 1)) * 100}%` }}
-            ></div>
-            
-            {steps.map((step) => (
-              <div key={step.num} className="flex flex-col items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (step.num < currentStep || (step.num > currentStep && formData.name)) {
-                      setCurrentStep(step.num);
-                    }
-                  }}
-                  className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all duration-300 shadow-sm cursor-pointer
-                    ${currentStep === step.num ? 'bg-primary text-white scale-110 shadow-primary/30 ring-4 ring-primary/20' : 
-                      currentStep > step.num ? 'bg-primary text-white' : 'bg-white text-slate-400 dark:bg-slate-800 border border-slate-200 dark:border-slate-700'}`}
-                >
-                  {currentStep > step.num ? <Check size={18} /> : step.icon}
-                </button>
-                <span className={`text-xs font-medium ${currentStep === step.num ? 'text-primary' : 'text-slate-400'}`}>
-                  {step.title}
-                </span>
-              </div>
-            ))}
-          </div>
+ {viewMode === 'summary'&& (
+ <HeaderActions>
+ <button 
+ onClick={() => setViewMode('edit')} 
+ className="w-10 h-10 rounded-full bg-success/20 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center text-muted-foreground transition-colors shrink-0 cursor-pointer"
+ title="Edit Branch Details"
+ >
+ <Edit2 size={18} color='green'/>
+ </button>
+ </HeaderActions>
+ )}
 
-          <form onSubmit={handleSubmit} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-6 sm:p-8">
-            
-            {/* Step 1: Basic Info */}
-            {currentStep === 1 && (
-              <div className="space-y-5 animate-in fade-in slide-in-from-right-4 duration-300">
-                <h3 className="text-xl font-bold font-heading mb-4 text-slate-800 dark:text-white">Basic Information</h3>
-                <Input
-                  label="Shop Name *"
-                  name="name"
-                  value={formData.name}
-                  onChange={handleChange}
-                  placeholder="e.g. Hotel Saravana Bhavan"
-                  required
-                />
-                
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Description</label>
-                  <textarea
-                    name="description"
-                    value={formData.description}
-                    onChange={handleChange}
-                    placeholder="A short description about your restaurant..."
-                    className="flex w-full rounded-xl border border-input bg-slate-50 dark:bg-slate-800/50 px-3 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary min-h-[100px] resize-y"
-                  />
-                </div>
+ {viewMode === 'summary'? (
+ <div className="bg-background border border-border rounded-2xl shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
+ <div className="h-40 sm:h-48 w-full bg-muted relative">
+ {shop?.banner_url ? (
+ <img src={shop.banner_url} alt="Banner" className="w-full h-full object-cover" />
+ ) : (
+ <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+ <Store size={48} className="opacity-20" />
+ </div>
+ )}
+ <div className="absolute -bottom-12 left-6 sm:left-8 p-1 bg-background rounded-2xl">
+ <div className="w-24 h-24 rounded-xl overflow-hidden bg-muted border border-border">
+ {shop?.logo_url ? (
+ <img src={shop.logo_url} alt="Logo" className="w-full h-full object-cover" />
+ ) : (
+ <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+ <Store size={32} />
+ </div>
+ )}
+ </div>
+ </div>
+ </div>
+ 
+ <div className="pt-16 pb-6 px-6 sm:px-8">
+ <div className="flex items-center justify-between gap-3 mb-2">
+    <h3 className="text-xl sm:text-2xl font-bold text-foreground truncate">{shop?.name}</h3>
+    <Button 
+      onClick={() => setViewMode('edit')} 
+      size="sm" 
+      variant="outline" 
+      className="gap-1.5 text-xs h-8 px-3 shrink-0 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 font-semibold"
+    >
+      <Edit2 size={14} /> Edit Shop
+    </Button>
+  </div>
+ <p className="text-muted-foreground mb-6">{shop?.description || 'No description provided.'}</p>
+ 
+ <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-8 text-sm">
+ <div className="flex items-start gap-3">
+ <MapPin className="text-muted-foreground shrink-0 mt-0.5" size={18} />
+ <span className="text-foreground">{shop?.address || 'No address set'}</span>
+ </div>
+ <div className="flex items-center gap-3">
+ <Phone className="text-muted-foreground shrink-0" size={18} />
+ <span className="text-foreground">{shop?.phone || 'No phone set'}</span>
+ </div>
+ <div className="flex items-center gap-3">
+ <span className="text-success font-bold shrink-0 text-center w-[18px]">W</span>
+ <span className="text-foreground">{shop?.whatsapp || 'No WhatsApp set'}</span>
+ </div>
+ <div className="flex items-center gap-3">
+ <Clock className="text-muted-foreground shrink-0" size={18} />
+ <span className="text-foreground">
+ {shop?.opening_time ? formatTime(shop.opening_time) : '--:--'} to {shop?.closing_time ? formatTime(shop.closing_time) : '--:--'}
+ </span>
+ </div>
+ </div>
+ 
+ {shop?.welcome_message && (
+ <div className="mt-6 p-4 bg-muted/50 rounded-xl text-sm italic text-muted-foreground border border-border">
+"{shop.welcome_message}"
+ </div>
+ )}
+ </div>
+ </div>
+ ) : (
+ <>
+ {/* Progress Stepper - 3 Steps */}
+ <div className="flex items-center justify-between mb-8 relative">
+ <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-1 bg-muted rounded-full -z-10"></div>
+ <div 
+ className="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-primary transition-all duration-300 rounded-full -z-10"
+ style={{ width: `${((currentStep - 1) / (steps.length - 1)) * 100}%` }}
+ ></div>
+ 
+ {steps.map((step) => (
+ <div key={step.num} className="flex flex-col items-center gap-2">
+ <button
+ type="button"
+ onClick={() => {
+ if (step.num < currentStep || (step.num > currentStep && formData.name)) {
+ setCurrentStep(step.num);
+ }
+ }}
+ className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all duration-300 shadow-sm cursor-pointer
+ ${currentStep === step.num ? 'bg-primary text-primary-foreground scale-110 shadow-primary/30 ring-4 ring-primary/20': 
+ currentStep > step.num ? 'bg-primary text-primary-foreground': 'bg-background text-muted-foreground border border-border'}`}
+ >
+ {currentStep > step.num ? <Check size={18} /> : step.icon}
+ </button>
+ <span className={`text-xs font-medium ${currentStep === step.num ? 'text-primary': 'text-muted-foreground'}`}>
+ {step.title}
+ </span>
+ </div>
+ ))}
+ </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Welcome Message</label>
-                  <textarea
-                    name="welcome_message"
-                    value={formData.welcome_message}
-                    onChange={handleChange}
-                    placeholder="Message displayed to customers when opening menu..."
-                    className="flex w-full rounded-xl border border-input bg-slate-50 dark:bg-slate-800/50 px-3 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary min-h-[80px] resize-y"
-                  />
-                </div>
-              </div>
-            )}
+ <form onSubmit={handleSubmit} className="bg-card text-card-foreground border border-border rounded-2xl shadow-sm p-6 sm:p-8">
+ 
+ {/* Step 1: Basic Info */}
+ {currentStep === 1 && (
+ <div className="space-y-5 animate-in fade-in slide-in-from-right-4 duration-300">
+ <div className="flex justify-between items-center mb-6">
+ <div>
+ <h2 className="text-lg font-bold text-foreground">Basic Info</h2>
+ <p className="text-sm text-muted-foreground mt-1">
+ {isCreateNew ?"Set up your new shop's primary details." :"Update your shop's primary details."}
+ </p>
+ </div>
+ {!isCreateNew && (
+ <Button onClick={() => setViewMode('summary')} variant="outline" className="gap-2">
+ <ChevronRight size={18} />
+ View Summary
+ </Button>
+ )}
+ </div>
+ 
+ {isCreateNew && ownedShops.length > 0 && (
+ <div className="mb-6">
+ <label className="block text-sm font-medium text-foreground mb-2">
+ Clone Existing Menus & Settings
+ </label>
+ <SearchableSelect
+ options={[
+ { id: '', name: 'Start Fresh (Blank Menu)'},
+ ...ownedShops.map((s) => ({ id: s.id, name: `Clone from: ${s.name}` }))
+ ]}
+ value={formData.clone_from_shop_id || ''}
+ onChange={(value) => setFormData((prev) => ({ ...prev, clone_from_shop_id: value }))}
+ placeholder="Start Fresh (Blank Menu)"
+ showSearch={false}
+ />
+ <p className="text-xs text-muted-foreground mt-1">This will duplicate all Categories, Menu Items, and Discounts to this new branch.</p>
+ </div>
+ )}
 
-            {/* Step 2: Contact & Location */}
-            {currentStep === 2 && (
-              <div className="space-y-5 animate-in fade-in slide-in-from-right-4 duration-300">
-                <h3 className="text-xl font-bold font-heading mb-4 text-slate-800 dark:text-white">Contact & Location</h3>
-                
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <Input
-                    label="Phone Number"
-                    name="phone"
-                    value={formData.phone}
-                    onChange={handleChange}
-                    placeholder="+91 98765 43210"
-                  />
-                  <Input
-                    label="WhatsApp Number"
-                    name="whatsapp"
-                    value={formData.whatsapp}
-                    onChange={handleChange}
-                    placeholder="+91 98765 43210"
-                  />
-                </div>
+ <Input
+ label="Shop Name *"
+ name="name"
+ value={formData.name}
+ onChange={handleChange}
+ placeholder="e.g. Siva Hotel"
+ required
+ />
+ 
+ <div className="space-y-1.5">
+ <label className="text-sm font-medium text-foreground">Description</label>
+ <textarea
+ name="description"
+ value={formData.description}
+ onChange={handleChange}
+ placeholder="A short description about your restaurant..."
+ className="flex w-full rounded-xl border border-input bg-muted/50 px-3 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary min-h-[100px] resize-y"
+ />
+ </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <TimePicker
-                    value={formData.opening_time}
-                    onChange={(t) => setFormData(prev => ({ ...prev, opening_time: t }))}
-                    label="Opening Time"
-                  />
-                  <TimePicker
-                    value={formData.closing_time}
-                    onChange={(t) => setFormData(prev => ({ ...prev, closing_time: t }))}
-                    label="Closing Time"
-                  />
-                </div>
+ <div className="space-y-1.5">
+ <label className="text-sm font-medium text-foreground">Welcome Message</label>
+ <textarea
+ name="welcome_message"
+ value={formData.welcome_message}
+ onChange={handleChange}
+ placeholder="Message displayed to customers when opening menu..."
+ className="flex w-full rounded-xl border border-input bg-muted/50 px-3 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary min-h-[80px] resize-y"
+ />
+ </div>
+ </div>
+ )}
 
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Full Address</label>
-                  <textarea
-                    name="address"
-                    value={formData.address}
-                    onChange={handleChange}
-                    placeholder="Enter your store address..."
-                    className="flex w-full rounded-xl border border-input bg-slate-50 dark:bg-slate-800/50 px-3 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary min-h-[80px] resize-y"
-                  />
-                </div>
+ {/* Step 2: Contact & Location */}
+ {currentStep === 2 && (
+ <div className="space-y-5 animate-in fade-in slide-in-from-right-4 duration-300">
+ <h3 className="text-xl font-bold font-heading mb-4 text-foreground">Contact & Location</h3>
+ 
+ <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+ <Input
+ label="Phone Number"
+ name="phone"
+ value={formData.phone}
+ onChange={handleChange}
+ placeholder="+91 98765 43210"
+ />
+ <Input
+ label="WhatsApp Number"
+ name="whatsapp"
+ value={formData.whatsapp}
+ onChange={handleChange}
+ placeholder="+91 98765 43210"
+ />
+ </div>
 
-                {/* Map Location Selector */}
-                <div className="space-y-2 pt-2">
-                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                    <Navigation size={16} className="text-primary" /> Map Pin Location
-                  </label>
-                  <MapLocationSelector
-                    latitude={formData.latitude}
-                    longitude={formData.longitude}
-                    onChange={(lat, lng) => setFormData(prev => ({ ...prev, latitude: lat, longitude: lng }))}
-                  />
-                </div>
+ <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+ <TimePicker
+ value={formData.opening_time}
+ onChange={(t) => setFormData(prev => ({ ...prev, opening_time: t }))}
+ label="Opening Time"
+ />
+ <TimePicker
+ value={formData.closing_time}
+ onChange={(t) => setFormData(prev => ({ ...prev, closing_time: t }))}
+ label="Closing Time"
+ />
+ </div>
 
-                {/* Google Review Link */}
-                <Input
-                  label="Google Review Link (Optional)"
-                  name="google_review_link"
-                  value={formData.google_review_link}
-                  onChange={handleChange}
-                  placeholder="https://g.page/r/..."
-                />
-              </div>
-            )}
+ <div className="space-y-1.5">
+ <label className="text-sm font-medium text-foreground">Full Address</label>
+ <textarea
+ name="address"
+ value={formData.address}
+ onChange={handleChange}
+ placeholder="Enter your store address..."
+ className="flex w-full rounded-xl border border-input bg-muted/50 px-3 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary min-h-[80px] resize-y"
+ />
+ </div>
 
-            {/* Step 3: Branding */}
-            {currentStep === 3 && (
-              <div className="space-y-5 animate-in fade-in slide-in-from-right-4 duration-300">
-                <h3 className="text-xl font-bold font-heading mb-4 text-slate-800 dark:text-white">Branding</h3>
-                <p className="text-sm text-slate-500 mb-4">Upload your restaurant logo and banner to personalize your digital menu.</p>
-                
-                <div className="flex flex-col sm:flex-row gap-6">
-                  {/* Logo Upload */}
-                  <div className="flex flex-col items-start gap-3">
-                    <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Shop Logo</label>
-                    <div 
-                      className="w-32 h-32 rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-700 flex items-center justify-center bg-slate-50 dark:bg-slate-900 overflow-hidden relative group cursor-pointer hover:bg-slate-100 transition-colors"
-                      onClick={() => logoInputRef.current?.click()}
-                    >
-                      {formData.logo_url ? (
-                        <>
-                          <img src={formData.logo_url} alt="Logo" className="w-full h-full object-cover" />
-                          <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                            <UploadCloud className="text-white" />
-                          </div>
-                        </>
-                      ) : (
-                        <div className="text-center p-4">
-                          <UploadCloud className="mx-auto h-8 w-8 text-slate-400 mb-2" />
-                          <span className="text-xs text-slate-500">Upload Logo</span>
-                        </div>
-                      )}
-                      {isUploadingLogo && (
-                        <div className="absolute inset-0 bg-white/80 dark:bg-slate-900/80 flex items-center justify-center">
-                          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
-                        </div>
-                      )}
-                    </div>
-                    <input 
-                      type="file" 
-                      ref={logoInputRef} 
-                      className="hidden" 
-                      accept="image/*"
-                      onChange={(e) => handleFileUpload(e, 'logo')} 
-                    />
-                  </div>
+ {/* Map Location Selector */}
+ <div className="space-y-2 pt-2">
+ <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
+ <Navigation size={16} className="text-primary" /> Map Pin Location
+ </label>
+ <MapLocationSelector
+ latitude={formData.latitude}
+ longitude={formData.longitude}
+ onChange={(lat, lng) => setFormData(prev => ({ ...prev, latitude: lat, longitude: lng }))}
+ />
+ </div>
 
-                  {/* Banner Upload */}
-                  <div className="flex-1 flex flex-col items-start gap-3">
-                    <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Shop Banner</label>
-                    <div 
-                      className="w-full h-32 rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-700 flex items-center justify-center bg-slate-50 dark:bg-slate-900 overflow-hidden relative group cursor-pointer hover:bg-slate-100 transition-colors"
-                      onClick={() => bannerInputRef.current?.click()}
-                    >
-                      {formData.banner_url ? (
-                        <>
-                          <img src={formData.banner_url} alt="Banner" className="w-full h-full object-cover" />
-                          <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                            <UploadCloud className="text-white" />
-                          </div>
-                        </>
-                      ) : (
-                        <div className="text-center p-4">
-                          <UploadCloud className="mx-auto h-8 w-8 text-slate-400 mb-2" />
-                          <span className="text-xs text-slate-500">Upload Banner Image (1200x400 rec.)</span>
-                        </div>
-                      )}
-                      {isUploadingBanner && (
-                        <div className="absolute inset-0 bg-white/80 dark:bg-slate-900/80 flex items-center justify-center">
-                          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
-                        </div>
-                      )}
-                    </div>
-                    <input 
-                      type="file" 
-                      ref={bannerInputRef} 
-                      className="hidden" 
-                      accept="image/*"
-                      onChange={(e) => handleFileUpload(e, 'banner')} 
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
+ {/* Google Review Link */}
+ <Input
+ label="Google Review Link (Optional)"
+ name="google_review_link"
+ value={formData.google_review_link}
+ onChange={handleChange}
+ placeholder="https://g.page/r/..."
+ />
+ </div>
+ )}
 
-            {/* Stepper Action Buttons */}
-            <div className="mt-8 pt-6 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center">
-              {currentStep > 1 ? (
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  onClick={handleBack}
-                  size="sm"
-                  className="rounded-xl font-bold"
-                >
-                  Back
-                </Button>
-              ) : (
-                <div></div>
-              )}
+ {/* Step 3: Branding */}
+ {currentStep === 3 && (
+ <div className="space-y-5 animate-in fade-in slide-in-from-right-4 duration-300">
+ <h3 className="text-xl font-bold font-heading mb-4 text-foreground">Branding</h3>
+ <p className="text-sm text-muted-foreground mb-4">Upload your restaurant logo and banner to personalize your digital menu.</p>
+ 
+ <div className="flex flex-col sm:flex-row gap-6">
+ {/* Logo Upload */}
+ <div className="flex flex-col items-start gap-3">
+ <label className="text-sm font-medium text-foreground">Branch Logo</label>
+ <div 
+ className="w-32 h-32 rounded-2xl border-2 border-dashed border-border flex items-center justify-center bg-muted/50 overflow-hidden relative group cursor-pointer hover:bg-muted transition-colors"
+ onClick={() => logoInputRef.current?.click()}
+ >
+ {formData.logo_url ? (
+ <>
+ <img src={formData.logo_url} alt="Logo" className="w-full h-full object-cover" />
+ <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+ <UploadCloud className="text-white" />
+ </div>
+ </>
+ ) : (
+ <div className="text-center p-4">
+ <UploadCloud className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
+ <span className="text-xs text-muted-foreground">Upload Logo</span>
+ </div>
+ )}
+ {isUploadingLogo && (
+ <div className="absolute inset-0 bg-background/80 /80 flex items-center justify-center">
+ <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+ </div>
+ )}
+ </div>
+ <input 
+ type="file" 
+ ref={logoInputRef} 
+ className="hidden" 
+ accept="image/*"
+ onChange={(e) => handleFileUpload(e, 'logo')} 
+ />
+ </div>
 
-              {currentStep < 3 ? (
-                <Button 
-                  type="button" 
-                  onClick={handleNext}
-                  size="sm"
-                  className="rounded-xl font-bold"
-                >
-                  Next Step <ChevronRight size={16} className="ml-1" />
-                </Button>
-              ) : (
-                <Button 
-                  type="submit" 
-                  disabled={isLoading}
-                  size="sm"
-                  className="rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white"
-                >
-                  {isLoading ? 'Saving Shop...' : 'Save Shop Profile'} <Save size={16} className="ml-1.5" />
-                </Button>
-              )}
-            </div>
+ {/* Banner Upload */}
+ <div className="flex-1 flex flex-col items-start gap-3">
+ <label className="text-sm font-medium text-foreground">Branch Banner</label>
+ <div 
+ className="w-full h-32 rounded-2xl border-2 border-dashed border-border flex items-center justify-center bg-muted/50 overflow-hidden relative group cursor-pointer hover:bg-muted transition-colors"
+ onClick={() => bannerInputRef.current?.click()}
+ >
+ {formData.banner_url ? (
+ <>
+ <img src={formData.banner_url} alt="Banner" className="w-full h-full object-cover" />
+ <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+ <UploadCloud className="text-white" />
+ </div>
+ </>
+ ) : (
+ <div className="text-center p-4">
+ <UploadCloud className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
+ <span className="text-xs text-muted-foreground">Upload Banner Image (1200x400 rec.)</span>
+ </div>
+ )}
+ {isUploadingBanner && (
+ <div className="absolute inset-0 bg-background/80 /80 flex items-center justify-center">
+ <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+ </div>
+ )}
+ </div>
+ <input 
+ type="file" 
+ ref={bannerInputRef} 
+ className="hidden" 
+ accept="image/*"
+ onChange={(e) => handleFileUpload(e, 'banner')} 
+ />
+ </div>
+ </div>
+ </div>
+ )}
 
-          </form>
-        </>
-      )}
-    </div>
-  );
+ {/* Stepper Action Buttons */}
+ <div className="mt-8 pt-6 border-t border-border flex justify-between items-center">
+ {currentStep > 1 ? (
+ <Button 
+ type="button" 
+ variant="outline" 
+ onClick={handleBack}
+ size="sm"
+ className="rounded-xl font-bold"
+ >
+ Back
+ </Button>
+ ) : (
+ <div></div>
+ )}
+
+ {currentStep < 3 ? (
+ <Button 
+ type="button" 
+ onClick={handleNext}
+ size="sm"
+ className="rounded-xl font-bold"
+ >
+ Next Step <ChevronRight size={16} className="ml-1" />
+ </Button>
+ ) : (
+ <Button 
+ type="submit" 
+ disabled={isLoading}
+ size="sm"
+ className="rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white"
+ >
+ {isLoading ? 'Saving Shop...': 'Save Shop Profile'} <Save size={16} className="ml-1.5" />
+ </Button>
+ )}
+ </div>
+
+ </form>
+ </>
+ )}
+ </div>
+ );
 }

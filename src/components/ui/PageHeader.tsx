@@ -18,9 +18,9 @@ export function PageHeader({ title, subtitle, className = '' }: PageHeaderProps)
   }, [title, subtitle, setTitle]);
 
   return (
-    <div className={`mb-4 text-left ${className}`}>
+    <div className={`mb-6 text-left ${className}`}>
       <div className="flex items-center gap-2">
-        <h1 className="text-xl sm:text-2xl font-black font-heading tracking-tight text-slate-900 dark:text-white">
+        <h1 className="text-2xl sm:text-3xl font-bold font-heading tracking-tight text-foreground">
           {title}
         </h1>
         
@@ -29,7 +29,7 @@ export function PageHeader({ title, subtitle, className = '' }: PageHeaderProps)
             <button
               data-tooltip-id="page-header-tooltip"
               data-tooltip-content={subtitle}
-              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors rounded-full p-0.5 focus:outline-none shrink-0"
+              className="text-muted-foreground hover:text-foreground transition-colors rounded-full p-0.5 focus:outline-none shrink-0"
               aria-label="More information"
             >
               <Info size={16} />
@@ -38,14 +38,14 @@ export function PageHeader({ title, subtitle, className = '' }: PageHeaderProps)
             <Tooltip 
               id="page-header-tooltip" 
               place="bottom-start"
-              className="!bg-slate-900 !text-white !text-xs !py-1.5 !px-3 !rounded-xl shadow-xl z-50 max-w-xs font-medium"
+              className="!bg-popover !text-popover-foreground border border-border !text-xs !py-2 !px-4 !rounded-xl shadow-xl z-50 max-w-xs font-medium"
             />
           </>
         )}
       </div>
 
       {subtitle && (
-        <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+        <p className="text-sm text-muted-foreground font-medium mt-1">
           {subtitle}
         </p>
       )}

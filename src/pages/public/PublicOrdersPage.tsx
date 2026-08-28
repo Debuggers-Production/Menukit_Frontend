@@ -217,10 +217,11 @@ export function PublicOrdersPage() {
     const status = order.order_status;
     const isUnpaid = order.payment_status === 'pending';
     const type = order.order_type; // 'dine_in', 'takeaway', 'delivery'
-    const isPendingAccept = status === 'pending';
-    const isPreparing = status === 'preparing' || status === 'cooking' || status === 'accepted';
-    const isCompleted = status === 'completed';
-    const isCancelled = status === 'cancelled' || status === 'rejected';
+    const isPendingAccept = status === 'pending' || status === 'PENDING_VENDOR';
+    const isPaymentPending = status === 'PAYMENT_PENDING';
+    const isPreparing = status === 'preparing' || status === 'cooking' || status === 'accepted' || status === 'PAID' || status === 'PREPARING';
+    const isCompleted = status === 'completed' || status === 'READY' || status === 'OUT_FOR_DELIVERY' || status === 'DELIVERED' || status === 'COMPLETED';
+    const isCancelled = status === 'cancelled' || status === 'rejected' || status === 'CANCELLED' || status === 'REJECTED';
 
     return (
       <div className="bg-slate-50/70 dark:bg-slate-950/40 rounded-2xl p-4 border border-slate-100 dark:border-slate-800/80 mb-4 relative overflow-hidden">
@@ -231,6 +232,15 @@ export function PublicOrdersPage() {
               <div className="absolute inset-0 rounded-full bg-amber-500/20 animate-[radar-pulse_1.5s_infinite]" />
               <div className="relative w-8 h-8 rounded-full bg-amber-500 text-white flex items-center justify-center shadow-sm">
                 <Hotel size={15} />
+              </div>
+            </div>
+          )}
+
+          {isPaymentPending && (
+            <div className="relative flex items-center justify-center w-10 h-10 shrink-0">
+              <div className="absolute inset-0 rounded-full bg-blue-500/20 animate-ping" style={{ animationDuration: '2.5s' }} />
+              <div className="relative w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center shadow-sm">
+                <CreditCard size={15} />
               </div>
             </div>
           )}
@@ -264,13 +274,15 @@ export function PublicOrdersPage() {
           <div className="flex-1 min-w-0">
             <h4 className="text-[11px] font-black text-slate-850 dark:text-slate-200 capitalize">
               {isPendingAccept && "Waiting for acceptance"}
-              {status === 'accepted' && "Order Accepted"}
-              {(status === 'preparing' || status === 'cooking') && "Preparing Your Meal"}
+              {isPaymentPending && "Pending Payment"}
+              {(status === 'accepted' || status === 'PAID') && "Order Accepted"}
+              {(status === 'preparing' || status === 'cooking' || status === 'PREPARING') && "Preparing Your Meal"}
               {isCompleted && (type === 'delivery' ? "Meal Delivered Successfully" : type === 'takeaway' ? "Order Picked Up" : "Served Hot at Table")}
               {isCancelled && "Order Cancelled"}
             </h4>
             <p className="text-[9px] text-slate-400 font-bold tracking-wide uppercase truncate mt-0.5">
               {isPendingAccept && "Restaurant is reviewing details..."}
+              {isPaymentPending && "Waiting for you to complete payment"}
               {isPreparing && "Kitchen is cooking fresh ingredients..."}
               {isCompleted && "Thank you for dining with us!"}
               {isCancelled && "Order has been cancelled."}
@@ -486,10 +498,10 @@ export function PublicOrdersPage() {
               <div className="space-y-4">
                 {filteredOrders.map((order, idx) => {
                   const isUnpaid = order.payment_status === 'pending';
-                  const isPendingAccept = order.order_status === 'pending';
-                  const isPreparing = order.order_status === 'preparing' || order.order_status === 'cooking' || order.order_status === 'accepted';
-                  const isCompleted = order.order_status === 'completed';
-                  const isCancelled = order.order_status === 'cancelled' || order.order_status === 'rejected';
+                  const isPendingAccept = order.order_status === 'pending' || order.order_status === 'PENDING_VENDOR';
+                  const isPreparing = order.order_status === 'preparing' || order.order_status === 'cooking' || order.order_status === 'accepted' || order.order_status === 'PAID' || order.order_status === 'PREPARING';
+                  const isCompleted = order.order_status === 'completed' || order.order_status === 'READY' || order.order_status === 'OUT_FOR_DELIVERY' || order.order_status === 'DELIVERED' || order.order_status === 'COMPLETED';
+                  const isCancelled = order.order_status === 'cancelled' || order.order_status === 'rejected' || order.order_status === 'CANCELLED' || order.order_status === 'REJECTED';
 
                   // Dynamic card border/bg styling based on live states
                   let cardClass = "bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800/80";
@@ -920,6 +932,7 @@ export function PublicOrdersPage() {
           shopId={shop.id}
           onClose={() => setShowVerifyPopup(false)}
           onUnlock={handleVerifySuccess}
+          initialStep="mobile"
         />
       )}
     </div>

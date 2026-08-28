@@ -1,17 +1,21 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
-import { Users, ShieldCheck, Smartphone, Plus, Edit2, Trash2, Info, Search, Lock } from 'lucide-react';
-import { Tooltip } from 'react-tooltip';
+import { Users, ShieldCheck, Smartphone, Plus, Edit2, Search, Lock, RefreshCw, AlertCircle, Trophy } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
-import { membershipService, MembershipAnalytics, Member, RepeatedCustomer } from '@/services/memberships';
+import { membershipService, MembershipAnalytics, Member } from '@/services/memberships';
 import { useShopStore } from '@/store/shopStore';
-import { PageHeader } from '@/components/ui/PageHeader';
+import { useHeaderStore } from '@/store/useHeaderStore';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
+import { InfiniteScrollTrigger } from '@/components/ui/InfiniteScrollTrigger';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { api } from '@/services/api';
+
+const PAGE_SIZE = 20;
 
 export function MembersPage() {
   const navigate = useNavigate();
@@ -21,13 +25,28 @@ export function MembersPage() {
   const [isLocked, setIsLocked] = useState(false);
   const [isDetailsLocked, setIsDetailsLocked] = useState(false);
 
+  const { setTitle: setHeaderTitle } = useHeaderStore();
+
+  useEffect(() => {
+    setHeaderTitle('Members & Verified Customers', 'Manage your exclusive member base and view analytics.');
+  }, [setHeaderTitle]);
+
   useEffect(() => {
     api.get('/subscription/current').then(res => setSubStatus(res.data)).catch(console.error);
   }, []);
 
   const [analytics, setAnalytics] = useState<MembershipAnalytics | null>(null);
-  const [members, setMembers] = useState<Member[]>([]);
+  const [membersList, setMembersList] = useState<Member[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [skip, setSkip] = useState(0);
+
+  const [activeTab, setActiveTab] = useState<'existing' | 'new' | 'repeated'>('existing');
+  const [minVisits, setMinVisits] = useState(2);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [memberToDelete, setMemberToDelete] = useState<string | null>(null);
@@ -37,55 +56,75 @@ export function MembersPage() {
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
   const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
   const [isDeletingAll, setIsDeletingAll] = useState(false);
-
-  const [activeTab, setActiveTab] = useState<'existing' | 'new' | 'repeated'>('existing');
-  const [autoMembers, setAutoMembers] = useState<Member[]>([]);
-  const [repeatedMembers, setRepeatedMembers] = useState<RepeatedCustomer[]>([]);
-  const [minVisits, setMinVisits] = useState(2);
   const [isConverting, setIsConverting] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
 
-  const filteredMembers = (
-    activeTab === 'existing' ? members : 
-    activeTab === 'repeated' ? repeatedMembers : 
-    autoMembers
-  ).filter(m => 
-    (m.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
-    m.mobile_number.includes(searchQuery)
-  );
+  // Debounce search query input (350ms)
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 350);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
 
-  const fetchAnalytics = async (targetShopId?: string) => {
+  // Initial Summary Analytics Fetch
+  const fetchAnalyticsSummary = async (targetShopId?: string) => {
     const id = targetShopId || shopId || shop?.id;
     if (!id) return;
-    setIsLoading(true);
     try {
       const data = await membershipService.getAnalytics(id);
       setAnalytics(data);
       setIsLocked(false);
-
-      try {
-        const membersData = await membershipService.getMembers(id);
-        const autoData = await membershipService.getAutoRegisteredMembers(id);
-        const repeatedData = await membershipService.getRepeatedCustomers(id, minVisits);
-        setMembers(membersData);
-        setAutoMembers(autoData);
-        setRepeatedMembers(repeatedData);
-        setIsDetailsLocked(false);
-      } catch (detErr: any) {
-        if (detErr.response?.status === 403) {
-          setIsDetailsLocked(true);
-        }
-      }
     } catch (err: any) {
       if (err.response?.status === 403) {
         setIsLocked(true);
       } else {
         console.error('Failed to load membership analytics', err);
       }
-    } finally {
-      setIsLoading(false);
     }
   };
+
+  // Paginated Members List Fetch
+  const loadMembersData = useCallback(async (currentSkip: number, reset: boolean = false) => {
+    const id = shopId || shop?.id;
+    if (!id) return;
+
+    if (reset) {
+      setIsLoading(true);
+    } else {
+      setIsFetchingMore(true);
+    }
+
+    try {
+      const res = await membershipService.getPaginatedMembers(
+        id,
+        activeTab,
+        currentSkip,
+        PAGE_SIZE,
+        debouncedSearch.trim() || undefined,
+        minVisits
+      );
+
+      setHasMore(res.has_more);
+      setSkip(currentSkip);
+      setIsDetailsLocked(false);
+
+      if (reset) {
+        setMembersList(res.items || []);
+      } else {
+        setMembersList((prev) => [...prev, ...(res.items || [])]);
+      }
+    } catch (err: any) {
+      if (err.response?.status === 403) {
+        setIsDetailsLocked(true);
+      } else {
+        console.error('Failed to load paginated members', err);
+        toast.error('Failed to load members list');
+      }
+    } finally {
+      setIsLoading(false);
+      setIsFetchingMore(false);
+    }
+  }, [shopId, shop?.id, activeTab, debouncedSearch, minVisits]);
 
   useEffect(() => {
     const init = async () => {
@@ -104,28 +143,29 @@ export function MembersPage() {
         setShopId(id);
       }
       if (id) {
-        fetchAnalytics(id);
-      } else {
-        setIsLoading(false);
+        Promise.all([
+          fetchAnalyticsSummary(id),
+          loadMembersData(0, true)
+        ]);
       }
     };
     init();
-  }, [shop?.id]);
+  }, [shop?.id, loadMembersData]);
 
+  // Fetch paginated data whenever tab, debounced search, or minVisits changes
   useEffect(() => {
-    const currentId = shopId || shop?.id;
-    if (currentId && activeTab === 'repeated') {
-      const fetchRepeated = async () => {
-        try {
-          const repeatedData = await membershipService.getRepeatedCustomers(currentId, minVisits);
-          setRepeatedMembers(repeatedData);
-        } catch (err) {
-          console.error('Failed to load repeated customers', err);
-        }
-      };
-      fetchRepeated();
+    const id = shopId || shop?.id;
+    if (id) {
+      loadMembersData(0, true);
     }
-  }, [shopId, shop?.id, minVisits, activeTab]);
+  }, [shopId, shop?.id, activeTab, debouncedSearch, minVisits, loadMembersData]);
+
+  const handleLoadMore = () => {
+    if (hasMore && !isFetchingMore && !isLoading) {
+      const nextSkip = skip + PAGE_SIZE;
+      loadMembersData(nextSkip, false);
+    }
+  };
 
   const handleConvertToMember = async (memberId: string) => {
     if (!shop?.id) return;
@@ -133,7 +173,7 @@ export function MembersPage() {
     try {
       await membershipService.convertToMember(shop.id, memberId);
       toast.success('Customer converted to verified member!');
-      fetchAnalytics();
+      fetchAnalyticsSummary();
       setActiveTab('existing');
     } catch (err: any) {
       toast.error(err.response?.data?.detail || 'Failed to convert customer');
@@ -164,7 +204,8 @@ export function MembersPage() {
       }
       setFormData({ name: '', mobile_number: '' });
       setEditingMemberId(null);
-      fetchAnalytics();
+      fetchAnalyticsSummary();
+      loadMembersData(0, true);
     } catch (err: any) {
       toast.error(err.response?.data?.detail || (editingMemberId ? 'Failed to update member' : 'Failed to add member'));
     } finally {
@@ -178,8 +219,8 @@ export function MembersPage() {
     try {
       await membershipService.deleteMember(shop.id, memberToDelete);
       toast.success('Member removed successfully');
-      setMembers(members.filter(m => m.id !== memberToDelete));
-      fetchAnalytics();
+      fetchAnalyticsSummary();
+      loadMembersData(0, true);
     } catch (err: any) {
       toast.error(err.response?.data?.detail || 'Failed to remove member');
     } finally {
@@ -193,9 +234,8 @@ export function MembersPage() {
     setIsDeletingAll(true);
     try {
       await membershipService.deleteAllMembers(shop.id, type);
-      if (type === 'existing' || type === 'all') setMembers([]);
-      if (type === 'new' || type === 'all') setAutoMembers([]);
-      fetchAnalytics();
+      fetchAnalyticsSummary();
+      loadMembersData(0, true);
       setShowDeleteAllConfirm(false);
       toast.success(
         type === 'existing' ? 'All verified members deleted' :
@@ -237,404 +277,295 @@ export function MembersPage() {
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <PageHeader
-          title="Members & Verified Customers"
-          subtitle="Manage your exclusive member base and view analytics."
-          className="mb-0"
-        />
-      </div>
-
-      {/* Analytics Cards */}
+      {/* Analytics Cards (Lightweight Count Metrics) */}
       <div className="grid grid-cols-3 gap-2 sm:gap-4">
-        <Card className="bg-gradient-to-br from-indigo-50 to-white border-indigo-100">
+        <Card className="bg-gradient-to-br from-indigo-50 to-white border-indigo-100 dark:from-indigo-950/20 dark:to-slate-900 dark:border-indigo-900/30">
           <CardHeader className="p-3 sm:p-4 pb-0 sm:pb-1 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-0">
-            <CardTitle className="text-[10px] sm:text-xs font-semibold text-slate-600 leading-tight">Total Members</CardTitle>
-            <div className="hidden sm:flex w-7 h-7 rounded-full bg-indigo-100 text-indigo-600 items-center justify-center">
-              <Users size={14} />
-            </div>
+            <CardTitle className="text-[10px] sm:text-xs font-semibold text-slate-600 dark:text-slate-300 leading-tight">Total Members</CardTitle>
+            <Users size={16} className="text-indigo-500 shrink-0" />
           </CardHeader>
           <CardContent className="p-3 sm:p-4 pt-1 sm:pt-2">
-            <div className="text-lg sm:text-2xl font-bold text-slate-800">
-              {isLoading ? '...' : analytics?.total_members || 0}
+            <div className="text-xl sm:text-3xl font-black text-indigo-950 dark:text-indigo-200">
+              {analytics?.total_members ?? 0}
             </div>
-            <p className="text-[9px] sm:text-[11px] text-slate-500 mt-0.5 leading-tight line-clamp-1 hidden sm:block">Total registered customers</p>
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-emerald-50 to-white border-emerald-100">
+        <Card className="bg-gradient-to-br from-emerald-50 to-white border-emerald-100 dark:from-emerald-950/20 dark:to-slate-900 dark:border-emerald-900/30">
           <CardHeader className="p-3 sm:p-4 pb-0 sm:pb-1 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-0">
-            <CardTitle className="text-[10px] sm:text-xs font-semibold text-slate-600 leading-tight">Manually Verified</CardTitle>
-            <div className="hidden sm:flex w-7 h-7 rounded-full bg-emerald-100 text-emerald-600 items-center justify-center">
-              <ShieldCheck size={14} />
-            </div>
+            <CardTitle className="text-[10px] sm:text-xs font-semibold text-slate-600 dark:text-slate-300 leading-tight">Manually Verified</CardTitle>
+            <ShieldCheck size={16} className="text-emerald-500 shrink-0" />
           </CardHeader>
           <CardContent className="p-3 sm:p-4 pt-1 sm:pt-2">
-            <div className="text-lg sm:text-2xl font-bold text-slate-800">
-              {isLoading ? '...' : analytics?.manually_added || 0}
+            <div className="text-xl sm:text-3xl font-black text-emerald-950 dark:text-emerald-200">
+              {analytics?.manually_added ?? 0}
             </div>
-            <p className="text-[9px] sm:text-[11px] text-slate-500 mt-0.5 leading-tight line-clamp-1 hidden sm:block">Added by you</p>
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-amber-50 to-white border-amber-100">
+        <Card className="bg-gradient-to-br from-amber-50 to-white border-amber-100 dark:from-amber-950/20 dark:to-slate-900 dark:border-amber-900/30">
           <CardHeader className="p-3 sm:p-4 pb-0 sm:pb-1 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-0">
-            <CardTitle className="text-[10px] sm:text-xs font-semibold text-slate-600 leading-tight">Auto Registered</CardTitle>
-            <div className="hidden sm:flex w-7 h-7 rounded-full bg-amber-100 text-amber-600 items-center justify-center">
-              <Smartphone size={14} />
-            </div>
+            <CardTitle className="text-[10px] sm:text-xs font-semibold text-slate-600 dark:text-slate-300 leading-tight">Auto Registered</CardTitle>
+            <Smartphone size={16} className="text-amber-500 shrink-0" />
           </CardHeader>
           <CardContent className="p-3 sm:p-4 pt-1 sm:pt-2">
-            <div className="text-lg sm:text-2xl font-bold text-slate-800">
-              {isLoading ? '...' : analytics?.auto_registered || 0}
+            <div className="text-xl sm:text-3xl font-black text-amber-950 dark:text-amber-200">
+              {analytics?.auto_registered ?? 0}
             </div>
-            <p className="text-[9px] sm:text-[11px] text-slate-500 mt-0.5 leading-tight line-clamp-1 hidden sm:block">New interested customers</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Tabs and Search */}
-      <div className="sticky top-[-16px] sm:top-[-24px] lg:top-[-32px] z-20 bg-[#f8fafc]/90 backdrop-blur-md pb-4 pt-4 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 border-b border-slate-200 mb-6 flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
-        <div className="flex bg-slate-100 p-1 rounded-xl w-full sm:max-w-sm">
-        <button
-          onClick={() => setActiveTab('existing')}
-          data-tooltip-id="existing-tab-info"
-          className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${activeTab === 'existing'
-              ? 'bg-white text-slate-800 shadow-sm'
-              : 'text-slate-500 hover:text-slate-700'
-            }`}
-        >
-          Existing
-          <Info size={14} className="text-slate-400" />
-        </button>
-        <Tooltip id="existing-tab-info" place="top" style={{ backgroundColor: '#1e293b', color: '#fff', borderRadius: '8px', fontSize: '12px', maxWidth: '250px', zIndex: 100 }}>
-          Customers you have manually added to your membership program.
-        </Tooltip>
+      {/* Main Content Area */}
+      <Card className="shadow-xs overflow-hidden border-slate-200 dark:border-slate-800">
+        <div className="p-4 sm:p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            {/* Custom Tab Switcher */}
+            <div className="flex items-center gap-1.5 p-1 bg-slate-200/60 dark:bg-slate-800 rounded-xl max-w-fit">
+              <button
+                onClick={() => setActiveTab('existing')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  activeTab === 'existing'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                }`}
+              >
+                Existing
+              </button>
 
-        <button
-          onClick={() => setActiveTab('new')}
-          data-tooltip-id="new-tab-info"
-          className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${activeTab === 'new'
-              ? 'bg-white text-slate-800 shadow-sm'
-              : 'text-slate-500 hover:text-slate-700'
-            }`}
-        >
-          New
-          <Info size={14} className="text-slate-400" />
-          {autoMembers.length > 0 && (
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${activeTab === 'new' ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-500'}`}>
-              {autoMembers.length}
-            </span>
-          )}
-        </button>
-        <Tooltip id="new-tab-info" place="top" style={{ backgroundColor: '#1e293b', color: '#fff', borderRadius: '8px', fontSize: '12px', maxWidth: '250px', zIndex: 100 }}>
-          New customers who joined via OTP. Convert them to verified members.
-        </Tooltip>
+              <button
+                onClick={() => setActiveTab('new')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  activeTab === 'new'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                }`}
+              >
+                New
+                <span className="bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300 px-1.5 py-0.5 rounded-full text-[10px] font-black">
+                  {analytics?.auto_registered ?? 0}
+                </span>
+              </button>
 
-        <button
-          onClick={() => setActiveTab('repeated')}
-          data-tooltip-id="repeated-tab-info"
-          className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${activeTab === 'repeated'
-              ? 'bg-white text-slate-800 shadow-sm'
-              : 'text-slate-500 hover:text-slate-700'
-            }`}
-        >
-          Repeated
-          <Info size={14} className="text-slate-400" />
-          {repeatedMembers.length > 0 && (
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${activeTab === 'repeated' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-500'}`}>
-              {repeatedMembers.length}
-            </span>
-          )}
-        </button>
-        <Tooltip id="repeated-tab-info" place="top" style={{ backgroundColor: '#1e293b', color: '#fff', borderRadius: '8px', fontSize: '12px', maxWidth: '250px', zIndex: 100 }}>
-          Customers who have visited your shop multiple times.
-        </Tooltip>
-        </div>
+              <button
+                onClick={() => setActiveTab('repeated')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  activeTab === 'repeated'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                }`}
+              >
+                Repeated
+                <span className="bg-indigo-100 text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-300 px-1.5 py-0.5 rounded-full text-[10px] font-black">
+                  {analytics?.repeated_count ?? 0}
+                </span>
+              </button>
+            </div>
 
-        {activeTab === 'repeated' && (
-          <div className="w-full sm:max-w-[120px] shrink-0">
-            <Input
-              type="number"
-              min={2}
-              value={minVisits}
-              onChange={(e) => setMinVisits(parseInt(e.target.value) || 2)}
-              placeholder="Min visits"
-              className="w-full bg-white h-10"
-              label="Min Visits"
+            {/* Action Buttons & Min Visits filter */}
+            <div className="flex items-center gap-2">
+              {activeTab === 'repeated' && (
+                <div className="flex items-center gap-1 bg-white dark:bg-slate-900 px-2.5 py-1 rounded-xl border border-slate-200 dark:border-slate-700 text-xs">
+                  <span className="text-slate-500 font-bold text-[11px]">Min Visits:</span>
+                  <select
+                    value={minVisits}
+                    onChange={(e) => setMinVisits(Number(e.target.value))}
+                    className="bg-transparent font-black text-slate-800 dark:text-white focus:outline-none"
+                  >
+                    <option value={2}>2+</option>
+                    <option value={3}>3+</option>
+                    <option value={5}>5+</option>
+                  </select>
+                </div>
+              )}
+
+              {activeTab === 'existing' && !isDetailsLocked && (
+                <Button
+                  onClick={() => {
+                    setEditingMemberId(null);
+                    setFormData({ name: '', mobile_number: '' });
+                    setIsAddModalOpen(true);
+                  }}
+                  size="sm"
+                  className="hidden sm:inline-flex bg-primary hover:bg-primary/90 text-white rounded-xl text-xs font-bold gap-1 shadow-xs"
+                >
+                  <Plus size={14} /> Add Member
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* API Search Input */}
+          <div className="relative mt-3">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+            <input
+              type="text"
+              placeholder="Search member by name or mobile..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-primary font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400"
             />
           </div>
-        )}
-
-        <div className="w-full sm:max-w-xs flex gap-2">
-          <Input
-            leftIcon={<Search size={18} />}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by name or mobile..."
-            className="w-full bg-white flex-1"
-          />
-          {(members.length > 0 || autoMembers.length > 0) && (
-            <button
-              onClick={() => setShowDeleteAllConfirm(true)}
-              className="flex items-center justify-center gap-2 px-4 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 font-medium text-sm transition-colors border border-red-200 dark:bg-red-900/20 dark:border-red-800 dark:hover:bg-red-900/40 shrink-0 h-10"
-              title="Delete All Members"
-            >
-              <Trash2 size={16} />
-              <span className="hidden sm:inline">Delete All</span>
-            </button>
-          )}
         </div>
-      </div>
 
-      {/* Members List or Locked Card */}
-      {isDetailsLocked ? (
-        <div className="bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/15 border border-amber-500/30 rounded-2xl p-8 text-center space-y-4 shadow-xs mb-24">
-          <div className="w-14 h-14 bg-amber-500 text-white rounded-2xl flex items-center justify-center mx-auto shadow-md">
-            <Lock size={28} />
-          </div>
-          <div className="max-w-md mx-auto space-y-2">
-            <h3 className="text-lg font-black text-slate-900 dark:text-white">Customer Details Locked</h3>
-            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed font-medium">
-              You currently have access to <strong>New Member Count</strong> metrics above! Upgrade to <strong>New Member + Details</strong> to view customer names, phone numbers, search members, and manage your member list.
-            </p>
-          </div>
-          <Button
-            onClick={() => navigate('/subscription/marketplace')}
-            className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold px-6 py-2.5 rounded-xl shadow-md transition-all text-xs uppercase tracking-wider cursor-pointer"
-          >
-            Upgrade to View Details →
-          </Button>
-        </div>
-      ) : (
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-24">
-          <div className="overflow-x-auto w-full">
-            {isLoading ? (
-              <div className="py-8 text-center text-slate-500">Loading members...</div>
-            ) : filteredMembers.length === 0 ? (
-              <div className="py-8 text-center text-slate-500 border-b border-slate-100">
-                {searchQuery ? 'No members match your search.' : (activeTab === 'existing' ? 'No manually verified members yet.' : activeTab === 'repeated' ? 'No repeated customers found.' : 'No auto-registered customers yet.')}
-              </div>
-            ) : (
-              <table className="w-full text-left border-collapse">
-                <thead className="sticky top-0 bg-white z-10 shadow-sm">
-                  <tr className="border-b border-slate-200">
-                    <th className="py-3 px-4 font-semibold text-sm text-slate-600 bg-slate-50/80 backdrop-blur">Name</th>
-                    <th className="py-3 px-4 font-semibold text-sm text-slate-600 bg-slate-50/80 backdrop-blur">Mobile Number</th>
-                    <th className="py-3 px-4 font-semibold text-sm text-slate-600 bg-slate-50/80 backdrop-blur">Joined On</th>
-                    {activeTab === 'repeated' && (
-                      <th className="py-3 px-4 font-semibold text-sm text-slate-600 bg-slate-50/80 backdrop-blur text-center">Visits</th>
-                    )}
-                    <th className="py-3 px-4 font-semibold text-sm text-slate-600 text-right bg-slate-50/80 backdrop-blur">Actions</th>
+        <CardContent className="p-0">
+          {isDetailsLocked ? (
+            <div className="p-8 text-center space-y-3">
+              <Lock size={32} className="mx-auto text-amber-500" />
+              <h4 className="font-extrabold text-sm text-slate-800 dark:text-slate-200">Member Details Module Required</h4>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto">Subscribe to the Member Details module to view individual member customer phone numbers and profiles.</p>
+              <Button onClick={() => navigate('/subscription')} size="sm" className="bg-primary text-white text-xs font-extrabold">Upgrade Now</Button>
+            </div>
+          ) : isLoading && membersList.length === 0 ? (
+            <div className="p-6 space-y-3">
+              {[1, 2, 3, 4].map(i => (
+                <Skeleton key={i} className="h-10 w-full rounded-xl" />
+              ))}
+            </div>
+          ) : membersList.length === 0 ? (
+            <div className="p-12 text-center space-y-2">
+              <Users size={32} className="mx-auto text-slate-400" />
+              <h4 className="font-bold text-slate-700 dark:text-slate-300 text-sm">No Members Found</h4>
+              <p className="text-xs text-slate-400">
+                {debouncedSearch ? `No records match "${debouncedSearch}".` : 'No customers recorded in this list yet.'}
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 dark:bg-slate-800/50 text-[10px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800">
+                    <th className="py-3 px-4">Name</th>
+                    <th className="py-3 px-4">Mobile Number</th>
+                    <th className="py-3 px-4">Joined On</th>
+                    {activeTab === 'repeated' && <th className="py-3 px-4 text-center">Visits</th>}
+                    <th className="py-3 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {filteredMembers.map(member => (
-                      <tr key={member.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
-                        <td className="py-3 px-4 text-sm font-medium text-slate-800">
-                          {member.name || 'N/A'}
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 font-medium">
+                  {membersList.map((m, index) => (
+                    <tr key={`${m.id}-${index}`} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
+                      <td className="py-3 px-4 font-bold text-slate-800 dark:text-slate-200">
+                        {m.name || 'Unnamed Customer'}
+                      </td>
+                      <td className="py-3 px-4 font-mono text-slate-600 dark:text-slate-400">
+                        {m.mobile_number}
+                      </td>
+                      <td className="py-3 px-4 text-slate-500 font-mono text-[11px]">
+                        {new Date(m.joined_at).toLocaleDateString()}
+                      </td>
+                      {activeTab === 'repeated' && (
+                        <td className="py-3 px-4 text-center font-extrabold text-indigo-600 dark:text-indigo-400">
+                          {m.visit_count ?? 0}
                         </td>
-                        <td className="py-3 px-4 text-sm text-slate-600">
-                          {member.mobile_number}
-                        </td>
-                        <td className="py-3 px-4 text-sm text-slate-500">
-                          {new Date(member.joined_at).toLocaleDateString()}
-                        </td>
-                        {activeTab === 'repeated' && (
-                          <td className="py-3 px-4 text-sm font-semibold text-indigo-600 text-center">
-                            <span className="bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-100">
-                              {(member as RepeatedCustomer).visit_count}
-                            </span>
-                          </td>
-                        )}
-                        <td className="py-3 px-4 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            {activeTab === 'new' && (
-                              <button
-                                onClick={() => handleConvertToMember(member.id)}
-                                disabled={isConverting}
-                                className="px-3 py-1.5 text-xs font-semibold bg-amber-100 text-amber-700 hover:bg-amber-200 rounded-lg transition-colors whitespace-nowrap"
-                              >
-                                Convert to Member
-                              </button>
-                            )}
-                            {activeTab === 'existing' && (
-                              <button
-                                onClick={() => openEditModal(member)}
-                                className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                title="Edit"
-                              >
-                                <Edit2 size={16} />
-                              </button>
-                            )}
+                      )}
+                      <td className="py-3 px-4 text-right">
+                        {activeTab === 'new' ? (
+                          <Button
+                            onClick={() => handleConvertToMember(m.id)}
+                            disabled={isConverting}
+                            size="sm"
+                            variant="outline"
+                            className="text-[11px] h-7 px-2.5 font-bold text-emerald-600 border-emerald-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
+                          >
+                            Verify & Add
+                          </Button>
+                        ) : activeTab === 'existing' ? (
+                          <div className="flex items-center justify-end gap-1">
                             <button
-                              onClick={() => setMemberToDelete(member.id)}
-                              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                              title="Remove"
+                              onClick={() => openEditModal(m)}
+                              className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+                              title="Edit Member"
                             >
-                              <Trash2 size={16} />
+                              <Edit2 size={14} />
                             </button>
                           </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
+                        ) : null}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
               </table>
-            )}
+
+              {/* API Infinite Scroll Trigger */}
+              <InfiniteScrollTrigger
+                onIntersect={handleLoadMore}
+                isLoading={isFetchingMore}
+                hasMore={hasMore}
+              />
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Add / Edit Member Modal */}
+      <Modal
+        isOpen={isAddModalOpen || isEditModalOpen}
+        onClose={() => {
+          setIsAddModalOpen(false);
+          setIsEditModalOpen(false);
+          setEditingMemberId(null);
+          setFormData({ name: '', mobile_number: '' });
+        }}
+        title={editingMemberId ? 'Edit Member Details' : 'Add New Verified Member'}
+      >
+        <form onSubmit={handleAddMember} className="space-y-4 pt-2">
+          <div>
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Customer Name</label>
+            <Input
+              type="text"
+              placeholder="e.g. Siva Rajan"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              className="text-xs"
+            />
           </div>
-        </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Mobile Number *</label>
+            <Input
+              type="tel"
+              placeholder="e.g. 9876543210"
+              value={formData.mobile_number}
+              onChange={(e) => setFormData({ ...formData, mobile_number: e.target.value })}
+              required
+              className="text-xs font-mono"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setIsAddModalOpen(false);
+                setIsEditModalOpen(false);
+                setEditingMemberId(null);
+              }}
+              size="sm"
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={isSubmitting} size="sm" className="bg-primary text-white">
+              {isSubmitting ? 'Saving...' : editingMemberId ? 'Update Member' : 'Save Member'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* FAB for Add Member (Mobile) */}
+      {!isAddModalOpen && !isEditModalOpen && !isDetailsLocked && createPortal(
+        <button
+          onClick={() => {
+            setEditingMemberId(null);
+            setFormData({ name: '', mobile_number: '' });
+            setIsAddModalOpen(true);
+          }}
+          className="lg:hidden fixed bottom-20 lg:bottom-8 right-4 lg:right-8 z-50 w-14 h-14 rounded-full bg-primary hover:bg-primary-600 hover:scale-105 shadow-xl flex items-center justify-center text-white transition-all duration-200 cursor-pointer"
+          title="Add Member"
+        >
+          <Plus size={24} />
+        </button>,
+        document.body
       )}
-
-      {/* Add Member Modal */}
-      <Modal
-        isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-        title="Manually Verify Member"
-        className="max-w-md"
-      >
-        <form onSubmit={handleAddMember} className="space-y-4 mt-4">
-          <div className="bg-blue-50 border border-blue-100 text-blue-800 p-3 rounded-lg flex items-start gap-2 mb-4">
-            <ShieldCheck className="shrink-0 mt-0.5" size={16} />
-            <p className="text-xs leading-relaxed">
-              Use this if a customer is physically present and you want to grant them membership status instantly.
-            </p>
-          </div>
-
-          <Input
-            label="Customer Mobile Number *"
-            value={formData.mobile_number}
-            onChange={e => setFormData({ ...formData, mobile_number: e.target.value })}
-            placeholder="Enter mobile number"
-            required
-          />
-
-          <Input
-            label="Customer Name (Optional)"
-            value={formData.name}
-            onChange={e => setFormData({ ...formData, name: e.target.value })}
-            placeholder="e.g. John Doe"
-          />
-
-          <div className="pt-4 flex justify-end gap-3">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setIsAddModalOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? 'Verifying...' : 'Verify Member'}
-            </Button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* Edit Member Modal */}
-      <Modal
-        isOpen={isEditModalOpen}
-        onClose={() => { setIsEditModalOpen(false); setEditingMemberId(null); setFormData({ name: '', mobile_number: '' }); }}
-        title="Edit Member"
-        className="max-w-md"
-      >
-        <form onSubmit={handleAddMember} className="space-y-4 mt-4">
-          <Input
-            label="Customer Mobile Number *"
-            value={formData.mobile_number}
-            onChange={e => setFormData({ ...formData, mobile_number: e.target.value })}
-            placeholder="Enter mobile number"
-            required
-          />
-
-          <Input
-            label="Customer Name (Optional)"
-            value={formData.name}
-            onChange={e => setFormData({ ...formData, name: e.target.value })}
-            placeholder="e.g. John Doe"
-          />
-
-          <div className="pt-4 flex justify-end gap-3">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => { setIsEditModalOpen(false); setEditingMemberId(null); setFormData({ name: '', mobile_number: '' }); }}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? 'Saving...' : 'Save Changes'}
-            </Button>
-          </div>
-        </form>
-      </Modal>
-
-      <ConfirmModal
-        isOpen={!!memberToDelete}
-        onClose={() => setMemberToDelete(null)}
-        onConfirm={handleDeleteMember}
-        title="Remove Member"
-        message="Are you sure you want to remove this member from your shop? They will lose access to member-only discounts."
-        confirmText={isDeleting ? 'Removing...' : 'Remove Member'}
-        isDestructive
-      />
-
-      <Modal
-        isOpen={showDeleteAllConfirm}
-        onClose={() => setShowDeleteAllConfirm(false)}
-        title="Delete Members"
-        className="max-w-md"
-      >
-        <div className="mt-4">
-          <p className="text-slate-600 dark:text-slate-400 text-sm mb-6">
-            Choose which group of members you want to completely delete. This action cannot be undone.
-          </p>
-          
-          <div className="flex flex-col gap-3">
-            <Button
-              variant="outline"
-              onClick={() => handleDeleteAll('existing')}
-              disabled={isDeletingAll}
-              className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
-            >
-              <Trash2 size={16} className="mr-2" />
-              Delete All Existing Members
-            </Button>
-            
-            <Button
-              variant="outline"
-              onClick={() => handleDeleteAll('new')}
-              disabled={isDeletingAll}
-              className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
-            >
-              <Trash2 size={16} className="mr-2" />
-              Delete All New Customers
-            </Button>
-
-            <Button
-              onClick={() => setShowDeleteAllConfirm(false)}
-              disabled={isDeletingAll}
-              className="w-full"
-            >
-              Cancel
-            </Button>
-          </div>
-        </div>
-      </Modal>
-
-      <button
-        onClick={() => setIsAddModalOpen(true)}
-        className="fixed bottom-20 lg:bottom-8 right-4 w-14 h-14 bg-primary text-white rounded-full shadow-xl flex items-center justify-center hover:bg-primary/90 hover:scale-105 transition-all z-50 hover:shadow-2xl active:scale-95 cursor-pointer"
-        title="Add Member Manually"
-      >
-        <Plus size={28} />
-      </button>
     </div>
   );
 }

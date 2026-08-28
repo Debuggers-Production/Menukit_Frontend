@@ -8,7 +8,8 @@ import {
 import { api } from '@/services/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { PageHeader } from '@/components/ui/PageHeader';
+import { useHeaderStore } from '@/store/useHeaderStore';
+import { HeaderActions } from '@/components/HeaderActions';
 import { DatePicker } from '@/components/ui/DatePicker';
 import { useShopStore } from '@/store/shopStore';
 import { membershipService, RepeatedCustomer } from '@/services/memberships';
@@ -40,6 +41,12 @@ export function AnalyticsPage() {
   const [paymentModeFilter, setPaymentModeFilter] = useState<'all' | 'online' | 'offline'>('all');
 
   const [invoiceSearch, setInvoiceSearch] = useState('');
+  
+  // Card Search States
+  const [dishSearch, setDishSearch] = useState('');
+  const [revenueSearch, setRevenueSearch] = useState('');
+  const [categorySearch, setCategorySearch] = useState('');
+  const [termSearch, setTermSearch] = useState('');
 
   const getRevenueApiUrl = () => {
     if (dateFilter === 'custom' && customStart && customEnd) {
@@ -47,6 +54,12 @@ export function AnalyticsPage() {
     }
     return `/analytics/revenue?days=${typeof dateFilter === 'number' ? dateFilter : 30}`;
   };
+
+  const { setTitle } = useHeaderStore();
+
+  useEffect(() => {
+    setTitle('Product Analytics & Sales', 'Real-time order revenue, item popularity ranking, payment gateway charges, and invoice records.');
+  }, [setTitle]);
 
   // Dedicated fetch for Customer Search Data
   useEffect(() => {
@@ -71,35 +84,43 @@ export function AnalyticsPage() {
       setIsLoading(true);
       try {
         let currentShopId = shop?.id;
+        let fetchShopPromise = null;
         if (!shop) {
-          const shopRes = await api.get('/shops/me').catch(() => ({ data: {} }));
-          if (shopRes.data?.id) {
-            currentShopId = shopRes.data.id;
-          }
+          fetchShopPromise = api.get('/shops/me').then(res => {
+            currentShopId = res.data?.id;
+            return res;
+          }).catch(() => ({ data: {} }));
         }
 
-        const subRes = await api.get('/subscription/current').catch(() => ({ data: null }));
-        setSubscriptionInfo(subRes.data);
+        const [shopRes, subRes, dashRes] = await Promise.all([
+          fetchShopPromise || Promise.resolve(null),
+          api.get('/subscription/current').catch(() => ({ data: null })),
+          api.get('/analytics/dashboard').catch(() => ({ data: null }))
+        ]);
 
-        // Core Dashboard overview is free
-        const dashRes = await api.get('/analytics/dashboard').catch(() => ({ data: null }));
+        setSubscriptionInfo(subRes.data);
         setData(dashRes.data);
 
-        // Revenue analytics module check
-        try {
-          const revRes = await api.get(getRevenueApiUrl());
-          setRevenueData(revRes.data);
-          setIsLocked(false);
-        } catch (revErr: any) {
-          if (revErr.response?.status === 403) {
-            setIsLocked(true);
-          }
-        }
+        // Fetch revenue and repeated customers in parallel after we guarantee we have currentShopId
+        const fetchRevenuePromise = api.get(getRevenueApiUrl())
+          .then(res => {
+            setRevenueData(res.data);
+            setIsLocked(false);
+          })
+          .catch(revErr => {
+            if (revErr.response?.status === 403) {
+              setIsLocked(true);
+            }
+          });
 
-        if (currentShopId) {
-          const repeated = await membershipService.getRepeatedCustomers(currentShopId, 2).catch(() => []);
-          setRepeatedCustomers(repeated);
-        }
+        const fetchRepeatedPromise = currentShopId
+          ? membershipService.getRepeatedCustomers(currentShopId, 2)
+              .then(repeated => setRepeatedCustomers(repeated))
+              .catch(() => setRepeatedCustomers([]))
+          : Promise.resolve();
+
+        await Promise.all([fetchRevenuePromise, fetchRepeatedPromise]);
+
       } catch (error: any) {
         console.error('Failed to fetch analytics', error);
       } finally {
@@ -185,39 +206,31 @@ export function AnalyticsPage() {
 
   return (
     <div className="space-y-5 sm:space-y-8 max-w-6xl mx-auto animate-fade-in pb-28">
-      {/* Header with Navigation */}
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 sm:gap-4">
-        <PageHeader 
-          title="Product Analytics & Sales"
-          subtitle="Real-time order revenue, item popularity ranking, payment gateway charges, and invoice records."
-          className="mb-0"
-        />
-
-        <div className="flex items-center gap-2 w-full lg:w-auto shrink-0">
-          <div className="bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl flex items-center gap-1 border border-slate-200/60 dark:border-slate-700/60 w-full lg:w-auto shrink-0">
-            <button
-              onClick={() => setActiveTab('revenue')}
-              className={`flex-1 lg:flex-none flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
-                activeTab === 'revenue' 
-                  ? 'bg-white dark:bg-slate-900 text-primary shadow-sm' 
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-              }`}
-            >
-              <TrendingUp size={14} /> Revenue & Orders
-            </button>
-            <button
-              onClick={() => setActiveTab('scans')}
-              className={`flex-1 lg:flex-none flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
-                activeTab === 'scans' 
-                  ? 'bg-white dark:bg-slate-900 text-primary shadow-sm' 
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-              }`}
-            >
-              <QrCode size={14} /> Scans & Traffic
-            </button>
-          </div>
+      
+      <HeaderActions>
+        <div className="bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl flex items-center gap-1 border border-slate-200/60 dark:border-slate-700/60 shrink-0">
+          <button
+            onClick={() => setActiveTab('revenue')}
+            className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
+              activeTab === 'revenue' 
+                ? 'bg-white dark:bg-slate-900 text-primary shadow-sm' 
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+            }`}
+          >
+            <TrendingUp size={14} /> Revenue
+          </button>
+          <button
+            onClick={() => setActiveTab('scans')}
+            className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
+              activeTab === 'scans' 
+                ? 'bg-white dark:bg-slate-900 text-primary shadow-sm' 
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+            }`}
+          >
+            <QrCode size={14} /> Traffic
+          </button>
         </div>
-      </div>
+      </HeaderActions>
 
       {isLocked && (
         <div className="bg-gradient-to-r from-red-50 to-orange-50 dark:from-red-950/40 dark:to-orange-950/40 border-2 border-red-500/50 p-6 sm:p-8 rounded-3xl text-center space-y-4 shadow-xl">
@@ -374,7 +387,7 @@ export function AnalyticsPage() {
                     </h3>
                   </div>
                   <div className="p-2 sm:p-2.5 rounded-xl bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 shrink-0">
-                    <DollarSign size={18} className="sm:w-5 sm:h-5" />
+                    <Banknote size={18} className="sm:w-5 sm:h-5" />
                   </div>
                 </div>
                 
@@ -509,18 +522,30 @@ export function AnalyticsPage() {
           </Card>
 
           {/* Product Level Popularity & Top Customer Searches */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-                <CardTitle className="text-sm font-bold flex items-center gap-2">
-                  <Trophy size={16} className="text-amber-500 shrink-0" /> Top Ordered Dishes
-                </CardTitle>
-                <span className="text-[11px] font-bold text-slate-400">Total Units</span>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6">
+            <Card className="h-[320px] flex flex-col">
+              <CardHeader className="flex flex-col gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 shrink-0">
+                <div className="flex flex-row items-center justify-between">
+                  <CardTitle className="text-sm font-bold flex items-center gap-2">
+                    <Trophy size={16} className="text-amber-500 shrink-0" /> Top Ordered Dishes
+                  </CardTitle>
+                  <span className="text-[11px] font-bold text-slate-400">Total Units</span>
+                </div>
+                <div className="relative">
+                  <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search dishes..."
+                    value={dishSearch}
+                    onChange={(e) => setDishSearch(e.target.value)}
+                    className="w-full h-7 pl-7 pr-3 text-[11px] rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-1 focus:ring-amber-500/50"
+                  />
+                </div>
               </CardHeader>
-              <CardContent className="pt-4">
+              <CardContent className="pt-4 flex-1 overflow-y-auto no-scrollbar scrollbar-thin">
                 {revenueData?.top_ordered_items?.length > 0 ? (
                   <div className="space-y-3">
-                    {revenueData.top_ordered_items.slice(0, 6).map((item: any, idx: number) => {
+                    {revenueData.top_ordered_items.filter((i: any) => i.name.toLowerCase().includes(dishSearch.toLowerCase())).map((item: any, idx: number) => {
                       const maxQty = revenueData.top_ordered_items[0].total_quantity || 1;
                       const pct = Math.round((item.total_quantity / maxQty) * 100);
                       return (
@@ -550,17 +575,32 @@ export function AnalyticsPage() {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-                <CardTitle className="text-sm font-bold flex items-center gap-2">
-                  <DollarSign size={16} className="text-emerald-500 shrink-0" /> Top Revenue Food Items
-                </CardTitle>
-                <span className="text-[11px] font-bold text-slate-400">Total Revenue</span>
+            <Card className="h-[320px] flex flex-col">
+              <CardHeader className="flex flex-col gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 shrink-0">
+                <div className="flex flex-row items-center justify-between">
+                  <CardTitle className="text-sm font-bold flex items-center gap-2">
+                    <Banknote size={16} className="text-emerald-500 shrink-0" /> Top Revenue Food Items
+                  </CardTitle>
+                  <span className="text-[11px] font-bold text-slate-400">Total Revenue</span>
+                </div>
+                <div className="relative">
+                  <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search items..."
+                    value={revenueSearch}
+                    onChange={(e) => setRevenueSearch(e.target.value)}
+                    className="w-full h-7 pl-7 pr-3 text-[11px] rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
+                  />
+                </div>
               </CardHeader>
-              <CardContent className="pt-4">
+              <CardContent className="pt-4 flex-1 overflow-y-auto no-scrollbar scrollbar-thin">
                 {revenueData?.top_ordered_items?.length > 0 ? (
                   <div className="space-y-3">
-                    {[...revenueData.top_ordered_items].sort((a,b) => b.total_revenue - a.total_revenue).slice(0, 6).map((item: any, idx: number) => {
+                    {[...revenueData.top_ordered_items]
+                      .sort((a,b) => b.total_revenue - a.total_revenue)
+                      .filter((i: any) => i.name.toLowerCase().includes(revenueSearch.toLowerCase()))
+                      .map((item: any, idx: number) => {
                       const maxRev = revenueData.top_ordered_items[0].total_revenue || 1;
                       const pct = Math.round((item.total_revenue / maxRev) * 100);
                       return (
@@ -590,23 +630,91 @@ export function AnalyticsPage() {
               </CardContent>
             </Card>
 
-            {/* Top Customer Searches */}
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-                <CardTitle className="text-sm font-bold flex items-center gap-2">
-                  <Search size={16} className="text-orange-500 shrink-0" /> Top Customer Searches
-                </CardTitle>
-                <span className="text-[10px] font-bold bg-orange-100 dark:bg-orange-950/40 text-orange-600 dark:text-orange-400 px-2 py-0.5 rounded-full uppercase">
-                  Module Add-on
-                </span>
+            {/* Top Ordered Categories */}
+            <Card className="h-[320px] flex flex-col">
+              <CardHeader className="flex flex-col gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 shrink-0">
+                <div className="flex flex-row items-center justify-between">
+                  <CardTitle className="text-sm font-bold flex items-center gap-2">
+                    <Trophy size={16} className="text-indigo-500 shrink-0" /> Top Categories
+                  </CardTitle>
+                  <span className="text-[11px] font-bold text-slate-400">Total Clicks</span>
+                </div>
+                <div className="relative">
+                  <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search categories..."
+                    value={categorySearch}
+                    onChange={(e) => setCategorySearch(e.target.value)}
+                    className="w-full h-7 pl-7 pr-3 text-[11px] rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
+                  />
+                </div>
               </CardHeader>
-              <CardContent className="pt-4">
+              <CardContent className="pt-4 flex-1 overflow-y-auto no-scrollbar scrollbar-thin">
+                {revenueData?.top_ordered_categories?.length > 0 ? (
+                  <div className="space-y-3">
+                    {revenueData.top_ordered_categories.filter((c: any) => c.name.toLowerCase().includes(categorySearch.toLowerCase())).map((cat: any, idx: number) => {
+                      const maxQty = revenueData.top_ordered_categories[0].total_quantity || 1;
+                      const pct = Math.round((cat.total_quantity / maxQty) * 100);
+                      return (
+                        <div key={idx} className="flex items-center justify-between gap-2.5 text-xs">
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <span className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px] shrink-0 ${
+                              idx === 0 ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-500'
+                            }`}>
+                              {idx + 1}
+                            </span>
+                            <span className="font-bold text-slate-800 dark:text-slate-200 truncate">{cat.name}</span>
+                          </div>
+                          
+                          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                            <div className="w-12 sm:w-20 h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                              <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                            </div>
+                            <span className="font-black text-indigo-600 dark:text-indigo-400 text-[11px] sm:text-xs w-16 text-right">{cat.total_quantity} clicks</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center py-6 text-slate-400">
+                    <Trophy size={28} className="mx-auto mb-2 opacity-50" />
+                    <p className="text-xs">No category data recorded yet.</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Top Customer Searches */}
+            <Card className="h-[320px] flex flex-col">
+              <CardHeader className="flex flex-col gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 shrink-0">
+                <div className="flex flex-row items-center justify-between">
+                  <CardTitle className="text-sm font-bold flex items-center gap-2">
+                    <Search size={16} className="text-orange-500 shrink-0" /> Top Searches
+                  </CardTitle>
+                  <span className="text-[10px] font-bold bg-orange-100 dark:bg-orange-950/40 text-orange-600 dark:text-orange-400 px-2 py-0.5 rounded-full uppercase">
+                    Module Add-on
+                  </span>
+                </div>
+                <div className="relative">
+                  <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search terms..."
+                    value={termSearch}
+                    onChange={(e) => setTermSearch(e.target.value)}
+                    className="w-full h-7 pl-7 pr-3 text-[11px] rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-1 focus:ring-orange-500/50"
+                  />
+                </div>
+              </CardHeader>
+              <CardContent className="pt-4 flex-1 overflow-y-auto no-scrollbar scrollbar-thin">
                 {isSearchDataLocked ? (
                   <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/40 dark:to-orange-950/40 border border-amber-200 dark:border-amber-800/80 p-4 rounded-xl text-center space-y-2">
                     <div className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-600 flex items-center justify-center mx-auto">
                       <Lock size={16} />
                     </div>
-                    <h5 className="font-extrabold text-xs text-slate-900 dark:text-white">Customer Search Analytics Locked</h5>
+                    <h5 className="font-extrabold text-xs text-slate-900 dark:text-white">Analytics Locked</h5>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400">
                       Subscribe to Search Data module to see live search terms.
                     </p>
@@ -616,7 +724,7 @@ export function AnalyticsPage() {
                   </div>
                 ) : topSearchesList.length > 0 ? (
                   <div className="space-y-3">
-                    {topSearchesList.map((search: any, i: number) => (
+                    {topSearchesList.filter((s: any) => s.term.toLowerCase().includes(termSearch.toLowerCase())).map((search: any, i: number) => (
                       <div key={i} className="flex items-center justify-between gap-2.5 text-xs">
                         <div className="flex items-center gap-2 min-w-0 flex-1">
                           <div className="bg-slate-100 dark:bg-slate-800 p-1.5 rounded-lg text-slate-500 shrink-0">
@@ -638,136 +746,8 @@ export function AnalyticsPage() {
                 )}
               </CardContent>
             </Card>
+
           </div>
-
-          {/* Detailed Invoice & Commission Settlement Table */}
-          <Card>
-            <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
-              <div>
-                <CardTitle className="text-sm sm:text-base font-bold flex items-center gap-2">
-                  <Receipt size={18} className="text-primary shrink-0" /> Order Settlement & Invoice Ledger
-                </CardTitle>
-                <p className="text-[11px] text-slate-500 mt-0.5">Click any Order ID to navigate to order details.</p>
-              </div>
-
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full sm:w-auto">
-                <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl shrink-0">
-                  <button
-                    onClick={() => setPaymentModeFilter('all')}
-                    className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
-                      paymentModeFilter === 'all'
-                        ? 'bg-white dark:bg-slate-900 text-primary shadow-xs'
-                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                    }`}
-                  >
-                    All
-                  </button>
-                  <button
-                    onClick={() => setPaymentModeFilter('online')}
-                    className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
-                      paymentModeFilter === 'online'
-                        ? 'bg-purple-600 text-white shadow-xs'
-                        : 'text-slate-500 hover:text-purple-600'
-                    }`}
-                  >
-                    Online
-                  </button>
-                  <button
-                    onClick={() => setPaymentModeFilter('offline')}
-                    className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
-                      paymentModeFilter === 'offline'
-                        ? 'bg-emerald-600 text-white shadow-xs'
-                        : 'text-slate-500 hover:text-emerald-600'
-                    }`}
-                  >
-                    Offline
-                  </button>
-                </div>
-
-                <div className="relative w-full sm:w-56">
-                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Search invoice or order ID..."
-                    value={invoiceSearch}
-                    onChange={(e) => setInvoiceSearch(e.target.value)}
-                    className="w-full h-8 pl-8 pr-3 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  />
-                </div>
-              </div>
-            </CardHeader>
-
-            <CardContent className="p-0">
-              {filteredInvoices.length > 0 ? (
-                <div className="overflow-x-auto no-scrollbar scrollbar-thin">
-                  <table className="w-full text-left text-xs min-w-[700px]">
-                    <thead className="bg-slate-50 dark:bg-slate-850 border-b border-slate-200 dark:border-slate-800 text-slate-500 uppercase tracking-wider font-bold">
-                      <tr>
-                        <th className="py-3 px-4">Order ID</th>
-                        <th className="py-3 px-4">Invoice No</th>
-                        <th className="py-3 px-4">Payment Ref / ID</th>
-                        <th className="py-3 px-4">Customer</th>
-                        <th className="py-3 px-4 text-right">Gross Amt</th>
-                        <th className="py-3 px-4 text-center">Method</th>
-                        <th className="py-3 px-4 text-right">PG Charge</th>
-                        <th className="py-3 px-4 text-right">Net Settled</th>
-                        <th className="py-3 px-4">Date & Time</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
-                      {filteredInvoices.map((inv: any) => (
-                        <tr key={inv.order_id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors">
-                          {/* Order ID - Clickable Navigation */}
-                          <td className="py-3 px-4">
-                            <button
-                              onClick={() => navigate('/orders', { state: { searchOrderId: inv.order_id } })}
-                              className="font-bold text-primary hover:underline flex items-center gap-1 cursor-pointer"
-                              title="Click to view order details"
-                            >
-                              #{inv.order_id.slice(0, 8)}
-                              <ExternalLink size={11} />
-                            </button>
-                          </td>
-                          <td className="py-3 px-4 font-mono font-bold text-slate-700 dark:text-slate-300">
-                            {inv.invoice_no}
-                          </td>
-                          <td className="py-3 px-4 text-slate-500 font-mono text-[11px]">
-                            <span className="truncate max-w-[100px] inline-block">{inv.payment_id}</span>
-                          </td>
-                          <td className="py-3 px-4 font-bold text-slate-800 dark:text-slate-200">
-                            {inv.customer_name}
-                          </td>
-                          <td className="py-3 px-4 text-right font-black text-slate-900 dark:text-white">
-                            {currencySymbol}{inv.total_order_amt}
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
-                              isOnlinePm(inv.payment_method) ? 'bg-purple-50 text-purple-700 border border-purple-200' : 'bg-slate-100 text-slate-600'
-                            }`}>
-                              {inv.payment_method}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-right text-rose-500 font-bold">
-                            -{currencySymbol}{inv.commission_amount}
-                          </td>
-                          <td className="py-3 px-4 text-right font-black text-emerald-600 dark:text-emerald-400">
-                            {currencySymbol}{inv.settled_amount}
-                          </td>
-                          <td className="py-3 px-4 text-slate-400 text-[11px]">
-                            {inv.created_at}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="py-12 text-center text-slate-400 text-xs">
-                  No invoices found matching your filter.
-                </div>
-              )}
-            </CardContent>
-          </Card>
         </div>
       )}
 
@@ -874,27 +854,7 @@ export function AnalyticsPage() {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center text-base font-bold">
-                  <Search size={18} className="mr-2 text-slate-500" /> Customer Search Terms
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {data?.top_searches?.length > 0 ? (
-                  <div className="flex flex-wrap gap-2">
-                    {data.top_searches.map((s: any, idx: number) => (
-                      <span key={idx} className="px-3 py-1.5 rounded-full text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                        {s.term}
-                        <span className="text-[10px] bg-white dark:bg-slate-900 px-1.5 py-0.5 rounded-full text-slate-500">{s.count}</span>
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-slate-400 text-center py-6">No search query history yet.</p>
-                )}
-              </CardContent>
-            </Card>
+
           </div>
         </div>
       )}

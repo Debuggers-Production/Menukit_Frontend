@@ -21,8 +21,15 @@ export const contestService = {
     return response.data;
   },
 
-  getShopContests: async (shopId: string): Promise<Contest[]> => {
-    const response = await api.get(`/contests/shop/${shopId}`);
+  getShopContests: async (shopId: string, params?: { skip?: number; limit?: number; status_filter?: string; search?: string }): Promise<{ data: Contest[]; hasMore: boolean; totalCount: number }> => {
+    const response = await api.get(`/contests/shop/${shopId}`, { params });
+    const hasMore = response.headers['x-has-more'] === 'true' || (response.data && response.data.length === (params?.limit || 20));
+    const totalCount = parseInt(response.headers['x-total-count'] || '0', 10);
+    return { data: response.data, hasMore, totalCount };
+  },
+
+  getShopContestStatusCounts: async (shopId: string): Promise<{ all: number; ongoing: number; completed: number; cancelled: number }> => {
+    const response = await api.get(`/contests/shop/${shopId}/status-counts`);
     return response.data;
   },
 

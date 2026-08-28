@@ -3,6 +3,7 @@ import { toast } from 'react-hot-toast';
 import { Save, Palette, LayoutTemplate, Type, Eye } from 'lucide-react';
 import { api } from '@/services/api';
 import { useShopStore } from '@/store/shopStore';
+import { loadGoogleFont } from '@/utils/fontLoader';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 
@@ -23,6 +24,16 @@ export function ThemeCustomizePage() {
   const [formData, setFormData] = useState(defaultTheme);
 
   useEffect(() => {
+    if (!shop) {
+      api.get('/shops/me').then(res => {
+        if (res.data?.id) {
+          setShop(res.data);
+        }
+      }).catch(console.error);
+    }
+  }, [shop, setShop]);
+
+  useEffect(() => {
     if (shop?.theme) {
       setFormData({
         theme: shop.theme.theme,
@@ -34,6 +45,12 @@ export function ThemeCustomizePage() {
       });
     }
   }, [shop]);
+
+  useEffect(() => {
+    if (formData.font_family) {
+      loadGoogleFont(formData.font_family);
+    }
+  }, [formData.font_family]);
 
   const handleChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -56,8 +73,8 @@ export function ThemeCustomizePage() {
     }
   };
 
-  const fontOptions = ['Inter', 'Outfit', 'Roboto', 'Playfair Display', 'Poppins'];
-  const colorPresets = ['#f97316', '#ef4444', '#3b82f6', '#10b981', '#8b5cf6', '#eab308'];
+  const fontOptions = ['Inter', 'Outfit', 'Poppins', 'Jakarta Sans', 'Roboto', 'Playfair Display', 'Montserrat', 'Lato', 'Oswald', 'Raleway', 'Nunito', 'Ubuntu', 'Merriweather', 'Noto Sans', 'Bubblegum Sans', 'Fredoka'];
+  const colorPresets = ['#f97316', '#ef4444', '#f43f5e', '#ec4899', '#8b5cf6', '#6366f1', '#3b82f6', '#0ea5e9', '#06b6d4', '#14b8a6', '#10b981', '#22c55e', '#eab308', '#000000', '#1e293b'];
 
   return (
     <div className="flex flex-col lg:flex-row gap-8 h-[calc(100vh-8rem)] animate-fade-in">

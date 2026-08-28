@@ -71,6 +71,7 @@ export interface Shop {
   longitude: number | null;
   google_review_link: string | null;
   review_widget_code: string | null;
+  employee_permissions?: Record<string, string[]>;
   settings: ShopSettings | null;
   theme: ThemeSettings | null;
   created_at: string;

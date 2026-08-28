@@ -20,6 +20,9 @@ const PRESET_TIMINGS: Record<string, string> = {
   'Mid-night': '(00:00 - 04:00)'
 };
 
+import { loadGoogleFont } from '@/utils/fontLoader';
+import { GoogleTranslate } from '@/components/GoogleTranslate';
+
 export function PublicItemPage() {
   const { id, itemId } = useParams();
   const navigate = useNavigate();
@@ -99,11 +102,17 @@ export function PublicItemPage() {
   }, [id, memberStatus]);
 
   useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
     setSelectedVariantIdx(0);
     setSelectedAddons([]);
     const fetchData = async () => {
       try {
-        const cachedShop = id ? publicCache.get(`shop_${id}`) : null;
+        let cachedShop = id ? publicCache.get(`shop_${id}`) : null;
+        if (cachedShop && !cachedShop.theme) {
+          cachedShop = null; // Stale cache without theme, refetch
+        }
         const cachedDiscounts = id ? publicCache.get(`discounts_${id}`) : null;
 
         if (cachedShop) setShop(cachedShop);
@@ -131,10 +140,28 @@ export function PublicItemPage() {
         console.error('Failed to load item page', err);
       } finally {
         setIsLoading(false);
+        setTimeout(() => {
+          window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+          document.documentElement.scrollTop = 0;
+          document.body.scrollTop = 0;
+        }, 10);
       }
     };
     if (id && itemId) fetchData();
   }, [id, itemId]);
+
+  useEffect(() => {
+    if (!isLoading) {
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+      setTimeout(() => {
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+      }, 50);
+    }
+  }, [isLoading]);
 
   useEffect(() => {
     if (id && itemId) {
@@ -144,6 +171,29 @@ export function PublicItemPage() {
         .finally(() => setIsLoadingReviews(false));
     }
   }, [id, itemId]);
+
+  useEffect(() => {
+    if (!shop?.theme) return;
+    const { primary_color, font_family, theme: themeMode } = shop.theme;
+
+    document.documentElement.style.setProperty('--primary', primary_color);
+    if (themeMode === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+
+    if (font_family) {
+      loadGoogleFont(font_family);
+      document.body.style.fontFamily = font_family;
+    }
+
+    return () => {
+      document.documentElement.style.removeProperty('--primary');
+      document.documentElement.classList.remove('dark');
+      document.body.style.fontFamily = '';
+    };
+  }, [shop?.theme]);
 
   const handleSubmitReview = async () => {
     if (!item || reviewRating === 0 || !id) return;
@@ -233,7 +283,8 @@ export function PublicItemPage() {
   const primaryColor = theme?.primary_color || '#ea580c';
 
   return (
-    <div className={`min-h-screen pb-36 ${isDark ? 'dark bg-slate-950 text-slate-50' : 'bg-slate-50 text-slate-900'}`} style={{ fontFamily: theme?.font_family || 'Inter' }}>
+    <div className="min-h-screen pb-36 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-50" style={{ fontFamily: theme?.font_family || 'Inter' }}>
+      <GoogleTranslate />
       {/* Sticky Header */}
       <div className="sticky top-0 z-45 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md border-b border-slate-100 dark:border-slate-800 p-4 flex items-center justify-between">
         <div className="flex items-center gap-3 min-w-0">
@@ -264,7 +315,7 @@ export function PublicItemPage() {
         </button>
       </div>
 
-      <div className="max-w-2xl mx-auto p-4 sm:p-6 bg-white dark:bg-slate-950">
+      <div className="max-w-2xl mx-auto p-4 sm:p-6 bg-white dark:bg-slate-900 rounded-2xl shadow-sm my-2 sm:my-4">
         {/* Images */}
         {item.images && item.images.length > 0 ? (
           <div className="mb-6">

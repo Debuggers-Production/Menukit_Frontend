@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
+import { createPortal } from 'react-dom';
 import { 
   Coffee, 
   QrCode, 
@@ -10,7 +11,8 @@ import {
   ExternalLink,
   Plus,
   Star,
-  Users
+  Users,
+  ShoppingBag
 } from 'lucide-react';
 import { api } from '@/services/api';
 import { membershipService } from '@/services/memberships';
@@ -18,7 +20,11 @@ import { useShopStore } from '@/store/shopStore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Button } from '@/components/ui/Button';
-import { PageHeader } from '@/components/ui/PageHeader';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { PageContainer } from '@/components/ui/PageContainer';
+import { useHeaderStore } from '@/store/useHeaderStore';
+import { HeaderActions } from '@/components/HeaderActions';
+import { CreateOrderModal } from '@/pages/orders/CreateOrderModal';
 
 export function DashboardPage() {
   const [stats, setStats] = useState<any>(null);
@@ -29,24 +35,35 @@ export function DashboardPage() {
   const { shop, setShop } = useShopStore();
   const [isLoading, setIsLoading] = useState(() => !shop);
   const [isFabOpen, setIsFabOpen] = useState(false);
+  const [isCreateOrderModalOpen, setIsCreateOrderModalOpen] = useState(false);
   const navigate = useNavigate();
+  const { setTitle } = useHeaderStore();
 
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
         let currentShopId = shop?.id;
+        let fetchShopPromise = null;
         
         // Fetch shop if not loaded
         if (!shop) {
-          const shopRes = await api.get('/shops/me');
-          if (shopRes.data.id) {
-            setShop(shopRes.data);
-            currentShopId = shopRes.data.id;
-          }
+          fetchShopPromise = api.get('/shops/me').then(shopRes => {
+            if (shopRes.data?.id) {
+              setShop(shopRes.data);
+              currentShopId = shopRes.data.id;
+            }
+            return shopRes;
+          }).catch(err => {
+            console.error(err);
+            return null;
+          });
         }
 
-        // Fetch analytics
-        const analyticsRes = await api.get('/analytics/dashboard');
+        const [shopData, analyticsRes] = await Promise.all([
+          fetchShopPromise || Promise.resolve(null),
+          api.get('/analytics/dashboard')
+        ]);
+
         setStats(analyticsRes.data.overview);
         setActivities(analyticsRes.data.recent_activities);
         setTopSearches(analyticsRes.data.top_searches);
@@ -64,7 +81,15 @@ export function DashboardPage() {
     };
 
     fetchDashboardData();
-  }, []);
+  }, [shop]);
+
+  useEffect(() => {
+    if (shop) {
+      setTitle('Overview', `Welcome back! Here's what's happening at ${shop.name}.`);
+    } else {
+      setTitle('Overview', '');
+    }
+  }, [shop, setTitle]);
 
   if (isLoading) {
     return (
@@ -87,19 +112,19 @@ export function DashboardPage() {
   // If no shop is created yet, prompt them to create one
   if (!shop?.id) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
-        <div className="w-24 h-24 bg-primary-400 dark:bg-primary-900/30 rounded-full flex items-center justify-center mb-6">
-          <Store className="w-12 h-12 text-primary" />
-        </div>
-        <h2 className="text-3xl font-heading font-bold mb-4">Welcome to Menukit!</h2>
-        <p className="text-slate-500 max-w-md mb-8 text-lg">
-          Let's get started by setting up your restaurant profile. It only takes a minute.
-        </p>
-        <Button size="lg" onClick={() => navigate('/shop-setup')}>
-          Create Your Shop Profile
-          <ArrowRight className="ml-2" size={18} />
-        </Button>
-      </div>
+      <PageContainer className="flex items-center justify-center">
+        <EmptyState
+          icon={<Store size={24} />}
+          title="Welcome to Menukit!"
+          description="Let's get started by setting up your restaurant profile. It only takes a minute."
+          action={
+            <Button size="lg" onClick={() => navigate('/shop-setup')}>
+              Create Your Shop Profile
+              <ArrowRight className="ml-2" size={18} />
+            </Button>
+          }
+        />
+      </PageContainer>
     );
   }
 
@@ -111,16 +136,32 @@ export function DashboardPage() {
   ];
 
   return (
-  <>
-    {/* Dashboard Content */}
-    <div className="space-y-6 sm:space-y-8 max-w-6xl mx-auto animate-slide-up pb-20">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 sm:gap-4">
-        <PageHeader 
-          title="Overview"
-          subtitle={`Welcome back! Here's what's happening at ${shop.name}.`}
-          className="mb-0"
-        />
-      </div>
+    <PageContainer className="pb-20">
+      {/* Dashboard Content */}
+      <div className="space-y-6 sm:space-y-8 animate-slide-up">
+      
+      <HeaderActions>
+        <div className="hidden lg:flex items-center gap-2">
+          <Button
+            onClick={() => window.open(`/shop/${shop.id}`, '_blank')}
+            variant="outline"
+            size="sm"
+            className="flex items-center gap-2 h-9 border-slate-200"
+          >
+            <ExternalLink size={16} />
+            View Menu
+          </Button>
+          <Button
+            onClick={() => navigate('/qr-code')}
+            variant="outline"
+            size="sm"
+            className="flex items-center gap-2 h-9 border-slate-200"
+          >
+            <QrCode size={16} />
+            Get QR
+          </Button>
+        </div>
+      </HeaderActions>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
@@ -129,10 +170,10 @@ export function DashboardPage() {
             <CardContent className="p-4 sm:p-6">
               <div className="flex flex-col-reverse sm:flex-row sm:justify-between sm:items-start gap-2">
                 <div>
-                  <p className="text-xs sm:text-sm font-medium text-slate-500 mb-0.5 sm:mb-1 truncate">
+                  <p className="text-xs sm:text-sm font-medium text-muted-foreground mb-0.5 sm:mb-1 truncate">
                     {stat.title}
                   </p>
-                  <h3 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white">
+                  <h3 className="text-2xl sm:text-3xl font-bold text-foreground">
                     {stat.value}
                   </h3>
                 </div>
@@ -233,62 +274,87 @@ export function DashboardPage() {
       </div>
     </div>
 
-    {/* FIXED FAB - OUTSIDE ANIMATED CONTAINER */}
-    <div className="fixed bottom-20 lg:bottom-8 right-4 lg:right-8 z-50 flex flex-col items-end gap-3">
-      {/* Expanded Actions */}
-      <div
-        className={`flex flex-col items-end gap-3 transition-all duration-300 ${
-          isFabOpen
-            ? 'opacity-100 translate-y-0 scale-100'
-            : 'opacity-0 translate-y-4 scale-95 pointer-events-none'
-        }`}
-      >
-        <div className="flex items-center gap-3">
-          <span className="bg-white dark:bg-slate-800 px-3 py-2 rounded-lg shadow text-xs font-medium">
-            View Menu
-          </span>
+    {/* FIXED FAB USING CREATEPORTAL */}
+    {!isCreateOrderModalOpen && createPortal(
+      <div className="fixed bottom-20 lg:bottom-8 right-4 lg:right-8 z-50 flex flex-col items-end gap-3">
+        {/* Expanded Actions */}
+        <div
+          className={`flex flex-col items-end gap-3 transition-all duration-300 ${
+            isFabOpen
+              ? 'opacity-100 translate-y-0 scale-100'
+              : 'opacity-0 translate-y-4 scale-95 pointer-events-none'
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <span className="bg-white dark:bg-slate-800 text-slate-800 dark:text-white px-3 py-1.5 rounded-lg shadow-md text-xs font-semibold">
+              Create Order
+            </span>
 
-          <button
-            onClick={() => {
-              setIsFabOpen(false);
-              window.open(`/shop/${shop.id}`, '_blank');
-            }}
-            className="w-12 h-12 rounded-full bg-white dark:bg-slate-800 shadow-lg flex items-center justify-center hover:scale-105 transition-transform"
-          >
-            <ExternalLink size={20} />
-          </button>
+            <button
+              onClick={() => {
+                setIsFabOpen(false);
+                setIsCreateOrderModalOpen(true);
+              }}
+              className="w-12 h-12 rounded-full bg-primary text-white shadow-xl flex items-center justify-center hover:scale-105 transition-transform"
+            >
+              <ShoppingBag size={20} />
+            </button>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <span className="bg-white dark:bg-slate-800 text-slate-800 dark:text-white px-3 py-1.5 rounded-lg shadow-md text-xs font-semibold">
+              View Menu
+            </span>
+
+            <button
+              onClick={() => {
+                setIsFabOpen(false);
+                window.open(`/shop/${shop?.id}`, '_blank');
+              }}
+              className="w-12 h-12 rounded-full bg-white dark:bg-slate-800 text-slate-800 dark:text-white shadow-xl flex items-center justify-center hover:scale-105 transition-transform"
+            >
+              <ExternalLink size={20} />
+            </button>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <span className="bg-white dark:bg-slate-800 text-slate-800 dark:text-white px-3 py-1.5 rounded-lg shadow-md text-xs font-semibold">
+              Get QR Code
+            </span>
+
+            <button
+              onClick={() => {
+                setIsFabOpen(false);
+                navigate('/qr-code');
+              }}
+              className="w-12 h-12 rounded-full bg-white dark:bg-slate-800 text-slate-800 dark:text-white shadow-xl flex items-center justify-center hover:scale-105 transition-transform"
+            >
+              <QrCode size={20} />
+            </button>
+          </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <span className="bg-white dark:bg-slate-800 px-3 py-2 rounded-lg shadow text-xs font-medium">
-            Get QR Code
-          </span>
-
-          <button
-            onClick={() => {
-              setIsFabOpen(false);
-              navigate('/qr-code');
-            }}
-            className="w-12 h-12 rounded-full bg-white dark:bg-slate-800 shadow-lg flex items-center justify-center hover:scale-105 transition-transform"
-          >
-            <QrCode size={20} />
-          </button>
-        </div>
-      </div>
-
-      {/* Main FAB */}
-      {/* Main FAB */}
+        {/* Main FAB */}
         <button
           onClick={() => setIsFabOpen(!isFabOpen)}
-          className={`w-14 h-14 rounded-full shadow-lg mb-14 flex items-center justify-center text-white transition-all duration-300 ${
+          className={`w-14 h-14 rounded-full shadow-xl flex items-center justify-center text-white transition-all duration-300 ${
             isFabOpen ? 'bg-slate-800 rotate-45' : 'bg-primary hover:bg-primary-600 hover:scale-105'
           }`}
         >
           <Plus size={24} />
         </button>
-    </div>
-  </>
-);
+      </div>,
+      document.body
+    )}
+
+    {/* Create Order Modal */}
+    <CreateOrderModal
+      isOpen={isCreateOrderModalOpen}
+      onClose={() => setIsCreateOrderModalOpen(false)}
+      onOrderCreated={() => navigate('/orders')}
+    />
+  </PageContainer>
+  );
 }
 
 // Needed because we reference Store icon before it was imported in DashboardPage

@@ -1,4 +1,4 @@
-import { Check, Trash2, Clock, Bell } from 'lucide-react';
+import { Check, Trash2, Clock, Bell, ShoppingBag, CreditCard, Star, UserPlus, CheckCircle2, Trophy } from 'lucide-react';
 import { useNotificationStore } from '@/store/notificationStore';
 import { PageHeader } from '@/components/ui/PageHeader';
 
@@ -12,6 +12,77 @@ export function NotificationsPage() {
 
   const handleMarkAllRead = () => {
     markAsRead();
+  };
+
+  const getNotificationDetails = (title: string, message: string, type: string) => {
+    let cleanTitle = title || '';
+    
+    // Replace underscores with spaces and collapse multiline strings into a single line with bullet separator
+    cleanTitle = cleanTitle
+      .replace(/_/g, ' ')
+      .split(/[\r\n]+/)
+      .map(s => s.trim())
+      .filter(Boolean)
+      .join(' • ');
+
+    // Standardize title format e.g. "Order #4396d2d8 Pending Vendor" -> "Order #4396d2d8 • Pending Vendor"
+    cleanTitle = cleanTitle.replace(/(Order\s+#[a-f0-9]+)\s+([A-Za-z])/i, '$1 • $2');
+
+    // Title case words nicely
+    cleanTitle = cleanTitle.replace(/\b[a-z]/g, (char) => char.toUpperCase());
+
+    const lowerTitle = cleanTitle.toLowerCase();
+    const lowerType = (type || '').toLowerCase();
+    const lowerMsg = (message || '').toLowerCase();
+
+    if (lowerTitle.includes('review') || lowerType.includes('review') || lowerMsg.includes('review')) {
+      return {
+        title: cleanTitle || 'New Food Review',
+        Icon: Star,
+        bgClass: 'bg-amber-100 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400',
+      };
+    }
+    if (lowerTitle.includes('customer') || lowerType.includes('customer') || lowerMsg.includes('customer')) {
+      return {
+        title: cleanTitle || 'New Customer Registered',
+        Icon: UserPlus,
+        bgClass: 'bg-blue-100 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400',
+      };
+    }
+    if (lowerTitle.includes('payment') || lowerType.includes('payment') || lowerMsg.includes('payment')) {
+      return {
+        title: cleanTitle || 'Payment Notification',
+        Icon: CreditCard,
+        bgClass: 'bg-purple-100 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400',
+      };
+    }
+    if (lowerTitle.includes('delivered') || lowerTitle.includes('completed') || lowerMsg.includes('delivered')) {
+      return {
+        title: cleanTitle || 'Order Completed',
+        Icon: CheckCircle2,
+        bgClass: 'bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400',
+      };
+    }
+    if (lowerTitle.includes('order') || lowerType.includes('order') || lowerMsg.includes('order')) {
+      return {
+        title: cleanTitle || 'Order Notification',
+        Icon: ShoppingBag,
+        bgClass: 'bg-indigo-100 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400',
+      };
+    }
+    if (lowerTitle.includes('contest') || lowerType.includes('contest') || lowerMsg.includes('contest')) {
+      return {
+        title: cleanTitle || 'Contest Alert',
+        Icon: Trophy,
+        bgClass: 'bg-yellow-100 dark:bg-yellow-950/50 text-yellow-600 dark:text-yellow-400',
+      };
+    }
+
+    return {
+      title: cleanTitle || 'Shop Notification',
+      Icon: Bell,
+      bgClass: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300',
+    };
   };
 
   return (
@@ -53,32 +124,36 @@ export function NotificationsPage() {
           </div>
         ) : (
           <div className="divide-y divide-slate-100 dark:divide-slate-800/50">
-            {notifications.map((notif) => (
-              <div 
-                key={notif.id} 
-                className={`p-5 transition-colors flex items-start gap-4 ${notif.is_read ? 'bg-white dark:bg-slate-900' : 'bg-primary/5 dark:bg-primary/10'}`}
-              >
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 text-xl shadow-sm ${notif.type === 'NEW_CUSTOMER' ? 'bg-blue-100 text-blue-600' : 'bg-amber-100 text-amber-600'}`}>
-                  {notif.type === 'NEW_CUSTOMER' ? '👋' : '⭐'}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex justify-between items-start gap-2">
-                    <p className="font-bold text-base text-slate-800 dark:text-slate-200">
-                      {notif.title}
-                    </p>
-                    <p className="text-xs text-slate-400 flex items-center gap-1 shrink-0 whitespace-nowrap">
-                      <Clock size={12} /> {formatTime(notif.created_at)}
+            {notifications.map((notif) => {
+              const { title, Icon, bgClass } = getNotificationDetails(notif.title, notif.message, notif.type);
+              
+              return (
+                <div 
+                  key={notif.id} 
+                  className={`p-4 sm:p-5 transition-colors flex items-start gap-3.5 sm:gap-4 ${notif.is_read ? 'bg-white dark:bg-slate-900' : 'bg-primary/5 dark:bg-primary/10'}`}
+                >
+                  <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center flex-shrink-0 shadow-sm ${bgClass}`}>
+                    <Icon className="w-5 h-5 sm:w-6 sm:h-6" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-bold text-sm sm:text-base text-slate-900 dark:text-slate-100 truncate">
+                        {title}
+                      </p>
+                      <p className="text-[11px] sm:text-xs text-slate-400 flex items-center gap-1 shrink-0 whitespace-nowrap">
+                        <Clock size={11} /> {formatTime(notif.created_at)}
+                      </p>
+                    </div>
+                    <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-1 line-clamp-2">
+                      {notif.message}
                     </p>
                   </div>
-                  <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                    {notif.message}
-                  </p>
+                  {!notif.is_read && (
+                    <div className="w-2.5 h-2.5 rounded-full bg-primary mt-2 shrink-0 shadow-[0_0_8px_rgba(249,115,22,0.5)]"></div>
+                  )}
                 </div>
-                {!notif.is_read && (
-                  <div className="w-3 h-3 rounded-full bg-primary mt-2 shrink-0 shadow-[0_0_8px_rgba(249,115,22,0.5)]"></div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

@@ -18,7 +18,8 @@ export function OTPVerifyPage() {
   const location = useLocation();
   const { login } = useAuthStore();
   
-  const email = location.state?.email;
+  const rawEmail = location.state?.email || '';
+  const email = rawEmail.trim().toLowerCase();
 
   useEffect(() => {
     if (!email) {
@@ -83,8 +84,20 @@ export function OTPVerifyPage() {
     setIsLoading(true);
     try {
       await login(email, code);
+      
+      const shopsRes = await api.get('/shops/my-shops');
+      const { owned, employed } = shopsRes.data;
+      const totalShops = owned.length + employed.length;
+
       toast.success('Login successful!');
-      navigate('/dashboard', { replace: true });
+
+      if (totalShops > 1 || totalShops === 0) {
+         navigate('/select-shop', { replace: true });
+      } else {
+         const shopId = owned.length > 0 ? owned[0].id : employed[0].id;
+         localStorage.setItem('current_shop_id', shopId);
+         navigate('/dashboard', { replace: true });
+      }
     } catch (error: any) {
       toast.error(error.response?.data?.detail || 'Invalid OTP code. Please try again.');
     } finally {

@@ -5,11 +5,6 @@ import { Toaster } from 'react-hot-toast'
 import './index.css'
 import App from './App.tsx'
 
-if (!sessionStorage.getItem('lang_reloading')) {
-  document.cookie = "googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
-  document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname}`;
-}
-sessionStorage.removeItem('lang_reloading');
 
 // Prevent mouse wheel from scrolling and altering number inputs globally
 document.addEventListener('wheel', () => {
@@ -17,6 +12,31 @@ document.addEventListener('wheel', () => {
     (document.activeElement as HTMLInputElement).blur();
   }
 }, { passive: true });
+
+// Safe DOM patches to prevent Google Translate from breaking React DOM reconciliation
+if (typeof Node !== 'undefined') {
+  const originalRemoveChild = Node.prototype.removeChild;
+  Node.prototype.removeChild = function <T extends Node>(child: T): T {
+    if (child.parentNode !== this) {
+      if (console) {
+        console.warn('Cannot remove child, parent is not the current node', child, this);
+      }
+      return child;
+    }
+    return originalRemoveChild.call(this, child) as T;
+  };
+
+  const originalInsertBefore = Node.prototype.insertBefore;
+  Node.prototype.insertBefore = function <T extends Node>(newNode: T, referenceNode: Node | null): T {
+    if (referenceNode && referenceNode.parentNode !== this) {
+      if (console) {
+        console.warn('Cannot insert child, reference parent is not the current node', newNode, referenceNode, this);
+      }
+      return newNode;
+    }
+    return originalInsertBefore.call(this, newNode, referenceNode) as T;
+  };
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {

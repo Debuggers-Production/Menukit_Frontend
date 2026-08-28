@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { 
   Wallet, 
@@ -7,25 +7,21 @@ import {
   AlertCircle, 
   Calendar, 
   Search, 
-  ArrowUpRight, 
-  Info, 
   Building2, 
   CreditCard,
-  Download,
-  Filter,
-  ChevronRight,
   ShieldCheck,
   RefreshCw,
   Trophy
 } from 'lucide-react';
 import { api } from '@/services/api';
 import { useShopStore } from '@/store/shopStore';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
+import { Card, CardContent, CardTitle, CardDescription } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { PageHeader } from '@/components/ui/PageHeader';
+import { useHeaderStore } from '@/store/useHeaderStore';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { SearchableSelect } from '@/components/ui/SearchableSelect';
 import { DatePicker } from '@/components/ui/DatePicker';
+import { InfiniteScrollTrigger } from '@/components/ui/InfiniteScrollTrigger';
 import toast from 'react-hot-toast';
 
 interface SettlementItem {
@@ -43,6 +39,7 @@ interface SettlementItem {
   settlement_status: 'settled' | 'pending';
   created_at: string;
   estimated_payout_date: string;
+  actual_settled_date?: string;
 }
 
 interface SettlementSummary {
@@ -56,8 +53,13 @@ interface SettlementSummary {
   settlement_policy_notice: string;
   contest_participants_count: number;
   contest_settlement_amount: number;
+  has_more: boolean;
+  skip: number;
+  limit: number;
   settlements: SettlementItem[];
 }
+
+const PAGE_SIZE = 20;
 
 export function SettlementsPage() {
   const navigate = useNavigate();
@@ -65,68 +67,102 @@ export function SettlementsPage() {
   const currency = shop?.settings?.currency || '₹';
 
   const [isLoading, setIsLoading] = useState(true);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
   const [summary, setSummary] = useState<SettlementSummary | null>(null);
-  
-  // Filters
+  const [settlementsList, setSettlementsList] = useState<SettlementItem[]>([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [skip, setSkip] = useState(0);
+
+  // Filters & Search
   const [dateFilter, setDateFilter] = useState<'7' | '30' | '90' | 'custom'>('30');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
 
-  const fetchSettlements = async () => {
-    setIsLoading(true);
+  const { setTitle } = useHeaderStore();
+
+  useEffect(() => {
+    setTitle('Settlements & Payouts', 'View online payment settlements, pending payout timelines, and date-wise revenue breakdowns.');
+  }, [setTitle]);
+
+  // Debounce search query input (350ms)
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 350);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
+
+  const loadSettlementsData = useCallback(async (currentSkip: number, reset: boolean = false) => {
+    if (reset) {
+      setIsLoading(true);
+    } else {
+      setIsFetchingMore(true);
+    }
+
     try {
       const params: any = {
         status_filter: statusFilter,
+        skip: currentSkip,
+        limit: PAGE_SIZE,
       };
+
+      if (debouncedSearch.trim()) {
+        params.search = debouncedSearch.trim();
+      }
+
       if (dateFilter === 'custom') {
         if (customStart && customEnd) {
           params.start_date = customStart;
           params.end_date = customEnd;
         } else {
           setIsLoading(false);
+          setIsFetchingMore(false);
           return;
         }
       } else {
         params.days = parseInt(dateFilter);
       }
 
-      const res = await api.get('/settlements/me', { params });
-      setSummary(res.data);
+      const res = await api.get<SettlementSummary>('/settlements/me', { params });
+      const data = res.data;
+
+      setSummary(data);
+      setHasMore(data.has_more);
+      setSkip(currentSkip);
+
+      if (reset) {
+        setSettlementsList(data.settlements || []);
+      } else {
+        setSettlementsList((prev) => [...prev, ...(data.settlements || [])]);
+      }
     } catch (err) {
       console.error("Failed to load settlements", err);
       toast.error("Failed to load settlements summary.");
     } finally {
       setIsLoading(false);
+      setIsFetchingMore(false);
+    }
+  }, [dateFilter, customStart, customEnd, statusFilter, debouncedSearch]);
+
+  // Trigger fetch on filter/search change
+  useEffect(() => {
+    if (dateFilter === 'custom' && (!customStart || !customEnd)) return;
+    loadSettlementsData(0, true);
+  }, [dateFilter, customStart, customEnd, statusFilter, debouncedSearch, loadSettlementsData]);
+
+  // Infinite Scroll Handler
+  const handleLoadMore = () => {
+    if (hasMore && !isFetchingMore && !isLoading) {
+      const nextSkip = skip + PAGE_SIZE;
+      loadSettlementsData(nextSkip, false);
     }
   };
 
-  useEffect(() => {
-    if (dateFilter === 'custom' && (!customStart || !customEnd)) return;
-    fetchSettlements();
-  }, [dateFilter, customStart, customEnd, statusFilter]);
-
-  const filteredSettlements = useMemo(() => {
-    if (!summary?.settlements) return [];
-    if (!searchQuery.trim()) return summary.settlements;
-    const query = searchQuery.toLowerCase();
-    return summary.settlements.filter(item => 
-      item.customer_name?.toLowerCase().includes(query) ||
-      item.customer_phone?.includes(query) ||
-      item.invoice_no?.toLowerCase().includes(query) ||
-      item.payment_reference?.toLowerCase().includes(query) ||
-      item.order_id?.toLowerCase().includes(query)
-    );
-  }, [summary, searchQuery]);
-
   return (
     <div className="space-y-4 max-w-6xl mx-auto animate-fade-in pb-24 lg:pb-12">
-      <PageHeader
-        title="Settlements & Payouts"
-        subtitle="View online payment settlements, pending payout timelines, and date-wise revenue breakdowns."
-      />
-
       {/* 7 WORKING DAYS SETTLEMENT POLICY BANNER */}
       <Card className="border-blue-200/80 dark:border-blue-900/40 bg-gradient-to-r from-blue-50/80 via-indigo-50/40 to-slate-50 dark:from-blue-950/30 dark:via-indigo-950/20 dark:to-slate-900 shadow-xs overflow-hidden">
         <CardContent className="p-3 sm:p-3.5">
@@ -170,7 +206,9 @@ export function SettlementsPage() {
             </Button>
           </div>
         </CardContent>
-      </Card>      {/* KPI METRIC CARDS */}
+      </Card>
+
+      {/* KPI METRIC CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         {/* Total Pending Settlement */}
         <Card className="border-amber-200/60 dark:border-amber-900/30 bg-amber-50/30 dark:bg-amber-950/10">
@@ -181,7 +219,7 @@ export function SettlementsPage() {
                 <Clock size={14} />
               </div>
             </div>
-            {isLoading ? (
+            {isLoading && settlementsList.length === 0 ? (
               <Skeleton className="h-6 w-24" />
             ) : (
               <div>
@@ -205,14 +243,14 @@ export function SettlementsPage() {
                 <CheckCircle2 size={14} />
               </div>
             </div>
-            {isLoading ? (
+            {isLoading && settlementsList.length === 0 ? (
               <Skeleton className="h-6 w-24" />
             ) : (
               <div>
                 <h3 className="text-xl font-black text-slate-900 dark:text-white">
                   {currency}{summary?.total_settled_amount.toFixed(2) || '0.00'}
                 </h3>
-                <p className="text-[10px] text-emerald-700 dark:emerald-400 font-semibold mt-0.5">
+                <p className="text-[10px] text-emerald-700 dark:text-emerald-400 font-semibold mt-0.5">
                   {summary?.settled_count || 0} payout(s) completed
                 </p>
               </div>
@@ -229,7 +267,7 @@ export function SettlementsPage() {
                 <Wallet size={14} />
               </div>
             </div>
-            {isLoading ? (
+            {isLoading && settlementsList.length === 0 ? (
               <Skeleton className="h-6 w-24" />
             ) : (
               <div>
@@ -253,7 +291,7 @@ export function SettlementsPage() {
                 <Trophy size={14} />
               </div>
             </div>
-            {isLoading ? (
+            {isLoading && settlementsList.length === 0 ? (
               <Skeleton className="h-6 w-24" />
             ) : (
               <div>
@@ -277,7 +315,7 @@ export function SettlementsPage() {
                 <Building2 size={14} />
               </div>
             </div>
-            {isLoading ? (
+            {isLoading && settlementsList.length === 0 ? (
               <Skeleton className="h-6 w-24" />
             ) : (
               <div>
@@ -296,7 +334,7 @@ export function SettlementsPage() {
         </Card>
       </div>
 
-      {/* FILTER CONTROLS & STICKY TOOLBAR */}
+      {/* FILTER CONTROLS & TRANSACTION LIST TABLE */}
       <Card className="overflow-visible">
         {/* Sticky Header Bar on Scroll */}
         <div className="sticky -top-4 sm:-top-6 lg:-top-8 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 p-3 sm:p-4 rounded-t-2xl shadow-md space-y-3">
@@ -363,7 +401,7 @@ export function SettlementsPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={fetchSettlements}
+                onClick={() => loadSettlementsData(0, true)}
                 className="rounded-xl h-9 px-2.5 shrink-0"
                 title="Refresh Settlements"
               >
@@ -372,7 +410,7 @@ export function SettlementsPage() {
             </div>
           </div>
 
-          {/* Search Box */}
+          {/* Backend Search Box */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
             <input
@@ -422,21 +460,21 @@ export function SettlementsPage() {
         </div>
 
         <CardContent className="p-0">
-          {isLoading ? (
+          {isLoading && settlementsList.length === 0 ? (
             <div className="p-8 space-y-4">
               {[1, 2, 3, 4].map(i => (
                 <Skeleton key={i} className="h-12 w-full rounded-xl" />
               ))}
             </div>
-          ) : filteredSettlements.length === 0 ? (
+          ) : settlementsList.length === 0 ? (
             <div className="p-12 text-center space-y-3">
               <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center mx-auto">
                 <Wallet size={24} />
               </div>
               <h4 className="font-bold text-slate-800 dark:text-slate-200 text-sm">No Settlement Transactions Found</h4>
               <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                {searchQuery 
-                  ? 'No records match your search query.' 
+                {debouncedSearch 
+                  ? `No records match "${debouncedSearch}".` 
                   : 'Online payments received from customer orders will automatically show here date-wise.'}
               </p>
             </div>
@@ -453,12 +491,12 @@ export function SettlementsPage() {
                     <th className="py-3 px-4 text-right">Gateway Fee (1%)</th>
                     <th className="py-3 px-4 text-right">Net Settlement</th>
                     <th className="py-3 px-4">Settlement Status</th>
-                    <th className="py-3 px-4 text-center">Est. Payout Date</th>
+                    <th className="py-3 px-4 text-center">Payout Date</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 font-medium">
-                  {filteredSettlements.map((item) => (
-                    <tr key={item.order_id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
+                  {settlementsList.map((item, index) => (
+                    <tr key={`${item.order_id}-${index}`} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
                       <td className="py-3 px-4 text-slate-700 dark:text-slate-300 font-mono text-[11px]">
                         {item.created_at}
                       </td>
@@ -497,13 +535,28 @@ export function SettlementsPage() {
                           </span>
                         )}
                       </td>
-                      <td className="py-3 px-4 text-center font-mono text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                        {item.estimated_payout_date}
+                      <td className="py-3 px-4 text-center">
+                        {item.settlement_status === 'settled' && item.actual_settled_date ? (
+                          <span className="font-mono text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
+                            {item.actual_settled_date}
+                          </span>
+                        ) : (
+                          <span className="font-mono text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                            Est: {item.estimated_payout_date}
+                          </span>
+                        )}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+
+              {/* API Infinite Scroll Trigger */}
+              <InfiniteScrollTrigger
+                onIntersect={handleLoadMore}
+                isLoading={isFetchingMore}
+                hasMore={hasMore}
+              />
             </div>
           )}
         </CardContent>

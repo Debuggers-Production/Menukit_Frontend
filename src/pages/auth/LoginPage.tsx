@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate, Link } from 'react-router';
 import { Mail, ArrowRight } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { api } from '@/services/api';
@@ -44,7 +44,7 @@ export function LoginPage() {
               type="email"
               placeholder="name@restaurant.com"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => setEmail(e.target.value.toLowerCase())}
               leftIcon={<Mail size={18} />}
               autoComplete="email"
               required
@@ -67,8 +67,8 @@ export function LoginPage() {
       <p className="text-center text-sm text-slate-500 mt-6">
         No password required. We'll send you a secure login code.
       </p>
-      <p className="text-center text-xs text-slate-400 mt-4">
-        By continuing, you are accepting our <a href="/terms" className="text-primary hover:underline">Terms and Conditions</a>.
+      <p className="text-center text-xs text-slate-400 mt-4 px-6">
+        By continuing, you are accepting our <Link to="/terms" className="text-primary font-medium hover:underline">Terms of Service</Link> and <Link to="/privacy" className="text-primary font-medium hover:underline">Privacy Policy</Link>.
       </p>
     </div>
   );

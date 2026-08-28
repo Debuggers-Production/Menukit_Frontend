@@ -1,4 +1,4 @@
-@import "tailwindcss";
+css_content = """@import "tailwindcss";
 
 /* Hide all forms of Google Translate top banner globally across all pages */
 .goog-te-banner-frame,
@@ -293,3 +293,9 @@ input[type='number'] {
     background-color: #475569; /* slate-600 */
   }
 }
+"""
+
+with open(r"d:\Projects\Menukit\Menukit_Frontend\src\index.css", "w") as f:
+    f.write(css_content)
+
+print("Restored index.css properly")

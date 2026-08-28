@@ -74,6 +74,7 @@ export function OrderStatusPage() {
         });
         toast.success("Payment successful! Order marked as paid.");
         setOrder((prev: any) => ({ ...prev, payment_status: 'paid' }));
+        fetchOrderStatus();
         return;
       }
 
@@ -106,6 +107,7 @@ export function OrderStatusPage() {
             });
             toast.success("Payment successful! Order marked as paid.");
             setOrder((prev: any) => ({ ...prev, payment_status: 'paid' }));
+            fetchOrderStatus();
           } catch {
             toast.error("Payment verification failed. Please contact support.");
           }
@@ -254,10 +256,12 @@ export function OrderStatusPage() {
 
   const fetchOrderStatus = async () => {
     try {
-      const shopRes = await api.get(`/public/shop/${id}`);
+      const [shopRes, orderRes] = await Promise.all([
+        api.get(`/public/shop/${id}`),
+        api.get(`/public/shop/${id}/orders/${orderId}`)
+      ]);
       setShop(shopRes.data);
 
-      const orderRes = await api.get(`/public/shop/${id}/orders/${orderId}`);
       const newOrder = orderRes.data;
       
       if (statusRef.current && newOrder.order_status !== statusRef.current) {
@@ -290,6 +294,30 @@ export function OrderStatusPage() {
       clearInterval(interval);
     };
   }, [id, orderId, order?.order_status]);
+
+  const [timeLeft, setTimeLeft] = useState<string>('');
+
+  useEffect(() => {
+    if (order?.order_status === 'PAYMENT_PENDING' && order?.payment_expires_at) {
+      const interval = setInterval(() => {
+        const expiry = new Date(order.payment_expires_at).getTime();
+        const now = new Date().getTime();
+        const diff = expiry - now;
+        
+        if (diff <= 0) {
+          setTimeLeft('EXPIRED');
+          clearInterval(interval);
+          // Refresh order status if expired
+          fetchOrderStatus();
+        } else {
+          const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+          const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+          setTimeLeft(`${minutes}:${seconds < 10 ? '0' : ''}${seconds}`);
+        }
+      }, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [order?.order_status, order?.payment_expires_at]);
 
   // If online and payment is pending, check payment status once on mount
   useEffect(() => {
@@ -337,6 +365,7 @@ export function OrderStatusPage() {
 
   const getStatusDisplay = () => {
     switch (order.order_status) {
+      case 'PENDING_VENDOR':
       case 'pending':
         return {
           title: 'Order Placed',
@@ -345,6 +374,16 @@ export function OrderStatusPage() {
           bgColor: 'bg-amber-50 dark:bg-amber-950/20',
           borderColor: 'border-amber-100 dark:border-amber-900/30'
         };
+      case 'PAYMENT_PENDING':
+        return {
+          title: 'Payment Pending',
+          desc: 'Please complete your payment. Your order will only be processed further once payment is received.',
+          icon: <CreditCard size={40} className="text-orange-500 animate-pulse" />,
+          bgColor: 'bg-orange-50 dark:bg-orange-950/20',
+          borderColor: 'border-orange-100 dark:border-orange-900/30'
+        };
+      case 'PAID':
+      case 'PREPARING':
       case 'accepted':
         return {
           title: 'Preparing Food',
@@ -353,6 +392,17 @@ export function OrderStatusPage() {
           bgColor: 'bg-blue-50 dark:bg-blue-950/20',
           borderColor: 'border-blue-100 dark:border-blue-900/30'
         };
+      case 'READY':
+      case 'OUT_FOR_DELIVERY':
+        return {
+          title: 'Ready / On the Way',
+          desc: 'Your order is on the way or ready for pickup.',
+          icon: <CheckCircle size={40} className="text-indigo-500" />,
+          bgColor: 'bg-indigo-50 dark:bg-indigo-950/20',
+          borderColor: 'border-indigo-100 dark:border-indigo-900/30'
+        };
+      case 'COMPLETED':
+      case 'DELIVERED':
       case 'completed':
         return {
           title: 'Order Completed',
@@ -361,6 +411,7 @@ export function OrderStatusPage() {
           bgColor: 'bg-emerald-50 dark:bg-emerald-950/20',
           borderColor: 'border-emerald-100 dark:border-emerald-900/30'
         };
+      case 'REJECTED':
       case 'rejected':
         return {
           title: 'Order Rejected',
@@ -483,31 +534,7 @@ export function OrderStatusPage() {
           <div className="absolute -right-10 -bottom-10 w-32 h-32 rounded-full opacity-10 blur-2xl bg-current pointer-events-none" />
           
           <div className="w-16 h-16 rounded-2xl bg-white dark:bg-slate-900 flex items-center justify-center shadow-md relative z-10">
-            {order.order_status === 'accepted' ? (
-              <motion.div
-                animate={{ y: [0, -6, 0], rotate: [0, 8, -8, 0] }}
-                transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut" }}
-              >
-                <CookingPot size={36} className="text-orange-500" />
-              </motion.div>
-            ) : order.order_status === 'pending' ? (
-              <motion.div
-                animate={{ scale: [0.9, 1.1, 0.9], opacity: [0.6, 1, 0.6] }}
-                transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
-              >
-                <Clock size={36} className="text-amber-500" />
-              </motion.div>
-            ) : order.order_status === 'completed' ? (
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: [0, 1.2, 1] }}
-                transition={{ duration: 0.5, ease: "easeOut" }}
-              >
-                <CheckCircle2 size={36} className="text-emerald-500" />
-              </motion.div>
-            ) : (
-              <XCircle size={36} className="text-slate-400" />
-            )}
+            {statusInfo.icon}
           </div>
           <div className="relative z-10">
             <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded bg-slate-200/50 dark:bg-slate-800/80 text-slate-650 dark:text-slate-300">
@@ -629,7 +656,7 @@ export function OrderStatusPage() {
                 <div className="flex justify-between text-slate-700 dark:text-slate-350">
                   <span>Platform fee</span>
                   <span className="font-black text-slate-900 dark:text-white">
-                    {shop?.settings?.currency || '₹'}{(Number(order.total_amount) * 0.01).toFixed(2)}
+                    {shop?.settings?.currency || '₹'}{(Number(order.total_amount) * 0.02).toFixed(2)}
                   </span>
                 </div>
                 <div className="flex justify-between text-slate-700 dark:text-slate-350">
@@ -671,7 +698,7 @@ export function OrderStatusPage() {
             <span className="font-black text-2xl tracking-tight text-orange-600">
               {shop?.settings?.currency || '₹'}{(
                 order.payment_method === 'online' 
-                  ? (Number(order.total_amount) + Number(order.total_amount) * 0.01 + Number(order.total_amount) * 0.03 + (Number(order.total_amount) * 0.03) * 0.18) 
+                  ? (Number(order.total_amount) + Number(order.total_amount) * 0.02 + Number(order.total_amount) * 0.03 + (Number(order.total_amount) * 0.03) * 0.18) 
                   : Number(order.total_amount)
               ).toFixed(2)}
             </span>
@@ -705,10 +732,18 @@ export function OrderStatusPage() {
               <QRCodeCanvas 
                 id="receipt-qr-canvas"
                 value={`${window.location.origin}/shop/${id}/order/${orderId}`} 
-                size={70} 
-                level="M" 
-                fgColor="#1e293b" 
+                size={90} 
+                level="H" 
+                fgColor="#000000" 
                 bgColor="#ffffff"
+                imageSettings={shop?.logo_url ? {
+                  src: shop.logo_url,
+                  x: undefined,
+                  y: undefined,
+                  height: 24,
+                  width: 24,
+                  excavate: true,
+                } : undefined}
               />
             </div>
             <button
@@ -737,35 +772,75 @@ export function OrderStatusPage() {
           )}
         </motion.div>
 
+        {/* Awaiting Vendor Acceptance */}
+        {order.order_status === 'PENDING_VENDOR' && (
+          <div className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/60 text-blue-800 dark:text-blue-300 text-xs font-medium flex items-center gap-3">
+            <Clock size={18} className="text-blue-600 shrink-0 animate-spin" />
+            <div>
+              <p className="font-bold text-blue-900 dark:text-blue-200">Awaiting Merchant Acceptance</p>
+              <p className="text-[11px] text-blue-700 dark:text-blue-400 mt-0.5">
+                The restaurant is reviewing your order. Please wait...
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Pay Online Action Trigger — Only when online payments are enabled */}
-        {order.payment_status === 'pending' && order.order_status !== 'rejected' && order.order_status !== 'cancelled' && shop?.settings?.online_payments_enabled !== false && (
-          order.order_type === 'delivery' ? (
-            <motion.button
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={handlePayOnline}
-              disabled={isRedirecting}
-              className="w-full py-4 rounded-2xl text-white font-extrabold shadow-md hover:brightness-110 active:scale-[0.98] transition-all text-center flex items-center justify-center gap-2 bg-gradient-to-r from-orange-500 to-amber-500 cursor-pointer"
-              style={{ boxShadow: `0 4px 15px ${primaryColor}40` }}
-            >
-              {isRedirecting ? (
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
-              ) : (
-                <>
-                  <CreditCard size={18} />
-                  <span>Pay Online Instantly ({shop?.settings?.currency || '₹'}{Number(order.total_amount).toFixed(2)})</span>
-                </>
-              )}
-            </motion.button>
+        {order.order_status === 'PAYMENT_PENDING' && shop?.settings?.online_payments_enabled !== false && (
+          order.payment_method === 'online' ? (
+            <div className="space-y-2">
+              <div className="flex justify-between items-center px-2">
+                <span className="text-[10px] font-bold text-slate-500 uppercase">Payment Window</span>
+                <span className="text-[10px] font-black text-rose-500 animate-pulse bg-rose-50 dark:bg-rose-950/30 px-2 rounded-full border border-rose-200">
+                  {timeLeft || 'EXPIRES SOON'}
+                </span>
+              </div>
+              <motion.button
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={handlePayOnline}
+                disabled={isRedirecting}
+                className="w-full py-4 rounded-2xl text-white font-extrabold shadow-md hover:brightness-110 active:scale-[0.98] transition-all text-center flex items-center justify-center gap-2 bg-gradient-to-r from-orange-500 to-amber-500 cursor-pointer"
+                style={{ boxShadow: `0 4px 15px ${primaryColor}40` }}
+              >
+                {isRedirecting ? (
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
+                ) : (
+                  <>
+                    <CreditCard size={18} />
+                    <span>Pay Online Instantly ({shop?.settings?.currency || '₹'}{(Number(order.total_amount) + Number(order.total_amount) * 0.02 + Number(order.total_amount) * 0.03 + (Number(order.total_amount) * 0.03) * 0.18).toFixed(2)})</span>
+                  </>
+                )}
+              </motion.button>
+            </div>
+          ) : order.payment_method === 'upi' && shop?.settings?.upi_id ? (
+            <div className="space-y-2">
+              <div className="flex justify-between items-center px-2">
+                <span className="text-[10px] font-bold text-slate-500 uppercase">Payment Window</span>
+                <span className="text-[10px] font-black text-rose-500 animate-pulse bg-rose-50 dark:bg-rose-950/30 px-2 rounded-full border border-rose-200">
+                  {timeLeft || 'EXPIRES SOON'}
+                </span>
+              </div>
+              <motion.button
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => {
+                  const upiUrl = `upi://pay?pa=${encodeURIComponent(shop.settings.upi_id!)}&pn=${encodeURIComponent(shop.name || 'Restaurant')}&am=${Number(order.total_amount).toFixed(2)}&cu=INR&tn=${encodeURIComponent(`Order #${order.id.slice(0,8)}`)}`;
+                  toast.success("Opening UPI app to complete payment...");
+                  window.open(upiUrl, '_blank');
+                }}
+                className="w-full py-4 rounded-2xl text-white font-extrabold shadow-md hover:brightness-110 active:scale-[0.98] transition-all text-center flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-500 cursor-pointer"
+              >
+                <span>Open UPI App to Pay ({shop?.settings?.currency || '₹'}{Number(order.total_amount).toFixed(2)})</span>
+              </motion.button>
+            </div>
           ) : (
             <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 text-amber-800 dark:text-amber-300 text-xs font-medium flex items-center gap-3">
               <Clock size={18} className="text-amber-600 shrink-0" />
               <div>
-                <p className="font-bold text-amber-900 dark:text-amber-200">Awaiting Merchant Payment Confirmation</p>
+                <p className="font-bold text-amber-900 dark:text-amber-200">Awaiting Physical Payment</p>
                 <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-0.5">
-                  {order.payment_method === 'upi'
-                    ? 'Payment via UPI initiated. The shopkeeper will verify and update your payment status.'
-                    : 'Pay physically at the counter/cash. The shopkeeper will update your payment status.'}
+                  Pay physically at the counter/cash. The shopkeeper will update your payment status.
                 </p>
               </div>
             </div>
@@ -773,12 +848,18 @@ export function OrderStatusPage() {
         )}
 
         {/* Cancelled / Rejected Order Notice */}
-        {(order.order_status === 'rejected' || order.order_status === 'cancelled') && (
+        {(order.order_status?.toUpperCase() === 'REJECTED' || order.order_status?.toUpperCase() === 'CANCELLED') && (
           <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-bold flex items-center gap-3">
             <XCircle size={22} className="text-rose-600 shrink-0" />
             <div>
               <p className="font-extrabold text-sm">Order Cancelled / Rejected</p>
-              <p className="text-[11px] font-medium opacity-90 mt-0.5">This order was rejected or cancelled. Online payment is disabled.</p>
+              <p className="text-[11px] font-medium opacity-90 mt-0.5">
+                {order.cancellation_reason ? (
+                  <span>Reason: <span className="font-bold">{order.cancellation_reason}</span></span>
+                ) : (
+                  'This order was rejected or cancelled. Online payment is disabled.'
+                )}
+              </p>
             </div>
           </div>
         )}

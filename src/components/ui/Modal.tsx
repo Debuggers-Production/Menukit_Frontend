@@ -12,9 +12,10 @@ interface ModalProps {
   children: React.ReactNode;
   footer?: React.ReactNode;
   className?: string;
+  closeOnBackdropClick?: boolean;
 }
 
-export function Modal({ isOpen, onClose, title, description, children, footer, className }: ModalProps) {
+export function Modal({ isOpen, onClose, title, description, children, footer, className, closeOnBackdropClick = true }: ModalProps) {
   const [mounted, setMounted] = React.useState(false);
 
   React.useEffect(() => {
@@ -46,7 +47,9 @@ export function Modal({ isOpen, onClose, title, description, children, footer, c
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={onClose}
+            onClick={() => {
+              if (closeOnBackdropClick) onClose();
+            }}
             className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs"
           />
           <motion.div
@@ -59,7 +62,7 @@ export function Modal({ isOpen, onClose, title, description, children, footer, c
             dragElastic={{ top: 0.1, bottom: 0.8 }}
             onDragEnd={handleDragEnd}
             className={cn(
-              "bg-white dark:bg-slate-900 relative w-full max-w-lg rounded-t-3xl sm:rounded-2xl shadow-2xl z-10 max-h-[90vh] sm:max-h-[85vh] overflow-hidden flex flex-col",
+              "bg-background relative w-full max-w-lg rounded-t-3xl sm:rounded-2xl shadow-2xl z-10 max-h-[90vh] sm:max-h-[85vh] overflow-hidden flex flex-col border border-border",
               className
             )}
           >
@@ -69,23 +72,23 @@ export function Modal({ isOpen, onClose, title, description, children, footer, c
               onClick={onClose}
               title="Drag down to close"
             >
-              <div className="w-12 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full" />
+              <div className="w-12 h-1.5 bg-muted rounded-full" />
             </div>
 
             {/* Fixed Header */}
             {(title || description) && (
-              <div className="relative z-30 bg-white dark:bg-slate-900 pt-3 pb-3 px-6 sm:px-8 border-b border-slate-100 dark:border-slate-800 shrink-0">
+              <div className="relative z-30 bg-background pt-4 pb-4 px-6 sm:px-8 border-b border-border shrink-0">
                 <button
                   onClick={onClose}
-                  className="absolute right-4 top-3 rounded-full p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                  className="absolute right-4 top-4 rounded-full p-1.5 text-muted-foreground hover:bg-muted transition-colors"
                 >
                   <X className="h-4.5 w-4.5" />
                   <span className="sr-only">Close</span>
                 </button>
 
-                <div className="space-y-0.5 pr-8 text-left">
-                  {title && <h2 className="text-base sm:text-xl font-black tracking-tight font-heading text-slate-900 dark:text-white">{title}</h2>}
-                  {description && <p className="text-[11px] text-slate-500 dark:text-slate-400">{description}</p>}
+                <div className="space-y-1 pr-8 text-left">
+                  {title && <h2 className="text-lg sm:text-xl font-bold tracking-tight font-heading text-foreground">{title}</h2>}
+                  {description && <p className="text-sm text-muted-foreground">{description}</p>}
                 </div>
               </div>
             )}
@@ -97,7 +100,7 @@ export function Modal({ isOpen, onClose, title, description, children, footer, c
 
             {/* Fixed Static Footer */}
             {footer && (
-              <div className="shrink-0 py-4 px-6 sm:px-8 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 mt-auto z-20">
+              <div className="shrink-0 py-4 px-6 sm:px-8 border-t border-border bg-background mt-auto z-20">
                 {footer}
               </div>
             )}

@@ -52,11 +52,11 @@ export function ConfirmModal({
       }
     >
       <div className="flex flex-col items-center text-center py-2">
-        <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-3 ${isDestructive ? 'bg-red-100 text-red-600 dark:bg-red-900/30' : 'bg-primary-100 text-primary-600 dark:bg-primary-900/30'}`}>
+        <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-4 ${isDestructive ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary'}`}>
           <AlertTriangle size={24} />
         </div>
-        <h2 className="text-lg font-bold mb-1.5 text-slate-900 dark:text-white font-heading">{title}</h2>
-        <p className="text-xs text-slate-500 leading-relaxed">{message}</p>
+        <h2 className="text-xl font-bold mb-2 text-foreground font-heading">{title}</h2>
+        <p className="text-sm text-muted-foreground leading-relaxed">{message}</p>
       </div>
     </Modal>
   );
