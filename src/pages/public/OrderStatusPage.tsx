@@ -435,6 +435,15 @@ export function OrderStatusPage() {
 
 
   const statusInfo = getStatusDisplay();
+  const isUnpaid = order?.payment_status === 'pending';
+  const isCancelled = order?.order_status?.toUpperCase() === 'REJECTED' || order?.order_status?.toUpperCase() === 'CANCELLED';
+  const currencySymbol = shop?.settings?.currency || '₹';
+  const grandTotalFormatted = (
+    Number(order?.total_amount || 0) + 
+    Number(order?.total_amount || 0) * 0.02 + 
+    Number(order?.total_amount || 0) * 0.03 + 
+    (Number(order?.total_amount || 0) * 0.03) * 0.18
+  ).toFixed(2);
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans pb-12 antialiased">
@@ -777,6 +786,7 @@ export function OrderStatusPage() {
         </motion.div>
 
         {/* Awaiting Vendor Acceptance */}
+        {/* Awaiting Vendor Acceptance */}
         {order.order_status === 'PENDING_VENDOR' && (
           <div className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/60 text-blue-800 dark:text-blue-300 text-xs font-medium flex items-center gap-3">
             <Clock size={18} className="text-blue-600 shrink-0 animate-spin" />
@@ -789,42 +799,69 @@ export function OrderStatusPage() {
           </div>
         )}
 
-        {/* Pay Online Action Trigger — Only when online payments are enabled */}
-        {order.order_status === 'PAYMENT_PENDING' && shop?.settings?.online_payments_enabled !== false && (
-          order.payment_method === 'online' ? (
-            <div className="space-y-2">
-              <div className="flex justify-between items-center px-2">
-                <span className="text-[10px] font-bold text-slate-500 uppercase">Payment Window</span>
-                <span className="text-[10px] font-black text-rose-500 animate-pulse bg-rose-50 dark:bg-rose-950/30 px-2 rounded-full border border-rose-200">
-                  {timeLeft || 'EXPIRES SOON'}
-                </span>
+        {/* Payment Action Options — Displayed whenever the order is unpaid and active */}
+        {isUnpaid && !isCancelled && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-900/60 shadow-lg shadow-amber-500/5 space-y-4"
+          >
+            {/* Payment header with window timer if active */}
+            <div className="flex justify-between items-center pb-3 border-b border-slate-150 dark:border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-orange-100 dark:bg-orange-950/40 flex items-center justify-center text-orange-600">
+                  <CreditCard size={16} />
+                </div>
+                <div>
+                  <h3 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider">
+                    Complete Payment
+                  </h3>
+                  <p className="text-[10px] text-slate-400 font-medium">
+                    {order.payment_method === 'cash' || order.payment_method === 'cash_on_delivery'
+                      ? 'Cash on Delivery selected'
+                      : 'Choose your payment option below'}
+                  </p>
+                </div>
               </div>
-              <motion.button
-                whileHover={{ scale: 1.01 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={handlePayOnline}
-                disabled={isRedirecting}
-                className="w-full py-4 rounded-2xl text-white font-extrabold shadow-md hover:brightness-110 active:scale-[0.98] transition-all text-center flex items-center justify-center gap-2 bg-gradient-to-r from-orange-500 to-amber-500 cursor-pointer"
-                style={{ boxShadow: `0 4px 15px ${primaryColor}40` }}
-              >
-                {isRedirecting ? (
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
-                ) : (
-                  <>
-                    <CreditCard size={18} />
-                    <span>Pay Online Instantly ({shop?.settings?.currency || '₹'}{(Number(order.total_amount) + Number(order.total_amount) * 0.02 + Number(order.total_amount) * 0.03 + (Number(order.total_amount) * 0.03) * 0.18).toFixed(2)})</span>
-                  </>
-                )}
-              </motion.button>
+
+              {timeLeft && timeLeft !== 'EXPIRED' && (
+                <div className="flex items-center gap-1 bg-rose-50 dark:bg-rose-950/40 text-rose-600 border border-rose-200 dark:border-rose-900/50 px-2.5 py-1 rounded-full text-[9px] font-black animate-pulse">
+                  <Clock size={10} />
+                  <span>{timeLeft}</span>
+                </div>
+              )}
             </div>
-          ) : order.payment_method === 'upi' && shop?.settings?.upi_id ? (
-            <div className="space-y-2">
-              <div className="flex justify-between items-center px-2">
-                <span className="text-[10px] font-bold text-slate-500 uppercase">Payment Window</span>
-                <span className="text-[10px] font-black text-rose-500 animate-pulse bg-rose-50 dark:bg-rose-950/30 px-2 rounded-full border border-rose-200">
-                  {timeLeft || 'EXPIRES SOON'}
-                </span>
+
+            {/* Online payment via Razorpay / Cards / UPI / NetBanking */}
+            {shop?.settings?.online_payments_enabled !== false && (
+              <div className="space-y-1.5">
+                <motion.button
+                  whileHover={{ scale: 1.01 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={handlePayOnline}
+                  disabled={isRedirecting}
+                  className="w-full py-3.5 px-4 rounded-2xl text-white font-extrabold shadow-md hover:brightness-110 active:scale-[0.98] transition-all text-center flex items-center justify-center gap-2 bg-gradient-to-r from-orange-500 to-amber-500 cursor-pointer disabled:opacity-50"
+                  style={{ boxShadow: `0 4px 15px ${primaryColor}40` }}
+                >
+                  {isRedirecting ? (
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
+                  ) : (
+                    <>
+                      <CreditCard size={16} />
+                      <span className="text-xs uppercase tracking-wider">
+                        Pay Online Instantly ({currencySymbol}{grandTotalFormatted})
+                      </span>
+                    </>
+                  )}
+                </motion.button>
+                <p className="text-[9px] text-center text-slate-400">
+                  Instant UPI (GPay / PhonePe / Paytm), Cards & NetBanking
+                </p>
               </div>
+            )}
+
+            {/* Direct UPI App Option if configured */}
+            {shop?.settings?.upi_id && (
               <motion.button
                 whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.98 }}
@@ -833,22 +870,27 @@ export function OrderStatusPage() {
                   toast.success("Opening UPI app to complete payment...");
                   window.open(upiUrl, '_blank');
                 }}
-                className="w-full py-4 rounded-2xl text-white font-extrabold shadow-md hover:brightness-110 active:scale-[0.98] transition-all text-center flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-500 cursor-pointer"
+                className="w-full py-3 px-4 rounded-2xl text-slate-800 dark:text-white bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 font-extrabold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 border border-slate-200 dark:border-slate-700 cursor-pointer"
               >
-                <span>Open UPI App to Pay ({shop?.settings?.currency || '₹'}{Number(order.total_amount).toFixed(2)})</span>
+                <span>Pay via UPI App ({currencySymbol}{Number(order.total_amount).toFixed(2)})</span>
               </motion.button>
-            </div>
-          ) : (
-            <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 text-amber-800 dark:text-amber-300 text-xs font-medium flex items-center gap-3">
-              <Clock size={18} className="text-amber-600 shrink-0" />
-              <div>
-                <p className="font-bold text-amber-900 dark:text-amber-200">Awaiting Physical Payment</p>
-                <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-0.5">
-                  Pay physically at the counter/cash. The shopkeeper will update your payment status.
-                </p>
+            )}
+
+            {/* Cash on Delivery / Counter information note */}
+            {(order.payment_method === 'cash' || order.payment_method === 'cash_on_delivery') && (
+              <div className="p-3 rounded-2xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/30 flex items-start gap-2.5">
+                <Clock size={16} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-[11px] font-bold text-amber-900 dark:text-amber-200">
+                    Pay with Cash / Counter
+                  </p>
+                  <p className="text-[10px] text-amber-700 dark:text-amber-400 mt-0.5 leading-snug">
+                    You can pay cash to the delivery partner or at counter. You can also pay online instantly using the button above.
+                  </p>
+                </div>
               </div>
-            </div>
-          )
+            )}
+          </motion.div>
         )}
 
         {/* Cancelled / Rejected Order Notice */}
@@ -875,13 +917,30 @@ export function OrderStatusPage() {
       {/* Floating Premium Bottom Actions Dock */}
       <div className="fixed bottom-4 left-4 right-4 sm:bottom-6 sm:left-1/2 sm:-translate-x-1/2 sm:w-[380px] z-40 print:hidden">
         <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl rounded-[20px] shadow-[0_10px_35px_rgba(0,0,0,0.12)] border border-slate-100 dark:border-slate-800 p-1.5 flex gap-2">
-          <button
-            onClick={() => navigate(`/shop/${id}/orders`)}
-            className="flex-1 py-2 text-slate-700 dark:text-slate-200 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-lg font-bold text-[10px] uppercase tracking-wider active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5"
-          >
-            <History size={13} />
-            <span>View Orders</span>
-          </button>
+          {isUnpaid && !isCancelled && shop?.settings?.online_payments_enabled !== false ? (
+            <button
+              onClick={handlePayOnline}
+              disabled={isRedirecting}
+              className="flex-1 py-2.5 text-white rounded-xl font-black text-[11px] uppercase tracking-wider active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md bg-gradient-to-r from-orange-500 to-amber-500 hover:brightness-110 disabled:opacity-50"
+            >
+              {isRedirecting ? (
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+              ) : (
+                <>
+                  <CreditCard size={14} />
+                  <span>Pay Now ({currencySymbol}{grandTotalFormatted})</span>
+                </>
+              )}
+            </button>
+          ) : (
+            <button
+              onClick={() => navigate(`/shop/${id}/orders`)}
+              className="flex-1 py-2 text-slate-700 dark:text-slate-200 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-lg font-bold text-[10px] uppercase tracking-wider active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5"
+            >
+              <History size={13} />
+              <span>View Orders</span>
+            </button>
+          )}
           <button
             onClick={() => setIsReceiptSheetOpen(true)}
             className="flex-1 py-2 text-white rounded-lg font-black text-[10px] uppercase tracking-wider active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"

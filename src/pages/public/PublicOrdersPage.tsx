@@ -293,6 +293,28 @@ export function PublicOrdersPage() {
 
         {/* Interactive Visual Animations */}
         <div className="mt-3 pt-3 border-t border-dashed border-slate-200 dark:border-slate-850 flex justify-center items-center h-14 relative bg-white/70 dark:bg-slate-900/40 rounded-xl overflow-hidden">
+          {isPaymentPending && (
+            <div className="flex items-center gap-6">
+              <div className="flex flex-col items-center">
+                <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-450 dark:text-slate-450 border border-slate-200/40">
+                  <ShoppingBag size={14} />
+                </div>
+                <span className="text-[8px] text-slate-450 font-bold mt-1 uppercase tracking-wide">Placed</span>
+              </div>
+              <div className="flex gap-1.5 animate-pulse">
+                <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: '0s' }} />
+                <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: '0.2s' }} />
+                <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: '0.4s' }} />
+              </div>
+              <div className="flex flex-col items-center animate-pulse">
+                <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-600 border border-blue-200/50">
+                  <CreditCard size={14} />
+                </div>
+                <span className="text-[8px] text-blue-600 font-black mt-1 uppercase tracking-wide">Payment</span>
+              </div>
+            </div>
+          )}
+
           {isPendingAccept && (
             <div className="flex items-center gap-6">
               <div className="flex flex-col items-center">
@@ -578,11 +600,17 @@ export function PublicOrdersPage() {
                         </div>
                       </div>
 
-                      {/* Warning notice for pending payment - only for takeaway / delivery when in PAYMENT_PENDING */}
-                      {isUnpaid && isPaymentPending && order.order_type !== 'dine_in' && !isCancelled && shop?.settings?.online_payments_enabled !== false && (
-                        <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2 text-[10px] text-amber-800 dark:text-amber-300 font-bold mb-3.5 flex items-center gap-1.5">
-                          <AlertCircle size={12} className="text-amber-600 dark:text-amber-400 animate-pulse" />
-                          <span>Payment is pending. Pay now to confirm your order details.</span>
+                      {/* Warning notice for pending payment */}
+                      {isUnpaid && !isCancelled && shop?.settings?.online_payments_enabled !== false && (
+                        <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2 text-[10px] text-amber-800 dark:text-amber-300 font-bold mb-3.5 flex items-center justify-between gap-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <AlertCircle size={12} className="text-amber-600 dark:text-amber-400 animate-pulse shrink-0" />
+                            <span>
+                              {order.payment_method === 'cash' || order.payment_method === 'cash_on_delivery'
+                                ? 'Payment is pending. Pay online now or pay cash upon arrival.'
+                                : 'Payment is pending. Pay now to complete your order.'}
+                            </span>
+                          </div>
                         </div>
                       )}
 
@@ -620,21 +648,21 @@ export function PublicOrdersPage() {
                           <span className="font-black text-lg text-slate-850 dark:text-white mt-1.5 block">{shop?.settings?.currency || '₹'}{Number(order.total_amount).toFixed(2)}</span>
                         </div>
                         <div className="flex gap-2">
-                          {/* Pay Now only when unpaid AND order is delivery AND order is not cancelled AND online payments enabled */}
-                          {isUnpaid && !isCancelled && order.order_type === 'delivery' && shop?.settings?.online_payments_enabled !== false && (
+                          {/* Pay Now for any unpaid, non-cancelled order when online payments are enabled */}
+                          {isUnpaid && !isCancelled && shop?.settings?.online_payments_enabled !== false && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handlePayNow(order.id);
                               }}
                               disabled={payingOrderId === order.id}
-                              className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-white text-[10px] font-black uppercase tracking-wider shadow-sm bg-gradient-to-r from-orange-500 to-amber-500 hover:brightness-110 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                              className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-white text-[11px] font-black uppercase tracking-wider shadow-md bg-gradient-to-r from-orange-500 to-amber-500 hover:brightness-110 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
                             >
                               {payingOrderId === order.id ? (
                                 <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white" />
                               ) : (
                                 <>
-                                  <CreditCard size={12} />
+                                  <CreditCard size={13} />
                                   <span>Pay Now</span>
                                 </>
                               )}
