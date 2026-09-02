@@ -10,6 +10,7 @@ import { useHeaderStore } from '@/store/useHeaderStore';
 import { QRCodeInfo } from '@/types';
 import QRCodeStyling from 'qr-code-styling';
 import { SearchableSelect } from '@/components/ui/SearchableSelect';
+import menukitLogo from '@/assets/menukit-logo.svg';
 
 
 export function QRCodePage() {
@@ -39,31 +40,55 @@ export function QRCodePage() {
     fetchQRCode();
   }, []);
 
-  // Effect to make shop logo rounded
+  // Effect to make shop logo rounded into a perfect circular badge
   useEffect(() => {
-    if (shop?.logo_url && includeLogo) {
+    const logoSource = shop?.logo_url || menukitLogo;
+    if (logoSource && includeLogo) {
       const img = new Image();
       img.crossOrigin = "anonymous";
       img.onload = () => {
         const canvas = document.createElement("canvas");
-        const size = Math.min(img.width, img.height);
-        canvas.width = size;
-        canvas.height = size;
+        const canvasSize = 512;
+        canvas.width = canvasSize;
+        canvas.height = canvasSize;
         const ctx = canvas.getContext("2d");
         if (ctx) {
+          // 1. Draw solid opaque white circular badge
           ctx.beginPath();
-          ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+          ctx.arc(canvasSize / 2, canvasSize / 2, (canvasSize / 2) - 4, 0, Math.PI * 2);
+          ctx.fillStyle = "#FFFFFF";
+          ctx.fill();
+
+          // 2. Draw clean subtle border ring for perfect circular definition
+          ctx.strokeStyle = "#E2E8F0";
+          ctx.lineWidth = 12;
+          ctx.stroke();
+
+          // 3. Draw logo centered inside the circle with proportional padding
+          const padding = 70;
+          const maxDim = canvasSize - (padding * 2);
+          const scale = Math.min(maxDim / img.width, maxDim / img.height);
+          const w = img.width * scale;
+          const h = img.height * scale;
+          const x = (canvasSize - w) / 2;
+          const y = (canvasSize - h) / 2;
+
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(canvasSize / 2, canvasSize / 2, (canvasSize / 2) - 10, 0, Math.PI * 2);
           ctx.clip();
-          ctx.drawImage(img, (size - img.width) / 2, (size - img.height) / 2, img.width, img.height);
-          setRoundedLogoUrl(canvas.toDataURL());
+          ctx.drawImage(img, x, y, w, h);
+          ctx.restore();
+
+          setRoundedLogoUrl(canvas.toDataURL("image/png"));
         } else {
-          setRoundedLogoUrl(shop.logo_url || undefined);
+          setRoundedLogoUrl(logoSource);
         }
       };
       img.onerror = () => {
-        setRoundedLogoUrl(shop.logo_url || undefined);
+        setRoundedLogoUrl(logoSource);
       };
-      img.src = shop.logo_url;
+      img.src = logoSource;
     } else {
       setRoundedLogoUrl(undefined);
     }
@@ -111,8 +136,9 @@ export function QRCodePage() {
         image: includeLogo && roundedLogoUrl ? roundedLogoUrl : undefined,
         imageOptions: {
           crossOrigin: "anonymous",
-          margin: 6,
-          imageSize: 0.35,
+          margin: 4,
+          imageSize: 0.32,
+          hideBackgroundDots: true,
         }
       };
 
@@ -349,8 +375,9 @@ export function QRCodePage() {
         image: includeLogo && roundedLogoUrl ? roundedLogoUrl : undefined,
         imageOptions: {
           crossOrigin: "anonymous",
-          margin: 6,
-          imageSize: 0.35,
+          margin: 4,
+          imageSize: 0.32,
+          hideBackgroundDots: true,
         }
       });
 
@@ -437,8 +464,9 @@ export function QRCodePage() {
         image: includeLogo && roundedLogoUrl ? roundedLogoUrl : undefined,
         imageOptions: {
           crossOrigin: "anonymous",
-          margin: 6,
-          imageSize: 0.35,
+          margin: 4,
+          imageSize: 0.32,
+          hideBackgroundDots: true,
         }
       });
       await exportQr.download({
@@ -479,8 +507,9 @@ export function QRCodePage() {
         image: includeLogo && roundedLogoUrl ? roundedLogoUrl : undefined,
         imageOptions: {
           crossOrigin: "anonymous",
-          margin: 6,
-          imageSize: 0.35,
+          margin: 4,
+          imageSize: 0.32,
+          hideBackgroundDots: true,
         }
       });
 

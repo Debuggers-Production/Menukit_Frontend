@@ -219,9 +219,10 @@ export function PublicOrdersPage() {
     const type = order.order_type; // 'dine_in', 'takeaway', 'delivery'
     const isPendingAccept = status === 'pending' || status === 'PENDING_VENDOR';
     const isPaymentPending = status === 'PAYMENT_PENDING';
-    const isPreparing = status === 'preparing' || status === 'cooking' || status === 'accepted' || status === 'PAID' || status === 'PREPARING';
+    const isPreparing = status === 'preparing' || status === 'cooking' || status === 'accepted' || status === 'ACCEPTED' || status === 'PAID' || status === 'PREPARING';
     const isCompleted = status === 'completed' || status === 'READY' || status === 'OUT_FOR_DELIVERY' || status === 'DELIVERED' || status === 'COMPLETED';
     const isCancelled = status === 'cancelled' || status === 'rejected' || status === 'CANCELLED' || status === 'REJECTED';
+
 
     return (
       <div className="bg-slate-50/70 dark:bg-slate-950/40 rounded-2xl p-4 border border-slate-100 dark:border-slate-800/80 mb-4 relative overflow-hidden">
@@ -499,9 +500,11 @@ export function PublicOrdersPage() {
                 {filteredOrders.map((order, idx) => {
                   const isUnpaid = order.payment_status === 'pending';
                   const isPendingAccept = order.order_status === 'pending' || order.order_status === 'PENDING_VENDOR';
-                  const isPreparing = order.order_status === 'preparing' || order.order_status === 'cooking' || order.order_status === 'accepted' || order.order_status === 'PAID' || order.order_status === 'PREPARING';
+                  const isPaymentPending = order.order_status === 'PAYMENT_PENDING';
+                  const isPreparing = order.order_status === 'preparing' || order.order_status === 'cooking' || order.order_status === 'accepted' || order.order_status === 'ACCEPTED' || order.order_status === 'PAID' || order.order_status === 'PREPARING';
                   const isCompleted = order.order_status === 'completed' || order.order_status === 'READY' || order.order_status === 'OUT_FOR_DELIVERY' || order.order_status === 'DELIVERED' || order.order_status === 'COMPLETED';
                   const isCancelled = order.order_status === 'cancelled' || order.order_status === 'rejected' || order.order_status === 'CANCELLED' || order.order_status === 'REJECTED';
+
 
                   // Dynamic card border/bg styling based on live states
                   let cardClass = "bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800/80";
@@ -575,13 +578,14 @@ export function PublicOrdersPage() {
                         </div>
                       </div>
 
-                      {/* Warning notice for pending payment - only when order is NOT cancelled AND online payments enabled */}
-                      {isUnpaid && !isCancelled && shop?.settings?.online_payments_enabled !== false && (
+                      {/* Warning notice for pending payment - only for takeaway / delivery when in PAYMENT_PENDING */}
+                      {isUnpaid && isPaymentPending && order.order_type !== 'dine_in' && !isCancelled && shop?.settings?.online_payments_enabled !== false && (
                         <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2 text-[10px] text-amber-800 dark:text-amber-300 font-bold mb-3.5 flex items-center gap-1.5">
                           <AlertCircle size={12} className="text-amber-600 dark:text-amber-400 animate-pulse" />
                           <span>Payment is pending. Pay now to confirm your order details.</span>
                         </div>
                       )}
+
 
                       {/* Live Process Animation Step Tracker */}
                       {renderLiveStatusVisual(order)}
@@ -589,7 +593,8 @@ export function PublicOrdersPage() {
                       <div className="border-t border-dashed border-slate-150 dark:border-slate-800/80 pt-3.5 flex justify-between items-center text-xs text-slate-500 mb-3.5">
                         <div className="flex items-center gap-1.5 font-mono text-[10px]">
                           <Clock size={13} className="text-slate-400" />
-                          <span>{new Date(order.created_at).toLocaleDateString()}</span>
+                          <span>{new Date(order.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
+
                         </div>
                         <span className="font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-650 dark:text-slate-300 text-[9px]">{order.order_type.replace('_', ' ')}</span>
                       </div>
@@ -643,9 +648,10 @@ export function PublicOrdersPage() {
                             className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-white text-[11px] font-black uppercase tracking-wider shadow-sm hover:brightness-110 active:scale-95 transition-all cursor-pointer group"
                             style={{ backgroundColor: primaryColor }}
                           >
-                            <span>Track</span>
+                            <span>View</span>
                             <ArrowRight size={13} className="group-hover:translate-x-1.5 transition-transform" />
                           </button>
+
                         </div>
                       </div>
                     </motion.div>

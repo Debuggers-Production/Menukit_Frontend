@@ -10,6 +10,7 @@ interface DatePickerProps {
   label?: string;
   placeholder?: string;
   className?: string;
+  direction?: 'auto' | 'up' | 'down';
 }
 
 export function DatePicker({
@@ -20,15 +21,52 @@ export function DatePicker({
   label,
   placeholder = 'Select Date',
   className,
+  direction = 'auto',
 }: DatePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [openUpwards, setOpenUpwards] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Auto-detect optimal dropdown direction (upwards if near bottom)
+  useEffect(() => {
+    if (!isOpen || !containerRef.current) return;
+    if (direction === 'up') {
+      setOpenUpwards(true);
+      return;
+    }
+    if (direction === 'down') {
+      setOpenUpwards(false);
+      return;
+    }
+
+    const checkDirection = () => {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      // Calendar popover is approx 330px high
+      if (spaceBelow < 330 && spaceAbove > spaceBelow) {
+        setOpenUpwards(true);
+      } else {
+        setOpenUpwards(false);
+      }
+    };
+
+    checkDirection();
+    window.addEventListener('resize', checkDirection);
+    window.addEventListener('scroll', checkDirection, true);
+    return () => {
+      window.removeEventListener('resize', checkDirection);
+      window.removeEventListener('scroll', checkDirection, true);
+    };
+  }, [isOpen, direction]);
 
   // Current viewing month & year state
   const initialDate = value ? new Date(value) : (minDate ? new Date(minDate) : new Date());
   const [viewDate, setViewDate] = useState<Date>(
     isNaN(initialDate.getTime()) ? new Date() : initialDate
   );
+
 
   // Update viewDate when value or minDate changes if current view is uninitialized
   useEffect(() => {
@@ -146,7 +184,14 @@ export function DatePicker({
 
       {/* Calendar Dropdown Popover */}
       {isOpen && (
-        <div className="fixed sm:absolute inset-x-4 sm:inset-x-auto sm:left-0 top-1/2 sm:top-full sm:mt-1.5 -translate-y-1/2 sm:translate-y-0 w-auto sm:w-64 max-w-sm mx-auto sm:mx-0 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-3.5 z-[100] animate-in fade-in zoom-in-95 duration-150">
+        <div 
+          data-lenis-prevent
+          className={cn(
+            "fixed sm:absolute inset-x-4 sm:inset-x-auto sm:left-0 top-1/2 sm:top-auto -translate-y-1/2 sm:translate-y-0 w-auto sm:w-64 max-w-sm mx-auto sm:mx-0 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-3.5 z-[100] animate-in fade-in zoom-in-95 duration-150",
+            openUpwards ? "sm:bottom-full sm:mb-2" : "sm:top-full sm:mt-1.5"
+          )}
+        >
+
           {/* Calendar Header: Month + Year + Nav */}
           <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-100 dark:border-slate-800">
             <span className="text-xs font-black text-slate-800 dark:text-white font-heading">

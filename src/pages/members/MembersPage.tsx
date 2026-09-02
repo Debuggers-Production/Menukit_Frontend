@@ -331,7 +331,11 @@ export function MembersPage() {
                 }`}
               >
                 Existing
+                <span className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300 px-1.5 py-0.5 rounded-full text-[10px] font-black">
+                  {analytics?.manually_added ?? 0}
+                </span>
               </button>
+
 
               <button
                 onClick={() => setActiveTab('new')}

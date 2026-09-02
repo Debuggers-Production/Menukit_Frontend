@@ -354,7 +354,7 @@ export function PublicMenuPage() {
   });
 
   useEffect(() => {
-    if (!id || memberStatus === 'verified-member' || sessionStorage.getItem(`discount_popup_seen_${id}`) || activeDiscounts.length === 0) return;
+    if (!id || memberStatus === 'verified-member' || sessionStorage.getItem(`discount_popup_seen_${id}`)) return;
 
     const timer = setTimeout(() => {
       setIsDiscountPopupOpen(true);
@@ -362,7 +362,8 @@ export function PublicMenuPage() {
     }, 10000);
 
     return () => clearTimeout(timer);
-  }, [id, memberStatus, activeDiscounts.length]);
+  }, [id, memberStatus]);
+
 
   useEffect(() => {
     const ref = searchParams.get('ref');

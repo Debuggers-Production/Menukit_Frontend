@@ -1,9 +1,16 @@
+import { useEffect } from 'react';
 import { Check, Trash2, Clock, Bell, ShoppingBag, CreditCard, Star, UserPlus, CheckCircle2, Trophy } from 'lucide-react';
 import { useNotificationStore } from '@/store/notificationStore';
-import { PageHeader } from '@/components/ui/PageHeader';
+import { useHeaderStore } from '@/store/useHeaderStore';
+import { HeaderActions } from '@/components/HeaderActions';
 
 export function NotificationsPage() {
   const { notifications, markAsRead, clearAll } = useNotificationStore();
+  const { setTitle } = useHeaderStore();
+
+  useEffect(() => {
+    setTitle('Notifications', "Stay updated with your shop's latest activities.");
+  }, [setTitle]);
 
   const formatTime = (isoString: string) => {
     const date = new Date(isoString);
@@ -86,32 +93,29 @@ export function NotificationsPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-3xl mx-auto animate-fade-in pb-24 lg:pb-12">
-      <div className="flex items-center justify-between">
-        <PageHeader
-          title="Notifications"
-          subtitle="Stay updated with your shop's latest activities."
-        />
-        
-        <div className="hidden sm:flex items-center gap-2">
-          {notifications.length > 0 && (
-            <>
-              <button 
-                onClick={handleMarkAllRead}
-                className="text-sm text-primary hover:underline flex items-center gap-1 font-medium bg-primary/10 px-3 py-1.5 rounded-lg transition-colors"
-              >
-                <Check size={16} /> Mark all read
-              </button>
-              <button 
-                onClick={clearAll}
-                className="text-sm text-slate-500 hover:text-red-500 hover:bg-red-50 flex items-center gap-1 bg-slate-100 px-3 py-1.5 rounded-lg transition-colors"
-              >
-                <Trash2 size={16} /> Clear All
-              </button>
-            </>
-          )}
-        </div>
-      </div>
+    <div className="space-y-4 max-w-4xl mx-auto animate-fade-in pb-24 lg:pb-12">
+      {/* Top Bar Header Actions */}
+      <HeaderActions>
+        {notifications.length > 0 && (
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={handleMarkAllRead}
+              className="text-xs text-amber-700 dark:text-amber-300 hover:bg-amber-100/80 dark:hover:bg-amber-950/60 flex items-center gap-1.5 font-bold bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-800/80 px-3 py-1.5 rounded-xl transition-all cursor-pointer shadow-2xs active:scale-[0.98]"
+            >
+              <Check size={14} className="text-amber-600 dark:text-amber-400" />
+              <span>Mark all read</span>
+            </button>
+            <button 
+              onClick={clearAll}
+              className="text-xs text-slate-600 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:border-rose-200 dark:hover:border-rose-800 flex items-center gap-1.5 font-bold bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-xl transition-all cursor-pointer shadow-2xs active:scale-[0.98]"
+            >
+              <Trash2 size={14} />
+              <span>Clear All</span>
+            </button>
+          </div>
+        )}
+      </HeaderActions>
+
 
       <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
         {notifications.length === 0 ? (

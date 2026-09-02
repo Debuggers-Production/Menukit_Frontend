@@ -40,7 +40,9 @@ const QRCodePage = lazy(() => import('@/pages/qr/QRCodePage').then(m => ({ defau
 const AnalyticsPage = lazy(() => import('@/pages/analytics/AnalyticsPage').then(m => ({ default: m.AnalyticsPage })));
 const DiscountsPage = lazy(() => import('@/pages/discounts/DiscountsPage').then(m => ({ default: m.DiscountsPage })));
 const ContestsPage = lazy(() => import('@/pages/contests/ContestsPage').then(m => ({ default: m.ContestsPage })));
+const CampaignsPage = lazy(() => import('@/pages/marketing/CampaignsPage').then(m => ({ default: m.CampaignsPage })));
 const InternalBulkPage = lazy(() => import('@/pages/admin/InternalBulkPage').then(m => ({ default: m.InternalBulkPage })));
+
 const MembersPage = lazy(() => import('@/pages/members/MembersPage').then(m => ({ default: m.MembersPage })));
 const SettingsPage = lazy(() => import('@/pages/settings/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const TeamPage = lazy(() => import('@/pages/settings/TeamPage').then(m => ({ default: m.TeamPage })));
@@ -126,7 +128,9 @@ function App() {
           <Route path="/orders" element={<PermissionGuard module="orders"><OrdersPage /></PermissionGuard>} />
           <Route path="/discounts" element={<PermissionGuard module="discounts"><DiscountsPage /></PermissionGuard>} />
           <Route path="/contests" element={<PermissionGuard module="contests"><ContestsPage /></PermissionGuard>} />
+          <Route path="/campaigns" element={<PermissionGuard module="marketing"><CampaignsPage /></PermissionGuard>} />
           <Route path="/members" element={<PermissionGuard module="customers"><MembersPage /></PermissionGuard>} />
+
           <Route path="/settings" element={<PermissionGuard module="settings"><SettingsPage /></PermissionGuard>} />
           <Route path="/settings/team" element={<PermissionGuard module="team"><TeamPage /></PermissionGuard>} />
           <Route path="/settlements" element={<PermissionGuard module="settlements"><SettlementsPage /></PermissionGuard>} />

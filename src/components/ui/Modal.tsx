@@ -33,12 +33,6 @@ export function Modal({ isOpen, onClose, title, description, children, footer, c
     };
   }, [isOpen]);
 
-  const handleDragEnd = (_event: any, info: any) => {
-    if (info.offset.y > 100 || info.velocity.y > 300) {
-      onClose();
-    }
-  };
-
   const modalContent = (
     <AnimatePresence>
       {isOpen && (
@@ -53,27 +47,16 @@ export function Modal({ isOpen, onClose, title, description, children, footer, c
             className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs"
           />
           <motion.div
-            initial={{ opacity: 0, y: 100 }}
+            initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 100 }}
+            exit={{ opacity: 0, y: 30 }}
             transition={{ type: "spring", damping: 25, stiffness: 220 }}
-            drag="y"
-            dragConstraints={{ top: 0 }}
-            dragElastic={{ top: 0.1, bottom: 0.8 }}
-            onDragEnd={handleDragEnd}
             className={cn(
               "bg-background relative w-full max-w-lg rounded-t-3xl sm:rounded-2xl shadow-2xl z-10 max-h-[90vh] sm:max-h-[85vh] overflow-hidden flex flex-col border border-border",
               className
             )}
           >
-            {/* Mobile Drag Handle Bar */}
-            <div 
-              className="w-full flex items-center justify-center pt-2 pb-1 sm:hidden cursor-grab active:cursor-grabbing shrink-0" 
-              onClick={onClose}
-              title="Drag down to close"
-            >
-              <div className="w-12 h-1.5 bg-muted rounded-full" />
-            </div>
+
 
             {/* Fixed Header */}
             {(title || description) && (

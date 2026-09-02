@@ -171,8 +171,15 @@ export function DashboardLayout() {
         border: 'border-amber-200/80 dark:border-amber-800/50',
         text: 'text-amber-950 dark:text-amber-200 font-semibold'
       },
+      '/campaigns': {
+        icon: 'text-purple-500 dark:text-purple-400',
+        bg: 'bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/40 dark:hover:bg-purple-900/50',
+        border: 'border-purple-200/80 dark:border-purple-800/50',
+        text: 'text-purple-950 dark:text-purple-200 font-semibold'
+      },
       '/discounts': {
         icon: 'text-rose-500 dark:text-rose-400',
+
         bg: 'bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/50',
         border: 'border-rose-200/80 dark:border-rose-800/50',
         text: 'text-rose-950 dark:text-rose-200 font-semibold'
@@ -260,12 +267,14 @@ export function DashboardLayout() {
     {
       section: 'Marketing & Growth',
       items: [
+        { name: 'Campaigns', path: '/campaigns', icon: Megaphone, iconColor: 'text-purple-500', permissionModule: 'marketing' },
         { name: 'Members', path: '/members', icon: Users, iconColor: 'text-teal-500', permissionModule: 'customers' },
         { name: 'Discounts', path: '/discounts', icon: Tag, iconColor: 'text-rose-500', permissionModule: 'discounts' },
         { name: 'Contests', path: '/contests', icon: Trophy, iconColor: 'text-yellow-500', permissionModule: 'contests' },
         { name: 'QR Code', path: '/qr-code', icon: QrCode, iconColor: 'text-indigo-500' },
       ]
     },
+
     {
       section: 'Management & System',
       items: [

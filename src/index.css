@@ -270,26 +270,38 @@ input[type='number'] {
   display: none !important;
 }
 
-/* Restore horizontal scrollbars on desktop/laptop for scrollable tabs */
-@media (pointer: fine) {
-  .scrollbar-hide::-webkit-scrollbar,
-  .no-scrollbar::-webkit-scrollbar {
-    display: block !important;
-    height: 4px !important;
-  }
-  
-  .scrollbar-hide::-webkit-scrollbar-track,
-  .no-scrollbar::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  
-  .scrollbar-hide::-webkit-scrollbar-thumb,
-  .no-scrollbar::-webkit-scrollbar-thumb {
-    background-color: #cbd5e1; /* slate-300 */
-    border-radius: 9999px;
-  }
-  .dark .scrollbar-hide::-webkit-scrollbar-thumb,
-  .dark .no-scrollbar::-webkit-scrollbar-thumb {
-    background-color: #475569; /* slate-600 */
-  }
+/* Sleek horizontal scrollbar utility for tabs and filter chips */
+.custom-scrollbar-x {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(203, 213, 225, 0.8) transparent;
 }
+.custom-scrollbar-x::-webkit-scrollbar {
+  height: 5px;
+}
+.custom-scrollbar-x::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 9999px;
+}
+.custom-scrollbar-x::-webkit-scrollbar-thumb {
+  background-color: rgba(148, 163, 184, 0.6);
+  border-radius: 9999px;
+}
+.custom-scrollbar-x::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(100, 116, 139, 0.9);
+}
+.dark .custom-scrollbar-x {
+  scrollbar-color: rgba(71, 85, 105, 0.8) transparent;
+}
+.dark .custom-scrollbar-x::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+}
+.dark .custom-scrollbar-x::-webkit-scrollbar-thumb {
+  background-color: rgba(71, 85, 105, 0.7);
+}
+.dark .custom-scrollbar-x::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(100, 116, 139, 0.9);
+}
+

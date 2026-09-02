@@ -488,7 +488,7 @@ export function SettlementsPage() {
                     <th className="py-3 px-4">Customer</th>
                     <th className="py-3 px-4">Method</th>
                     <th className="py-3 px-4 text-right">Gross Amount</th>
-                    <th className="py-3 px-4 text-right">Gateway Fee (1%)</th>
+                    <th className="py-3 px-4 text-right">Gateway Fee</th>
                     <th className="py-3 px-4 text-right">Net Settlement</th>
                     <th className="py-3 px-4">Settlement Status</th>
                     <th className="py-3 px-4 text-center">Payout Date</th>
@@ -519,11 +519,12 @@ export function SettlementsPage() {
                         {currency}{item.gross_amount.toFixed(2)}
                       </td>
                       <td className="py-3 px-4 text-right font-mono text-slate-400">
-                        -{currency}{item.platform_fee.toFixed(2)}
+                        {item.platform_fee > 0 ? `-${currency}${item.platform_fee.toFixed(2)}` : `${currency}0.00`}
                       </td>
                       <td className="py-3 px-4 text-right font-mono font-extrabold text-emerald-600 dark:text-emerald-400">
                         {currency}{item.net_settlement_amount.toFixed(2)}
                       </td>
+
                       <td className="py-3 px-4">
                         {item.settlement_status === 'settled' ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">

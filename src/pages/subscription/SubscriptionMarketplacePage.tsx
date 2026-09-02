@@ -10,6 +10,7 @@ import toast from 'react-hot-toast';
 import confetti from 'canvas-confetti';
 import { api } from '@/services/api';
 import menukitLogo from '@/assets/menukit-logo.svg';
+import { CountryFlag } from '@/components/CountryFlag';
 
 const CATEGORY_TAG_STYLES: Record<string, string> = {
   'Online Ordering': 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800',
@@ -41,11 +42,32 @@ interface Feature {
   id: string;
   name: string;
   price: number;
+  monthly_price?: number;
+  yearly_price?: number;
+  currency?: string;
+  currency_symbol?: string;
   description: string;
   category: string;
 }
 
-const ADDONS: Feature[] = [
+interface CountryConfig {
+  code: string;
+  name: string;
+  currency: string;
+  symbol: string;
+  flag: string;
+}
+
+const DEFAULT_SUPPORTED_COUNTRIES: CountryConfig[] = [
+  { code: 'IN', name: 'India', currency: 'INR', symbol: '₹', flag: '🇮🇳' },
+  { code: 'US', name: 'United States', currency: 'USD', symbol: '$', flag: '🇺🇸' },
+  { code: 'GB', name: 'United Kingdom', currency: 'GBP', symbol: '£', flag: '🇬🇧' },
+  { code: 'AU', name: 'Australia', currency: 'AUD', symbol: 'A$', flag: '🇦🇺' },
+  { code: 'CA', name: 'Canada', currency: 'CAD', symbol: 'C$', flag: '🇨🇦' },
+  { code: 'OTHER', name: 'International / Other', currency: 'USD', symbol: '$', flag: '🌎' },
+];
+
+const INITIAL_ADDONS: Feature[] = [
   {
     id: 'online-orders',
     name: 'Online Visibility & Orders Accept',
@@ -90,11 +112,40 @@ const ADDONS: Feature[] = [
   },
 ];
 
-const ALL_ACCESS_PRICE = 399;
-
 export function SubscriptionMarketplacePage() {
+  const [selectedCountry, setSelectedCountryState] = useState<string>(() => {
+    try {
+      return localStorage.getItem('menukit_selected_country') || '';
+    } catch {
+      return '';
+    }
+  });
+
+  const [countryConfig, setCountryConfig] = useState<CountryConfig>(DEFAULT_SUPPORTED_COUNTRIES[0]);
+  const [supportedCountries, setSupportedCountries] = useState<CountryConfig[]>(DEFAULT_SUPPORTED_COUNTRIES);
+  const [isCountryDropdownOpen, setIsCountryDropdownOpen] = useState(false);
+
+  const [dynamicModules, setDynamicModules] = useState<Feature[]>(INITIAL_ADDONS);
+  const [allAccessPlan, setAllAccessPlan] = useState<{
+    name: string;
+    price: number;
+    monthly_price: number;
+    yearly_price: number;
+    currency: string;
+    currency_symbol: string;
+    description: string;
+  }>({
+    name: 'All-Access Pack',
+    price: 399,
+    monthly_price: 399,
+    yearly_price: 3990,
+    currency: 'INR',
+    currency_symbol: '₹',
+    description: 'Unlock everything — all current and future modules included without restrictions.',
+  });
+
   const [selectedFeatures, setSelectedFeatures] = useState<Set<string>>(new Set());
-  const [isAllAccess, setIsAllAccess] = useState(false);
+  const [isAllAccess, setIsAllAccess] = useState(true);
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeSubscription, setActiveSubscription] = useState<any>(null);
@@ -106,9 +157,47 @@ export function SubscriptionMarketplacePage() {
     order_id: string;
     amount: number;
     currency: string;
+    currency_symbol?: string;
   } | null>(null);
 
   const setHeaderTitle = useHeaderStore((state) => state.setTitle);
+
+  const setSelectedCountry = (code: string) => {
+    setSelectedCountryState(code);
+    try {
+      localStorage.setItem('menukit_selected_country', code);
+    } catch {}
+  };
+
+  const fetchPricingCatalog = useCallback(async () => {
+    try {
+      const url = selectedCountry 
+        ? `/subscription/pricing?country=${selectedCountry}&billing_cycle=${billingCycle}`
+        : `/subscription/pricing?billing_cycle=${billingCycle}`;
+      const res = await api.get(url);
+      const data = res.data;
+      if (data.country) {
+        setCountryConfig({
+          code: data.country.code,
+          name: data.country.name,
+          currency: data.country.currency,
+          symbol: data.country.currency_symbol || data.country.symbol || '₹',
+          flag: data.country.flag || '🇮🇳',
+        });
+      }
+      if (data.supported_countries && Array.isArray(data.supported_countries)) {
+        setSupportedCountries(data.supported_countries);
+      }
+      if (data.all_access) {
+        setAllAccessPlan(data.all_access);
+      }
+      if (data.modules && Array.isArray(data.modules)) {
+        setDynamicModules(data.modules);
+      }
+    } catch (err) {
+      console.warn('Failed to load dynamic pricing catalog:', err);
+    }
+  }, [selectedCountry, billingCycle]);
 
   const fetchCurrentSubscription = useCallback(async () => {
     try {
@@ -124,6 +213,10 @@ export function SubscriptionMarketplacePage() {
     fetchCurrentSubscription();
   }, [setHeaderTitle, fetchCurrentSubscription]);
 
+  useEffect(() => {
+    fetchPricingCatalog();
+  }, [fetchPricingCatalog]);
+
   const fetchBillingHistory = async () => {
     try {
       const res = await api.get('/subscription/history');
@@ -136,9 +229,9 @@ export function SubscriptionMarketplacePage() {
 
   const subscribedAddons = useMemo(() => {
     if (!activeSubscription) return [];
-    if (activeSubscription.is_all_access) return ADDONS;
+    if (activeSubscription.is_all_access) return dynamicModules;
     if (Array.isArray(activeSubscription.active_modules)) {
-      return ADDONS.filter(addon => 
+      return dynamicModules.filter(addon => 
         activeSubscription.active_modules.includes(addon.id) ||
         (addon.id === 'analytics-advanced' && (
           activeSubscription.active_modules.includes('analytics-advanced-filters') ||
@@ -147,7 +240,7 @@ export function SubscriptionMarketplacePage() {
       );
     }
     return [];
-  }, [activeSubscription]);
+  }, [activeSubscription, dynamicModules]);
 
   const toggleFeature = (id: string) => {
     if (isAllAccess) setIsAllAccess(false);
@@ -193,17 +286,15 @@ export function SubscriptionMarketplacePage() {
   const { baseTotal, pgFee, gstFee, grandTotal, activeItems } = useMemo(() => {
     let base = 0;
     const items: Feature[] = [];
-
     const isYearly = billingCycle === 'yearly';
-    const multiplier = isYearly ? 10 : 1;
 
     if (isAllAccess) {
-      base = ALL_ACCESS_PRICE * multiplier;
+      base = isYearly ? (allAccessPlan.yearly_price || allAccessPlan.price * 10) : (allAccessPlan.monthly_price || allAccessPlan.price);
     } else {
       selectedFeatures.forEach((id) => {
-        const feature = ADDONS.find(a => a.id === id);
+        const feature = dynamicModules.find(a => a.id === id);
         if (feature) {
-          const itemPrice = feature.price * multiplier;
+          const itemPrice = isYearly ? (feature.yearly_price ?? feature.price * 10) : (feature.monthly_price ?? feature.price);
           base += itemPrice;
           items.push({ ...feature, price: itemPrice });
         }
@@ -221,7 +312,7 @@ export function SubscriptionMarketplacePage() {
       grandTotal: total,
       activeItems: items
     };
-  }, [selectedFeatures, isAllAccess, billingCycle]);
+  }, [selectedFeatures, isAllAccess, billingCycle, allAccessPlan, dynamicModules]);
 
   const handleMockPaymentSuccess = async () => {
     if (!mockGatewayOrder) return;
@@ -262,6 +353,7 @@ export function SubscriptionMarketplacePage() {
         is_all_access: isAllAccess,
         selected_modules: Array.from(selectedFeatures),
         billing_cycle: billingCycle,
+        country_code: selectedCountry || undefined,
       });
       
       const orderData = res.data;
@@ -270,7 +362,8 @@ export function SubscriptionMarketplacePage() {
         setMockGatewayOrder({
           order_id: orderData.order_id,
           amount: orderData.amount,
-          currency: orderData.currency || 'INR',
+          currency: orderData.currency || countryConfig.currency,
+          currency_symbol: orderData.currency_symbol || countryConfig.symbol,
         });
         setIsSubmitting(false);
         return;
@@ -326,12 +419,12 @@ export function SubscriptionMarketplacePage() {
 
   const categories = useMemo(() => {
     const map: Record<string, Feature[]> = {};
-    ADDONS.forEach(addon => {
+    dynamicModules.forEach(addon => {
       if (!map[addon.category]) map[addon.category] = [];
       map[addon.category].push(addon);
     });
     return map;
-  }, []);
+  }, [dynamicModules]);
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-24 animate-fade-in relative px-3 sm:px-6">
@@ -405,7 +498,7 @@ export function SubscriptionMarketplacePage() {
                 </button>
               </div>
               <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
-                {activeSubscription.is_all_access ? '✨ All 6 Modules Unlocked' : `${activeSubscription.active_modules?.length || 0} Modules Active`}
+                {activeSubscription.is_all_access ? '✨ All Modules Unlocked' : `${activeSubscription.active_modules?.length || 0} Modules Active`}
               </span>
             </div>
           </div>
@@ -464,18 +557,65 @@ export function SubscriptionMarketplacePage() {
         {/* LEFT COLUMN: MODULES MARKETPLACE (2/3 Width) */}
         <div className="lg:col-span-2 space-y-6">
           
-          {/* Section Header */}
-          <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-orange-50 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-900/40 text-primary text-[11px] font-bold uppercase tracking-wider mb-2 shadow-xs">
-              <img src={menukitLogo} alt="Menukit" className="w-4 h-4 object-contain" />
-              <span>MODULAR MARKETPLACE</span>
+          {/* Section Header with Country Switcher */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-orange-50 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-900/40 text-primary text-[11px] font-bold uppercase tracking-wider mb-2 shadow-xs">
+                <img src={menukitLogo} alt="Menukit" className="w-4 h-4 object-contain" />
+                <span>MODULAR MARKETPLACE</span>
+              </div>
+              <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
+                Select Your <span className="bg-gradient-to-r from-primary via-orange-500 to-orange-600 bg-clip-text text-transparent">Add-On Modules</span>
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
+                Pick individual modules for your business needs or unlock the full suite with the All-Access Pack.
+              </p>
             </div>
-            <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-              Select Your <span className="bg-gradient-to-r from-primary via-orange-500 to-orange-600 bg-clip-text text-transparent">Add-On Modules</span>
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-              Pick individual modules for your business needs or unlock the full suite with the All-Access Pack.
-            </p>
+
+            {/* Country Selector Dropdown Pill */}
+            <div className="relative self-start sm:self-center shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsCountryDropdownOpen(!isCountryDropdownOpen)}
+                className="bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 px-3.5 py-2 rounded-2xl inline-flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-200 transition-all shadow-xs cursor-pointer"
+                title="Change Country & Currency"
+              >
+                <CountryFlag code={countryConfig.code} size={18} />
+                <span>{countryConfig.name}</span>
+                <span className="text-slate-400 font-mono text-[11px]">({countryConfig.currency} {countryConfig.symbol})</span>
+                <ChevronDown size={14} className={cn("text-slate-400 transition-transform duration-200", isCountryDropdownOpen ? "rotate-180" : "")} />
+              </button>
+
+              {isCountryDropdownOpen && (
+                <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl py-1.5 z-50 overflow-hidden animate-fade-in">
+                  <div className="px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800">
+                    Select Your Country
+                  </div>
+                  {supportedCountries.map((c) => (
+                    <button
+                      key={c.code}
+                      type="button"
+                      onClick={() => {
+                        setSelectedCountry(c.code);
+                        setIsCountryDropdownOpen(false);
+                      }}
+                      className={cn(
+                        "w-full px-3 py-2 text-left flex items-center justify-between text-xs font-semibold transition-colors cursor-pointer",
+                        countryConfig.code === c.code
+                          ? "bg-primary/10 text-primary dark:text-orange-400 font-bold"
+                          : "text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+                      )}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <CountryFlag code={c.code} size={16} />
+                        <span>{c.name}</span>
+                      </div>
+                      <span className="text-[11px] text-slate-400 font-mono">{c.currency} {c.symbol}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* 2-COLUMN SPLIT HIGHLIGHT CARDS (Left: Included Free Bundle, Right: All-Access Pack) */}
@@ -513,7 +653,7 @@ export function SubscriptionMarketplacePage() {
               <div className="pt-4 border-t border-teal-200/60 dark:border-teal-800/60 flex items-baseline justify-between">
                 <div>
                   <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">Plan Price</span>
-                  <span className="text-3xl font-black text-teal-600 dark:text-teal-400 font-heading">₹0</span>
+                  <span className="text-3xl font-black text-teal-600 dark:text-teal-400 font-heading">{countryConfig.symbol}0</span>
                 </div>
                 <span className="text-xs text-slate-400 font-bold">/ forever free</span>
               </div>
@@ -557,15 +697,15 @@ export function SubscriptionMarketplacePage() {
                 </div>
 
                 <div>
-                  <h3 className="font-black text-lg text-white tracking-tight">All-Access Pack</h3>
+                  <h3 className="font-black text-lg text-white tracking-tight">{allAccessPlan.name || 'All-Access Pack'}</h3>
                   <p className="text-xs text-orange-50/90 leading-relaxed mt-1">
-                    Unlock <strong>ALL 6 Add-On Modules</strong> (Online Orders, Member Details, Search Data, Custom Themes, & Advanced Analytics) for one simple price.
+                    {allAccessPlan.description || 'Unlock all current and future add-on modules for one flat subscription.'}
                   </p>
                 </div>
 
                 <div className="space-y-1.5 pt-1 text-xs font-extrabold text-orange-100">
                   <span className="flex items-center gap-1.5"><CheckCircle2 size={14} className="text-amber-300 shrink-0" /> Save Big vs Individual Modules</span>
-                  <span className="flex items-center gap-1.5"><CheckCircle2 size={14} className="text-amber-300 shrink-0" /> Includes All 6 Current Add-ons</span>
+                  <span className="flex items-center gap-1.5"><CheckCircle2 size={14} className="text-amber-300 shrink-0" /> Includes All Marketplace Add-ons</span>
                 </div>
               </div>
 
@@ -573,7 +713,7 @@ export function SubscriptionMarketplacePage() {
                 <div>
                   <span className="text-[10px] font-bold text-orange-200 block uppercase tracking-wider">All-Access Price</span>
                   <div className="text-3xl font-black text-white font-heading">
-                    ₹{billingCycle === 'yearly' ? ALL_ACCESS_PRICE * 10 : ALL_ACCESS_PRICE}
+                    {countryConfig.symbol}{billingCycle === 'yearly' ? (allAccessPlan.yearly_price ?? allAccessPlan.price * 10) : (allAccessPlan.monthly_price ?? allAccessPlan.price)}
                     <span className="text-xs font-semibold opacity-90">/{billingCycle === 'yearly' ? 'yr' : 'mo'}</span>
                   </div>
                 </div>
@@ -618,7 +758,7 @@ export function SubscriptionMarketplacePage() {
                           ))
                         )
                       );
-                      const featurePrice = billingCycle === 'yearly' ? feature.price * 10 : feature.price;
+                      const featurePrice = billingCycle === 'yearly' ? (feature.yearly_price ?? feature.price * 10) : (feature.monthly_price ?? feature.price);
 
                       return (
                         <div
@@ -665,7 +805,7 @@ export function SubscriptionMarketplacePage() {
                           <div className="text-left sm:text-right">
                             <div className="flex items-baseline gap-1">
                               <span className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white font-heading">
-                                ₹{featurePrice}
+                                {countryConfig.symbol}{featurePrice}
                               </span>
                               <span className="text-xs text-slate-400 font-medium">
                                 /{billingCycle === 'yearly' ? 'yr' : 'mo'}
@@ -764,12 +904,12 @@ export function SubscriptionMarketplacePage() {
                   <div className="flex items-center gap-2">
                     <img src={menukitLogo} alt="Menukit" className="w-4 h-4 object-contain shrink-0" />
                     <div>
-                      <h4 className="font-extrabold text-xs text-slate-900 dark:text-white">All-Access Pack</h4>
-                      <p className="text-[10px] text-slate-500">All 6 Modules Unlocked</p>
+                      <h4 className="font-extrabold text-xs text-slate-900 dark:text-white">{allAccessPlan.name || 'All-Access Pack'}</h4>
+                      <p className="text-[10px] text-slate-500">All Modules Unlocked</p>
                     </div>
                   </div>
                   <span className="font-black text-xs text-slate-900 dark:text-white">
-                    ₹{ALL_ACCESS_PRICE * (billingCycle === 'yearly' ? 10 : 1)}
+                    {countryConfig.symbol}{billingCycle === 'yearly' ? (allAccessPlan.yearly_price ?? allAccessPlan.price * 10) : (allAccessPlan.monthly_price ?? allAccessPlan.price)}
                   </span>
                 </div>
               ) : activeItems.length > 0 ? (
@@ -780,7 +920,7 @@ export function SubscriptionMarketplacePage() {
                         {item.name}
                       </span>
                       <span className="font-extrabold text-slate-900 dark:text-white shrink-0">
-                        ₹{item.price}
+                        {countryConfig.symbol}{item.price}
                       </span>
                     </div>
                   ))}
@@ -798,15 +938,15 @@ export function SubscriptionMarketplacePage() {
             <div className="space-y-2 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs">
               <div className="flex justify-between text-slate-600 dark:text-slate-400">
                 <span>Base Subtotal</span>
-                <span className="font-bold text-slate-800 dark:text-slate-200">₹{baseTotal.toFixed(2)}</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200">{countryConfig.symbol}{baseTotal.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-slate-600 dark:text-slate-400">
                 <span>Gateway Fee (3%)</span>
-                <span className="font-bold text-slate-800 dark:text-slate-200">₹{pgFee.toFixed(2)}</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200">{countryConfig.symbol}{pgFee.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-slate-600 dark:text-slate-400">
                 <span>GST / Taxes (18% PG)</span>
-                <span className="font-bold text-slate-800 dark:text-slate-200">₹{gstFee.toFixed(2)}</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200">{countryConfig.symbol}{gstFee.toFixed(2)}</span>
               </div>
 
               {billingCycle === 'yearly' && (
@@ -823,7 +963,7 @@ export function SubscriptionMarketplacePage() {
                 </div>
                 <div className="text-right">
                   <span className="text-2xl font-black bg-gradient-to-r from-primary via-orange-500 to-amber-500 bg-clip-text text-transparent font-heading">
-                    ₹{grandTotal.toFixed(2)}
+                    {countryConfig.symbol}{grandTotal.toFixed(2)}
                   </span>
                   <span className="text-xs text-slate-400 font-bold block">/{billingCycle === 'yearly' ? 'yr' : 'mo'}</span>
                 </div>
@@ -889,30 +1029,33 @@ export function SubscriptionMarketplacePage() {
                   <p className="font-bold text-sm">No billing invoices found yet.</p>
                 </div>
               ) : (
-                historyList.map((item) => (
-                  <div key={item.id} className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-4">
-                    <div>
-                      <span className="text-[10px] font-bold text-slate-400 block uppercase">
-                        Invoice #{item.invoice_number}
-                      </span>
-                      <h4 className="font-black text-sm text-slate-900 dark:text-white">
-                        ₹{item.amount}
-                      </h4>
-                      <p className="text-xs text-slate-500">
-                        {new Date(item.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} • {item.status}
-                      </p>
-                    </div>
+                historyList.map((item) => {
+                  const currSym = item.currency === 'USD' ? '$' : item.currency === 'GBP' ? '£' : item.currency === 'AUD' ? 'A$' : item.currency === 'CAD' ? 'C$' : item.currency === 'EUR' ? '€' : '₹';
+                  return (
+                    <div key={item.id} className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-4">
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-400 block uppercase">
+                          Invoice #{item.invoice_number}
+                        </span>
+                        <h4 className="font-black text-sm text-slate-900 dark:text-white">
+                          {currSym}{item.amount} <span className="text-[10px] font-semibold text-slate-400 font-mono">({item.currency || 'INR'})</span>
+                        </h4>
+                        <p className="text-xs text-slate-500">
+                          {new Date(item.created_at || item.paid_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} • {item.status || 'Paid'}
+                        </p>
+                      </div>
 
-                    <a
-                      href={`/api/v1/subscription/invoice/${item.id}/print`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-bold text-primary flex items-center gap-1.5 hover:bg-primary/10 transition-colors shadow-xs"
-                    >
-                      <Printer size={14} /> Print Invoice
-                    </a>
-                  </div>
-                ))
+                      <a
+                        href={`/api/v1/subscription/invoice/${item.id}/print`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-bold text-primary flex items-center gap-1.5 hover:bg-primary/10 transition-colors shadow-xs"
+                      >
+                        <Printer size={14} /> Print Invoice
+                      </a>
+                    </div>
+                  );
+                })
               )}
             </div>
 
@@ -946,7 +1089,7 @@ export function SubscriptionMarketplacePage() {
             <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-1">
               <span className="text-xs text-slate-400 font-bold uppercase">Total Payable Amount</span>
               <div className="text-3xl font-black text-slate-900 dark:text-white font-heading">
-                ₹{(mockGatewayOrder.amount / 100).toFixed(2)}
+                {mockGatewayOrder.currency_symbol || (mockGatewayOrder.currency === 'USD' ? '$' : mockGatewayOrder.currency === 'GBP' ? '£' : mockGatewayOrder.currency === 'AUD' ? 'A$' : mockGatewayOrder.currency === 'CAD' ? 'C$' : mockGatewayOrder.currency === 'EUR' ? '€' : '₹')}{(mockGatewayOrder.amount / 100).toFixed(2)}
               </div>
             </div>
 

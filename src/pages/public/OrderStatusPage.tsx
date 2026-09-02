@@ -161,7 +161,8 @@ export function OrderStatusPage() {
       doc.setTextColor(30, 41, 59);
       doc.text(`Bill ID: #${order.id.slice(0, 8).toUpperCase()}`, 12, 30);
       doc.text(`Channel: ${order.order_type.replace('_', ' ').toUpperCase()}`, 80, 30);
-      doc.text(`Date   : ${new Date(order.created_at).toLocaleDateString()}`, 12, 35);
+      doc.text(`Date   : ${new Date(order.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}`, 12, 35);
+
       doc.text(`Status : ${order.order_status.toUpperCase()}`, 80, 35);
 
       // Customer Contact
@@ -364,9 +365,10 @@ export function OrderStatusPage() {
   }
 
   const getStatusDisplay = () => {
-    switch (order.order_status) {
+    const norm = (order.order_status || '').toUpperCase();
+    switch (norm) {
       case 'PENDING_VENDOR':
-      case 'pending':
+      case 'PENDING':
         return {
           title: 'Order Placed',
           desc: 'Waiting for restaurant approval.',
@@ -384,7 +386,8 @@ export function OrderStatusPage() {
         };
       case 'PAID':
       case 'PREPARING':
-      case 'accepted':
+      case 'ACCEPTED':
+      case 'COOKING':
         return {
           title: 'Preparing Food',
           desc: 'Chef is preparing your order.',
@@ -403,7 +406,6 @@ export function OrderStatusPage() {
         };
       case 'COMPLETED':
       case 'DELIVERED':
-      case 'completed':
         return {
           title: 'Order Completed',
           desc: 'Your food is ready / delivered! Enjoy!',
@@ -412,7 +414,6 @@ export function OrderStatusPage() {
           borderColor: 'border-emerald-100 dark:border-emerald-900/30'
         };
       case 'REJECTED':
-      case 'rejected':
         return {
           title: 'Order Rejected',
           desc: 'The restaurant was unable to accept this order.',
@@ -420,6 +421,7 @@ export function OrderStatusPage() {
           bgColor: 'bg-rose-50 dark:bg-rose-950/20',
           borderColor: 'border-rose-100 dark:border-rose-900/30'
         };
+      case 'CANCELLED':
       default:
         return {
           title: 'Cancelled',
@@ -430,6 +432,7 @@ export function OrderStatusPage() {
         };
     }
   };
+
 
   const statusInfo = getStatusDisplay();
 
@@ -586,8 +589,9 @@ export function OrderStatusPage() {
             </div>
             <div>
               <span className="text-[9px] text-slate-450 block uppercase tracking-wider">Date & Time</span>
-              <span className="text-slate-800 dark:text-slate-250">{new Date(order.created_at).toLocaleDateString()}</span>
+              <span className="text-slate-800 dark:text-slate-250">{new Date(order.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
             </div>
+
             <div className="text-right">
               <span className="text-[9px] text-slate-450 block uppercase tracking-wider">Status</span>
               <span className="font-bold text-orange-600 uppercase">{order.order_status}</span>

@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
-import { RefreshCw, ShoppingBag, Clock, XCircle, ChevronDown, Check, List, User, MapPin, Phone, Share2, Copy, ExternalLink, Navigation, Lock, Search, Plus } from 'lucide-react';
+import { RefreshCw, ShoppingBag, Clock, XCircle, ChevronDown, Check, CheckCircle2, List, User, MapPin, Phone, Share2, Copy, ExternalLink, Navigation, Lock, Search, Plus, Filter, X, Calendar } from 'lucide-react';
+
 import { api } from '@/services/api';
 import { useHeaderStore } from '@/store/useHeaderStore';
 import { HeaderActions } from '@/components/HeaderActions';
@@ -11,8 +12,104 @@ import { Modal } from '@/components/ui/Modal';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Badge } from '@/components/ui/Badge';
 import { InfiniteScrollTrigger } from '@/components/ui/InfiniteScrollTrigger';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { DatePicker } from '@/components/ui/DatePicker';
 import toast from 'react-hot-toast';
 import { CreateOrderModal } from './CreateOrderModal';
+
+const getTodayDateStr = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getYesterdayDateStr = () => {
+  const now = new Date();
+  now.setDate(now.getDate() - 1);
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+
+function OrderCardSkeleton() {
+  return (
+    <Card className="relative overflow-hidden border-l-4 border-l-slate-200 dark:border-l-slate-800 shadow-sm animate-fade-in">
+      <CardContent className="p-4 sm:p-5 space-y-3.5">
+        {/* Top Bar Skeleton */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-border/60">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-5 w-24 rounded-md" />
+              <Skeleton className="h-4 w-20 rounded-full" />
+            </div>
+            <Skeleton className="h-3.5 w-36 rounded-md" />
+          </div>
+          <Skeleton className="h-6 w-32 rounded-full shrink-0" />
+        </div>
+
+        {/* Content Grid: Customer & Items */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {/* Customer Information Skeleton */}
+          <div className="p-3 bg-muted/30 rounded-xl space-y-2.5 border border-border/40">
+            <div className="flex justify-between items-center">
+              <Skeleton className="h-3.5 w-16 rounded" />
+              <Skeleton className="h-4 w-28 rounded" />
+            </div>
+            <div className="flex justify-between items-center pt-1 border-t border-border/40 border-dashed">
+              <Skeleton className="h-3.5 w-12 rounded" />
+              <Skeleton className="h-3.5 w-32 rounded" />
+            </div>
+          </div>
+
+          {/* Order Items Preview Skeleton */}
+          <div className="p-3 bg-muted/30 rounded-xl space-y-2 border border-border/40">
+            <div className="flex justify-between items-center mb-1.5">
+              <Skeleton className="h-3.5 w-14 rounded" />
+              <Skeleton className="h-4 w-16 rounded-full" />
+            </div>
+            <div className="flex justify-between items-center">
+              <Skeleton className="h-3.5 w-36 rounded" />
+              <Skeleton className="h-3.5 w-6 rounded" />
+            </div>
+            <div className="flex justify-between items-center">
+              <Skeleton className="h-3.5 w-24 rounded" />
+              <Skeleton className="h-3.5 w-6 rounded" />
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom Bar: Payment & Actions */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-border/60">
+          <div className="flex items-center gap-4">
+            <div className="space-y-1">
+              <Skeleton className="h-3 w-12 rounded" />
+              <div className="flex items-center gap-1.5">
+                <Skeleton className="h-4 w-14 rounded" />
+                <Skeleton className="h-5 w-16 rounded-lg" />
+              </div>
+            </div>
+            <div className="space-y-1 pl-3 border-l border-border/40">
+              <Skeleton className="h-3 w-10 rounded" />
+              <Skeleton className="h-5 w-20 rounded" />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+            <Skeleton className="h-8 w-24 rounded-lg" />
+            <Skeleton className="h-8 w-16 rounded-lg" />
+            <Skeleton className="h-8 w-16 rounded-lg" />
+            <Skeleton className="h-8 w-28 rounded-lg" />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 
 function formatDateTime(dateStr: string) {
   if (!dateStr) return { date: '—', time: '—' };
@@ -74,15 +171,16 @@ function generateOrderBillText(order: any) {
 }
 
 const PAY_OPTIONS = [
-  { value: 'pending', label: 'Not Paid', cls: 'text-amber-700 bg-amber-50 border-amber-200', dot: 'bg-amber-400' },
   { value: 'paid', label: 'Paid', cls: 'text-emerald-700 bg-emerald-50 border-emerald-200', dot: 'bg-emerald-500' },
-  { value: 'completed', label: 'Completed', cls: 'text-blue-700 bg-blue-50 border-blue-200', dot: 'bg-blue-500' },
+  { value: 'pending', label: 'Not Paid', cls: 'text-amber-700 bg-amber-50 border-amber-200', dot: 'bg-amber-400' },
   { value: 'refunded', label: 'Refunded', cls: 'text-purple-700 bg-purple-50 border-purple-200', dot: 'bg-purple-500' },
 ];
 
 function paymentStyle(status: string) {
-  return PAY_OPTIONS.find(o => o.value === status) ?? PAY_OPTIONS[0];
+  const norm = (status || '').toLowerCase();
+  return PAY_OPTIONS.find(o => o.value === norm) ?? PAY_OPTIONS[1];
 }
+
 
 /* ── Portal Dropdown ─────────────────────────────────────────────────────── */
 interface PayDropdownProps {
@@ -147,12 +245,13 @@ function PayDropdown({ orderId, paymentStatus, paymentMethod, orderStatus, onSel
         ref={btnRef}
         onClick={openDropdown}
         disabled={disabled}
-        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-black border transition-all ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'} ${current.cls}`}
+        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-black border transition-all whitespace-nowrap shrink-0 ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'} ${current.cls}`}
       >
-        <span className={`w-1.5 h-1.5 rounded-full ${current.dot}`} />
-        <span>{current.label}</span>
-        <ChevronDown size={11} className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${current.dot}`} />
+        <span className="whitespace-nowrap">{current.label}</span>
+        <ChevronDown size={11} className={`shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
       </button>
+
 
       {open && createPortal(
         <div
@@ -187,40 +286,67 @@ function PayDropdown({ orderId, paymentStatus, paymentMethod, orderStatus, onSel
 }
 
 /* ── Order Status Portal Dropdown ───────────────────────────────────────── */
-const ORDER_STATUS_OPTIONS = [
-  { value: 'PENDING_VENDOR', label: 'Needs Acceptance', cls: 'text-amber-700 bg-amber-50 border-amber-200', dot: 'bg-amber-400' },
-  { value: 'PAYMENT_PENDING', label: 'Accept', cls: 'text-orange-700 bg-orange-50 border-orange-200', dot: 'bg-orange-500' },
-  { value: 'PAID', label: 'Paid - Start Prep', cls: 'text-indigo-700 bg-indigo-50 border-indigo-200', dot: 'bg-indigo-500' },
-  { value: 'PREPARING', label: 'Preparing', cls: 'text-blue-700 bg-blue-50 border-blue-200', dot: 'bg-blue-500' },
-  { value: 'READY', label: 'Ready for Pickup', cls: 'text-cyan-700 bg-cyan-50 border-cyan-200', dot: 'bg-cyan-500' },
-  { value: 'OUT_FOR_DELIVERY', label: 'Out for Delivery', cls: 'text-teal-700 bg-teal-50 border-teal-200', dot: 'bg-teal-500' },
-  { value: 'DELIVERED', label: 'Complete', cls: 'text-emerald-700 bg-emerald-50 border-emerald-200', dot: 'bg-emerald-500' },
-  { value: 'CANCELLED', label: 'Cancel', cls: 'text-rose-700 bg-rose-50 border-rose-200', dot: 'bg-rose-500' },
-  // Legacy Fallbacks
-  { value: 'pending', label: 'Pending (Legacy)', cls: 'text-amber-700 bg-amber-50 border-amber-200', dot: 'bg-amber-400' },
-  { value: 'accepted', label: 'Accepted (Legacy)', cls: 'text-blue-700 bg-blue-50 border-blue-200', dot: 'bg-blue-500' },
-  { value: 'completed', label: 'Completed (Legacy)', cls: 'text-emerald-700 bg-emerald-50 border-emerald-200', dot: 'bg-emerald-500' },
-  { value: 'rejected', label: 'Rejected (Legacy)', cls: 'text-rose-700 bg-rose-50 border-rose-200', dot: 'bg-rose-500' },
-];
-
-function orderStatusStyle(status: string) {
-  return ORDER_STATUS_OPTIONS.find(o => o.value === status) ?? ORDER_STATUS_OPTIONS[0];
+function getOrderStatusOptions(orderType?: string) {
+  const isDineIn = orderType === 'dine_in';
+  return [
+    { value: isDineIn ? 'PREPARING' : 'PAYMENT_PENDING', label: 'Accept', cls: 'text-orange-700 bg-orange-50 border-orange-200', dot: 'bg-orange-500' },
+    { value: 'COMPLETED', label: 'Complete', cls: 'text-emerald-700 bg-emerald-50 border-emerald-200', dot: 'bg-emerald-500' },
+    { value: 'CANCELLED', label: 'Cancel', cls: 'text-rose-700 bg-rose-50 border-rose-200', dot: 'bg-rose-500' },
+  ];
 }
+
+
+function orderStatusStyle(status: string, orderType?: string) {
+  const norm = (status || '').toUpperCase();
+  const isDineIn = orderType === 'dine_in';
+
+  if (norm === 'PENDING' || norm === 'PENDING_VENDOR') {
+    return { value: 'PENDING_VENDOR', label: 'Pending', cls: 'text-amber-700 bg-amber-50 border-amber-200', dot: 'bg-amber-400' };
+  }
+  if (norm === 'ACCEPTED' || (norm === 'PAYMENT_PENDING' && isDineIn)) {
+    return { value: 'ACCEPTED', label: 'Accepted', cls: 'text-cyan-700 bg-cyan-50 border-cyan-200', dot: 'bg-cyan-500' };
+  }
+  if (norm === 'PAYMENT_PENDING') {
+    return { value: 'PAYMENT_PENDING', label: 'Awaiting Payment', cls: 'text-orange-700 bg-orange-50 border-orange-200', dot: 'bg-orange-500' };
+  }
+  if (norm === 'PAID') {
+    return { value: 'PAID', label: 'Paid', cls: 'text-indigo-700 bg-indigo-50 border-indigo-200', dot: 'bg-indigo-500' };
+  }
+  if (norm === 'PREPARING') {
+    return { value: 'PREPARING', label: 'Preparing', cls: 'text-blue-700 bg-blue-50 border-blue-200', dot: 'bg-blue-500' };
+  }
+  if (norm === 'READY') {
+    return { value: 'READY', label: 'Ready', cls: 'text-cyan-700 bg-cyan-50 border-cyan-200', dot: 'bg-cyan-500' };
+  }
+  if (norm === 'OUT_FOR_DELIVERY') {
+    return { value: 'OUT_FOR_DELIVERY', label: 'Out for Delivery', cls: 'text-teal-700 bg-teal-50 border-teal-200', dot: 'bg-teal-500' };
+  }
+  if (norm === 'DELIVERED' || norm === 'COMPLETED') {
+    return { value: 'DELIVERED', label: 'Completed', cls: 'text-emerald-700 bg-emerald-50 border-emerald-200', dot: 'bg-emerald-500' };
+  }
+  if (norm === 'CANCELLED' || norm === 'REJECTED') {
+    return { value: 'CANCELLED', label: 'Cancelled', cls: 'text-rose-700 bg-rose-50 border-rose-200', dot: 'bg-rose-500' };
+  }
+  return { value: status, label: status, cls: 'text-slate-700 bg-slate-50 border-slate-200', dot: 'bg-slate-400' };
+}
+
 
 interface OrderStatusDropdownProps {
   orderId: string;
   orderStatus: string;
   paymentStatus: string;
+  orderType?: string;
   onSelect: (orderId: string, val: string) => void;
 }
 
-function OrderStatusDropdown({ orderId, orderStatus, paymentStatus, onSelect }: OrderStatusDropdownProps) {
+function OrderStatusDropdown({ orderId, orderStatus, paymentStatus, orderType, onSelect }: OrderStatusDropdownProps) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ top: 0, right: 0 });
   const btnRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  const current = orderStatusStyle(orderStatus);
+  const current = orderStatusStyle(orderStatus, orderType);
+  const options = getOrderStatusOptions(orderType);
 
   const openDropdown = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -247,11 +373,11 @@ function OrderStatusDropdown({ orderId, orderStatus, paymentStatus, onSelect }: 
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
-  const handleSelect = (opt: typeof ORDER_STATUS_OPTIONS[number]) => {
+  const handleSelect = (opt: { value: string; label: string; cls: string; dot: string }) => {
     setOpen(false);
-    if (opt.value === orderStatus) return;
+    if (orderStatusStyle(orderStatus, orderType).value === opt.value) return;
     
-    if (opt.value === 'CANCELLED' || opt.value === 'rejected') {
+    if (opt.value === 'CANCELLED') {
       onSelect(orderId, 'CANCELLED');
     } else {
       if (confirm(`Change order status to "${opt.label}"?`)) {
@@ -265,26 +391,21 @@ function OrderStatusDropdown({ orderId, orderStatus, paymentStatus, onSelect }: 
       <button
         ref={btnRef}
         onClick={openDropdown}
-        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border transition-all cursor-pointer ${current.cls}`}
+        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-black border transition-all whitespace-nowrap cursor-pointer shrink-0 ${current.cls}`}
       >
-        <span className={`w-1.5 h-1.5 rounded-full ${current.dot}`} />
-        <span>{current.label}</span>
-        <ChevronDown size={11} className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${current.dot}`} />
+        <span className="whitespace-nowrap">{current.label}</span>
+        <ChevronDown size={11} className={`shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open && createPortal(
         <div
           ref={panelRef}
           style={{ position: 'absolute', top: pos.top, right: pos.right, zIndex: 9999 }}
-          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl overflow-hidden min-w-[140px] animate-fade-in"
+          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl overflow-hidden min-w-[148px] animate-fade-in"
         >
-          {ORDER_STATUS_OPTIONS.filter(o => {
-            const isStandard = ['PENDING_VENDOR', 'PAYMENT_PENDING', 'PAID', 'PREPARING', 'READY', 'DELIVERED', 'CANCELLED'].includes(o.value);
-            if (!isStandard) return false;
-            if (paymentStatus === 'paid' && o.value === 'CANCELLED') return false;
-            return true;
-          }).map(opt => {
-            const isSelected = orderStatus === opt.value;
+          {options.map(opt => {
+            const isSelected = orderStatusStyle(orderStatus, orderType).value === opt.value;
             return (
               <button
                 key={opt.value}
@@ -311,6 +432,7 @@ function OrderStatusDropdown({ orderId, orderStatus, paymentStatus, onSelect }: 
 
 let cachedOrders: any[] = [];
 
+
 /* ── Main Page ───────────────────────────────────────────────────────────── */
 export function OrdersPage() {
   const navigate = useNavigate();
@@ -322,6 +444,7 @@ export function OrdersPage() {
   // API Filtering & Pagination
   const [filterStatus, setFilterStatus] = useState<string>('new');
   const [filterType, setFilterType] = useState<string>('all');
+  const [selectedDate, setSelectedDate] = useState<string>(getTodayDateStr());
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [skip, setSkip] = useState(0);
@@ -335,6 +458,8 @@ export function OrdersPage() {
   const [customerModalOrder, setCustomerModalOrder] = useState<any | null>(null);
   const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
   const [cancelOrderReason, setCancelOrderReason] = useState<string>('');
+  const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
+  const [isCancelling, setIsCancelling] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [targetOrderForAdd, setTargetOrderForAdd] = useState<any | null>(null);
   const { setTitle } = useHeaderStore();
@@ -345,14 +470,16 @@ export function OrdersPage() {
 
   const fetchStatusCounts = useCallback(async () => {
     try {
-      const res = await api.get('/orders/status-counts');
+      const res = await api.get('/orders/status-counts', {
+        params: selectedDate ? { date_filter: selectedDate } : {}
+      });
       if (res.data) {
         setStatusCounts(res.data);
       }
     } catch (err) {
       console.error('Failed to fetch status counts', err);
     }
-  }, []);
+  }, [selectedDate]);
 
   // Debounce search query input (350ms)
   useEffect(() => {
@@ -377,12 +504,16 @@ export function OrdersPage() {
         type_filter: filterType,
       };
 
+      if (selectedDate) {
+        params.date_filter = selectedDate;
+      }
+
       if (debouncedSearch.trim()) {
         params.search = debouncedSearch.trim();
       }
 
       const ordersReq = api.get('/orders', { params });
-      const countsReq = reset ? api.get('/orders/status-counts') : Promise.resolve(null);
+      const countsReq = reset ? api.get('/orders/status-counts', { params: selectedDate ? { date_filter: selectedDate } : {} }) : Promise.resolve(null);
 
       const [res, countsRes] = await Promise.all([ordersReq, countsReq]);
 
@@ -414,7 +545,7 @@ export function OrdersPage() {
       setIsLoading(false);
       setIsLoadingMore(false);
     }
-  }, [filterStatus, filterType, debouncedSearch]);
+  }, [filterStatus, filterType, debouncedSearch, selectedDate]);
 
   useEffect(() => {
     fetchOrdersData(0, true);
@@ -428,7 +559,8 @@ export function OrdersPage() {
 
     window.addEventListener('menukit-realtime-update', handleRealtimeUpdate);
     return () => window.removeEventListener('menukit-realtime-update', handleRealtimeUpdate);
-  }, [filterStatus, filterType, debouncedSearch, fetchOrdersData]);
+  }, [filterStatus, filterType, debouncedSearch, selectedDate, fetchOrdersData]);
+
 
   const handleLoadMore = () => {
     if (hasMore && !isLoadingMore && !isLoading) {
@@ -443,6 +575,7 @@ export function OrdersPage() {
       return;
     }
     
+    setUpdatingOrderId(orderId);
     try {
       const payload: any = { status: newStatus };
       if (reason) payload.cancellation_reason = reason;
@@ -452,19 +585,67 @@ export function OrdersPage() {
       setOrders(prev => prev.map(o => o.id === orderId ? { ...o, order_status: res.data.order_status, cancellation_reason: res.data.cancellation_reason } : o));
     } catch (err: any) {
       toast.error(err.response?.data?.detail || 'Failed to update order status');
+    } finally {
+      setUpdatingOrderId(null);
     }
   };
 
+  const [togglingItemId, setTogglingItemId] = useState<string | null>(null);
+  const [togglingCancelItemId, setTogglingCancelItemId] = useState<string | null>(null);
+
+  const handleToggleItemComplete = async (orderId: string, itemId: string) => {
+    setTogglingItemId(itemId);
+    try {
+      const res = await api.put(`/orders/${orderId}/items/${itemId}/toggle-complete`);
+      const updatedOrder = res.data;
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, items: updatedOrder.items } : o));
+      if (itemsModalOrder && itemsModalOrder.id === orderId) {
+        setItemsModalOrder((prev: any) => prev ? { ...prev, items: updatedOrder.items } : prev);
+      }
+      toast.success('Item status updated');
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || 'Failed to update item status');
+    } finally {
+      setTogglingItemId(null);
+    }
+  };
+
+  const handleToggleItemCancel = async (orderId: string, itemId: string) => {
+    setTogglingCancelItemId(itemId);
+    try {
+      const res = await api.put(`/orders/${orderId}/items/${itemId}/toggle-cancel`);
+      const updatedOrder = res.data;
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, items: updatedOrder.items } : o));
+      if (itemsModalOrder && itemsModalOrder.id === orderId) {
+        setItemsModalOrder((prev: any) => prev ? { ...prev, items: updatedOrder.items } : prev);
+      }
+      toast.success('Item cancellation status updated');
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || 'Failed to update item cancellation status');
+    } finally {
+      setTogglingCancelItemId(null);
+    }
+  };
+
+
   const submitCancelOrder = async () => {
+
+
     if (!cancellingOrderId) return;
     if (!cancelOrderReason.trim()) {
       toast.error("Please provide a cancellation reason");
       return;
     }
-    await handleUpdateStatus(cancellingOrderId, 'CANCELLED', cancelOrderReason);
-    setCancellingOrderId(null);
-    setCancelOrderReason('');
+    setIsCancelling(true);
+    try {
+      await handleUpdateStatus(cancellingOrderId, 'CANCELLED', cancelOrderReason);
+      setCancellingOrderId(null);
+      setCancelOrderReason('');
+    } finally {
+      setIsCancelling(false);
+    }
   };
+
 
   const handleUpdatePaymentStatus = useCallback(async (orderId: string, newPayStatus: string) => {
     try {
@@ -518,25 +699,27 @@ export function OrdersPage() {
       )}
 
       {/* Tabs — sticky top with backdrop blur matching Menus page */}
-      <div className="sticky top-[-16px] sm:top-[-24px] lg:top-[-32px] z-20 bg-background/95 backdrop-blur-md pb-4 pt-4 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 border-b border-border mb-6 space-y-3">
-        <div
-          className="flex overflow-x-auto gap-2 py-1 whitespace-nowrap scrollbar-hide no-scrollbar"
-          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-        >
+      <div className="sticky top-[-16px] sm:top-[-24px] lg:top-[-32px] z-20 bg-background/95 backdrop-blur-md pb-3 pt-3.5 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 border-b border-border mb-6 space-y-2.5">
+        <div className="flex custom-scrollbar-x gap-2 py-1 whitespace-nowrap pb-2">
           {[
             { id: 'all',       label: 'All Orders',       count: statusCounts.all ?? 0, activeBg: 'bg-slate-800 text-white shadow-md shadow-slate-800/20' },
             { id: 'new',       label: 'New Orders',       count: statusCounts.new ?? 0, activeBg: 'bg-amber-500 text-white shadow-md shadow-amber-500/20' },
             { id: 'awaiting_payment', label: 'Awaiting Payment', count: statusCounts.awaiting_payment ?? 0, activeBg: 'bg-blue-500 text-white shadow-md shadow-blue-500/20' },
-            { id: 'accepted',  label: 'Awaiting Preparing',        count: statusCounts.accepted ?? 0, activeBg: 'bg-indigo-500 text-white shadow-md shadow-indigo-500/20' },
             { id: 'preparing', label: 'Awaiting Complete', count: statusCounts.preparing ?? 0, activeBg: 'bg-cyan-500 text-white shadow-md shadow-cyan-500/20' },
             { id: 'completed', label: 'Completed',        count: statusCounts.completed ?? 0, activeBg: 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20' },
             { id: 'cancelled', label: 'Cancelled',        count: statusCounts.cancelled ?? 0, activeBg: 'bg-rose-500 text-white shadow-md shadow-rose-500/20' },
           ].map(tab => {
+
             const isSelected = filterStatus === tab.id;
             return (
               <button
                 key={tab.id}
-                onClick={() => setFilterStatus(tab.id)}
+                onClick={() => {
+                  if (filterStatus !== tab.id) {
+                    setIsLoading(true);
+                    setFilterStatus(tab.id);
+                  }
+                }}
                 className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
                   isSelected
                     ? tab.activeBg
@@ -557,21 +740,24 @@ export function OrdersPage() {
         </div>
 
         {/* Order Type Secondary Filters */}
-        <div
-          className="flex overflow-x-auto gap-2 mt-2 py-1 whitespace-nowrap scrollbar-hide no-scrollbar"
-          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-        >
+        <div className="flex custom-scrollbar-x gap-2 mt-1 py-1 whitespace-nowrap pb-1.5">
           {[
             { id: 'all', label: 'All Types', activeBg: 'bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900' },
             { id: 'dine_in', label: 'Dine-in', activeBg: 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20 border-transparent' },
             { id: 'takeaway', label: 'Takeaway', activeBg: 'bg-amber-500 text-white shadow-md shadow-amber-500/20 border-transparent' },
             { id: 'delivery', label: 'Online / Delivery', activeBg: 'bg-fuchsia-600 text-white shadow-md shadow-fuchsia-600/20 border-transparent' },
           ].map(typeTab => {
+
             const isSelected = filterType === typeTab.id;
             return (
               <button
                 key={typeTab.id}
-                onClick={() => setFilterType(typeTab.id)}
+                onClick={() => {
+                  if (filterType !== typeTab.id) {
+                    setIsLoading(true);
+                    setFilterType(typeTab.id);
+                  }
+                }}
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all shrink-0 cursor-pointer border ${
                   isSelected
                     ? typeTab.activeBg
@@ -584,22 +770,102 @@ export function OrdersPage() {
           })}
         </div>
 
-        {/* API Search Input */}
-        <div className="relative mt-2.5">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-          <input
-            type="text"
-            placeholder="Search customer, phone, table, address, or order ID..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-primary font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400 shadow-xs"
-          />
+        {/* Search & Date Filter Controls */}
+        <div className="flex flex-col sm:flex-row gap-2 mt-2.5 items-stretch sm:items-center">
+          {/* API Search Input */}
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
+            <input
+              type="text"
+              placeholder="Search customer, phone, table, address, or order ID..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-8 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-amber-500 font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400 shadow-xs"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                title="Clear Search"
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
+
+          {/* Custom DatePicker + Clear */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <div className="w-40 sm:w-48 relative">
+              <DatePicker
+                value={selectedDate}
+                onChange={(date) => setSelectedDate(date)}
+                placeholder="Filter by Date"
+                className="text-xs"
+              />
+            </div>
+            {selectedDate && (
+              <button
+                type="button"
+                onClick={() => setSelectedDate('')}
+                className="px-2.5 py-2 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 rounded-xl text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer shrink-0"
+                title="Clear Date (View All Time)"
+              >
+                <X size={13} />
+                <span className="hidden sm:inline">All Time</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Quick Date Shortcut Pills */}
+        <div className="flex items-center gap-1.5 pt-1 custom-scrollbar-x pb-1">
+          <span className="text-[10.5px] font-bold text-slate-400 mr-1 flex items-center gap-1 shrink-0">
+
+            <Filter size={11} /> Date:
+          </span>
+          <button
+            type="button"
+            onClick={() => setSelectedDate(getTodayDateStr())}
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer shrink-0 border ${
+              selectedDate === getTodayDateStr()
+                ? 'bg-amber-500 text-white border-amber-500 shadow-xs'
+                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+            }`}
+          >
+            Today
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedDate(getYesterdayDateStr())}
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer shrink-0 border ${
+              selectedDate === getYesterdayDateStr()
+                ? 'bg-amber-500 text-white border-amber-500 shadow-xs'
+                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+            }`}
+          >
+            Yesterday
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedDate('')}
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer shrink-0 border ${
+              !selectedDate
+                ? 'bg-amber-500 text-white border-amber-500 shadow-xs'
+                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+            }`}
+          >
+            All Time
+          </button>
         </div>
       </div>
 
-      {isLoading && orders.length === 0 ? (
-        <div className="h-64 flex items-center justify-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+
+      {isLoading ? (
+        <div className="flex flex-col gap-4 max-w-3xl mx-auto">
+          {[1, 2, 3].map((n) => (
+            <OrderCardSkeleton key={n} />
+          ))}
         </div>
       ) : orders.length === 0 ? (
         <Card className="p-12 text-center flex flex-col items-center justify-center">
@@ -610,15 +876,17 @@ export function OrdersPage() {
           </p>
         </Card>
       ) : (
+
         <div className="flex flex-col gap-4 max-w-3xl mx-auto">
           {orders.map(order => {
             const status = order.order_status;
+            const isDineIn = order.order_type === 'dine_in';
             
             // New logic booleans
             const isPendingVendor = status === 'PENDING_VENDOR' || status === 'pending';
-            const isPaymentPending = status === 'PAYMENT_PENDING';
+            const isPaymentPending = status === 'PAYMENT_PENDING' && !isDineIn;
             const isPaid = status === 'PAID';
-            const isPreparing = status === 'PREPARING' || status === 'accepted';
+            const isPreparing = status === 'PREPARING' || status === 'accepted' || status === 'ACCEPTED' || (status === 'PAYMENT_PENDING' && isDineIn);
             const isReady = status === 'READY';
             
             const isCancellable = isPendingVendor || isPaymentPending || isPaid || isPreparing;
@@ -626,10 +894,18 @@ export function OrdersPage() {
             const { date, time } = formatDateTime(order.created_at);
             
             // Colors
-            const borderColor = isPendingVendor ? '#f59e0b' : isPaymentPending ? '#f97316' : (isPaid || isPreparing || isReady) ? '#3b82f6' : status === 'completed' || status === 'DELIVERED' ? '#10b981' : '#ef4444';
+            const borderColor = isPendingVendor ? '#f59e0b' : isPaymentPending ? '#f97316' : (isPaid || isPreparing || isReady) ? '#06b6d4' : status === 'completed' || status === 'DELIVERED' ? '#10b981' : '#ef4444';
             
-            const previewItems = order.items?.slice(0, 2) ?? [];
-            const extraCount = (order.items?.length ?? 0) - 2;
+            // Sort items so active/unserved items appear first, completed next, and cancelled at the end
+            const sortedItems = [...(order.items ?? [])].sort((a: any, b: any) => {
+              if (Boolean(a.is_cancelled) !== Boolean(b.is_cancelled)) return a.is_cancelled ? 1 : -1;
+              if (Boolean(a.is_completed) !== Boolean(b.is_completed)) return a.is_completed ? 1 : -1;
+              return 0;
+            });
+            const previewItems = sortedItems.slice(0, 3);
+            const extraCount = sortedItems.length - previewItems.length;
+
+
 
             return (
               <Card key={order.id} className="relative overflow-hidden border-l-4 shadow-sm hover:shadow-md transition-shadow" style={{ borderLeftColor: borderColor }}>
@@ -661,10 +937,12 @@ export function OrdersPage() {
                         orderId={order.id}
                         orderStatus={order.order_status}
                         paymentStatus={order.payment_status}
+                        orderType={order.order_type}
                         onSelect={handleUpdateStatus}
                       />
                     </div>
                   </div>
+
 
                   {/* Content Grid: Customer & Items Side-by-Side on Desktop */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -705,23 +983,63 @@ export function OrdersPage() {
                         <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
                           <ShoppingBag size={12} /> Items
                         </span>
-                        <Badge variant="secondary" className="text-[10px] bg-background">
-                          {order.items?.reduce((acc: number, cur: any) => acc + cur.quantity, 0) || 0} Item(s)
-                        </Badge>
+                        <div className="flex items-center gap-1">
+                          {order.items?.some((it: any) => it.is_cancelled) && (
+                            <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 bg-rose-100 dark:bg-rose-950/60 px-1.5 py-0.2 rounded">
+                              {order.items.filter((it: any) => it.is_cancelled).length} Cancelled
+                            </span>
+                          )}
+                          {order.items?.some((it: any) => it.is_completed && !it.is_cancelled) && (
+                            <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/60 px-1.5 py-0.2 rounded">
+                              {order.items.filter((it: any) => it.is_completed && !it.is_cancelled).length}/{order.items.filter((it: any) => !it.is_cancelled).length} Given
+                            </span>
+                          )}
+                          <Badge variant="secondary" className="text-[10px] bg-background">
+                            {order.items?.reduce((acc: number, cur: any) => acc + cur.quantity, 0) || 0} Item(s)
+                          </Badge>
+                        </div>
                       </div>
                       <ul className="text-xs space-y-1">
-                        {previewItems.map((item: any, i: number) => (
-                          <li key={i} className="flex justify-between text-muted-foreground">
-                            <span className="truncate pr-2 font-medium text-foreground group-hover:text-primary transition-colors">{item.name}</span>
-                            <span className="font-bold text-foreground shrink-0">x{item.quantity}</span>
-                          </li>
-                        ))}
+                        {previewItems.map((item: any, i: number) => {
+                          const isDone = Boolean(item.is_completed);
+                          const isCancelled = Boolean(item.is_cancelled);
+                          const hasMixed = order.items?.some((it: any) => it.is_completed && !it.is_cancelled) && order.items?.some((it: any) => !it.is_completed && !it.is_cancelled);
+                          const isNewUnserved = !isDone && !isCancelled && hasMixed;
+                          return (
+                            <li key={i} className={`flex justify-between items-center ${isCancelled ? 'line-through text-rose-400/80 dark:text-rose-500/80 opacity-70' : isDone ? 'line-through text-slate-400 dark:text-slate-500 opacity-60' : 'text-foreground'}`}>
+                              <span className="truncate pr-2 font-medium group-hover:text-primary transition-colors flex items-center gap-1.5">
+                                {isCancelled ? (
+                                  <XCircle size={12} className="text-rose-500 shrink-0" />
+                                ) : isDone ? (
+                                  <CheckCircle2 size={12} className="text-emerald-500 shrink-0" />
+                                ) : (
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                                )}
+                                <span>{item.name}</span>
+                                {isCancelled && (
+                                  <span className="text-[8.5px] font-black tracking-wider bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 px-1 py-0.2 rounded shrink-0">
+                                    CANCELLED
+                                  </span>
+                                )}
+                                {isNewUnserved && (
+                                  <span className="text-[9px] font-black tracking-wider bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 px-1.5 py-0.2 rounded shrink-0">
+                                    NEW
+                                  </span>
+                                )}
+                              </span>
+                              <span className={`font-bold shrink-0 text-[11px] ${isCancelled ? 'text-rose-400' : 'text-foreground'}`}>x{item.quantity}</span>
+                            </li>
+                          );
+                        })}
+
                         {extraCount > 0 && (
                           <li className="text-[10px] font-bold text-muted-foreground pt-0.5 text-center">
                             + {extraCount} more items
                           </li>
                         )}
                       </ul>
+
+
                     </div>
                   </div>
 
@@ -736,12 +1054,12 @@ export function OrdersPage() {
                   )}
 
                   {/* Bottom Bar: Payment Status & Actions */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-border/60">
-                    <div className="flex items-center justify-between sm:justify-start gap-4">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-3 border-t border-border/60">
+                    <div className="flex items-center justify-between md:justify-start gap-4">
                       <div>
-                        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block">Payment</span>
+                        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Payment</span>
                         <div className="flex items-center gap-1.5 mt-0.5">
-                          <span className="font-extrabold capitalize text-xs text-foreground">{order.payment_method}</span>
+                          <span className="font-extrabold capitalize text-xs text-foreground shrink-0">{order.payment_method}</span>
                           <PayDropdown
                             orderId={order.id}
                             paymentStatus={order.payment_status}
@@ -753,29 +1071,36 @@ export function OrdersPage() {
                         </div>
                       </div>
 
-                      <div className="text-right sm:text-left border-l border-border/40 pl-4">
-                        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block">Total</span>
-                        <span className="font-black text-base text-foreground">
+                      <div className="text-right md:text-left border-l border-border/40 pl-4">
+                        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Total</span>
+                        <span className="font-black text-base text-foreground font-mono">
                           ₹{Number(order.total_amount).toFixed(2)}
                         </span>
                       </div>
                     </div>
 
                     {/* Action Buttons Row */}
-                    <div className="flex flex-wrap items-center gap-2 justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-border/40">
+                    <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 justify-end pt-2 md:pt-0 border-t md:border-t-0 border-border/40">
                       {status !== 'COMPLETED' && status !== 'CANCELLED' && (
                         <Button
                           size="sm"
                           variant="outline"
                           onClick={() => setTargetOrderForAdd(order)}
                           leftIcon={<Plus size={13} />}
-                          className="border-primary/40 text-primary hover:bg-primary/10 text-xs font-bold"
+                          className="border-primary/40 text-primary hover:bg-primary/10 text-xs font-bold w-full sm:w-auto h-9"
                         >
-                          + Add Items
+                          Add Items
                         </Button>
+
                       )}
 
-                      <Button size="sm" variant="outline" onClick={() => { navigator.clipboard.writeText(order.id); toast.success('Order ID copied'); }} leftIcon={<Copy size={13} />} className="text-xs text-muted-foreground">
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        onClick={() => { navigator.clipboard.writeText(order.id); toast.success('Order ID copied'); }} 
+                        leftIcon={<Copy size={13} />} 
+                        className="text-xs text-muted-foreground w-full sm:w-auto h-9"
+                      >
                         Copy
                       </Button>
                       
@@ -783,8 +1108,9 @@ export function OrdersPage() {
                         <Button
                           size="sm"
                           variant="secondary"
-                          className="bg-rose-50 hover:bg-rose-100 text-rose-600 border-0 text-xs font-bold"
+                          className="bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 border border-rose-200/60 dark:border-rose-900/40 text-xs font-bold w-full sm:w-auto h-9 px-4"
                           onClick={() => setCancellingOrderId(order.id)}
+                          disabled={updatingOrderId === order.id}
                           leftIcon={<XCircle size={13} />}
                         >
                           Cancel
@@ -792,41 +1118,44 @@ export function OrdersPage() {
                       )}
                       
                       {isPendingVendor && (
-                        <Button size="sm" className="text-xs font-bold" onClick={() => handleUpdateStatus(order.id, 'PAYMENT_PENDING')}>
+                        <Button
+                          size="sm"
+                          className="text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white w-full sm:w-auto h-9 shadow-xs px-4"
+                          onClick={() => {
+                            const nextStatus = order.order_type === 'dine_in' ? 'PREPARING' : 'PAYMENT_PENDING';
+                            handleUpdateStatus(order.id, nextStatus);
+                          }}
+                          isLoading={updatingOrderId === order.id}
+                        >
                           Accept Order
                         </Button>
                       )}
-                      
-                      {isPaymentPending && (
-                        <Button size="sm" variant="outline" disabled className="opacity-70 bg-amber-50 text-amber-700 border-amber-200 text-xs font-bold">
-                          Awaiting Payment
+
+
+
+                      {!isPendingVendor && status !== 'COMPLETED' && status !== 'CANCELLED' && status !== 'REJECTED' && (
+                        <Button
+                          size="sm"
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold w-full sm:w-auto h-9 shadow-xs px-4"
+                          onClick={() => handleUpdateStatus(order.id, 'COMPLETED')}
+                          isLoading={updatingOrderId === order.id}
+                          leftIcon={<Check size={14} />}
+                        >
+                          Complete Order
                         </Button>
                       )}
 
-                      {isPaid && (
-                        <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold" onClick={() => handleUpdateStatus(order.id, 'PREPARING')}>
-                          Start Prep
-                        </Button>
-                      )}
-
-                      {isPreparing && (
-                        <Button size="sm" className="bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold" onClick={() => handleUpdateStatus(order.id, 'READY')}>
-                          Mark Ready
-                        </Button>
-                      )}
-
-                      {isReady && (
-                        <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold" onClick={() => handleUpdateStatus(order.id, 'COMPLETED')}>
-                          Mark Completed
-                        </Button>
-                      )}
                     </div>
                   </div>
+
+
+
 
                 </CardContent>
               </Card>
             );
           })}
+          {isLoadingMore && <OrderCardSkeleton />}
           <InfiniteScrollTrigger
             onIntersect={handleLoadMore}
             isLoading={isLoadingMore}
@@ -834,6 +1163,7 @@ export function OrdersPage() {
           />
         </div>
       )}
+
 
       {/* Customer Info Modal (Desktop only via isOpen check) */}
       <Modal
@@ -1036,23 +1366,33 @@ export function OrdersPage() {
         title={`Order #${itemsModalOrder?.id?.slice(0, 8)?.toUpperCase()} — Items (${itemsModalOrder?.items?.length ?? 0})`}
       >
         {itemsModalOrder && (
-          <div className="mt-2">
-            <div className="flex items-center gap-3 mb-4 px-1">
-              <span className="text-xs font-bold text-slate-500">
-                {itemsModalOrder.items.length} item{itemsModalOrder.items.length !== 1 ? 's' : ''}
-              </span>
-              <span className="text-slate-200 dark:text-slate-700">•</span>
-              <span className={`text-xs font-black px-2 py-0.5 rounded-full ${itemsModalOrder.order_status === 'completed' ? 'bg-emerald-100 text-emerald-700' :
-                  itemsModalOrder.order_status === 'accepted' ? 'bg-blue-100 text-blue-700' :
-                    itemsModalOrder.order_status === 'pending' ? 'bg-amber-100 text-amber-700' :
-                      'bg-rose-100 text-rose-700'
-                }`}>
-                {itemsModalOrder.order_status}
-              </span>
+          <div className="space-y-4 pt-1">
+            {/* Top Order Status & Items Summary Banner */}
+            <div className="bg-slate-50 dark:bg-slate-900/60 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`px-2.5 py-1 rounded-lg text-xs font-black uppercase tracking-wider ${orderStatusStyle(itemsModalOrder.order_status).badgeClass || 'bg-primary/10 text-primary'}`}>
+                  {orderStatusStyle(itemsModalOrder.order_status).label}
+                </span>
+                <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
+                  {itemsModalOrder.items.filter((i: any) => i.is_completed && !i.is_cancelled).length} of {itemsModalOrder.items.filter((i: any) => !i.is_cancelled).length} Items Served
+                </span>
+                {itemsModalOrder.items.some((i: any) => i.is_cancelled) && (
+                  <span className="text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 px-2.5 py-0.5 rounded-lg border border-rose-200 dark:border-rose-800 flex items-center gap-1">
+                    <XCircle size={12} />
+                    <span>{itemsModalOrder.items.filter((i: any) => i.is_cancelled).length} Cancelled</span>
+                  </span>
+                )}
+              </div>
             </div>
 
-            <div className="overflow-y-auto max-h-[400px] pr-1 space-y-2" style={{ scrollbarWidth: 'thin' }}>
-              {itemsModalOrder.items.map((it: any, idx: number) => {
+
+            {/* Items List */}
+            <div className="overflow-y-auto max-h-[420px] pr-1 space-y-2.5" style={{ scrollbarWidth: 'thin' }}>
+              {[...(itemsModalOrder.items || [])].sort((a: any, b: any) => {
+                if (Boolean(a.is_cancelled) !== Boolean(b.is_cancelled)) return a.is_cancelled ? 1 : -1;
+                if (Boolean(a.is_completed) !== Boolean(b.is_completed)) return a.is_completed ? 1 : -1;
+                return 0;
+              }).map((it: any, idx: number) => {
                 let variantLabel: string | null = null;
                 if (it.variant_info) {
                   try {
@@ -1072,40 +1412,130 @@ export function OrdersPage() {
                   } catch { /* ignore */ }
                 }
 
+                const isItemDone = Boolean(it.is_completed);
+                const isItemCancelled = Boolean(it.is_cancelled);
+
                 return (
                   <div
                     key={it.id ?? idx}
-                    className="flex items-start justify-between gap-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl px-4 py-3 border border-slate-100 dark:border-slate-800"
+                    className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl p-4 border transition-all ${
+                      isItemCancelled
+                        ? 'bg-rose-50/30 dark:bg-rose-950/20 border-rose-200/60 dark:border-rose-800/40 opacity-80'
+                        : isItemDone
+                        ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200/60 dark:border-emerald-800/40'
+                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-2xs'
+                    }`}
                   >
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-bold text-sm text-slate-800 dark:text-slate-100">{it.name}</span>
-                        <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                        <span className={`font-bold text-sm sm:text-base ${isItemCancelled ? 'line-through text-rose-500/80 dark:text-rose-400/80' : isItemDone ? 'line-through text-slate-400 dark:text-slate-500' : 'text-slate-900 dark:text-slate-100'}`}>
+                          {it.name}
+                        </span>
+                        <span className={`text-xs font-black px-2 py-0.5 rounded-full ${isItemCancelled ? 'bg-rose-100 dark:bg-rose-900/40 text-rose-600' : 'bg-primary/10 text-primary'}`}>
                           ×{it.quantity}
                         </span>
+                        {isItemCancelled && (
+                          <span className="text-[10px] font-black tracking-wider bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 px-2 py-0.5 rounded-md flex items-center gap-1">
+                            <XCircle size={11} /> CANCELLED
+                          </span>
+                        )}
+                        {isItemDone && !isItemCancelled && (
+                          <span className="text-[10px] font-black tracking-wider bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 rounded-md flex items-center gap-1">
+                            <CheckCircle2 size={11} /> SERVED
+                          </span>
+                        )}
+                        {!isItemDone && !isItemCancelled && itemsModalOrder.items.some((x: any) => x.is_completed) && (
+                          <span className="text-[9.5px] font-black tracking-wider bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 px-2 py-0.5 rounded-md">
+                            NEW
+                          </span>
+                        )}
                       </div>
                       {variantLabel && (
-                        <p className="text-[11px] text-slate-500 mt-1 font-medium">
-                          <span className="font-semibold text-slate-600 dark:text-slate-400">Variant:</span> {variantLabel}
+                        <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                          <span className="font-semibold text-slate-600 dark:text-slate-300">Variant:</span> {variantLabel}
                         </p>
                       )}
                       {addons.length > 0 && (
-                        <p className="text-[11px] text-slate-500 mt-0.5">
-                          <span className="font-semibold text-slate-600 dark:text-slate-400">Add-ons:</span> {addons.join(', ')}
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          <span className="font-semibold text-slate-600 dark:text-slate-300">Add-ons:</span> {addons.join(', ')}
                         </p>
                       )}
                     </div>
-                    <span className="font-black text-sm font-mono text-slate-700 dark:text-slate-200 shrink-0">
-                      ₹{(it.price * it.quantity).toFixed(2)}
-                    </span>
+
+                    <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-800">
+                      <span className={`font-black text-sm sm:text-base font-mono ${isItemCancelled ? 'line-through text-slate-400 dark:text-slate-600' : 'text-slate-900 dark:text-slate-100'}`}>
+                        ₹{(it.price * it.quantity).toFixed(2)}
+                      </span>
+
+                      <div className="flex items-center gap-2">
+                        {isItemCancelled ? (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleItemCancel(itemsModalOrder.id, it.id)}
+                            disabled={togglingCancelItemId === it.id}
+                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs active:scale-[0.98]"
+                            title="Restore this item"
+                          >
+                            <RefreshCw size={12} className={togglingCancelItemId === it.id ? 'animate-spin' : ''} />
+                            <span>Restore Item</span>
+                          </button>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleItemComplete(itemsModalOrder.id, it.id)}
+                              disabled={togglingItemId === it.id}
+                              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer active:scale-[0.98] ${
+                                isItemDone
+                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700 hover:bg-emerald-200'
+                                  : 'bg-amber-500 hover:bg-amber-600 text-white shadow-xs'
+                              }`}
+                            >
+                              {isItemDone ? (
+                                <>
+                                  <CheckCircle2 size={13} className="text-emerald-600 dark:text-emerald-300" />
+                                  <span>Served</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Clock size={13} />
+                                  <span>Mark Given</span>
+                                </>
+                              )}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleToggleItemCancel(itemsModalOrder.id, it.id)}
+                              disabled={togglingCancelItemId === it.id}
+                              className="px-2.5 py-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1 active:scale-[0.98]"
+                              title="Cancel this item"
+                            >
+                              <XCircle size={13} />
+                              <span className="hidden sm:inline">Cancel</span>
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 );
               })}
             </div>
 
-            <div className="flex justify-between items-center font-black text-base mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white">
-              <span>Grand Total</span>
-              <span className="text-primary text-lg">₹{Number(itemsModalOrder.total_amount).toFixed(2)}</span>
+            {/* Modal Footer (Clean & Spacious) */}
+            <div className="flex items-center justify-between gap-3 pt-3.5 border-t border-slate-200 dark:border-slate-800 mt-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500 font-medium">
+                  {itemsModalOrder.customer_name || 'Walk-in'} • <span className="capitalize font-bold text-slate-700 dark:text-slate-300">{itemsModalOrder.order_type?.replace('_', ' ')}</span>
+                  {itemsModalOrder.table_number && ` • Table ${itemsModalOrder.table_number}`}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="font-extrabold text-xs text-slate-400 uppercase tracking-wider">Grand Total:</span>
+                <span className="text-primary font-black text-xl">₹{Number(itemsModalOrder.total_amount).toFixed(2)}</span>
+              </div>
             </div>
           </div>
         )}
@@ -1118,23 +1548,31 @@ export function OrdersPage() {
         title={`Order #${itemsModalOrder?.id?.slice(0, 8)?.toUpperCase()} — Items (${itemsModalOrder?.items?.length ?? 0})`}
       >
         {itemsModalOrder && (
-          <div>
-            <div className="flex items-center gap-3 mb-4">
-              <span className="text-xs font-bold text-slate-500">
-                {itemsModalOrder.items.length} item{itemsModalOrder.items.length !== 1 ? 's' : ''}
-              </span>
-              <span className="text-slate-200 dark:text-slate-700">•</span>
-              <span className={`text-xs font-black px-2 py-0.5 rounded-full ${itemsModalOrder.order_status === 'completed' ? 'bg-emerald-100 text-emerald-700' :
-                  itemsModalOrder.order_status === 'accepted' ? 'bg-blue-100 text-blue-700' :
-                    itemsModalOrder.order_status === 'pending' ? 'bg-amber-100 text-amber-700' :
-                      'bg-rose-100 text-rose-700'
-                }`}>
-                {itemsModalOrder.order_status}
-              </span>
+          <div className="space-y-3.5 pb-2">
+            {/* Mobile Summary Banner */}
+            <div className="bg-slate-50 dark:bg-slate-900/60 p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className={`px-2 py-0.5 rounded-lg text-[11px] font-black uppercase tracking-wider ${orderStatusStyle(itemsModalOrder.order_status).badgeClass || 'bg-primary/10 text-primary'}`}>
+                  {orderStatusStyle(itemsModalOrder.order_status).label}
+                </span>
+                <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
+                  {itemsModalOrder.items.filter((i: any) => i.is_completed && !i.is_cancelled).length}/{itemsModalOrder.items.filter((i: any) => !i.is_cancelled).length} Served
+                </span>
+                {itemsModalOrder.items.some((i: any) => i.is_cancelled) && (
+                  <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-md bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400">
+                    {itemsModalOrder.items.filter((i: any) => i.is_cancelled).length} Cancelled
+                  </span>
+                )}
+              </div>
             </div>
 
-            <div className="space-y-2">
-              {itemsModalOrder.items.map((it: any, idx: number) => {
+            {/* Mobile Items List */}
+            <div className="space-y-2.5">
+              {[...(itemsModalOrder.items || [])].sort((a: any, b: any) => {
+                if (Boolean(a.is_cancelled) !== Boolean(b.is_cancelled)) return a.is_cancelled ? 1 : -1;
+                if (Boolean(a.is_completed) !== Boolean(b.is_completed)) return a.is_completed ? 1 : -1;
+                return 0;
+              }).map((it: any, idx: number) => {
                 let variantLabel: string | null = null;
                 if (it.variant_info) {
                   try {
@@ -1154,44 +1592,128 @@ export function OrdersPage() {
                   } catch { /* ignore */ }
                 }
 
+                const isItemDone = Boolean(it.is_completed);
+                const isItemCancelled = Boolean(it.is_cancelled);
+
                 return (
                   <div
                     key={it.id ?? idx}
-                    className="flex items-start justify-between gap-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl px-4 py-3 border border-slate-100 dark:border-slate-800"
+                    className={`flex flex-col gap-2 rounded-2xl p-3.5 border transition-all ${
+                      isItemCancelled
+                        ? 'bg-rose-50/30 dark:bg-rose-950/20 border-rose-200/60 dark:border-rose-800/40 opacity-80'
+                        : isItemDone
+                        ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200/60 dark:border-emerald-800/40'
+                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
+                    }`}
                   >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-bold text-sm text-slate-800 dark:text-slate-100">{it.name}</span>
-                        <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-primary/10 text-primary">
-                          ×{it.quantity}
-                        </span>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="space-y-0.5 flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className={`font-bold text-xs sm:text-sm ${isItemCancelled ? 'line-through text-rose-500/80 dark:text-rose-400/80' : isItemDone ? 'line-through text-slate-400 dark:text-slate-500' : 'text-slate-800 dark:text-slate-100'}`}>
+                            {it.name}
+                          </span>
+                          <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full ${isItemCancelled ? 'bg-rose-100 dark:bg-rose-900/40 text-rose-600' : 'bg-primary/10 text-primary'}`}>
+                            ×{it.quantity}
+                          </span>
+                          {isItemCancelled && (
+                            <span className="text-[9px] font-black tracking-wider bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 px-1 py-0.2 rounded">
+                              CANCELLED
+                            </span>
+                          )}
+                          {isItemDone && !isItemCancelled && (
+                            <span className="text-[9px] font-black tracking-wider bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 px-1 py-0.2 rounded">
+                              SERVED
+                            </span>
+                          )}
+                        </div>
+                        {variantLabel && (
+                          <p className="text-[10px] text-slate-500 mt-0.5 font-medium">
+                            <span className="font-semibold text-slate-600 dark:text-slate-400">Variant:</span> {variantLabel}
+                          </p>
+                        )}
+                        {addons.length > 0 && (
+                          <p className="text-[10px] text-slate-500 mt-0.5">
+                            <span className="font-semibold text-slate-600 dark:text-slate-400">Add-ons:</span> {addons.join(', ')}
+                          </p>
+                        )}
                       </div>
-                      {variantLabel && (
-                        <p className="text-[11px] text-slate-500 mt-1 font-medium">
-                          <span className="font-semibold text-slate-600 dark:text-slate-400">Variant:</span> {variantLabel}
-                        </p>
-                      )}
-                      {addons.length > 0 && (
-                        <p className="text-[11px] text-slate-500 mt-0.5">
-                          <span className="font-semibold text-slate-600 dark:text-slate-400">Add-ons:</span> {addons.join(', ')}
-                        </p>
+
+                      <span className={`font-black text-xs font-mono shrink-0 ${isItemCancelled ? 'line-through text-slate-400' : 'text-slate-800 dark:text-slate-100'}`}>
+                        ₹{(it.price * it.quantity).toFixed(2)}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100 dark:border-slate-800/60">
+                      {isItemCancelled ? (
+                        <button
+                          type="button"
+                          onClick={() => handleToggleItemCancel(itemsModalOrder.id, it.id)}
+                          disabled={togglingCancelItemId === it.id}
+                          className="px-3 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1"
+                        >
+                          <RefreshCw size={11} className={togglingCancelItemId === it.id ? 'animate-spin' : ''} />
+                          <span>Restore</span>
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleItemComplete(itemsModalOrder.id, it.id)}
+                            disabled={togglingItemId === it.id}
+                            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                              isItemDone
+                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700'
+                                : 'bg-amber-500 text-white'
+                            }`}
+                          >
+                            {isItemDone ? (
+                              <>
+                                <CheckCircle2 size={12} className="text-emerald-600 dark:text-emerald-300" />
+                                <span>Served</span>
+                              </>
+                            ) : (
+                              <>
+                                <Clock size={12} />
+                                <span>Mark Given</span>
+                              </>
+                            )}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleToggleItemCancel(itemsModalOrder.id, it.id)}
+                            disabled={togglingCancelItemId === it.id}
+                            className="px-2.5 py-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-200/80 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1"
+                            title="Cancel this item"
+                          >
+                            <XCircle size={13} />
+                            <span>Cancel</span>
+                          </button>
+                        </>
                       )}
                     </div>
-                    <span className="font-black text-sm font-mono text-slate-700 dark:text-slate-200 shrink-0">
-                      ₹{(it.price * it.quantity).toFixed(2)}
-                    </span>
                   </div>
                 );
               })}
             </div>
 
-            <div className="flex justify-between items-center font-black text-base mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white">
-              <span>Grand Total</span>
-              <span className="text-primary text-lg">₹{Number(itemsModalOrder.total_amount).toFixed(2)}</span>
+            {/* Mobile Sheet Footer */}
+            <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-200 dark:border-slate-700 mt-2">
+              <span className="text-xs text-slate-500 font-medium capitalize">
+                {itemsModalOrder.customer_name || 'Walk-in'} • {itemsModalOrder.order_type?.replace('_', ' ')}
+              </span>
+
+              <div className="flex items-center gap-1.5">
+                <span className="font-extrabold text-xs text-slate-400 uppercase tracking-wider">Total:</span>
+                <span className="text-primary font-black text-lg">₹{Number(itemsModalOrder.total_amount).toFixed(2)}</span>
+              </div>
             </div>
           </div>
         )}
       </BottomSheet>
+
+
+
 
       {/* Cancellation Modal */}
       <Modal
@@ -1226,9 +1748,11 @@ export function OrdersPage() {
             <Button
               className="flex-1 bg-rose-600 hover:bg-rose-700 text-white border-0"
               onClick={submitCancelOrder}
+              isLoading={isCancelling}
             >
               Confirm Cancellation
             </Button>
+
           </div>
         </div>
       </Modal>

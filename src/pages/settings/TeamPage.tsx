@@ -36,12 +36,14 @@ export function TeamPage() {
     { id: 'discounts', label: 'Discounts & Offers', level: 'none' },
     { id: 'contests', label: 'Contests & Rewards', level: 'none' },
     { id: 'customers', label: 'Members & Customers', level: 'none' },
+    { id: 'marketing', label: 'Marketing & Campaigns (Broadcasts)', level: 'none' },
     { id: 'analytics', label: 'Analytics & Reports', level: 'none' },
     { id: 'team', label: 'Team Management', level: 'none' },
     { id: 'subscription', label: 'Subscriptions', level: 'none' },
     { id: 'settlements', label: 'Settlements & Payouts', level: 'none' },
     { id: 'settings', label: 'Shop Settings', level: 'none' },
   ]);
+
   const [editingPermissions, setEditingPermissions] = useState<Record<string, Record<string, string[]>>>({});
   const [isUpdating, setIsUpdating] = useState(false);
   const [isSending, setIsSending] = useState(false);

@@ -7,14 +7,51 @@ interface TimePickerProps {
   value?: string; // "HH:MM" 24h format
   onChange?: (value: string) => void;
   placeholder?: string;
+  direction?: 'auto' | 'up' | 'down';
 }
 
-export function TimePicker({ label, value, onChange, placeholder }: TimePickerProps) {
+export function TimePicker({ label, value, onChange, placeholder, direction = 'auto' }: TimePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [openUpwards, setOpenUpwards] = useState(false);
   const [hour, setHour] = useState(12);
   const [minute, setMinute] = useState(0);
   const [period, setPeriod] = useState<'AM' | 'PM'>('AM');
   const ref = useRef<HTMLDivElement>(null);
+
+  // Auto-detect optimal dropdown direction (upwards if near bottom)
+  useEffect(() => {
+    if (!isOpen || !ref.current) return;
+    if (direction === 'up') {
+      setOpenUpwards(true);
+      return;
+    }
+    if (direction === 'down') {
+      setOpenUpwards(false);
+      return;
+    }
+
+    const checkDirection = () => {
+      if (!ref.current) return;
+      const rect = ref.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      // Time popover is approx 240px high
+      if (spaceBelow < 240 && spaceAbove > spaceBelow) {
+        setOpenUpwards(true);
+      } else {
+        setOpenUpwards(false);
+      }
+    };
+
+    checkDirection();
+    window.addEventListener('resize', checkDirection);
+    window.addEventListener('scroll', checkDirection, true);
+    return () => {
+      window.removeEventListener('resize', checkDirection);
+      window.removeEventListener('scroll', checkDirection, true);
+    };
+  }, [isOpen, direction]);
+
 
   // Parse incoming "HH:MM" 24h time
   useEffect(() => {
@@ -91,7 +128,16 @@ export function TimePicker({ label, value, onChange, placeholder }: TimePickerPr
         </button>
 
         {isOpen && (
-          <div className="absolute z-50 mt-2 left-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl p-4 animate-in fade-in slide-in-from-top-2 duration-150">
+          <div 
+            data-lenis-prevent
+            className={cn(
+              "absolute z-50 left-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl p-4 animate-in fade-in duration-150",
+              openUpwards
+                ? "bottom-full mb-2 slide-in-from-bottom-2"
+                : "top-full mt-2 slide-in-from-top-2"
+            )}
+          >
+
             <div className="flex items-center gap-3">
               {/* Hour */}
               <div className="flex flex-col items-center gap-1">
