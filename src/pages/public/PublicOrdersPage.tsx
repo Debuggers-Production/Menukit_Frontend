@@ -167,6 +167,8 @@ export function PublicOrdersPage() {
         return;
       }
 
+      const currSymbol = payData.currency_symbol || shop?.settings?.currency || '₹';
+      const currencyCode = payData.currency || 'INR';
       const baseTotal = payData.base_total || (payData.amount / 100).toFixed(2);
       const platFee = payData.platform_fee || 0;
       const pgFee = payData.pg_fee || 0;
@@ -176,16 +178,16 @@ export function PublicOrdersPage() {
       const rzpOptions = {
         key: payData.razorpay_key,
         amount: payData.amount,
-        currency: payData.currency || 'INR',
+        currency: currencyCode,
         name: shop?.name || 'Restaurant Order',
-        description: `Items: ₹${baseTotal} | Platform Fee: ₹${platFee} | PG Fee (3%): ₹${pgFee} | GST: ₹${gstFee} = ₹${grandTotal}`,
+        description: `Items: ${currSymbol}${baseTotal} | Platform Fee: ${currSymbol}${platFee} | PG Fee (3%): ${currSymbol}${pgFee} | GST: ${currSymbol}${gstFee} = ${currSymbol}${grandTotal}`,
         order_id: payData.razorpay_order_id,
         notes: {
-          "1_Items_Subtotal": `₹${baseTotal}`,
-          "2_Platform_Fee_2%": `₹${platFee}`,
-          "3_Payment_Gateway_Fee_3%": `₹${pgFee}`,
-          "4_GST_on_Fee_18%": `₹${gstFee}`,
-          "5_Grand_Total": `₹${grandTotal}`
+          "1_Items_Subtotal": `${currSymbol}${baseTotal}`,
+          "2_Platform_Fee_2%": `${currSymbol}${platFee}`,
+          "3_Payment_Gateway_Fee_3%": `${currSymbol}${pgFee}`,
+          "4_GST_on_Fee_18%": `${currSymbol}${gstFee}`,
+          "5_Grand_Total": `${currSymbol}${grandTotal}`
         },
         handler: async (response: any) => {
           try {
