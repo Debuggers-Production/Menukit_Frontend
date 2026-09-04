@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
-import { RefreshCw, ShoppingBag, Clock, XCircle, ChevronDown, Check, CheckCircle2, List, User, MapPin, Phone, Share2, Copy, ExternalLink, Navigation, Lock, Search, Plus, Filter, X, Calendar } from 'lucide-react';
+import { RefreshCw, ShoppingBag, Clock, XCircle, ChevronDown, Check, CheckCircle2, List, User, MapPin, Phone, Share2, Copy, ExternalLink, Navigation, Lock, Search, Plus, Filter, X, Calendar, Printer } from 'lucide-react';
 
 import { api } from '@/services/api';
 import { useHeaderStore } from '@/store/useHeaderStore';
+import { useShopStore } from '@/store/shopStore';
 import { HeaderActions } from '@/components/HeaderActions';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent } from '@/components/ui/Card';
@@ -16,6 +17,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { DatePicker } from '@/components/ui/DatePicker';
 import toast from 'react-hot-toast';
 import { CreateOrderModal } from './CreateOrderModal';
+import { ThermalBillModal } from '@/components/orders/ThermalBillModal';
 
 const getTodayDateStr = () => {
   const now = new Date();
@@ -456,6 +458,7 @@ export function OrdersPage() {
 
   const [itemsModalOrder, setItemsModalOrder] = useState<any | null>(null);
   const [customerModalOrder, setCustomerModalOrder] = useState<any | null>(null);
+  const [thermalPrintOrder, setThermalPrintOrder] = useState<any | null>(null);
   const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
   const [cancelOrderReason, setCancelOrderReason] = useState<string>('');
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
@@ -463,6 +466,7 @@ export function OrdersPage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [targetOrderForAdd, setTargetOrderForAdd] = useState<any | null>(null);
   const { setTitle } = useHeaderStore();
+  const { shop } = useShopStore();
 
   useEffect(() => {
     setTitle('Orders Queue', 'Manage your incoming live orders, dine-in tickets, and deliveries.');
@@ -1094,6 +1098,33 @@ export function OrdersPage() {
 
                       )}
 
+                      {/* Prominent Print Bill Button for Completed bills */}
+                      {status === 'COMPLETED' && (
+                        <Button
+                          size="sm"
+                          onClick={() => setThermalPrintOrder(order)}
+                          leftIcon={<Printer size={14} />}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold w-full sm:w-auto h-9 shadow-xs px-3.5"
+                          title="Print Thermal Bill Receipt"
+                        >
+                          Print Bill
+                        </Button>
+                      )}
+
+                      {/* Print Button for active orders */}
+                      {status !== 'COMPLETED' && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setThermalPrintOrder(order)}
+                          leftIcon={<Printer size={13} />}
+                          className="text-xs text-muted-foreground hover:text-foreground w-full sm:w-auto h-9"
+                          title="Print Thermal Bill Receipt"
+                        >
+                          Print
+                        </Button>
+                      )}
+
                       <Button 
                         size="sm" 
                         variant="outline" 
@@ -1225,11 +1256,20 @@ export function OrdersPage() {
             )}
 
             {/* Quick Share & Copy Actions */}
-            <div className="flex gap-2 pt-2 border-t border-slate-150 dark:border-slate-800">
+            <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-150 dark:border-slate-800">
+              <Button
+                size="sm"
+                className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs"
+                onClick={() => setThermalPrintOrder(customerModalOrder)}
+                leftIcon={<Printer size={14} />}
+              >
+                Print Bill
+              </Button>
+
               <Button
                 variant="outline"
                 size="sm"
-                className="flex-1 gap-1.5"
+                className="gap-1 text-xs"
                 onClick={() => {
                   const billText = generateOrderBillText(customerModalOrder);
                   if (navigator.share) {
@@ -1241,13 +1281,13 @@ export function OrdersPage() {
                 }}
                 leftIcon={<Share2 size={14} />}
               >
-                Share Bill
+                Share
               </Button>
 
               <Button
                 variant="secondary"
                 size="sm"
-                className="flex-1 gap-1.5"
+                className="gap-1 text-xs"
                 onClick={() => {
                   const billText = generateOrderBillText(customerModalOrder);
                   navigator.clipboard.writeText(billText);
@@ -1255,7 +1295,7 @@ export function OrdersPage() {
                 }}
                 leftIcon={<Copy size={14} />}
               >
-                Copy Text
+                Copy
               </Button>
             </div>
           </div>
@@ -1322,11 +1362,20 @@ export function OrdersPage() {
             )}
 
             {/* Quick Share & Copy Actions */}
-            <div className="flex gap-2 pt-2 border-t border-slate-150 dark:border-slate-800">
+            <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-150 dark:border-slate-800">
+              <Button
+                size="sm"
+                className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs"
+                onClick={() => setThermalPrintOrder(customerModalOrder)}
+                leftIcon={<Printer size={14} />}
+              >
+                Print Bill
+              </Button>
+
               <Button
                 variant="outline"
                 size="sm"
-                className="flex-1 gap-1.5"
+                className="gap-1 text-xs"
                 onClick={() => {
                   const billText = generateOrderBillText(customerModalOrder);
                   if (navigator.share) {
@@ -1338,13 +1387,13 @@ export function OrdersPage() {
                 }}
                 leftIcon={<Share2 size={14} />}
               >
-                Share Bill
+                Share
               </Button>
 
               <Button
                 variant="secondary"
                 size="sm"
-                className="flex-1 gap-1.5"
+                className="gap-1 text-xs"
                 onClick={() => {
                   const billText = generateOrderBillText(customerModalOrder);
                   navigator.clipboard.writeText(billText);
@@ -1352,7 +1401,7 @@ export function OrdersPage() {
                 }}
                 leftIcon={<Copy size={14} />}
               >
-                Copy Text
+                Copy
               </Button>
             </div>
           </div>
@@ -1524,7 +1573,7 @@ export function OrdersPage() {
             </div>
 
             {/* Modal Footer (Clean & Spacious) */}
-            <div className="flex items-center justify-between gap-3 pt-3.5 border-t border-slate-200 dark:border-slate-800 mt-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3.5 border-t border-slate-200 dark:border-slate-800 mt-2">
               <div className="flex items-center gap-2">
                 <span className="text-xs text-slate-500 font-medium">
                   {itemsModalOrder.customer_name || 'Walk-in'} • <span className="capitalize font-bold text-slate-700 dark:text-slate-300">{itemsModalOrder.order_type?.replace('_', ' ')}</span>
@@ -1532,9 +1581,19 @@ export function OrdersPage() {
                 </span>
               </div>
 
-              <div className="flex items-center gap-2">
-                <span className="font-extrabold text-xs text-slate-400 uppercase tracking-wider">Grand Total:</span>
-                <span className="text-primary font-black text-xl">₹{Number(itemsModalOrder.total_amount).toFixed(2)}</span>
+              <div className="flex items-center justify-between sm:justify-end gap-3">
+                <Button
+                  size="sm"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-8"
+                  onClick={() => setThermalPrintOrder(itemsModalOrder)}
+                  leftIcon={<Printer size={13} />}
+                >
+                  Print Bill
+                </Button>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-extrabold text-xs text-slate-400 uppercase tracking-wider">Grand Total:</span>
+                  <span className="text-primary font-black text-xl">₹{Number(itemsModalOrder.total_amount).toFixed(2)}</span>
+                </div>
               </div>
             </div>
           </div>
@@ -1699,9 +1758,14 @@ export function OrdersPage() {
 
             {/* Mobile Sheet Footer */}
             <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-200 dark:border-slate-700 mt-2">
-              <span className="text-xs text-slate-500 font-medium capitalize">
-                {itemsModalOrder.customer_name || 'Walk-in'} • {itemsModalOrder.order_type?.replace('_', ' ')}
-              </span>
+              <Button
+                size="sm"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-8 px-3"
+                onClick={() => setThermalPrintOrder(itemsModalOrder)}
+                leftIcon={<Printer size={13} />}
+              >
+                Print Bill
+              </Button>
 
               <div className="flex items-center gap-1.5">
                 <span className="font-extrabold text-xs text-slate-400 uppercase tracking-wider">Total:</span>
@@ -1770,6 +1834,14 @@ export function OrdersPage() {
         onClose={() => setTargetOrderForAdd(null)}
         targetOrder={targetOrderForAdd}
         onOrderCreated={() => fetchOrdersData(0, true)}
+      />
+
+      {/* Thermal Bill Receipt Modal */}
+      <ThermalBillModal
+        isOpen={!!thermalPrintOrder}
+        onClose={() => setThermalPrintOrder(null)}
+        order={thermalPrintOrder}
+        shop={shop}
       />
 
       {/* Floating Action Button (FAB) for Create Order */}
