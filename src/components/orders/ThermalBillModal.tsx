@@ -1,39 +1,110 @@
-import { useState } from 'react';
-import { Printer, Download, Copy, Check, X, Smartphone, Receipt } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Printer, Copy, Check, Sparkles } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import toast from 'react-hot-toast';
 import { 
   formatReceiptDateTime, 
-  printThermalReceipt, 
-  generateThermalReceiptHtml 
+  printBillToAllPrinters,
+  printThermalReceipt,
+  isNewlyAddedItem,
 } from '@/utils/thermalPrinter';
+import { usePrinterStore } from '@/store/usePrinterStore';
 
 interface ThermalBillModalProps {
   isOpen: boolean;
   onClose: () => void;
   order: any | null;
   shop: any | null;
+  initialMode?: 'all' | 'new_only';
 }
 
-export function ThermalBillModal({ isOpen, onClose, order, shop }: ThermalBillModalProps) {
-  const [paperWidth, setPaperWidth] = useState<'80mm' | '58mm'>('80mm');
+export function ThermalBillModal({ isOpen, onClose, order, shop, initialMode }: ThermalBillModalProps) {
+  const { billingPrinter, billingPrinters, billingPaperWidth } = usePrinterStore();
+  const activePrinters = (billingPrinters && billingPrinters.length > 0)
+    ? billingPrinters.filter(p => p.enabled !== false)
+    : [billingPrinter];
+
+  // Visual receipt preview paper width from settings / registered printers
+  const paperWidth: '80mm' | '58mm' = (activePrinters[0]?.paperWidth || billingPaperWidth) === '58mm' ? '58mm' : '80mm';
+  const is58mm = paperWidth === '58mm';
   const [isPrinting, setIsPrinting] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // Active (non-cancelled) items
+  const allActiveItems = (order?.items || []).filter((it: any) => !it.is_cancelled);
+  // Newly added items (running additions, unserved additions, or later items)
+  const newlyAddedItems = allActiveItems.filter((it: any) => isNewlyAddedItem(it, order));
+  const hasNewlyAdded = newlyAddedItems.length > 0 && newlyAddedItems.length < allActiveItems.length;
+
+  const [printMode, setPrintMode] = useState<'all' | 'new_only'>(() => {
+    if (initialMode) return initialMode;
+    return hasNewlyAdded ? 'new_only' : 'all';
+  });
+
+  useEffect(() => {
+    if (initialMode) {
+      setPrintMode(initialMode);
+    } else if (hasNewlyAdded) {
+      setPrintMode('new_only');
+    } else {
+      setPrintMode('all');
+    }
+  }, [order?.id, initialMode, hasNewlyAdded]);
+
   if (!order) return null;
+
+  const isNewOnlyMode = printMode === 'new_only' && hasNewlyAdded;
+  // If newly added mode is active, ONLY include the newly added items, omitting previous items!
+  const items = isNewOnlyMode ? newlyAddedItems : allActiveItems;
 
   const { full: formattedDateTime } = formatReceiptDateTime(order.created_at);
   const billNo = `INV-${new Date(order.created_at || Date.now()).getFullYear()}-${order.id ? order.id.slice(0, 8).toUpperCase() : '00000000'}`;
   const currencySymbol = (!shop?.settings?.currency || shop?.settings?.currency === '$') ? 'Rs' : shop.settings.currency;
   
-  const items = order.items || [];
   const totalUnits = items.reduce((sum: number, it: any) => sum + (it.quantity || 1), 0);
   const totalItems = items.length;
 
   const subtotal = items.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
-  const totalAmount = Number(order.total_amount ?? subtotal);
-  const discountAmount = Math.max(0, subtotal - totalAmount);
+  const rawTotalAmount = isNewOnlyMode ? subtotal : Number(order.total_amount ?? subtotal);
+  const discountAmount = isNewOnlyMode ? 0 : Math.max(0, subtotal - rawTotalAmount);
+  const receiptTitle = isNewOnlyMode ? 'TAX INVOICE (NEW ITEMS)' : 'TAX INVOICE';
+
+  // GST Compliance Calculation
+  const isGstEnabled = Boolean(shop?.settings?.gst_enabled);
+  const cgstRate = Number(shop?.settings?.cgst_rate || 0);
+  const sgstRate = Number(shop?.settings?.sgst_rate || 0);
+  const totalTaxRate = cgstRate + sgstRate;
+  const isInclusive = Boolean(shop?.settings?.inclusive_tax);
+
+  let taxableValue = subtotal;
+  let totalTax = 0;
+  let cgstAmount = 0;
+  let sgstAmount = 0;
+  let finalBillTotal = rawTotalAmount;
+
+  if (isGstEnabled && totalTaxRate > 0) {
+    if (isInclusive) {
+      finalBillTotal = rawTotalAmount;
+      taxableValue = Math.round((finalBillTotal / (1 + totalTaxRate / 100)) * 100) / 100;
+      totalTax = Math.round((finalBillTotal - taxableValue) * 100) / 100;
+      cgstAmount = Math.round((totalTax * (cgstRate / totalTaxRate)) * 100) / 100;
+      sgstAmount = Math.round((totalTax - cgstAmount) * 100) / 100;
+    } else {
+      // EXCLUSIVE: Tax is added on top of food subtotal
+      taxableValue = Math.max(0, subtotal - discountAmount);
+      cgstAmount = Math.round((taxableValue * (cgstRate / 100)) * 100) / 100;
+      sgstAmount = Math.round((taxableValue * (sgstRate / 100)) * 100) / 100;
+      totalTax = Math.round((cgstAmount + sgstAmount) * 100) / 100;
+
+      const orderAmountNum = Number(order.total_amount || 0);
+      if (!isNewOnlyMode && orderAmountNum >= taxableValue + totalTax - 0.05) {
+        finalBillTotal = orderAmountNum;
+      } else {
+        finalBillTotal = Math.round((taxableValue + totalTax) * 100) / 100;
+      }
+    }
+  }
 
   const orderTypeLabel = order.order_type === 'dine_in' 
     ? (order.table_number ? `Dine-in (Table #${order.table_number})` : 'Dine-in')
@@ -48,13 +119,33 @@ export function ThermalBillModal({ isOpen, onClose, order, shop }: ThermalBillMo
 
   const handlePrint = async () => {
     setIsPrinting(true);
-    const toastId = toast.loading('Preparing print...');
     try {
-      await printThermalReceipt(order, shop, { paperWidth });
-      toast.success('Print dialog opened', { id: toastId });
+      await printBillToAllPrinters(order, shop, activePrinters, { 
+        paperWidth,
+        customItems: items,
+        receiptTitle,
+        isNewOnly: isNewOnlyMode,
+      });
+    } catch (e) {
+      console.error('Print bill failed:', e);
+      toast.error('Failed to print bill');
+    } finally {
+      setIsPrinting(false);
+    }
+  };
+
+  const handleSystemBrowserPrint = async () => {
+    setIsPrinting(true);
+    try {
+      await printThermalReceipt(order, shop, { 
+        paperWidth,
+        customItems: items,
+        receiptTitle,
+        isNewOnly: isNewOnlyMode,
+      });
     } catch (e) {
       console.error(e);
-      toast.error('Failed to open print dialog', { id: toastId });
+      toast.error('Failed to open system print dialog');
     } finally {
       setIsPrinting(false);
     }
@@ -73,7 +164,17 @@ export function ThermalBillModal({ isOpen, onClose, order, shop }: ThermalBillMo
       return line;
     }).join('\n');
 
-    const billText = `🧾 ${shop?.name || 'SHOP'} - TAX INVOICE\n` +
+    let gstText = '';
+    if (isGstEnabled && totalTaxRate > 0) {
+      gstText = `--------------------------------\n` +
+        `Taxable Turnover: ${taxableValue.toFixed(2)}\n` +
+        `CGST (${cgstRate}%): ${cgstAmount.toFixed(2)}\n` +
+        `SGST (${sgstRate}%): ${sgstAmount.toFixed(2)}\n` +
+        (isInclusive ? `(Prices include GST)\n` : `(Exclusive: Tax added on items)\n`);
+    }
+
+    const billText = `🧾 ${shop?.name || 'SHOP'} - ${receiptTitle}\n` +
+      (isNewOnlyMode ? `*** RUNNING ADDITIONS ONLY ***\n` : '') +
       `Bill No: ${billNo}\n` +
       `Date: ${formattedDateTime}\n` +
       `--------------------------------\n` +
@@ -81,20 +182,21 @@ export function ThermalBillModal({ isOpen, onClose, order, shop }: ThermalBillMo
       (order.customer_phone ? `Phone: ${order.customer_phone}\n` : '') +
       `Type: ${orderTypeLabel}\n` +
       `--------------------------------\n` +
-      `ITEMS:\n${itemsText}\n` +
+      `ITEMS (${isNewOnlyMode ? 'NEW ADDITIONS' : 'FINALIZED'}):\n${itemsText}\n` +
       `--------------------------------\n` +
-      `TOTAL: ${currencySymbol} ${totalAmount.toFixed(2)}\n` +
+      `Subtotal: ${currencySymbol} ${subtotal.toFixed(2)}\n` +
+      (discountAmount > 0 ? `Discount: -${currencySymbol} ${discountAmount.toFixed(2)}\n` : '') +
+      gstText +
+      `TOTAL: ${currencySymbol} ${finalBillTotal.toFixed(2)}\n` +
       `Payment: ${order.payment_method?.toUpperCase()} (${order.payment_status?.toUpperCase()})\n` +
       `--------------------------------\n` +
       `Thank you for ordering with us!`;
 
     navigator.clipboard.writeText(billText);
     setCopied(true);
-    toast.success('Bill text copied to clipboard!');
+    toast.success(isNewOnlyMode ? 'New items bill text copied!' : 'Final bill text copied!');
     setTimeout(() => setCopied(false), 2000);
   };
-
-  const is58mm = paperWidth === '58mm';
 
   return (
     <Modal
@@ -104,42 +206,26 @@ export function ThermalBillModal({ isOpen, onClose, order, shop }: ThermalBillMo
       className="max-w-xl"
     >
       <div className="space-y-4 pt-1">
-        {/* Controls Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-slate-100 dark:bg-slate-850 rounded-2xl border border-slate-200/80 dark:border-slate-800">
-          {/* Paper Width Selector */}
-          <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2">Paper:</span>
-            <button
-              type="button"
-              onClick={() => setPaperWidth('80mm')}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                paperWidth === '80mm'
-                  ? 'bg-primary text-white shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
-              }`}
-            >
-              80mm (Standard)
-            </button>
-            <button
-              type="button"
-              onClick={() => setPaperWidth('58mm')}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                paperWidth === '58mm'
-                  ? 'bg-primary text-white shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
-              }`}
-            >
-              58mm (Mini)
-            </button>
+        {/* Controls Toolbar: Clean Target Status & Print Action */}
+        <div className="flex items-center justify-between gap-3 p-3 bg-slate-100 dark:bg-slate-850 rounded-2xl border border-slate-200/80 dark:border-slate-800">
+          <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400 min-w-0">
+            <Printer size={15} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <div className="truncate">
+              <span className="font-semibold text-slate-700 dark:text-slate-300">
+                {activePrinters.length > 1
+                  ? `Sending to all ${activePrinters.length} registered cashier printers`
+                  : `Target: ${activePrinters[0]?.name || 'Cashier Printer'}`}
+              </span>
+            </div>
           </div>
 
           {/* Quick Actions */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <Button
               size="sm"
               variant="outline"
               onClick={handleCopyText}
-              className="text-xs h-8 px-2.5"
+              className="text-xs h-9 px-3"
               title="Copy bill text"
             >
               {copied ? <Check size={14} className="text-emerald-500 mr-1" /> : <Copy size={14} className="mr-1" />}
@@ -151,15 +237,58 @@ export function ThermalBillModal({ isOpen, onClose, order, shop }: ThermalBillMo
               onClick={handlePrint}
               isLoading={isPrinting}
               leftIcon={<Printer size={15} />}
-              className="text-xs font-bold h-8 px-3.5 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
+              className="text-xs font-bold h-9 px-4 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs cursor-pointer"
+              title={activePrinters.length > 1 ? `Print bill to all ${activePrinters.length} registered printers` : `Print bill to ${activePrinters[0]?.name || 'Cashier Printer'}`}
             >
-              Print Bill
+              {isNewOnlyMode ? 'Print New Items' : 'Print Bill'}
             </Button>
           </div>
         </div>
 
+        {/* If Order has Newly Added Items: Mode Toggle Banner */}
+        {hasNewlyAdded && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl">
+            <div className="flex items-center gap-2">
+              <Sparkles size={16} className="text-amber-600 dark:text-amber-400 shrink-0" />
+              <div>
+                <div className="font-extrabold text-xs text-amber-900 dark:text-amber-200">
+                  Running Additions Detected
+                </div>
+                <div className="text-[11px] text-amber-700 dark:text-amber-300">
+                  {newlyAddedItems.length} newly added item(s) on this running order
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 self-end sm:self-auto bg-white dark:bg-slate-900 p-1 rounded-xl border border-amber-300 dark:border-amber-800 shadow-2xs">
+              <button
+                type="button"
+                onClick={() => setPrintMode('new_only')}
+                className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                  isNewOnlyMode
+                    ? 'bg-amber-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-amber-700 dark:hover:text-amber-300'
+                }`}
+              >
+                ✨ New Items Only ({newlyAddedItems.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setPrintMode('all')}
+                className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                  !isNewOnlyMode
+                    ? 'bg-slate-800 dark:bg-slate-100 text-white dark:text-slate-900 shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                }`}
+              >
+                Full Bill ({allActiveItems.length})
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Thermal Receipt Visual Preview Container (Block scroll to prevent flex overflow clipping) */}
-        <div className="w-full bg-slate-100 dark:bg-slate-950 p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-y-auto max-h-[62vh]">
+        <div className="w-full bg-slate-100 dark:bg-slate-950 p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-y-auto max-h-[60vh]">
           <div
             id="thermal-receipt-preview-content"
             style={{
@@ -203,13 +332,23 @@ export function ThermalBillModal({ isOpen, onClose, order, shop }: ThermalBillMo
                   GSTIN: {shop?.settings?.gstin || shop?.gstin}
                 </p>
               )}
+              {shop?.settings?.fssai_license && (
+                <p className="text-[10px] text-slate-800">
+                  FSSAI Lic: {shop.settings.fssai_license}
+                </p>
+              )}
             </div>
 
             {/* Tax Invoice Header */}
             <div className="border-t border-dashed border-black my-2.5" />
             <div className="text-center font-black text-xs uppercase tracking-widest py-0.5">
-              TAX INVOICE
+              {receiptTitle}
             </div>
+            {isNewOnlyMode && (
+              <div className="text-center text-[9px] font-black tracking-wider uppercase text-black">
+                * RUNNING ADDITIONS ONLY *
+              </div>
+            )}
             <div className="border-t border-dashed border-black my-2.5" />
 
             {/* Meta Information */}
@@ -252,8 +391,8 @@ export function ThermalBillModal({ isOpen, onClose, order, shop }: ThermalBillMo
             </div>
             <div className="border-t border-dashed border-black my-2.5" />
 
-            {/* Items List */}
-            <div className="space-y-2 text-[11px]">
+            {/* Finalized Items List ONLY */}
+            <div className="space-y-2.5 text-[11px]">
               {items.map((it: any, idx: number) => {
                 let variantLabel: string | null = null;
                 if (it.variant_info) {
@@ -266,7 +405,9 @@ export function ThermalBillModal({ isOpen, onClose, order, shop }: ThermalBillMo
 
                 return (
                   <div key={idx}>
-                    <div className="font-bold break-words leading-tight">{it.name}</div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-bold break-words leading-tight">{it.name}</span>
+                    </div>
                     {variantLabel && (
                       <div className="text-[9.5px] text-slate-700">({variantLabel})</div>
                     )}
@@ -301,11 +442,35 @@ export function ThermalBillModal({ isOpen, onClose, order, shop }: ThermalBillMo
               )}
             </div>
 
+            {/* GST Breakdown */}
+            {isGstEnabled && totalTaxRate > 0 && (
+              <>
+                <div className="border-t border-dashed border-black my-2" />
+                <div className="text-[11px] space-y-0.5">
+                  <div className="flex justify-between">
+                    <span>Taxable Turnover:</span>
+                    <span>{taxableValue.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>CGST ({cgstRate}%):</span>
+                    <span>{cgstAmount.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>SGST ({sgstRate}%):</span>
+                    <span>{sgstAmount.toFixed(2)}</span>
+                  </div>
+                  <div className="text-[9.5px] italic text-slate-700 pt-0.5">
+                    {isInclusive ? '(Prices include GST)' : '(Exclusive: Tax added on items)'}
+                  </div>
+                </div>
+              </>
+            )}
+
             {/* Grand Total */}
             <div className="border-t border-dashed border-black my-2.5" />
             <div className="flex justify-between items-center text-sm font-black py-0.5">
               <span>TOTAL</span>
-              <span>{currencySymbol} {totalAmount.toFixed(2)}</span>
+              <span>{currencySymbol} {finalBillTotal.toFixed(2)}</span>
             </div>
             <div className="border-t border-dashed border-black my-2.5" />
 
@@ -335,7 +500,7 @@ export function ThermalBillModal({ isOpen, onClose, order, shop }: ThermalBillMo
         </div>
 
         {/* Footer Actions */}
-        <div className="flex justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
           <Button
             variant="secondary"
             onClick={onClose}
@@ -347,9 +512,11 @@ export function ThermalBillModal({ isOpen, onClose, order, shop }: ThermalBillMo
             onClick={handlePrint}
             isLoading={isPrinting}
             leftIcon={<Printer size={15} />}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 cursor-pointer"
           >
-            Print to Thermal Printer
+            {isNewOnlyMode 
+              ? (activePrinters.length > 1 ? `Print New Items (${activePrinters.length} Printers)` : 'Print New Items')
+              : (activePrinters.length > 1 ? `Print Bill (${activePrinters.length} Printers)` : 'Print Bill')}
           </Button>
         </div>
       </div>

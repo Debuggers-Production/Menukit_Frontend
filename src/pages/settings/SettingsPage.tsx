@@ -3,11 +3,16 @@ import { useNavigate } from 'react-router';
 import { 
   Mail, Store, Shield, Smartphone, ChevronRight, Sliders, Globe, 
   Coins, Truck, ShoppingBag, QrCode, Tag, MapPin, Zap, CheckCircle2, Lock, Info, AlertCircle,
-  CreditCard
+  CreditCard, Printer, Plus, Trash2, Edit2, UtensilsCrossed, FileText, Check, RotateCcw,
+  Wifi, Usb, Volume2, Terminal, Copy, Receipt, Search, X, Tags, Layers
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { useAuthStore } from '@/store/authStore';
 import { useShopStore } from '@/store/shopStore';
+import { usePrinterStore, PrinterStation, BillingPrinterConfig, BillingPrinter } from '@/store/usePrinterStore';
+import { printThermalKot, printBillToPrinter } from '@/utils/thermalPrinter';
+import { requestWebUsbPrinter, sendEscPosToDevice } from '@/utils/webUsbPrinter';
+import { buildKotEscPos } from '@/utils/escpos';
 import { api } from '@/services/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -59,11 +64,412 @@ function SettingRow({
 
 export function SettingsPage() {
   const { user, changeEmail } = useAuthStore();
-  const { shop, setShop } = useShopStore();
+  const { shop, setShop, categories, setCategories } = useShopStore();
   const navigate = useNavigate();
 
   // Tab State
-  const [activeTab, setActiveTab] = useState<'general' | 'ordering' | 'discovery' | 'payments' | 'account'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'ordering' | 'discovery' | 'payments' | 'gst' | 'printers' | 'account'>('general');
+  const [printerSection, setPrinterSection] = useState<'all' | 'kot' | 'billing'>('all');
+
+  // Printer & KOT Store
+  const {
+    paperWidth,
+    setPaperWidth,
+    autoPrintOnAccept,
+    setAutoPrintOnAccept,
+    stations,
+    addStation,
+    updateStation,
+    removeStation,
+    billingPrinter,
+    billingPrinters,
+    autoPrintOnPayment,
+    billingPaperWidth,
+    addBillingPrinter,
+    updateBillingPrinter,
+    removeBillingPrinter,
+    setDefaultBillingPrinter,
+    setAutoPrintOnPayment,
+    setBillingPaperWidth,
+    setBillingPrinter,
+  } = usePrinterStore();
+
+  // Fetch categories if needed for printer station routing
+  useEffect(() => {
+    if (!categories || categories.length === 0) {
+      api.get('/categories', { params: { limit: 500 } })
+        .then(res => setCategories(res.data || []))
+        .catch(err => console.error('Failed to load categories for printer routing', err));
+    }
+  }, [categories, setCategories]);
+
+  // Printer Station Form State
+  const [isStationModalOpen, setIsStationModalOpen] = useState(false);
+  const [editingStationId, setEditingStationId] = useState<string | null>(null);
+  const [isTestingLan, setIsTestingLan] = useState(false);
+  const [pairedUsbName, setPairedUsbName] = useState<string | null>(null);
+
+  // Quick Multi-Category Assign Modal State
+  const [quickAssignStation, setQuickAssignStation] = useState<PrinterStation | null>(null);
+  const [quickAssignCategoryIds, setQuickAssignCategoryIds] = useState<string[]>(['all']);
+  const [categorySearchQuery, setCategorySearchQuery] = useState('');
+
+  const [stationForm, setStationForm] = useState<{
+    name: string;
+    paperWidth: '80mm' | '58mm';
+    categoryIds: string[];
+    autoPrintOnAccept: boolean;
+    enabled: boolean;
+    connectionType: 'browser' | 'network' | 'usb';
+    ipAddress: string;
+    port: number;
+    soundBuzzer: boolean;
+  }>({
+    name: '',
+    paperWidth: '80mm',
+    categoryIds: ['all'],
+    autoPrintOnAccept: true,
+    enabled: true,
+    connectionType: 'browser',
+    ipAddress: '',
+    port: 9100,
+    soundBuzzer: true,
+  });
+
+  const openNewStationModal = () => {
+    setEditingStationId(null);
+    setCategorySearchQuery('');
+    setStationForm({
+      name: '',
+      paperWidth,
+      categoryIds: ['all'],
+      autoPrintOnAccept: true,
+      enabled: true,
+      connectionType: 'network',
+      ipAddress: '127.0.0.1',
+      port: 9100,
+      soundBuzzer: true,
+    });
+    setIsStationModalOpen(true);
+  };
+
+  const openEditStationModal = (station: PrinterStation) => {
+    setEditingStationId(station.id);
+    setCategorySearchQuery('');
+    setStationForm({
+      name: station.name,
+      paperWidth: station.paperWidth || paperWidth,
+      categoryIds: station.categoryIds || ['all'],
+      autoPrintOnAccept: station.autoPrintOnAccept !== false,
+      enabled: station.enabled !== false,
+      connectionType: station.connectionType || 'network',
+      ipAddress: station.ipAddress || '127.0.0.1',
+      port: station.port || 9100,
+      soundBuzzer: station.soundBuzzer !== false,
+    });
+    setIsStationModalOpen(true);
+  };
+
+  const handlePairUsb = async () => {
+    try {
+      const dev = await requestWebUsbPrinter();
+      if (dev) {
+        setPairedUsbName(dev.name);
+        setStationForm(prev => ({ ...prev, connectionType: 'usb' }));
+        toast.success(`Paired: ${dev.name}`);
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to pair USB printer');
+    }
+  };
+
+  const handleTestLanSocket = async (ip: string, port: number = 9100, name: string = 'Test') => {
+    if (!ip.trim()) {
+      toast.error('Please enter a valid IP address first');
+      return;
+    }
+    setIsTestingLan(true);
+    const toastId = toast.loading(`Connecting to LAN printer at ${ip}:${port}...`);
+    try {
+      const res = await api.post('/printer/test-lan', {
+        ip: ip.trim(),
+        port: Number(port) || 9100,
+        station_name: name,
+      });
+      toast.success(res.data.message || 'Connected to printer and printed test slip!', { id: toastId });
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || 'Printer unreachable. Verify IP, power, and LAN cable.', { id: toastId });
+    } finally {
+      setIsTestingLan(false);
+    }
+  };
+
+  const handleSaveStation = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!stationForm.name.trim()) {
+      toast.error('Please enter a printer station name');
+      return;
+    }
+    if (stationForm.connectionType === 'network' && !stationForm.ipAddress.trim()) {
+      toast.error('Please specify the Printer IP address for Network LAN mode');
+      return;
+    }
+    if (stationForm.categoryIds.length === 0) {
+      toast.error('Please select at least one food category or choose "All Categories"');
+      return;
+    }
+
+    if (editingStationId) {
+      updateStation(editingStationId, stationForm);
+      toast.success('Printer station updated');
+    } else {
+      addStation(stationForm);
+      toast.success('Printer station added');
+    }
+    setIsStationModalOpen(false);
+  };
+
+  const handleTestPrint = async (station?: PrinterStation) => {
+    const mockOrder = {
+      id: 'demo-kot-001',
+      created_at: new Date().toISOString(),
+      order_type: 'dine_in',
+      table_number: '5',
+      customer_name: 'Test Customer',
+      customer_phone: '+919876543210',
+      items: [
+        {
+          id: 'item-1',
+          name: 'Butter Naan',
+          quantity: 2,
+          price: 45,
+          notes: 'Crispy & well buttered',
+        },
+        {
+          id: 'item-2',
+          name: 'Paneer Butter Masala',
+          quantity: 1,
+          price: 240,
+          notes: 'Medium spicy',
+        },
+      ],
+    };
+
+    const targetWidth = station?.paperWidth || paperWidth;
+    const targetName = station?.name || 'Kitchen Printer Test';
+
+    // If Network LAN
+    if (station?.connectionType === 'network' && station.ipAddress) {
+      await handleTestLanSocket(station.ipAddress, station.port || 9100, targetName);
+      return;
+    }
+
+    // If Direct USB
+    if (station?.connectionType === 'usb') {
+      const toastId = toast.loading('Sending ESC/POS bytes to USB printer...');
+      try {
+        const bytes = buildKotEscPos(mockOrder, shop, {
+          paperWidth: targetWidth,
+          stationName: targetName,
+          soundBuzzer: station.soundBuzzer !== false,
+        });
+        const ok = await sendEscPosToDevice(bytes);
+        if (ok) {
+          toast.success('Test KOT sent to USB thermal printer!', { id: toastId });
+        } else {
+          toast.error('No USB printer paired. Click edit station and pair your printer.', { id: toastId });
+        }
+      } catch (e: any) {
+        toast.error('Failed to send to USB printer', { id: toastId });
+      }
+      return;
+    }
+
+    // System Browser / Kiosk Print
+    toast.loading('Sending test KOT slip...', { id: 'test-kot' });
+    try {
+      const ok = await printThermalKot(mockOrder, shop, {
+        paperWidth: targetWidth,
+        stationName: targetName,
+        invocationMode: 'full',
+      });
+      if (ok) {
+        toast.success(`Test KOT sent to ${targetWidth} printer!`, { id: 'test-kot' });
+      } else {
+        toast.error('Print dialog canceled or printer unavailable', { id: 'test-kot' });
+      }
+    } catch (err) {
+      toast.error('Failed to run test print', { id: 'test-kot' });
+    }
+  };
+
+  // Cashier Billing Printer Modal State
+  const [isBillingModalOpen, setIsBillingModalOpen] = useState(false);
+  const [editingBillingPrinterId, setEditingBillingPrinterId] = useState<string | null>(null);
+  const [billingPrinterForm, setBillingPrinterForm] = useState<{
+    name: string;
+    paperWidth: '80mm' | '58mm';
+    connectionType: 'browser' | 'network' | 'usb';
+    ipAddress: string;
+    port: number;
+    enabled: boolean;
+    isDefault: boolean;
+  }>({
+    name: '',
+    paperWidth: '80mm',
+    connectionType: 'network',
+    ipAddress: '127.0.0.1',
+    port: 9100,
+    enabled: true,
+    isDefault: false,
+  });
+
+  const openNewBillingPrinterModal = () => {
+    setEditingBillingPrinterId(null);
+    setBillingPrinterForm({
+      name: `Cashier Counter ${billingPrinters.length + 1}`,
+      paperWidth: billingPaperWidth || '80mm',
+      connectionType: 'network',
+      ipAddress: '127.0.0.1',
+      port: 9100,
+      enabled: true,
+      isDefault: billingPrinters.length === 0,
+    });
+    setIsBillingModalOpen(true);
+  };
+
+  const openEditBillingPrinterModal = (printer: BillingPrinter) => {
+    setEditingBillingPrinterId(printer.id);
+    setBillingPrinterForm({
+      name: printer.name,
+      paperWidth: printer.paperWidth || billingPaperWidth || '80mm',
+      connectionType: printer.connectionType || 'network',
+      ipAddress: printer.ipAddress || '127.0.0.1',
+      port: printer.port || 9100,
+      enabled: printer.enabled !== false,
+      isDefault: Boolean(printer.isDefault),
+    });
+    setIsBillingModalOpen(true);
+  };
+
+  const handlePairBillingPrinterUsb = async () => {
+    try {
+      const dev = await requestWebUsbPrinter();
+      if (dev) {
+        setBillingPrinterForm(prev => ({ ...prev, connectionType: 'usb' }));
+        toast.success(`Paired USB printer: ${dev.name}`);
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to pair USB printer');
+    }
+  };
+
+  const handleSaveBillingPrinter = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!billingPrinterForm.name.trim()) {
+      toast.error('Please enter a cashier printer name');
+      return;
+    }
+    if (billingPrinterForm.connectionType === 'network' && !billingPrinterForm.ipAddress.trim()) {
+      toast.error('Please enter a valid IP address for LAN printing');
+      return;
+    }
+
+    if (editingBillingPrinterId) {
+      updateBillingPrinter(editingBillingPrinterId, billingPrinterForm);
+      toast.success('Cashier printer updated');
+    } else {
+      addBillingPrinter(billingPrinterForm);
+      toast.success('Cashier printer added');
+    }
+    setIsBillingModalOpen(false);
+  };
+
+  const handleTestBillPrint = async () => {
+    const targetPrinter = billingPrinters?.find(p => p.isDefault && p.enabled) || billingPrinters?.[0] || billingPrinter;
+    const mockOrder = {
+      id: 'demo-inv-001',
+      created_at: new Date().toISOString(),
+      order_type: 'dine_in',
+      table_number: '4',
+      customer_name: 'Rahul Sharma',
+      customer_phone: '+919876543210',
+      payment_method: 'CASH',
+      payment_status: 'paid',
+      items: [
+        {
+          id: 'item-1',
+          name: 'Paneer Butter Masala',
+          quantity: 1,
+          price: 240,
+        },
+        {
+          id: 'item-2',
+          name: 'Butter Naan',
+          quantity: 3,
+          price: 45,
+        },
+        {
+          id: 'item-3',
+          name: 'Sweet Lassi',
+          quantity: 2,
+          price: 60,
+        },
+      ],
+      total_amount: 495,
+    };
+
+    await printBillToPrinter(mockOrder, shop, targetPrinter);
+  };
+
+  const handleTestSpecificBillPrint = async (printer: BillingPrinter) => {
+    const mockOrder = {
+      id: 'demo-inv-' + Math.floor(100 + Math.random() * 900),
+      created_at: new Date().toISOString(),
+      order_type: 'dine_in',
+      table_number: '1',
+      customer_name: 'Walk-in Customer',
+      customer_phone: '+919876543210',
+      payment_method: 'CASH',
+      payment_status: 'paid',
+      items: [
+        {
+          id: 'item-1',
+          name: 'Paneer Butter Masala',
+          quantity: 1,
+          price: 240,
+        },
+        {
+          id: 'item-2',
+          name: 'Garlic Butter Naan',
+          quantity: 2,
+          price: 60,
+        },
+        {
+          id: 'item-3',
+          name: 'Fresh Lime Soda',
+          quantity: 1,
+          price: 40,
+        },
+      ],
+      total_amount: 400,
+    };
+
+    await printBillToPrinter(mockOrder, shop, printer);
+  };
+
+  const handlePairBillingUsb = async () => {
+    try {
+      const dev = await requestWebUsbPrinter();
+      if (dev) {
+        setBillingPrinter({ connectionType: 'usb' });
+        toast.success(`Paired USB billing printer: ${dev.name}`);
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to pair USB printer');
+    }
+  };
+
 
   // Change Email State
   const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
@@ -99,6 +505,14 @@ export function SettingsPage() {
     ifsc_code: shop?.settings?.ifsc_code || '',
     beneficiary_name: shop?.settings?.beneficiary_name || '',
     upi_id: shop?.settings?.upi_id || '',
+    gst_enabled: shop?.settings?.gst_enabled || false,
+    gstin: shop?.settings?.gstin || '',
+    legal_name: shop?.settings?.legal_name || '',
+    fssai_license: shop?.settings?.fssai_license || '',
+    cgst_rate: shop?.settings?.cgst_rate ?? 2.5,
+    sgst_rate: shop?.settings?.sgst_rate ?? 2.5,
+    inclusive_tax: shop?.settings?.inclusive_tax || false,
+    tax_invoice_notes: shop?.settings?.tax_invoice_notes || '',
   });
 
   // Fetch shop settings on mount
@@ -139,6 +553,14 @@ export function SettingsPage() {
         ifsc_code: shop.settings.ifsc_code || '',
         beneficiary_name: shop.settings.beneficiary_name || '',
         upi_id: shop.settings.upi_id || '',
+        gst_enabled: shop.settings.gst_enabled || false,
+        gstin: shop.settings.gstin || '',
+        legal_name: shop.settings.legal_name || '',
+        fssai_license: shop.settings.fssai_license || '',
+        cgst_rate: shop.settings.cgst_rate ?? 2.5,
+        sgst_rate: shop.settings.sgst_rate ?? 2.5,
+        inclusive_tax: shop.settings.inclusive_tax || false,
+        tax_invoice_notes: shop.settings.tax_invoice_notes || '',
       });
     }
   }, [shop]);
@@ -260,6 +682,195 @@ export function SettingsPage() {
     resetEmailFlow();
   };
 
+  // Category Picker Component with Search, Multi-Select, & Quick Actions
+  const renderCategoryPicker = (
+    currentCategoryIds: string[],
+    onChange: (ids: string[]) => void,
+    searchQuery: string,
+    onSearchChange: (q: string) => void
+  ) => {
+    const isUniversal = currentCategoryIds.includes('all');
+    const filteredCategories = categories.filter((c) =>
+      c.name.toLowerCase().includes((searchQuery || '').toLowerCase())
+    );
+
+    return (
+      <div className="space-y-3 pt-1">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+            <Tags size={14} className="text-amber-500" />
+            <span>Category Routing (Assign Multiple)</span>
+          </label>
+          <span className="text-[11px] text-slate-400">Routes food items to this printer</span>
+        </div>
+
+        {/* Mode Toggle: Universal All Categories vs Choose Multiple Categories */}
+        <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700">
+          <button
+            type="button"
+            onClick={() => onChange(['all'])}
+            className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+              isUniversal
+                ? 'bg-purple-600 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <Zap size={13} />
+            <span>All Categories (Universal)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (isUniversal) {
+                onChange([]);
+              }
+            }}
+            className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+              !isUniversal
+                ? 'bg-amber-600 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <Tags size={13} />
+            <span>Choose Multiple ({isUniversal ? 0 : currentCategoryIds.length})</span>
+          </button>
+        </div>
+
+        {isUniversal ? (
+          <div className="p-3.5 rounded-xl border border-purple-200 dark:border-purple-800/60 bg-purple-50/60 dark:bg-purple-950/30 flex items-start gap-2.5">
+            <CheckCircle2 size={16} className="text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
+            <div className="text-xs">
+              <p className="font-bold text-purple-900 dark:text-purple-200">
+                Universal Machine Active
+              </p>
+              <p className="text-slate-600 dark:text-slate-400 mt-0.5 text-[11px] leading-relaxed">
+                All food and drinks from every category will print to this station. Switch to "Choose Multiple" if you want to assign specific food categories only.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-2.5 border border-slate-200 dark:border-slate-800 rounded-xl p-3 bg-slate-50/50 dark:bg-slate-900/40">
+            {/* Search & Actions Bar */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+              <div className="relative flex-1">
+                <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search categories..."
+                  value={searchQuery}
+                  onChange={(e) => onSearchChange(e.target.value)}
+                  className="w-full pl-8 pr-7 py-1.5 text-xs bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-hidden focus:ring-1 focus:ring-amber-500"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => onSearchChange('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between sm:justify-end gap-2 text-xs shrink-0">
+                <span className="text-[11px] font-bold text-amber-700 dark:text-amber-400 bg-amber-100/80 dark:bg-amber-950/60 px-2 py-0.5 rounded-md">
+                  {currentCategoryIds.length} of {categories.length} selected
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => onChange(categories.map((c) => c.id))}
+                    className="text-[11px] font-bold text-primary hover:underline px-1 py-0.5 cursor-pointer"
+                  >
+                    Select All
+                  </button>
+                  <span className="text-slate-300 dark:text-slate-700">•</span>
+                  <button
+                    type="button"
+                    onClick={() => onChange([])}
+                    className="text-[11px] font-bold text-slate-400 hover:text-rose-500 hover:underline px-1 py-0.5 cursor-pointer"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Selected Categories Tags Row */}
+            {currentCategoryIds.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-1.5 bg-white dark:bg-slate-850 rounded-lg border border-slate-200 dark:border-slate-800">
+                {currentCategoryIds.map((catId) => {
+                  const catObj = categories.find((c) => c.id === catId);
+                  if (!catObj) return null;
+                  return (
+                    <span
+                      key={catId}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-500/15 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700/60"
+                    >
+                      <span>{catObj.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => onChange(currentCategoryIds.filter((id) => id !== catId))}
+                        className="hover:text-rose-600 cursor-pointer ml-0.5"
+                        title={`Remove ${catObj.name}`}
+                      >
+                        <X size={11} strokeWidth={3} />
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Category Grid Checklist */}
+            <div className="max-h-56 overflow-y-auto space-y-1.5 border border-slate-200 dark:border-slate-800 rounded-xl p-2 custom-scrollbar bg-white dark:bg-slate-850">
+              {filteredCategories.length === 0 ? (
+                <div className="text-xs text-slate-400 py-6 text-center">
+                  {searchQuery ? `No categories matching "${searchQuery}"` : 'No categories found in shop menu.'}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                  {filteredCategories.map((cat) => {
+                    const isChecked = currentCategoryIds.includes(cat.id);
+                    return (
+                      <div
+                        key={cat.id}
+                        onClick={() => {
+                          const exists = currentCategoryIds.includes(cat.id);
+                          const updated = exists
+                            ? currentCategoryIds.filter((id) => id !== cat.id)
+                            : [...currentCategoryIds, cat.id];
+                          onChange(updated);
+                        }}
+                        className={`flex items-center justify-between p-2.5 rounded-xl border transition-all cursor-pointer text-xs select-none ${
+                          isChecked
+                            ? 'border-amber-500/80 bg-amber-50/80 dark:bg-amber-950/40 text-amber-900 dark:text-amber-100 font-bold shadow-2xs'
+                            : 'border-slate-200 dark:border-slate-700/80 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0 pr-1">
+                          <div className={`w-4 h-4 rounded flex items-center justify-center border shrink-0 transition-colors ${
+                            isChecked
+                              ? 'bg-amber-500 border-amber-500 text-white'
+                              : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900'
+                          }`}>
+                            {isChecked && <Check size={11} strokeWidth={3} />}
+                          </div>
+                          <span className="truncate">{cat.name}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // Helper to render Tab Button
   const TabButton = ({ id, label, icon: Icon }: { id: any, label: string, icon: any }) => (
     <button
@@ -296,6 +907,8 @@ export function SettingsPage() {
           <TabButton id="ordering" label="Ordering Channels" icon={ShoppingBag} />
           <TabButton id="discovery" label="Public Discovery" icon={MapPin} />
           <TabButton id="payments" label="Payments & Bank" icon={CreditCard} />
+          <TabButton id="gst" label="GST & Compliances" icon={Receipt} />
+          <TabButton id="printers" label="Kitchen & Printers" icon={Printer} />
           <TabButton id="account" label="Security & Account" icon={Shield} />
         </div>
 
@@ -528,7 +1141,7 @@ export function SettingsPage() {
               <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs">
                 <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-slate-50/50 dark:bg-slate-900/50">
                   <CardTitle className="text-base font-bold">Online Payments</CardTitle>
-                  <CardDescription className="text-xs">Gateway configuration and Direct UPI.</CardDescription>
+                  <CardDescription className="text-xs">Gateway configuration and payment settings.</CardDescription>
                 </CardHeader>
                 <CardContent className="p-4 sm:p-6 space-y-6">
                   {/* Gateway */}
@@ -562,31 +1175,6 @@ export function SettingsPage() {
                         </>
                       );
                     })()}
-                  </div>
-
-                  <hr className="border-slate-100 dark:border-slate-800" />
-
-                  {/* Direct UPI */}
-                  <div>
-                    <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5">
-                      <Coins size={14} className="text-emerald-500" /> Direct Shop UPI (Zero Fee)
-                    </h4>
-                    <div className="p-4 bg-slate-50/60 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800">
-                      <div className="flex flex-col sm:flex-row sm:items-start gap-4">
-                        <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-black text-xs shrink-0">UPI</div>
-                        <div className="flex-1 space-y-2">
-                          <p className="text-xs font-bold text-slate-800 dark:text-slate-100">Shop UPI ID</p>
-                          <p className="text-[11px] text-slate-500">Enable customers dining in to pay you directly via their UPI apps without gateway fees.</p>
-                          <input
-                            type="text"
-                            placeholder="e.g. 9876543210@ybl"
-                            value={settingsData.upi_id || ''}
-                            onChange={(e) => setSettingsData(prev => ({ ...prev, upi_id: e.target.value.toLowerCase() }))}
-                            className="w-full sm:max-w-md px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500 font-medium"
-                          />
-                        </div>
-                      </div>
-                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -647,6 +1235,939 @@ export function SettingsPage() {
                   )}
                 </CardContent>
               </Card>
+            </div>
+          )}
+
+          {/* =========================================
+              GST & GOVERNMENT COMPLIANCES TAB
+          ========================================= */}
+          {activeTab === 'gst' && (
+            <div className="space-y-6 animate-in fade-in duration-300">
+              <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs">
+                <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-slate-50/50 dark:bg-slate-900/50">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <CardTitle className="text-base font-bold">GST & Government Compliances</CardTitle>
+                        <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                          Tax Invoices & FSSAI
+                        </span>
+                      </div>
+                      <CardDescription className="text-xs mt-1">
+                        Configure GSTIN, FSSAI registration, tax rates (CGST/SGST), and invoice calculation mode.
+                      </CardDescription>
+                    </div>
+                    <div className="flex items-center gap-3 bg-white dark:bg-slate-900 px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs">
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Enable GST Billing:</span>
+                      <Switch
+                        checked={settingsData.gst_enabled}
+                        onCheckedChange={(checked) => setSettingsData(prev => ({ ...prev, gst_enabled: checked }))}
+                      />
+                    </div>
+                  </div>
+                </CardHeader>
+
+                <CardContent className="p-4 sm:p-6 space-y-6">
+                  {!settingsData.gst_enabled ? (
+                    <div className="p-6 text-center rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-dashed border-slate-200 dark:border-slate-800 space-y-3">
+                      <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 mx-auto flex items-center justify-center">
+                        <Receipt size={24} />
+                      </div>
+                      <div className="font-bold text-sm text-slate-800 dark:text-slate-200">GST Billing is Disabled</div>
+                      <p className="text-xs text-slate-500 max-w-md mx-auto">
+                        Turn on the switch above if your restaurant or business is registered under GST to calculate CGST/SGST on orders, issue legal Tax Invoices, and generate tax compliance audit reports.
+                      </p>
+                      <Button
+                        size="sm"
+                        onClick={() => setSettingsData(prev => ({ ...prev, gst_enabled: true }))}
+                        className="font-bold bg-primary text-white text-xs h-8 px-4"
+                      >
+                        Enable GST Now
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      {/* Government Registrations */}
+                      <div>
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-2">
+                          <Store size={14} className="text-primary" />
+                          Business & Government Identifiers
+                        </h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                              <span>Goods & Services Tax ID (GSTIN)</span>
+                              <span className="text-[10px] font-normal text-slate-400">15 Characters</span>
+                            </label>
+                            <Input
+                              placeholder="e.g. 33AAAAA0000A1Z5"
+                              value={settingsData.gstin}
+                              onChange={(e) => setSettingsData(prev => ({ ...prev, gstin: e.target.value.toUpperCase().trim() }))}
+                              maxLength={15}
+                              className="font-mono uppercase font-bold tracking-wider"
+                            />
+                            <p className="text-[11px] text-slate-500">
+                              Appears prominently on public customer receipts and cashier bills.
+                            </p>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                              Legal / Registered Business Name
+                            </label>
+                            <Input
+                              placeholder="e.g. Siva Food Enterprises Pvt Ltd"
+                              value={settingsData.legal_name}
+                              onChange={(e) => setSettingsData(prev => ({ ...prev, legal_name: e.target.value }))}
+                            />
+                            <p className="text-[11px] text-slate-500">
+                              Official registered trade entity name for legal Tax Invoices.
+                            </p>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                              <span>FSSAI License Number</span>
+                              <span className="text-[10px] font-normal text-slate-400">14 Digits</span>
+                            </label>
+                            <Input
+                              placeholder="e.g. 12423008000123"
+                              value={settingsData.fssai_license}
+                              onChange={(e) => setSettingsData(prev => ({ ...prev, fssai_license: e.target.value.trim() }))}
+                              maxLength={14}
+                              className="font-mono tracking-wider font-bold"
+                            />
+                            <p className="text-[11px] text-slate-500">
+                              Mandatory Food Safety license number printed on restaurant slips.
+                            </p>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                              Invoice Declaration / Footer Note
+                            </label>
+                            <Input
+                              placeholder="e.g. Tax Invoice issued under Section 31 of CGST Act"
+                              value={settingsData.tax_invoice_notes}
+                              onChange={(e) => setSettingsData(prev => ({ ...prev, tax_invoice_notes: e.target.value }))}
+                            />
+                            <p className="text-[11px] text-slate-500">
+                              Custom compliance or return policy note printed at the bottom of bills.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Tax Rates Configuration */}
+                      <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
+                            <Coins size={14} className="text-primary" />
+                            Tax Rates & GST Slabs
+                          </h4>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[11px] font-medium text-slate-500">Quick Slabs:</span>
+                            <button
+                              type="button"
+                              onClick={() => setSettingsData(prev => ({ ...prev, cgst_rate: 2.5, sgst_rate: 2.5 }))}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                settingsData.cgst_rate === 2.5 && settingsData.sgst_rate === 2.5
+                                  ? 'bg-primary text-white shadow-xs'
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                              }`}
+                            >
+                              5% (Standard)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSettingsData(prev => ({ ...prev, cgst_rate: 6.0, sgst_rate: 6.0 }))}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                settingsData.cgst_rate === 6.0 && settingsData.sgst_rate === 6.0
+                                  ? 'bg-primary text-white shadow-xs'
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                              }`}
+                            >
+                              12%
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSettingsData(prev => ({ ...prev, cgst_rate: 9.0, sgst_rate: 9.0 }))}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                settingsData.cgst_rate === 9.0 && settingsData.sgst_rate === 9.0
+                                  ? 'bg-primary text-white shadow-xs'
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                              }`}
+                            >
+                              18% (AC/Bar)
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                              Central GST (CGST %)
+                            </label>
+                            <div className="relative">
+                              <Input
+                                type="number"
+                                step="0.1"
+                                min="0"
+                                max="28"
+                                value={settingsData.cgst_rate}
+                                onChange={(e) => setSettingsData(prev => ({ ...prev, cgst_rate: parseFloat(e.target.value) || 0 }))}
+                                className="pr-8 font-bold"
+                              />
+                              <span className="absolute right-3 top-2.5 text-xs text-slate-400 font-bold">%</span>
+                            </div>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                              State GST (SGST %)
+                            </label>
+                            <div className="relative">
+                              <Input
+                                type="number"
+                                step="0.1"
+                                min="0"
+                                max="28"
+                                value={settingsData.sgst_rate}
+                                onChange={(e) => setSettingsData(prev => ({ ...prev, sgst_rate: parseFloat(e.target.value) || 0 }))}
+                                className="pr-8 font-bold"
+                              />
+                              <span className="absolute right-3 top-2.5 text-xs text-slate-400 font-bold">%</span>
+                            </div>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                              Combined Effective Tax
+                            </label>
+                            <div className="h-10 flex items-center px-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 font-black text-emerald-700 dark:text-emerald-300 text-sm">
+                              {((Number(settingsData.cgst_rate) || 0) + (Number(settingsData.sgst_rate) || 0)).toFixed(1)}% Total GST
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Tax Calculation Mode: Exclusive vs Inclusive */}
+                      <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-2">
+                          <Sliders size={14} className="text-primary" />
+                          Tax Pricing Calculation Mode
+                        </h4>
+                        
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div 
+                            onClick={() => setSettingsData(prev => ({ ...prev, inclusive_tax: false }))}
+                            className={`p-4 rounded-2xl border-2 transition-all cursor-pointer ${
+                              !settingsData.inclusive_tax
+                                ? 'border-primary bg-primary/5 dark:bg-primary/10'
+                                : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-1.5">
+                              <span className="font-bold text-sm text-slate-900 dark:text-slate-100">
+                                Exclusive Tax (Added at checkout)
+                              </span>
+                              <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                                !settingsData.inclusive_tax ? 'border-primary bg-primary text-white' : 'border-slate-300'
+                              }`}>
+                                {!settingsData.inclusive_tax && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                              </div>
+                            </div>
+                            <p className="text-xs text-slate-500 leading-relaxed">
+                              Standard for restaurants. Menu prices represent net food amount; CGST & SGST are computed and added on top in the bill.
+                            </p>
+                            <div className="mt-3 text-[11px] font-mono bg-slate-100 dark:bg-slate-800 p-2 rounded-lg text-slate-600 dark:text-slate-400">
+                              Item: ₹100 + 5% GST (₹5) = <strong>Total ₹105</strong>
+                            </div>
+                          </div>
+
+                          <div 
+                            onClick={() => setSettingsData(prev => ({ ...prev, inclusive_tax: true }))}
+                            className={`p-4 rounded-2xl border-2 transition-all cursor-pointer ${
+                              settingsData.inclusive_tax
+                                ? 'border-primary bg-primary/5 dark:bg-primary/10'
+                                : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-1.5">
+                              <span className="font-bold text-sm text-slate-900 dark:text-slate-100">
+                                Inclusive Tax (Included in menu price)
+                              </span>
+                              <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                                settingsData.inclusive_tax ? 'border-primary bg-primary text-white' : 'border-slate-300'
+                              }`}>
+                                {settingsData.inclusive_tax && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                              </div>
+                            </div>
+                            <p className="text-xs text-slate-500 leading-relaxed">
+                              Ideal for cafes & QSR. Menu prices already include GST; the invoice automatically shows the extracted net taxable amount & tax breakdown.
+                            </p>
+                            <div className="mt-3 text-[11px] font-mono bg-slate-100 dark:bg-slate-800 p-2 rounded-lg text-slate-600 dark:text-slate-400">
+                              Item: ₹100 (Taxable ₹95.24 + GST ₹4.76) = <strong>Total ₹100</strong>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Live Status Overview Banner */}
+                      <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                        <div className="flex items-center gap-2.5">
+                          <CheckCircle2 size={18} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                          <div>
+                            <span className="font-extrabold text-emerald-950 dark:text-emerald-200">
+                              GST Compliance Active ({((Number(settingsData.cgst_rate) || 0) + (Number(settingsData.sgst_rate) || 0)).toFixed(1)}% Total Tax)
+                            </span>
+                            <div className="text-[11px] text-emerald-700 dark:text-emerald-300 mt-0.5">
+                              Mode: {settingsData.inclusive_tax ? 'Inclusive Pricing' : 'Exclusive (Added to Bill)'} • GSTIN: {settingsData.gstin || 'Not configured'} • FSSAI: {settingsData.fssai_license || 'Not configured'}
+                            </div>
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          onClick={handleSaveShopSettings}
+                          disabled={isSavingSettings}
+                          className="font-bold bg-emerald-600 hover:bg-emerald-700 text-white shrink-0 h-8 cursor-pointer"
+                        >
+                          {isSavingSettings ? 'Saving...' : 'Save GST Settings'}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* =========================================
+              KITCHEN PRINTERS & KOT SETTINGS TAB
+          ========================================= */}
+          {activeTab === 'printers' && (
+            <div className="space-y-6 animate-in fade-in duration-300">
+              {/* Context Selector / Quick Filter Bar */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 p-2 sm:p-2.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
+                <div className="flex items-center gap-1.5 p-1 bg-slate-100/80 dark:bg-slate-800/80 rounded-xl w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={() => setPrinterSection('all')}
+                    className={`flex-1 sm:flex-none px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                      printerSection === 'all'
+                        ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <Layers size={13} />
+                    <span>All Setup</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPrinterSection('kot')}
+                    className={`flex-1 sm:flex-none px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                      printerSection === 'kot'
+                        ? 'bg-amber-500 text-white shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <UtensilsCrossed size={13} />
+                    <span>Kitchen KOT ({stations.length})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPrinterSection('billing')}
+                    className={`flex-1 sm:flex-none px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                      printerSection === 'billing'
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <Receipt size={13} />
+                    <span>Cashier Billing ({billingPrinters.length})</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* =========================================================
+                  SECTION 1: KITCHEN ORDER TICKETS (KOT)
+              ========================================================= */}
+              {(printerSection === 'all' || printerSection === 'kot') && (
+                <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs overflow-hidden">
+                  <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-linear-to-r from-amber-50/70 via-orange-50/30 to-transparent dark:from-amber-950/20 dark:via-orange-950/10 dark:to-transparent flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
+                        <UtensilsCrossed size={20} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <CardTitle className="text-base font-bold">Kitchen Order Tickets (KOT)</CardTitle>
+                          <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                            Kitchen Prep
+                          </span>
+                        </div>
+                        <CardDescription className="text-xs mt-0.5">
+                          Configure thermal tickets for cooks, station routing (Kitchen, Bar, Grill), and automated printing upon acceptance.
+                        </CardDescription>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleTestPrint()}
+                        leftIcon={<FileText size={13} className="text-amber-500" />}
+                        className="text-xs font-bold"
+                      >
+                        Test Sample KOT
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={openNewStationModal}
+                        leftIcon={<Plus size={14} />}
+                        className="bg-primary text-white font-bold text-xs shadow-xs"
+                      >
+                        Add Station
+                      </Button>
+                    </div>
+                  </CardHeader>
+
+                  <CardContent className="p-4 sm:p-5 space-y-5">
+                    {/* Compact Quick Settings Bar: Auto-Print Toggle + Default Paper Width */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Auto-Print KOT Switch */}
+                      <div className="p-3.5 rounded-xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0">
+                            <Zap size={16} />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                              Auto-Print KOT on Acceptance
+                            </p>
+                            <p className="text-[10px] text-slate-500 truncate">
+                              Print tickets when orders are accepted
+                            </p>
+                          </div>
+                        </div>
+                        <Switch
+                          checked={autoPrintOnAccept}
+                          onChange={(val) => {
+                            setAutoPrintOnAccept(val);
+                            toast.success(val ? 'Auto-print KOT enabled' : 'Auto-print KOT disabled');
+                          }}
+                        />
+                      </div>
+
+                      {/* Default KOT Roll Width Segmented Selector */}
+                      <div className="p-3.5 rounded-xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                            Default KOT Roll Width
+                          </p>
+                          <p className="text-[10px] text-slate-500">
+                            Format for new station tickets
+                          </p>
+                        </div>
+                        <div className="flex items-center bg-slate-200/80 dark:bg-slate-700/60 p-1 rounded-xl shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPaperWidth('80mm');
+                              toast.success('KOT width set to 80mm');
+                            }}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                              paperWidth === '80mm'
+                                ? 'bg-amber-500 text-white shadow-xs'
+                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                            }`}
+                          >
+                            80mm
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPaperWidth('58mm');
+                              toast.success('KOT width set to 58mm');
+                            }}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                              paperWidth === '58mm'
+                                ? 'bg-amber-500 text-white shadow-xs'
+                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                            }`}
+                          >
+                            58mm
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Kitchen Printer Stations Subsection */}
+                    <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <label className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider block">
+                            Kitchen Printer Stations &amp; Category Routing
+                          </label>
+                          <p className="text-[11px] text-slate-500">
+                            Route food items to specific printers (e.g., Main Kitchen, Bar, Grill) or print universally.
+                          </p>
+                        </div>
+                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                          {stations.length} {stations.length === 1 ? 'Station Configured' : 'Stations Configured'}
+                        </span>
+                      </div>
+
+                      {stations.length === 0 ? (
+                        <div className="text-center py-8 bg-slate-50 dark:bg-slate-850/50 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 p-5 space-y-2.5">
+                          <Printer size={32} className="mx-auto text-slate-400" />
+                          <div>
+                            <p className="font-bold text-sm text-slate-700 dark:text-slate-300">No Printer Stations Configured</p>
+                            <p className="text-xs text-slate-500 mt-0.5 max-w-md mx-auto">
+                              Add your first station (e.g., Main Kitchen, Bar, Tandoor) to automatically route specific food categories.
+                            </p>
+                          </div>
+                          <Button
+                            size="sm"
+                            onClick={openNewStationModal}
+                            leftIcon={<Plus size={14} />}
+                            className="font-bold"
+                          >
+                            Register Printer Machine
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                          {stations.map((station) => {
+                            const isUniversal = !station.categoryIds || station.categoryIds.includes('all') || station.categoryIds.length === 0;
+                            const matchedCategories = !isUniversal 
+                              ? categories.filter(c => station.categoryIds.includes(c.id))
+                              : [];
+
+                            return (
+                              <div
+                                key={station.id}
+                                className={`p-3.5 rounded-2xl border transition-all flex flex-col justify-between space-y-2.5 ${
+                                  station.enabled !== false
+                                    ? 'bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-800 shadow-xs'
+                                    : 'bg-slate-50/70 dark:bg-slate-900/40 border-slate-200/40 dark:border-slate-800/40 opacity-70'
+                                }`}
+                              >
+                                <div className="space-y-2">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="space-y-0.5">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <h4 className="font-black text-sm text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                                          <Printer size={15} className="text-primary" />
+                                          {station.name}
+                                        </h4>
+                                        <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                          {station.paperWidth || '80mm'}
+                                        </span>
+                                        {station.connectionType === 'network' && (
+                                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800 flex items-center gap-1">
+                                            <Wifi size={10} /> LAN {station.ipAddress || 'No IP'}
+                                          </span>
+                                        )}
+                                        {station.connectionType === 'usb' && (
+                                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300 border border-teal-200 dark:border-teal-800 flex items-center gap-1">
+                                            <Usb size={10} /> Direct USB
+                                          </span>
+                                        )}
+                                        {(!station.connectionType || station.connectionType === 'browser') && (
+                                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 flex items-center gap-1">
+                                            🖥️ System Default
+                                          </span>
+                                        )}
+                                        {station.soundBuzzer !== false && (
+                                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded text-amber-600 dark:text-amber-400 flex items-center gap-0.5" title="Kitchen Buzzer Alert Active">
+                                            <Volume2 size={11} />
+                                          </span>
+                                        )}
+                                        {station.enabled === false && (
+                                          <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300">
+                                            Disabled
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleTestPrint(station)}
+                                        title="Send Test Print to this Station"
+                                        className="p-1.5 rounded-lg text-slate-400 hover:text-primary hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                                      >
+                                        <Printer size={14} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => openEditStationModal(station)}
+                                        title="Edit Station"
+                                        className="p-1.5 rounded-lg text-slate-400 hover:text-primary hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                                      >
+                                        <Edit2 size={14} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (confirm(`Remove printer station "${station.name}"?`)) {
+                                            removeStation(station.id);
+                                            toast.success('Station removed');
+                                          }
+                                        }}
+                                        title="Delete Station"
+                                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                                      >
+                                        <Trash2 size={14} />
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {/* Category routing badges */}
+                                  <div className="pt-0.5">
+                                    <div className="flex items-center justify-between mb-1">
+                                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+                                        Routing Categories:
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setQuickAssignStation(station);
+                                          setQuickAssignCategoryIds(station.categoryIds || ['all']);
+                                          setCategorySearchQuery('');
+                                        }}
+                                        className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 hover:underline cursor-pointer"
+                                        title="Choose & assign multiple categories to this printer"
+                                      >
+                                        <Tags size={12} />
+                                        <span>Assign Categories</span>
+                                      </button>
+                                    </div>
+                                    {isUniversal ? (
+                                      <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[11px] font-bold bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/60">
+                                        <Zap size={12} className="text-purple-600" />
+                                        <span>All Categories (Universal - Prints All Food)</span>
+                                      </div>
+                                    ) : (
+                                      <div className="flex flex-wrap gap-1">
+                                        {matchedCategories.length > 0 ? (
+                                          matchedCategories.map((c) => (
+                                            <span
+                                              key={c.id}
+                                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/60"
+                                            >
+                                              {c.name}
+                                            </span>
+                                          ))
+                                        ) : (
+                                          <span className="text-[11px] text-slate-400 italic">
+                                            {station.categoryIds.length} categories assigned
+                                          </span>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs">
+                                  <span className="text-slate-500 font-medium text-[11px]">
+                                    Auto-print: <strong className={station.autoPrintOnAccept !== false ? 'text-emerald-600' : 'text-slate-400'}>{station.autoPrintOnAccept !== false ? 'Active' : 'Off'}</strong>
+                                  </span>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => updateStation(station.id, { enabled: station.enabled === false ? true : false })}
+                                    className="h-6 text-[11px] font-bold text-slate-600 dark:text-slate-300 px-2"
+                                  >
+                                    {station.enabled === false ? 'Enable' : 'Disable'}
+                                  </Button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* =========================================================
+                  SECTION 2: CASHIER & CUSTOMER BILL PRINTERS
+              ========================================================= */}
+              {(printerSection === 'all' || printerSection === 'billing') && (
+                <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs overflow-hidden">
+                  <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-3.5 bg-linear-to-r from-emerald-50/70 via-teal-50/30 to-transparent dark:from-emerald-950/20 dark:via-teal-950/10 dark:to-transparent flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 mt-0.5">
+                        <Receipt size={20} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <CardTitle className="text-base font-bold">Customer Bill &amp; Tax Receipt Printers</CardTitle>
+                          <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                            Cashier Counter
+                          </span>
+                        </div>
+                        <CardDescription className="text-xs mt-0.5">
+                          Configure thermal printers for customer tax bills, invoices, and multiple billing counters.
+                        </CardDescription>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleTestBillPrint}
+                        leftIcon={<Printer size={13} className="text-emerald-600" />}
+                        className="text-xs font-bold border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/50"
+                      >
+                        Test Print Bill
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={openNewBillingPrinterModal}
+                        leftIcon={<Plus size={14} />}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs"
+                      >
+                        Add Cashier Printer
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="p-4 sm:p-5 space-y-5">
+                    {/* Compact Quick Settings Bar: Auto-Print Toggle + Receipt Paper Width */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Auto-Print Bill Switch */}
+                      <div className="p-3.5 rounded-xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 flex items-center justify-center shrink-0">
+                            <Zap size={16} />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                              Auto-Print on Completion
+                            </p>
+                            <p className="text-[10px] text-slate-500 truncate">
+                              Print bill when order is paid or completed
+                            </p>
+                          </div>
+                        </div>
+                        <Switch
+                          checked={autoPrintOnPayment || false}
+                          onChange={(val) => {
+                            setAutoPrintOnPayment(val);
+                            toast.success(val ? 'Auto-print bill enabled' : 'Auto-print bill disabled');
+                          }}
+                        />
+                      </div>
+
+                      {/* Receipt Paper Width Segmented Selector */}
+                      <div className="p-3.5 rounded-xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                            Default Receipt Paper Width
+                          </p>
+                          <p className="text-[10px] text-slate-500">
+                            Format for customer tax bills
+                          </p>
+                        </div>
+                        <div className="flex items-center bg-slate-200/80 dark:bg-slate-700/60 p-1 rounded-xl shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBillingPaperWidth('80mm');
+                              toast.success('Bill paper width set to 80mm');
+                            }}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                              billingPaperWidth !== '58mm'
+                                ? 'bg-emerald-600 text-white shadow-xs'
+                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                            }`}
+                          >
+                            80mm
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBillingPaperWidth('58mm');
+                              toast.success('Bill paper width set to 58mm');
+                            }}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                              billingPaperWidth === '58mm'
+                                ? 'bg-emerald-600 text-white shadow-xs'
+                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                            }`}
+                          >
+                            58mm
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Cashier Billing Printers Subsection */}
+                    <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <label className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider block">
+                            Cashier Billing Printers &amp; Counters
+                          </label>
+                          <p className="text-[11px] text-slate-500">
+                            Configure one or multiple bill printers (e.g., Main Cashier Counter, Bar Billing, Takeaway Desk).
+                          </p>
+                        </div>
+                        <span className="text-[11px] font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
+                          {billingPrinters.length} {billingPrinters.length === 1 ? 'Printer' : 'Printers'} Configured
+                        </span>
+                      </div>
+
+                      {billingPrinters.length === 0 ? (
+                        <div className="p-8 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
+                          <Receipt className="mx-auto h-8 w-8 text-slate-400 mb-2" />
+                          <p className="text-xs font-bold text-slate-700 dark:text-slate-300">No Cashier Printers Added</p>
+                          <p className="text-[11px] text-slate-500 mt-0.5">Click below to register your first billing printer.</p>
+                          <Button
+                            size="sm"
+                            onClick={openNewBillingPrinterModal}
+                            leftIcon={<Plus size={14} />}
+                            className="mt-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+                          >
+                            Add Cashier Printer
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                          {billingPrinters.map((printer) => (
+                            <div
+                              key={printer.id}
+                              className={`p-4 rounded-2xl border transition-all flex flex-col justify-between gap-3 ${
+                                printer.enabled === false
+                                  ? 'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 opacity-60'
+                                  : 'border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900/70 shadow-xs hover:border-emerald-300 dark:hover:border-emerald-800'
+                              }`}
+                            >
+                              <div className="space-y-2.5">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div>
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <Receipt size={15} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                      <h5 className="font-extrabold text-sm text-slate-900 dark:text-slate-100">
+                                        {printer.name}
+                                      </h5>
+                                    </div>
+
+                                    <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                                      <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                        {printer.paperWidth || '80mm'}
+                                      </span>
+                                      {printer.connectionType === 'network' && (
+                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800 flex items-center gap-1">
+                                          <Wifi size={10} /> LAN {printer.ipAddress}:{printer.port || 9100}
+                                        </span>
+                                      )}
+                                      {printer.connectionType === 'usb' && (
+                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300 border border-teal-200 dark:border-teal-800 flex items-center gap-1">
+                                          <Usb size={10} /> Direct USB
+                                        </span>
+                                      )}
+                                      {(!printer.connectionType || printer.connectionType === 'browser') && (
+                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 flex items-center gap-1">
+                                          🖥️ System Default
+                                        </span>
+                                      )}
+                                      {printer.isDefault && (
+                                        <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                                          Default Bill Printer
+                                        </span>
+                                      )}
+                                      {printer.enabled === false && (
+                                        <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300">
+                                          Disabled
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleTestSpecificBillPrint(printer)}
+                                      title="Send Test Bill Print to this Printer"
+                                      className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                                    >
+                                      <Printer size={14} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => openEditBillingPrinterModal(printer)}
+                                      title="Edit Cashier Printer"
+                                      className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                                    >
+                                      <Edit2 size={14} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (billingPrinters.length <= 1) {
+                                          toast.error('You must have at least one cashier billing printer.');
+                                          return;
+                                        }
+                                        if (confirm(`Remove cashier printer "${printer.name}"?`)) {
+                                          removeBillingPrinter(printer.id);
+                                          toast.success('Cashier printer removed');
+                                        }
+                                      }}
+                                      title="Delete Printer"
+                                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                <div className="pt-0.5">
+                                  {printer.isDefault ? (
+                                    <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-bold bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60">
+                                      <Check size={12} strokeWidth={3} />
+                                      <span>Primary Counter (Default target for quick bill print &amp; auto-printing)</span>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setDefaultBillingPrinter(printer.id);
+                                        toast.success(`"${printer.name}" set as default bill printer`);
+                                      }}
+                                      className="text-[11px] font-bold text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 hover:underline cursor-pointer"
+                                    >
+                                      ★ Set as Primary Bill Printer
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs">
+                                <span className="text-slate-500 font-medium text-[11px]">
+                                  Auto-print: <strong className={printer.enabled !== false && autoPrintOnPayment ? 'text-emerald-600' : 'text-slate-400'}>{printer.enabled !== false && autoPrintOnPayment ? 'Active' : 'Off'}</strong>
+                                </span>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => updateBillingPrinter(printer.id, { enabled: printer.enabled === false ? true : false })}
+                                  className="h-6 text-[11px] font-bold text-slate-600 dark:text-slate-300 px-2"
+                                >
+                                  {printer.enabled === false ? 'Enable' : 'Disable'}
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           )}
 
@@ -789,6 +2310,497 @@ export function SettingsPage() {
             </div>
           )}
         </div>
+      </Modal>
+
+      {/* Printer Station Configuration Modal */}
+      <Modal
+        isOpen={isStationModalOpen}
+        onClose={() => setIsStationModalOpen(false)}
+        title={editingStationId ? "Edit Kitchen Printer Station" : "Register Kitchen Printer Station"}
+        className="max-w-lg"
+      >
+        <form onSubmit={handleSaveStation} className="space-y-5 pt-2">
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+              Station / Machine Name <span className="text-rose-500">*</span>
+            </label>
+            <Input
+              value={stationForm.name}
+              onChange={(e) => setStationForm((prev) => ({ ...prev, name: e.target.value }))}
+              placeholder="e.g., Main Kitchen, Tandoor Counter, Bar & Beverages"
+              required
+              autoFocus
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+              Thermal Paper Width (mm)
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setStationForm((prev) => ({ ...prev, paperWidth: '80mm' }))}
+                className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                  stationForm.paperWidth === '80mm'
+                    ? 'border-primary bg-primary/10 font-bold text-primary shadow-xs'
+                    : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
+                }`}
+              >
+                <div className="font-extrabold text-xs">80mm (Standard POS)</div>
+                <div className="text-[11px] text-slate-500 mt-0.5">3 1/8 inches • 48 columns</div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setStationForm((prev) => ({ ...prev, paperWidth: '58mm' }))}
+                className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                  stationForm.paperWidth === '58mm'
+                    ? 'border-primary bg-primary/10 font-bold text-primary shadow-xs'
+                    : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
+                }`}
+              >
+                <div className="font-extrabold text-xs">58mm (Compact)</div>
+                <div className="text-[11px] text-slate-500 mt-0.5">2 1/4 inches • Handheld/Mobile</div>
+              </button>
+            </div>
+          </div>
+
+          {/* Hardware Connection Mode */}
+          <div className="space-y-2 pt-1">
+            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+              Hardware Connection Mode
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              {/* Browser / Kiosk */}
+              <button
+                type="button"
+                onClick={() => setStationForm(prev => ({ ...prev, connectionType: 'browser' }))}
+                className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                  stationForm.connectionType === 'browser'
+                    ? 'border-primary bg-primary/10 text-primary font-bold shadow-xs'
+                    : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
+                }`}
+              >
+                <div className="text-xs font-black">🖥️ System Default</div>
+                <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">OS Print Spooler or Kiosk Silent</div>
+              </button>
+
+              {/* Network LAN IP */}
+              <button
+                type="button"
+                onClick={() => setStationForm(prev => ({ ...prev, connectionType: 'network' }))}
+                className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                  stationForm.connectionType === 'network'
+                    ? 'border-primary bg-primary/10 text-primary font-bold shadow-xs'
+                    : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
+                }`}
+              >
+                <div className="text-xs font-black flex items-center gap-1"><Wifi size={13} /> Network LAN</div>
+                <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">Kitchen Ethernet / Wi-Fi IP (Port 9100)</div>
+              </button>
+
+              {/* Direct USB */}
+              <button
+                type="button"
+                onClick={() => setStationForm(prev => ({ ...prev, connectionType: 'usb' }))}
+                className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                  stationForm.connectionType === 'usb'
+                    ? 'border-primary bg-primary/10 text-primary font-bold shadow-xs'
+                    : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
+                }`}
+              >
+                <div className="text-xs font-black flex items-center gap-1"><Usb size={13} /> Direct USB</div>
+                <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">WebUSB / Serial zero-dialog</div>
+              </button>
+            </div>
+
+            {/* Network LAN IP Config Fields */}
+            {stationForm.connectionType === 'network' && (
+              <div className="p-3 bg-blue-50/60 dark:bg-blue-950/30 rounded-xl border border-blue-200/80 dark:border-blue-800/60 space-y-2.5 animate-fade-in">
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="col-span-2 space-y-1">
+                    <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Printer IP Address *</label>
+                    <Input
+                      value={stationForm.ipAddress}
+                      onChange={(e) => setStationForm(prev => ({ ...prev, ipAddress: e.target.value }))}
+                      placeholder="e.g. 192.168.1.150"
+                      className="bg-white dark:bg-slate-900 text-xs h-9"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">RAW Port</label>
+                    <Input
+                      type="number"
+                      value={stationForm.port || 9100}
+                      onChange={(e) => setStationForm(prev => ({ ...prev, port: parseInt(e.target.value) || 9100 }))}
+                      placeholder="9100"
+                      className="bg-white dark:bg-slate-900 text-xs h-9"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-[11px] text-slate-500">Universal RAW ESC/POS port is 9100</span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={isTestingLan || !stationForm.ipAddress.trim()}
+                    onClick={() => handleTestLanSocket(stationForm.ipAddress, stationForm.port, stationForm.name)}
+                    className="h-7 text-xs font-bold bg-white dark:bg-slate-900 cursor-pointer"
+                  >
+                    {isTestingLan ? 'Testing...' : 'Test Connection'}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Direct USB Config Fields */}
+            {stationForm.connectionType === 'usb' && (
+              <div className="p-3 bg-teal-50/60 dark:bg-teal-950/30 rounded-xl border border-teal-200/80 dark:border-teal-800/60 space-y-2 animate-fade-in">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                      {pairedUsbName ? `Paired: ${pairedUsbName}` : 'No USB Printer Paired Yet'}
+                    </p>
+                    <p className="text-[11px] text-slate-500">Chrome will connect directly via WebUSB/Serial with zero dialogs.</p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handlePairUsb}
+                    leftIcon={<Usb size={13} />}
+                    className="bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold h-8 cursor-pointer"
+                  >
+                    {pairedUsbName ? 'Re-Pair USB' : 'Pair USB Printer'}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Kitchen Buzzer Option */}
+          <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200/80 dark:border-slate-800">
+            <div className="flex items-center gap-2.5">
+              <Volume2 size={16} className="text-amber-500" />
+              <div>
+                <p className="text-xs font-bold text-slate-800 dark:text-slate-200">Sound Kitchen Buzzer / Beeper</p>
+                <p className="text-[11px] text-slate-500">Rings printer beeper twice when a new KOT ticket arrives.</p>
+              </div>
+            </div>
+            <Switch
+              checked={stationForm.soundBuzzer !== false}
+              onChange={(val) => setStationForm(prev => ({ ...prev, soundBuzzer: val }))}
+            />
+          </div>
+
+          {/* Food Category Routing with Multi-Select */}
+          {renderCategoryPicker(
+            stationForm.categoryIds,
+            (ids) => setStationForm((prev) => ({ ...prev, categoryIds: ids })),
+            categorySearchQuery,
+            setCategorySearchQuery
+          )}
+
+          <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={stationForm.enabled}
+                onChange={(val) => setStationForm((prev) => ({ ...prev, enabled: val }))}
+              />
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Station Active</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsStationModalOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                className="bg-primary text-white font-bold"
+              >
+                {editingStationId ? "Save Changes" : "Add Station"}
+              </Button>
+            </div>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Quick Modal: Assign Multiple Categories to Single Printer */}
+      <Modal
+        isOpen={!!quickAssignStation}
+        onClose={() => setQuickAssignStation(null)}
+        title={`Assign Categories: ${quickAssignStation?.name || 'Printer Station'}`}
+        className="max-w-xl"
+      >
+        <div className="space-y-4 pt-1">
+          <p className="text-xs text-slate-500">
+            Choose which menu categories should automatically route and print to{' '}
+            <strong className="text-slate-800 dark:text-slate-200">{quickAssignStation?.name}</strong>.
+            You can select multiple categories or set it as Universal.
+          </p>
+
+          {renderCategoryPicker(
+            quickAssignCategoryIds,
+            setQuickAssignCategoryIds,
+            categorySearchQuery,
+            setCategorySearchQuery
+          )}
+
+          <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setQuickAssignStation(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                if (!quickAssignStation) return;
+                if (quickAssignCategoryIds.length === 0) {
+                  toast.error('Please select at least one category or choose All Categories');
+                  return;
+                }
+                updateStation(quickAssignStation.id, { categoryIds: quickAssignCategoryIds });
+                toast.success(`Assigned ${quickAssignCategoryIds.includes('all') ? 'all' : quickAssignCategoryIds.length} categories to ${quickAssignStation.name}!`);
+                setQuickAssignStation(null);
+              }}
+              className="bg-amber-600 hover:bg-amber-700 text-white font-bold"
+            >
+              Save Categories ({quickAssignCategoryIds.includes('all') ? 'All' : quickAssignCategoryIds.length})
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Cashier Billing Printer Configuration Modal */}
+      <Modal
+        isOpen={isBillingModalOpen}
+        onClose={() => setIsBillingModalOpen(false)}
+        title={editingBillingPrinterId ? "Edit Cashier Bill Printer" : "Register Cashier Bill Printer"}
+        className="max-w-lg"
+      >
+        <form onSubmit={handleSaveBillingPrinter} className="space-y-5 pt-2">
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+              Printer / Counter Name <span className="text-rose-500">*</span>
+            </label>
+            <Input
+              value={billingPrinterForm.name}
+              onChange={(e) => setBillingPrinterForm((prev) => ({ ...prev, name: e.target.value }))}
+              placeholder="e.g., Main Cashier Desk, Counter 2, Bar Cashier"
+              required
+              autoFocus
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+              Receipt Paper Width (mm)
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setBillingPrinterForm((prev) => ({ ...prev, paperWidth: '80mm' }))}
+                className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                  billingPrinterForm.paperWidth === '80mm'
+                    ? 'border-emerald-600 bg-emerald-500/10 font-bold text-emerald-600 dark:text-emerald-400 shadow-xs'
+                    : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
+                }`}
+              >
+                <div className="font-extrabold text-xs">80mm (Standard POS)</div>
+                <div className="text-[11px] text-slate-500 mt-0.5">3 1/8 inches • Full Customer Bill</div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setBillingPrinterForm((prev) => ({ ...prev, paperWidth: '58mm' }))}
+                className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                  billingPrinterForm.paperWidth === '58mm'
+                    ? 'border-emerald-600 bg-emerald-500/10 font-bold text-emerald-600 dark:text-emerald-400 shadow-xs'
+                    : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
+                }`}
+              >
+                <div className="font-extrabold text-xs">58mm (Compact)</div>
+                <div className="text-[11px] text-slate-500 mt-0.5">2 1/4 inches • Compact Receipt</div>
+              </button>
+            </div>
+          </div>
+
+          {/* Hardware Connection Mode */}
+          <div className="space-y-2 pt-1">
+            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+              Hardware Connection Mode
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              {/* Browser / System Default */}
+              <button
+                type="button"
+                onClick={() => setBillingPrinterForm(prev => ({ ...prev, connectionType: 'browser' }))}
+                className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                  billingPrinterForm.connectionType === 'browser'
+                    ? 'border-emerald-600 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold shadow-xs'
+                    : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
+                }`}
+              >
+                <div className="text-xs font-black">🖥️ System Default</div>
+                <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">OS Print Spooler / Browser Dialog</div>
+              </button>
+
+              {/* Network LAN IP */}
+              <button
+                type="button"
+                onClick={() => setBillingPrinterForm(prev => ({ ...prev, connectionType: 'network' }))}
+                className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                  billingPrinterForm.connectionType === 'network'
+                    ? 'border-emerald-600 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold shadow-xs'
+                    : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
+                }`}
+              >
+                <div className="text-xs font-black flex items-center gap-1"><Wifi size={13} /> Network LAN</div>
+                <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">Counter Ethernet / Wi-Fi IP (Port 9100)</div>
+              </button>
+
+              {/* Direct USB */}
+              <button
+                type="button"
+                onClick={() => setBillingPrinterForm(prev => ({ ...prev, connectionType: 'usb' }))}
+                className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                  billingPrinterForm.connectionType === 'usb'
+                    ? 'border-emerald-600 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold shadow-xs'
+                    : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
+                }`}
+              >
+                <div className="text-xs font-black flex items-center gap-1"><Usb size={13} /> Direct USB</div>
+                <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">WebUSB raw print zero-dialog</div>
+              </button>
+            </div>
+
+            {/* Network LAN IP Config Fields */}
+            {billingPrinterForm.connectionType === 'network' && (
+              <div className="p-3 bg-blue-50/60 dark:bg-blue-950/30 rounded-xl border border-blue-200/80 dark:border-blue-800/60 space-y-2.5 animate-fade-in">
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="col-span-2 space-y-1">
+                    <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Printer IP Address *</label>
+                    <Input
+                      value={billingPrinterForm.ipAddress}
+                      onChange={(e) => setBillingPrinterForm(prev => ({ ...prev, ipAddress: e.target.value }))}
+                      placeholder="e.g. 192.168.1.100 or 127.0.0.1"
+                      className="bg-white dark:bg-slate-900 text-xs h-9"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Port</label>
+                    <Input
+                      type="number"
+                      value={billingPrinterForm.port}
+                      onChange={(e) => setBillingPrinterForm(prev => ({ ...prev, port: parseInt(e.target.value) || 9100 }))}
+                      placeholder="9100"
+                      className="bg-white dark:bg-slate-900 text-xs h-9 font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <p className="text-[11px] text-slate-500">
+                    Standard ESC/POS thermal printer port is <code className="text-slate-700 dark:text-slate-300 font-bold font-mono">9100</code>.
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    isLoading={isTestingLan}
+                    onClick={() => handleTestLanSocket(billingPrinterForm.ipAddress, billingPrinterForm.port, billingPrinterForm.name)}
+                    className="h-7 text-xs font-bold shrink-0"
+                  >
+                    Test LAN Ping
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Direct USB Device Pairing Button */}
+            {billingPrinterForm.connectionType === 'usb' && (
+              <div className="p-3 bg-teal-50/60 dark:bg-teal-950/30 rounded-xl border border-teal-200/80 dark:border-teal-800/60 flex items-center justify-between gap-3 animate-fade-in">
+                <div className="space-y-0.5">
+                  <div className="text-xs font-bold text-teal-900 dark:text-teal-200 flex items-center gap-1.5">
+                    <Usb size={13} />
+                    <span>Direct WebUSB ESC/POS</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Pair USB cable connected receipt printer.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handlePairBillingPrinterUsb}
+                  leftIcon={<Usb size={13} />}
+                  className="bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold shrink-0 h-8"
+                >
+                  Pair USB Printer
+                </Button>
+              </div>
+            )}
+          </div>
+
+          {/* Primary Counter & Active Checkboxes */}
+          <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2">
+            <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-800">
+              <div className="space-y-0.5">
+                <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  Primary Cashier Printer
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  Default target when printing bills and for automatic bill printing
+                </div>
+              </div>
+              <Switch
+                checked={billingPrinterForm.isDefault}
+                onChange={(val) => setBillingPrinterForm(prev => ({ ...prev, isDefault: val }))}
+              />
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={billingPrinterForm.enabled}
+                  onChange={(val) => setBillingPrinterForm(prev => ({ ...prev, enabled: val }))}
+                />
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Printer Active</span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsBillingModalOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  size="sm"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                >
+                  {editingBillingPrinterId ? "Save Changes" : "Add Printer"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </form>
       </Modal>
     </div>
   );

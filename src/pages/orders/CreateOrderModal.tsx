@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, Plus, Minus, ShoppingBag, ArrowRight, ArrowLeft, User, Phone, Check, X, ChevronDown, LayoutGrid } from 'lucide-react';
+import { Search, Plus, Minus, ShoppingBag, ArrowRight, ArrowLeft, User, Phone, Check, X, ChevronDown, LayoutGrid, RotateCcw } from 'lucide-react';
 
 
 
@@ -17,8 +17,13 @@ import toast from 'react-hot-toast';
 interface CreateOrderModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onOrderCreated: () => void;
+  onOrderCreated?: (order?: any, newlyAddedItems?: any[]) => void;
   targetOrder?: any;
+  replacingItem?: {
+    order: any;
+    item: any;
+  } | null;
+  onItemReplaced?: (updatedOrder: any, previousItem: any, newItem: any) => void;
 }
 
 interface CartItem {
@@ -26,8 +31,24 @@ interface CartItem {
   quantity: number;
 }
 
-export function CreateOrderModal({ isOpen, onClose, onOrderCreated, targetOrder }: CreateOrderModalProps) {
-  const { menuItems, setMenuItems, categories, setCategories } = useShopStore();
+const REPLACEMENT_REASONS = [
+  { id: 'Customer changed item preference', name: 'Customer changed item preference' },
+  { id: 'Item out of stock / ingredient unavailable', name: 'Item out of stock / ingredient unavailable' },
+  { id: 'Different portion or spice level requested', name: 'Different portion or spice level requested' },
+  { id: 'Chef recommendation / Kitchen change', name: 'Chef recommendation / Kitchen change' },
+  { id: 'Billing / entry error', name: 'Billing / entry error' },
+  { id: 'custom', name: 'Other reason (enter below)...' },
+];
+
+export function CreateOrderModal({ 
+  isOpen, 
+  onClose, 
+  onOrderCreated, 
+  targetOrder,
+  replacingItem,
+  onItemReplaced,
+}: CreateOrderModalProps) {
+  const { menuItems, setMenuItems, categories, setCategories, shop } = useShopStore();
   
   const [step, setStep] = useState<1 | 2>(1);
   const [loading, setLoading] = useState(false);
@@ -61,6 +82,11 @@ export function CreateOrderModal({ isOpen, onClose, onOrderCreated, targetOrder 
 
   // Food Type Filter
   const [foodFilter, setFoodFilter] = useState<'all' | 'veg' | 'non-veg' | 'egg' | 'drink' | 'dessert'>('all');
+
+  // Replacement Mode State
+  const [isConfirmingReplacement, setIsConfirmingReplacement] = useState(false);
+  const [replacementReason, setReplacementReason] = useState('Customer changed item preference');
+  const [customReplacementReason, setCustomReplacementReason] = useState('');
 
 
   // Debounce search query input (350ms)
@@ -114,6 +140,9 @@ export function CreateOrderModal({ isOpen, onClose, onOrderCreated, targetOrder 
     if (isOpen) {
       setStep(1);
       setCart({});
+      setIsConfirmingReplacement(false);
+      setReplacementReason('Customer changed item preference');
+      setCustomReplacementReason('');
       setCustomerName('');
       setCustomerPhone('');
       setOrderType('dine_in');
@@ -176,6 +205,21 @@ export function CreateOrderModal({ isOpen, onClose, onOrderCreated, targetOrder 
 
   const updateQuantity = (item: MenuItem, delta: number) => {
     setCart(prev => {
+      if (replacingItem) {
+        // In replacement mode, exactly 1 replacement item is selected
+        const currentQty = prev[item.id]?.quantity || 0;
+        let newQty = currentQty === 0 
+          ? (delta > 0 ? (replacingItem.item?.quantity || 1) : 1) 
+          : currentQty + delta;
+        if (newQty <= 0) return {};
+        return {
+          [item.id]: {
+            menuItem: item,
+            quantity: newQty,
+          }
+        };
+      }
+
       const currentQty = prev[item.id]?.quantity || 0;
       const newQty = currentQty + delta;
       if (newQty <= 0) {
@@ -204,6 +248,112 @@ export function CreateOrderModal({ isOpen, onClose, onOrderCreated, targetOrder 
     }, 0);
   }, [cart]);
 
+  // GST Calculation
+  const cgstRate = Number(shop?.settings?.cgst_rate || 0);
+  const sgstRate = Number(shop?.settings?.sgst_rate || 0);
+  const totalTaxRate = cgstRate + sgstRate;
+  const isGstEnabled = Boolean(shop?.settings?.gst_enabled && totalTaxRate > 0);
+  const isExclusiveTax = isGstEnabled && !shop?.settings?.inclusive_tax;
+
+  const gstCalculation = useMemo(() => {
+    if (!isGstEnabled) {
+      return {
+        taxable: totalCartAmount,
+        cgst: 0,
+        sgst: 0,
+        totalTax: 0,
+        finalTotal: totalCartAmount,
+      };
+    }
+    if (isExclusiveTax) {
+      // EXCLUSIVE: Tax is added on top of food items
+      const cgst = Math.round((totalCartAmount * (cgstRate / 100)) * 100) / 100;
+      const sgst = Math.round((totalCartAmount * (sgstRate / 100)) * 100) / 100;
+      const totalTax = Math.round((cgst + sgst) * 100) / 100;
+      const finalTotal = Math.round((totalCartAmount + totalTax) * 100) / 100;
+      return {
+        taxable: totalCartAmount,
+        cgst,
+        sgst,
+        totalTax,
+        finalTotal,
+      };
+    } else {
+      // INCLUSIVE: Tax is already baked in
+      const taxable = Math.round((totalCartAmount / (1 + totalTaxRate / 100)) * 100) / 100;
+      const totalTax = Math.round((totalCartAmount - taxable) * 100) / 100;
+      const cgst = Math.round((totalTax * (cgstRate / totalTaxRate)) * 100) / 100;
+      const sgst = Math.round((totalTax - cgst) * 100) / 100;
+      return {
+        taxable,
+        cgst,
+        sgst,
+        totalTax,
+        finalTotal: totalCartAmount,
+      };
+    }
+  }, [isGstEnabled, isExclusiveTax, totalCartAmount, cgstRate, sgstRate, totalTaxRate]);
+
+  // Replacement mode calculations
+  const selectedReplacement = replacingItem ? Object.values(cart)[0] : null;
+  const oldReplacementTotal = replacingItem 
+    ? Number(replacingItem.item?.price || 0) * Number(replacingItem.item?.quantity || 1) 
+    : 0;
+  const newReplacementTotal = selectedReplacement 
+    ? Number(selectedReplacement.menuItem.offer_price || selectedReplacement.menuItem.price) * selectedReplacement.quantity 
+    : 0;
+  const replacementPriceDiff = newReplacementTotal - oldReplacementTotal;
+
+  const handleConfirmReplacementSubmit = async () => {
+    if (!replacingItem || !selectedReplacement) return;
+    const finalReason = replacementReason === 'custom' 
+      ? (customReplacementReason.trim() || 'Item replaced') 
+      : replacementReason;
+
+    setLoading(true);
+    const toastId = toast.loading(`Replacing ${replacingItem.item.name} with ${selectedReplacement.menuItem.name}...`);
+    try {
+      const payload = {
+        new_menu_item_id: selectedReplacement.menuItem.id,
+        name: selectedReplacement.menuItem.name,
+        quantity: selectedReplacement.quantity,
+        price: Number(selectedReplacement.menuItem.offer_price || selectedReplacement.menuItem.price),
+        variant_info: null,
+        addons_info: null,
+        reason: finalReason,
+      };
+
+      const res = await api.post(`/orders/${replacingItem.order.id}/items/${replacingItem.item.id}/replace`, payload);
+      const updatedOrder = res.data;
+      toast.success(`Item replaced with ${selectedReplacement.menuItem.name}`, { id: toastId });
+
+      if (onItemReplaced) {
+        const cancelledPrevItem = {
+          ...replacingItem.item,
+          is_cancelled: true,
+          cancellation_reason: finalReason,
+        };
+        const newlyAddedItem = (updatedOrder.items || []).find(
+          (it: any) => !it.is_cancelled && it.menu_item_id === selectedReplacement.menuItem.id
+        ) || {
+          menu_item_id: selectedReplacement.menuItem.id,
+          name: selectedReplacement.menuItem.name,
+          quantity: selectedReplacement.quantity,
+          price: Number(selectedReplacement.menuItem.offer_price || selectedReplacement.menuItem.price),
+          category_id: selectedReplacement.menuItem.category_id,
+        };
+        onItemReplaced(updatedOrder, cancelledPrevItem, newlyAddedItem);
+      }
+      setIsConfirmingReplacement(false);
+      onClose();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.response?.data?.detail || 'Failed to replace item', { id: toastId });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleAppendItems = async () => {
     if (!targetOrder || totalCartCount === 0) return;
     setLoading(true);
@@ -215,9 +365,15 @@ export function CreateOrderModal({ isOpen, onClose, onOrderCreated, targetOrder 
         price: Number(item.menuItem.offer_price || item.menuItem.price),
       }));
 
-      await api.post(`/orders/${targetOrder.id}/items`, { items: itemsPayload });
+      const res = await api.post(`/orders/${targetOrder.id}/items`, { items: itemsPayload });
       toast.success(`Added ${totalCartCount} item(s) to Order #${targetOrder.id.slice(0, 8).toUpperCase()}`);
-      onOrderCreated();
+      
+      const updatedOrder = res.data;
+      const prevIds = new Set((targetOrder.items || []).map((it: any) => it.id));
+      const newlyAdded = (updatedOrder.items || []).filter((it: any) => !prevIds.has(it.id));
+      const addedItemsToSend = newlyAdded.length > 0 ? newlyAdded : itemsPayload;
+
+      if (onOrderCreated) onOrderCreated(updatedOrder, addedItemsToSend);
       onClose();
     } catch (error: any) {
       console.error(error);
@@ -262,14 +418,14 @@ export function CreateOrderModal({ isOpen, onClose, onOrderCreated, targetOrder 
         delivery_address: orderType === 'delivery' ? deliveryAddress.trim() || null : null,
         payment_method: paymentMethod,
         payment_status: paymentStatus,
-        total_amount: totalCartAmount,
+        total_amount: gstCalculation.finalTotal,
         items: itemsPayload,
       };
 
-      await api.post('/orders', payload);
+      const res = await api.post('/orders', payload);
 
       toast.success('Order created successfully!');
-      onOrderCreated();
+      if (onOrderCreated) onOrderCreated(res.data);
       onClose();
     } catch (error: any) {
       console.error(error);
@@ -296,12 +452,18 @@ export function CreateOrderModal({ isOpen, onClose, onOrderCreated, targetOrder 
             </button>
           )}
           <h2 className="text-sm sm:text-base font-bold text-foreground truncate">
-            {targetOrder 
+            {replacingItem
+              ? `Replace "${replacingItem.item.name}" in Order #${replacingItem.order.id.slice(0, 6).toUpperCase()}`
+              : targetOrder 
               ? `Add Items to #${targetOrder.id.slice(0, 6).toUpperCase()}`
               : (step === 1 ? 'Select Menu Items' : 'Customer & Order Info')}
           </h2>
           <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary shrink-0">
-            {step === 1 ? `Step 1/2 • ${totalCartCount} item${totalCartCount === 1 ? '' : 's'}` : 'Step 2/2'}
+            {replacingItem
+              ? 'Replacement Mode'
+              : step === 1 
+              ? `Step 1/2 • ${totalCartCount} item${totalCartCount === 1 ? '' : 's'}` 
+              : 'Step 2/2'}
           </span>
         </div>
 
@@ -312,6 +474,27 @@ export function CreateOrderModal({ isOpen, onClose, onOrderCreated, targetOrder 
           <X size={20} />
         </button>
       </div>
+
+      {/* Replacement Context Sub-Banner */}
+      {replacingItem && (
+        <div className="bg-amber-500/10 border-b border-amber-500/20 px-3 sm:px-6 py-2.5 flex items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="p-1 rounded-lg bg-amber-500/20 text-amber-600 dark:text-amber-400 shrink-0">
+              <RotateCcw size={14} />
+            </span>
+            <div className="text-xs truncate">
+              <span className="text-muted-foreground">Original item: </span>
+              <strong className="text-foreground font-bold">{replacingItem.item.name}</strong>
+              <span className="text-muted-foreground ml-1 font-mono">
+                (×{replacingItem.item.quantity} • ₹{Number(replacingItem.item.price * replacingItem.item.quantity).toFixed(2)})
+              </span>
+            </div>
+          </div>
+          <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-700 dark:text-amber-300 shrink-0 hidden sm:inline">
+            Tap + ADD on a replacement dish below
+          </span>
+        </div>
+      )}
 
       {/* STEP 1: MENU SELECTION */}
       {step === 1 && (
@@ -575,14 +758,31 @@ export function CreateOrderModal({ isOpen, onClose, onOrderCreated, targetOrder 
         <div className="flex flex-col flex-1 overflow-hidden">
           <div className="flex-1 overflow-y-auto px-4 sm:px-8 py-4 space-y-4 pb-24 max-w-2xl mx-auto w-full">
             {/* Cart Summary Banner */}
-            <div className="p-3.5 bg-muted/60 rounded-2xl border border-border flex items-center justify-between text-xs sm:text-sm">
-              <div>
-                <span className="font-bold text-foreground">{totalCartCount} Items in Order</span>
-                <div className="text-muted-foreground text-xs truncate max-w-[280px]">
-                  {Object.values(cart).map(i => `${i.menuItem.name} (x${i.quantity})`).join(', ')}
+            <div className="p-3.5 bg-muted/60 rounded-2xl border border-border space-y-2 text-xs sm:text-sm">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-foreground">{totalCartCount} Items in Order</span>
+                  <div className="text-muted-foreground text-xs truncate max-w-[280px]">
+                    {Object.values(cart).map(i => `${i.menuItem.name} (x${i.quantity})`).join(', ')}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="font-black text-base text-primary font-mono">₹{gstCalculation.finalTotal.toFixed(2)}</span>
+                  {isExclusiveTax && totalCartCount > 0 && (
+                    <div className="text-[10px] text-muted-foreground">
+                      ₹{totalCartAmount.toFixed(2)} + ₹{gstCalculation.totalTax.toFixed(2)} GST
+                    </div>
+                  )}
                 </div>
               </div>
-              <span className="font-black text-base text-primary font-mono">₹{totalCartAmount.toFixed(2)}</span>
+              {isGstEnabled && totalCartCount > 0 && (
+                <div className="pt-2 border-t border-border/60 flex justify-between items-center text-[11px] text-muted-foreground font-mono">
+                  <span>GST ({cgstRate}% CGST + {sgstRate}% SGST)</span>
+                  <span className="font-semibold text-foreground">
+                    {isExclusiveTax ? `+₹${gstCalculation.totalTax.toFixed(2)} (Exclusive)` : `₹${gstCalculation.totalTax.toFixed(2)} (Included)`}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Order Type Tabs */}
@@ -726,34 +926,88 @@ export function CreateOrderModal({ isOpen, onClose, onOrderCreated, targetOrder 
 
       {/* Fixed Bottom Action Bar */}
       <div className="fixed bottom-0 inset-x-0 bg-background/95 backdrop-blur border-t border-border px-4 py-3 z-30 flex items-center justify-between shadow-lg">
-        <div>
-          <div className="text-[11px] font-semibold text-muted-foreground">{totalCartCount} item(s) selected</div>
-          <div className="text-base sm:text-lg font-black text-foreground font-mono">
-            ₹{totalCartAmount.toFixed(2)}
-          </div>
-        </div>
+        {replacingItem ? (
+          <>
+            <div>
+              {selectedReplacement ? (
+                <div>
+                  <div className="text-xs font-bold text-foreground truncate max-w-[190px] sm:max-w-none flex items-center gap-1.5">
+                    <span>New: {selectedReplacement.menuItem.name}</span>
+                    <span className="text-[11px] font-mono text-muted-foreground">×{selectedReplacement.quantity}</span>
+                  </div>
+                  <div className="flex items-baseline gap-2 mt-0.5">
+                    <span className="text-base sm:text-lg font-black text-foreground font-mono">
+                      ₹{newReplacementTotal.toFixed(2)}
+                    </span>
+                    {replacementPriceDiff > 0 && (
+                      <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-950/60 px-2 py-0.5 rounded-md">
+                        +₹{replacementPriceDiff.toFixed(2)} to collect
+                      </span>
+                    )}
+                    {replacementPriceDiff < 0 && (
+                      <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/60 px-2 py-0.5 rounded-md">
+                        -₹{Math.abs(replacementPriceDiff).toFixed(2)} refund
+                      </span>
+                    )}
+                    {replacementPriceDiff === 0 && (
+                      <span className="text-[11px] font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
+                        Same price
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-xs text-muted-foreground font-medium">
+                  Tap <strong className="text-foreground">+ ADD</strong> on any item to replace
+                </div>
+              )}
+            </div>
 
-        {step === 1 ? (
-          <Button
-            onClick={handleNextStep}
-            disabled={totalCartCount === 0}
-            isLoading={loading}
-            className="gap-2 px-6 h-10 rounded-xl font-bold bg-primary hover:bg-primary/90 text-white shadow-md transition-all active:scale-95 cursor-pointer"
-          >
-            {targetOrder ? (
-              <>Add Items (₹{totalCartAmount.toFixed(2)}) <Check size={16} /></>
-            ) : (
-              <>Next <ArrowRight size={16} /></>
-            )}
-          </Button>
+            <Button
+              onClick={() => setIsConfirmingReplacement(true)}
+              disabled={!selectedReplacement || loading}
+              className="gap-2 px-5 sm:px-6 h-10 rounded-xl font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-md transition-all active:scale-95 cursor-pointer whitespace-nowrap"
+            >
+              Confirm Replacement <ArrowRight size={16} />
+            </Button>
+          </>
         ) : (
-          <Button
-            onClick={handleSubmitOrder}
-            isLoading={loading}
-            className="px-6 h-10 rounded-xl font-bold gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md transition-all active:scale-95 cursor-pointer"
-          >
-            <Check size={16} /> Create Order (₹{totalCartAmount.toFixed(2)})
-          </Button>
+          <>
+            <div>
+              <div className="text-[11px] font-semibold text-muted-foreground">
+                {totalCartCount} item(s) selected
+                {isExclusiveTax && gstCalculation.totalTax > 0 && (
+                  <span className="ml-1 text-primary font-bold">(+₹{gstCalculation.totalTax.toFixed(2)} GST)</span>
+                )}
+              </div>
+              <div className="text-base sm:text-lg font-black text-foreground font-mono">
+                ₹{gstCalculation.finalTotal.toFixed(2)}
+              </div>
+            </div>
+
+            {step === 1 ? (
+              <Button
+                onClick={handleNextStep}
+                disabled={totalCartCount === 0}
+                isLoading={loading}
+                className="gap-2 px-6 h-10 rounded-xl font-bold bg-primary hover:bg-primary/90 text-white shadow-md transition-all active:scale-95 cursor-pointer"
+              >
+                {targetOrder ? (
+                  <>Add Items (₹{gstCalculation.finalTotal.toFixed(2)}) <Check size={16} /></>
+                ) : (
+                  <>Next (₹{gstCalculation.finalTotal.toFixed(2)}) <ArrowRight size={16} /></>
+                )}
+              </Button>
+            ) : (
+              <Button
+                onClick={handleSubmitOrder}
+                isLoading={loading}
+                className="px-6 h-10 rounded-xl font-bold gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md transition-all active:scale-95 cursor-pointer"
+              >
+                <Check size={16} /> Create Order (₹{gstCalculation.finalTotal.toFixed(2)})
+              </Button>
+            )}
+          </>
         )}
       </div>
 
@@ -880,6 +1134,97 @@ export function CreateOrderModal({ isOpen, onClose, onOrderCreated, targetOrder 
           </div>
         </div>
       </Modal>
+
+      {/* Replacement Reason Confirmation Modal */}
+      {replacingItem && (
+        <Modal
+          isOpen={isConfirmingReplacement}
+          onClose={() => setIsConfirmingReplacement(false)}
+          title="Confirm Item Replacement"
+          className="max-w-md"
+        >
+          <div className="space-y-4 pt-1">
+            {/* Old vs New Item comparison card */}
+            <div className="p-3.5 bg-muted/60 border border-border rounded-2xl flex items-center justify-between gap-3">
+              <div className="space-y-0.5 min-w-0 flex-1">
+                <span className="text-[10px] font-bold text-rose-500 uppercase tracking-wider block">Old Item (Remove)</span>
+                <div className="font-bold text-sm text-foreground truncate">{replacingItem.item?.name}</div>
+                <div className="text-xs text-muted-foreground font-mono">
+                  ×{replacingItem.item?.quantity} • ₹{oldReplacementTotal.toFixed(2)}
+                </div>
+              </div>
+
+              <div className="p-2 rounded-full bg-amber-500/10 text-amber-600 shrink-0">
+                <ArrowRight size={16} />
+              </div>
+
+              <div className="space-y-0.5 min-w-0 flex-1 text-right">
+                <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider block">New Item (Add)</span>
+                <div className="font-bold text-sm text-foreground truncate">{selectedReplacement?.menuItem?.name}</div>
+                <div className="text-xs text-emerald-600 font-bold font-mono">
+                  ×{selectedReplacement?.quantity} • ₹{newReplacementTotal.toFixed(2)}
+                </div>
+              </div>
+            </div>
+
+            {/* Price Difference Indicator */}
+            <div className="p-3 rounded-xl bg-background border border-border flex items-center justify-between text-xs">
+              <span className="font-semibold text-muted-foreground">Price Difference:</span>
+              <span className={`font-mono font-black text-sm ${replacementPriceDiff > 0 ? 'text-amber-600' : replacementPriceDiff < 0 ? 'text-emerald-600' : 'text-foreground'}`}>
+                {replacementPriceDiff > 0 
+                  ? `+₹${replacementPriceDiff.toFixed(2)} (To collect)` 
+                  : replacementPriceDiff < 0 
+                  ? `-₹${Math.abs(replacementPriceDiff).toFixed(2)} (Refund / Deduct)` 
+                  : '₹0.00 (Same price)'}
+              </span>
+            </div>
+
+            {/* Replacement Reason Selector */}
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-foreground uppercase tracking-wider block">
+                Replacement Reason <span className="text-rose-500">*</span>
+              </label>
+              <SearchableSelect
+                options={REPLACEMENT_REASONS}
+                value={replacementReason}
+                onChange={(val) => setReplacementReason(val)}
+                placeholder="Select replacement reason..."
+                showSearch={false}
+                className="h-11 rounded-xl text-sm"
+              />
+
+              {replacementReason === 'custom' && (
+                <Input
+                  placeholder="Enter replacement reason here..."
+                  value={customReplacementReason}
+                  onChange={(e) => setCustomReplacementReason(e.target.value)}
+                  className="rounded-xl mt-2"
+                  autoFocus
+                />
+              )}
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex gap-3 pt-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setIsConfirmingReplacement(false)}
+                disabled={loading}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-bold"
+                onClick={handleConfirmReplacementSubmit}
+                isLoading={loading}
+              >
+                Confirm & Replace Item
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>,
     document.body
   );

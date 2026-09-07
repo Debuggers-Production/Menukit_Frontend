@@ -14,7 +14,7 @@ import logo from "@/assets/menukit-logo.svg";
 export function ShopSwitcherDropdown() {
   const navigate = useNavigate();
   const location = useLocation();
-  const isCreateNew = location.state?.createNew === true && location.pathname === '/shop-setup';
+  const isCreateNew = ((location.state?.createNew === true) || new URLSearchParams(location.search).get('create') === 'true') && location.pathname === '/shop-setup';
   
   const [ownedShops, setOwnedShops] = useState<Shop[]>([]);
   const [staffShops, setStaffShops] = useState<Shop[]>([]);
@@ -146,7 +146,7 @@ export function ShopSwitcherDropdown() {
               <button
                 onClick={() => {
                   setIsOpen(false);
-                  navigate('/shop-setup', { state: { createNew: true } });
+                  navigate('/shop-setup?create=true', { state: { createNew: true } });
                 }}
                 className="w-full flex items-center gap-2 px-2 py-1.5 text-[13px] font-bold text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
               >

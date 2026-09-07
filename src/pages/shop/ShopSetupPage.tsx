@@ -5,6 +5,8 @@ import { Store, MapPin, Phone, UploadCloud, Save, ChevronRight, Check, Edit2, Cl
 import { compressImage } from '../../utils/imageCompression';
 import { api } from '@/services/api';
 import { useShopStore } from '@/store/shopStore';
+import { usePermissions } from '@/hooks/usePermissions';
+import { AccessDenied } from '@/components/ui/AccessDenied';
 
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -139,117 +141,134 @@ function MapLocationSelector({
 }
 
 export function ShopSetupPage() {
- const { shop, setShop } = useShopStore();
- const { setTitle: setHeaderTitle } = useHeaderStore();
- const [isLoading, setIsLoading] = useState(false);
- const [currentStep, setCurrentStep] = useState(1);
- const location = useLocation();
- const isCreateNew = location.state?.createNew === true;
- const [viewMode, setViewMode] = useState<'summary'| 'edit'>(isCreateNew ? 'edit': 'edit');
- const [ownedShops, setOwnedShops] = useState<{id: string, name: string}[]>([]);
+  const { shop, setShop } = useShopStore();
+  const { setTitle: setHeaderTitle } = useHeaderStore();
+  const [isLoading, setIsLoading] = useState(false);
+  const [currentStep, setCurrentStep] = useState(1);
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const isCreateNewParam = location.state?.createNew === true || searchParams.get('create') === 'true' || searchParams.get('new') === 'true';
+  const [isCreateNew, setIsCreateNew] = useState<boolean>(isCreateNewParam);
+  const [viewMode, setViewMode] = useState<'summary' | 'edit'>(isCreateNewParam ? 'edit' : 'edit');
+  const [ownedShops, setOwnedShops] = useState<{ id: string; name: string }[]>([]);
+  const { canRead } = usePermissions('settings');
 
- const formatTime = (timeStr: string) => {
- if (!timeStr) return '';
- const [h, m] = timeStr.split(':');
- const date = new Date();
- date.setHours(parseInt(h, 10));
- date.setMinutes(parseInt(m, 10));
- return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
- };
- 
- const [formData, setFormData] = useState<FormData>({
- name: '',
- description: '',
- welcome_message: '',
- phone: '',
- whatsapp: '',
- address: '',
- logo_url: '',
- banner_url: '',
- opening_time: '',
- closing_time: '',
- latitude: '',
- longitude: '',
- google_review_link: '',
- clone_from_shop_id: '',
- });
+  const formatTime = (timeStr: string) => {
+    if (!timeStr) return '';
+    const [h, m] = timeStr.split(':');
+    const date = new Date();
+    date.setHours(parseInt(h, 10));
+    date.setMinutes(parseInt(m, 10));
+    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
+  };
+  
+  const [formData, setFormData] = useState<FormData>({
+    name: '',
+    description: '',
+    welcome_message: '',
+    phone: '',
+    whatsapp: '',
+    address: '',
+    logo_url: '',
+    banner_url: '',
+    opening_time: '',
+    closing_time: '',
+    latitude: '',
+    longitude: '',
+    google_review_link: '',
+    clone_from_shop_id: '',
+  });
 
- const logoInputRef = useRef<HTMLInputElement>(null);
- const bannerInputRef = useRef<HTMLInputElement>(null);
- const [isUploadingLogo, setIsUploadingLogo] = useState(false);
- const [isUploadingBanner, setIsUploadingBanner] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const bannerInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const [isUploadingBanner, setIsUploadingBanner] = useState(false);
 
- useEffect(() => {
- setHeaderTitle('Shop Setup', 'Configure your restaurant\'s digital presence');
- }, [setHeaderTitle]);
+  // Sync isCreateNew when navigation changes
+  useEffect(() => {
+    if (isCreateNewParam) {
+      setIsCreateNew(true);
+      setViewMode('edit');
+    }
+  }, [isCreateNewParam]);
 
- useEffect(() => {
- if (isCreateNew) {
- setShop(null);
- setFormData({
- name: '',
- description: '',
- welcome_message: '',
- phone: '',
- whatsapp: '',
- address: '',
- logo_url: '',
- banner_url: '',
- opening_time: '',
- closing_time: '',
- latitude: '',
- longitude: '',
- google_review_link: '',
- clone_from_shop_id: '',
- });
- setViewMode('edit');
- 
- const fetchOwnedShops = async () => {
- try {
- const res = await api.get('/shops/my-shops');
- setOwnedShops(res.data.owned || []);
- } catch (err) {
- console.error("Failed to fetch owned shops for cloning dropdown", err);
- }
- };
- fetchOwnedShops();
- return;
- }
+  // Always fetch owned shops to know if user owns any shop
+  useEffect(() => {
+    const fetchOwned = async () => {
+      try {
+        const res = await api.get('/shops/my-shops');
+        setOwnedShops(res.data.owned || []);
+      } catch (err) {
+        console.error("Failed to fetch owned shops", err);
+      }
+    };
+    fetchOwned();
+  }, []);
 
- const fetchShop = async () => {
- try {
- setIsLoading(true);
- const res = await api.get('/shops/me');
- if (res.data && res.data.id) {
- setShop(res.data);
- const loadedShop = res.data;
- setFormData({
- name: loadedShop.name || '',
- description: loadedShop.description || '',
- welcome_message: loadedShop.welcome_message || '',
- phone: loadedShop.phone || '',
- whatsapp: loadedShop.whatsapp || '',
- address: loadedShop.address || '',
- logo_url: loadedShop.logo_url || '',
- banner_url: loadedShop.banner_url || '',
- opening_time: loadedShop.opening_time || '',
- closing_time: loadedShop.closing_time || '',
- latitude: loadedShop.latitude?.toString() || '',
- longitude: loadedShop.longitude?.toString() || '',
- google_review_link: loadedShop.google_review_link || '',
- clone_from_shop_id: '',
- });
- setViewMode('summary');
- }
- } catch (error) {
- console.error('Failed to load shop details', error);
- } finally {
- setIsLoading(false);
- }
- };
+  useEffect(() => {
+    if (isCreateNew) {
+      setHeaderTitle(ownedShops.length > 0 ? 'Create New Branch' : 'Create New Shop', 'Set up your restaurant\'s digital presence');
+    } else {
+      setHeaderTitle('Shop Setup', 'Configure your restaurant\'s digital presence');
+    }
+  }, [setHeaderTitle, isCreateNew, ownedShops.length]);
 
- fetchShop();
- }, [setShop, isCreateNew]);
+  useEffect(() => {
+    if (isCreateNew) {
+      setFormData({
+        name: '',
+        description: '',
+        welcome_message: '',
+        phone: '',
+        whatsapp: '',
+        address: '',
+        logo_url: '',
+        banner_url: '',
+        opening_time: '',
+        closing_time: '',
+        latitude: '',
+        longitude: '',
+        google_review_link: '',
+        clone_from_shop_id: '',
+      });
+      setViewMode('edit');
+      return;
+    }
+
+    const fetchShop = async () => {
+      try {
+        setIsLoading(true);
+        const res = await api.get('/shops/me');
+        if (res.data && res.data.id) {
+          setShop(res.data);
+          const loadedShop = res.data;
+          setFormData({
+            name: loadedShop.name || '',
+            description: loadedShop.description || '',
+            welcome_message: loadedShop.welcome_message || '',
+            phone: loadedShop.phone || '',
+            whatsapp: loadedShop.whatsapp || '',
+            address: loadedShop.address || '',
+            logo_url: loadedShop.logo_url || '',
+            banner_url: loadedShop.banner_url || '',
+            opening_time: loadedShop.opening_time || '',
+            closing_time: loadedShop.closing_time || '',
+            latitude: loadedShop.latitude?.toString() || '',
+            longitude: loadedShop.longitude?.toString() || '',
+            google_review_link: loadedShop.google_review_link || '',
+            clone_from_shop_id: '',
+          });
+          setViewMode('summary');
+        }
+      } catch (error) {
+        console.error('Failed to load shop details', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchShop();
+  }, [setShop, isCreateNew]);
 
  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
  const { name, value } = e.target;
@@ -281,7 +300,7 @@ export function ShopSetupPage() {
  const newUrl = res.data.url;
  setFormData(prev => ({ ...prev, [`${type}_url`]: newUrl }));
  
- if (shop?.id) {
+ if (shop?.id && !isCreateNew) {
  const updateRes = await api.put('/shops/me', { [`${type}_url`]: newUrl });
  setShop(updateRes.data);
  }
@@ -333,49 +352,78 @@ export function ShopSetupPage() {
       return;
     }
 
- setIsLoading(true);
- try {
- const payload: any = { ...formData };
- payload.latitude = payload.latitude ? parseFloat(payload.latitude) : null;
- payload.longitude = payload.longitude ? parseFloat(payload.longitude) : null;
+    setIsLoading(true);
+    try {
+      const payload: any = { ...formData };
+      payload.latitude = payload.latitude ? parseFloat(payload.latitude) : null;
+      payload.longitude = payload.longitude ? parseFloat(payload.longitude) : null;
+      if (!payload.clone_from_shop_id) {
+        delete payload.clone_from_shop_id;
+      }
 
- let res;
- if (shop?.id && !isCreateNew) {
- res = await api.put('/shops/me', payload);
- toast.success('Shop profile updated successfully!');
- } else {
- res = await api.post('/shops', payload);
- localStorage.setItem('current_shop_id', res.data.id);
- toast.success('Shop created successfully!');
- }
- 
- setShop(res.data);
- setViewMode('summary');
- } catch (error: any) {
- const detail = error.response?.data?.detail;
- const errMsg = typeof detail === 'string' 
-   ? detail 
-   : (Array.isArray(detail) && detail[0]?.msg ? `${detail[0].loc?.[detail[0].loc.length - 1] || ''}: ${detail[0].msg}` : 'Failed to save shop details');
- toast.error(errMsg);
- } finally {
- setIsLoading(false);
- }
- };
+      let res;
+      if (shop?.id && !isCreateNew) {
+        res = await api.put('/shops/me', payload);
+        toast.success('Shop profile updated successfully!');
+        setShop(res.data);
+        setViewMode('summary');
+      } else {
+        res = await api.post('/shops', payload);
+        localStorage.setItem('current_shop_id', res.data.id);
+        toast.success('Shop created successfully!');
+        setShop(res.data);
+        window.location.href = '/dashboard';
+        return;
+      }
+    } catch (error: any) {
+      const detail = error.response?.data?.detail;
+      const errMsg = typeof detail === 'string' 
+        ? detail 
+        : (Array.isArray(detail) && detail[0]?.msg ? `${detail[0].loc?.[detail[0].loc.length - 1] || ''}: ${detail[0].msg}` : 'Failed to save shop details');
+      toast.error(errMsg);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
- const steps = [
- { num: 1, title: 'Basic Info', icon: <Store size={18} /> },
- { num: 2, title: 'Contact', icon: <Phone size={18} /> },
- { num: 3, title: 'Branding', icon: <UploadCloud size={18} /> },
- ];
+  const steps = [
+    { num: 1, title: 'Basic Info', icon: <Store size={18} /> },
+    { num: 2, title: 'Contact', icon: <Phone size={18} /> },
+    { num: 3, title: 'Branding', icon: <UploadCloud size={18} /> },
+  ];
 
- return (
- <div className="space-y-6 max-w-4xl mx-auto animate-fade-in pb-12">
- <div className="mb-8">
- <h1 className="text-2xl font-bold text-foreground">
- {isCreateNew ? 'Create New Branch': 'Branch Setup'}
- </h1>
- <p className="text-muted-foreground mt-1">Configure your restaurant's digital presence</p>
- </div>
+  if (!isCreateNew && shop?.id && !canRead) {
+    return (
+      <div className="flex flex-col items-center justify-center p-4 min-h-[400px]">
+        <AccessDenied />
+        {ownedShops.length === 0 && (
+          <div className="mt-4 text-center">
+            <p className="text-sm text-muted-foreground mb-3">
+              You are assigned to this hotel as staff, but you can create your own shop.
+            </p>
+            <Button
+              onClick={() => {
+                setIsCreateNew(true);
+                setViewMode('edit');
+              }}
+              className="gap-2"
+            >
+              <Store size={16} /> Create My Own Shop
+            </Button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 max-w-4xl mx-auto animate-fade-in pb-12">
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold text-foreground">
+          {isCreateNew ? (ownedShops.length > 0 ? 'Create New Branch' : 'Create New Shop') : 'Branch Setup'}
+        </h1>
+        <p className="text-muted-foreground mt-1">Configure your restaurant's digital presence</p>
+      </div>
 
  {viewMode === 'summary'&& (
  <HeaderActions>
@@ -739,7 +787,7 @@ export function ShopSetupPage() {
  size="sm"
  className="rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white"
  >
- {isLoading ? 'Saving Shop...': 'Save Shop Profile'} <Save size={16} className="ml-1.5" />
+ {isLoading ? (isCreateNew ? 'Creating Shop...' : 'Saving Shop...') : (isCreateNew ? 'Create Shop' : 'Save Shop Profile')} <Save size={16} className="ml-1.5" />
  </Button>
  )}
  </div>

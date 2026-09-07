@@ -189,7 +189,7 @@ export function SettlementsPage() {
                   </div>
                 ) : (
                   <p className="text-[10px] font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1 pt-0.5">
-                    <AlertCircle size={13} /> No Shop UPI ID configured. <button onClick={() => navigate('/settings')} className="underline hover:text-amber-700">Add UPI in Settings</button>
+                    <AlertCircle size={13} /> No payout bank account configured. <button onClick={() => navigate('/settings')} className="underline hover:text-amber-700">Add Account in Settings</button>
                   </p>
                 )}
               </div>

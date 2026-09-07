@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { ChevronLeft, CookingPot, CheckCircle2, Clock, XCircle, AlertCircle, CreditCard, Printer, Receipt, FileText, CheckCircle, ChefHat, Download, History } from 'lucide-react';
+import { ChevronLeft, CookingPot, CheckCircle2, Clock, XCircle, AlertCircle, CreditCard, Printer, Receipt, FileText, CheckCircle, ChefHat, Download, History, Lock } from 'lucide-react';
 import { api } from '@/services/api';
 import { Shop } from '@/types';
 import toast from 'react-hot-toast';
@@ -54,6 +54,10 @@ export function OrderStatusPage() {
   };
 
   const handlePayOnline = async () => {
+    if (order?.order_type === 'dine_in' && (order?.order_status === 'PENDING_VENDOR' || order?.order_status === 'PENDING')) {
+      toast.error("Please wait for the restaurant to accept your order before completing payment.");
+      return;
+    }
     setIsRedirecting(true);
     try {
       const sdkLoaded = await loadRazorpaySDK();
@@ -152,10 +156,20 @@ export function OrderStatusPage() {
       doc.setTextColor(100, 116, 139);
       doc.text("TAX INVOICE / BILL RECEIPT", 74, 20, { align: "center" });
 
+      let headerY = 24;
+      if (shop?.settings?.gstin) {
+        doc.text(`GSTIN: ${shop.settings.gstin}`, 74, headerY, { align: "center" });
+        headerY += 4;
+      }
+      if (shop?.settings?.fssai_license) {
+        doc.text(`FSSAI Lic: ${shop.settings.fssai_license}`, 74, headerY, { align: "center" });
+        headerY += 4;
+      }
+
       // Perforation line
       doc.setLineDashPattern([2, 1], 0);
       doc.setDrawColor(203, 213, 225);
-      doc.line(10, 24, 138, 24);
+      doc.line(10, headerY, 138, headerY);
 
       // 2. Metadata Block
       doc.setFont("courier", "normal");
@@ -214,11 +228,53 @@ export function OrderStatusPage() {
       doc.line(10, nextY, 138, nextY);
       nextY += 8;
 
-      // 5. Total
+      // 5. Taxes & Total
+      let grandTotalToPrint = Number(order.total_amount || 0);
+      if (shop?.settings?.gst_enabled) {
+        const cgstRate = Number(shop.settings.cgst_rate || 0);
+        const sgstRate = Number(shop.settings.sgst_rate || 0);
+        const totalTaxRate = cgstRate + sgstRate;
+        const gross = Number(order.total_amount || 0);
+        const items = (order.items || []).filter((it: any) => !it.is_cancelled);
+        const itemsSubtotal = items.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+
+        if (totalTaxRate > 0) {
+          let taxable = gross;
+          let totalTax = 0;
+          let cgst = 0;
+          let sgst = 0;
+          if (shop.settings.inclusive_tax) {
+            taxable = Math.round((gross / (1 + totalTaxRate / 100)) * 100) / 100;
+            totalTax = Math.round((gross - taxable) * 100) / 100;
+            cgst = Math.round((totalTax * (cgstRate / totalTaxRate)) * 100) / 100;
+            sgst = Math.round((totalTax - cgst) * 100) / 100;
+            grandTotalToPrint = gross;
+          } else {
+            // Exclusive: Tax is added on top of food items
+            taxable = itemsSubtotal > 0 ? itemsSubtotal : Math.round((gross / (1 + totalTaxRate / 100)) * 100) / 100;
+            cgst = Math.round((taxable * (cgstRate / 100)) * 100) / 100;
+            sgst = Math.round((taxable * (sgstRate / 100)) * 100) / 100;
+            totalTax = Math.round((cgst + sgst) * 100) / 100;
+            if (gross >= taxable + totalTax - 0.05) {
+              grandTotalToPrint = gross;
+            } else {
+              grandTotalToPrint = Math.round((taxable + totalTax) * 100) / 100;
+            }
+          }
+          doc.text(`Taxable: ${shop?.settings?.currency || 'Rs'}.${taxable.toFixed(2)}`, 12, nextY);
+          doc.text(`CGST (${cgstRate}%): ${shop?.settings?.currency || 'Rs'}.${cgst.toFixed(2)}`, 80, nextY);
+          nextY += 5;
+          doc.text(`SGST (${sgstRate}%): ${shop?.settings?.currency || 'Rs'}.${sgst.toFixed(2)}`, 80, nextY);
+          nextY += 5;
+          doc.line(10, nextY, 138, nextY);
+          nextY += 6;
+        }
+      }
+
       doc.setFont("courier", "bold");
       doc.setFontSize(11);
       doc.text("GRAND TOTAL", 12, nextY);
-      doc.text(`${shop?.settings?.currency || 'Rs'}.${Number(order.total_amount).toFixed(2)}`, 115, nextY);
+      doc.text(`${shop?.settings?.currency || 'Rs'}.${grandTotalToPrint.toFixed(2)}`, 115, nextY);
       nextY += 8;
 
       // 6. QR Code representation
@@ -244,6 +300,13 @@ export function OrderStatusPage() {
       doc.setFontSize(7);
       doc.setTextColor(148, 163, 184);
       doc.text("*SCAN TO TRACK LIVE STATUS*", 74, nextY, { align: "center" });
+
+      if (shop?.settings?.tax_invoice_notes) {
+        nextY += 5;
+        doc.setFontSize(6.5);
+        doc.setTextColor(100, 116, 139);
+        doc.text(shop.settings.tax_invoice_notes, 74, nextY, { align: "center", maxWidth: 110 });
+      }
 
       // Save the generated document
       doc.save(`bill_receipt_${order.id.slice(0, 8).toUpperCase()}.pdf`);
@@ -439,6 +502,15 @@ export function OrderStatusPage() {
   const statusInfo = getStatusDisplay();
   const isUnpaid = order?.payment_status === 'pending';
   const isCancelled = order?.order_status?.toUpperCase() === 'REJECTED' || order?.order_status?.toUpperCase() === 'CANCELLED';
+  const isDineIn = order?.order_type === 'dine_in';
+  const normOrderStatus = (order?.order_status || '').toUpperCase();
+  const isPendingVendor = normOrderStatus === 'PENDING_VENDOR' || normOrderStatus === 'PENDING';
+
+  // Rule: For dine-in, payment is disabled until the merchant accepts the order.
+  // For takeaway and delivery, upfront payment is permitted / mandatory.
+  const isPaymentDisabledForDineIn = isDineIn && isPendingVendor;
+  const canPayNow = isUnpaid && !isCancelled && !isPaymentDisabledForDineIn;
+
   const currencySymbol = shop?.settings?.currency || '₹';
   const grandTotalFormatted = (
     Number(order?.total_amount || 0) + 
@@ -586,6 +658,12 @@ export function OrderStatusPage() {
           <div className="text-center border-b border-dashed border-slate-300/80 pb-4">
             <h3 className="font-mono font-black text-base text-slate-800 dark:text-slate-200 uppercase tracking-widest">{shop?.name}</h3>
             <p className="font-mono text-[9px] text-slate-400 mt-1 uppercase">Tax Invoice / Bill Receipt</p>
+            {(shop?.settings?.gstin || shop?.settings?.fssai_license) && (
+              <div className="mt-1 text-[9px] font-mono text-slate-500 flex flex-wrap items-center justify-center gap-2">
+                {shop.settings.gstin && <span>GSTIN: <strong className="font-bold text-slate-700 dark:text-slate-300">{shop.settings.gstin}</strong></span>}
+                {shop.settings.fssai_license && <span>FSSAI: <strong className="font-bold text-slate-700 dark:text-slate-300">{shop.settings.fssai_license}</strong></span>}
+              </div>
+            )}
           </div>
 
           {/* Metadata Block */}
@@ -689,6 +767,52 @@ export function OrderStatusPage() {
                 <span>-{shop?.settings?.currency || '₹'}{(order.items.reduce((acc: number, it: any) => acc + (it.price * it.quantity), 0) - Number(order.total_amount)).toFixed(2)}</span>
               </div>
             )}
+
+            {/* GST Tax Breakdown */}
+            {shop?.settings?.gst_enabled && (() => {
+              const cgstRate = Number(shop.settings.cgst_rate || 0);
+              const sgstRate = Number(shop.settings.sgst_rate || 0);
+              const totalTaxRate = cgstRate + sgstRate;
+              const gross = Number(order.total_amount || 0);
+              if (totalTaxRate <= 0) return null;
+
+              const items = (order.items || []).filter((it: any) => !it.is_cancelled);
+              const itemsSubtotal = items.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+
+              let taxable = gross;
+              let cgst = 0;
+              let sgst = 0;
+              if (shop.settings.inclusive_tax) {
+                taxable = Math.round((gross / (1 + totalTaxRate / 100)) * 100) / 100;
+                const totalTax = Math.round((gross - taxable) * 100) / 100;
+                cgst = Math.round((totalTax * (cgstRate / totalTaxRate)) * 100) / 100;
+                sgst = Math.round((totalTax - cgst) * 100) / 100;
+              } else {
+                // Exclusive mode: items subtotal is taxable turnover
+                taxable = itemsSubtotal > 0 ? itemsSubtotal : Math.round((gross / (1 + totalTaxRate / 100)) * 100) / 100;
+                cgst = Math.round((taxable * (cgstRate / 100)) * 100) / 100;
+                sgst = Math.round((taxable * (sgstRate / 100)) * 100) / 100;
+              }
+              return (
+                <div className="pt-2 border-t border-dashed border-slate-200 dark:border-slate-800 space-y-1">
+                  <div className="flex justify-between text-slate-500">
+                    <span>Taxable Turnover</span>
+                    <span className="font-bold">{shop?.settings?.currency || '₹'}{taxable.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-700 dark:text-slate-300">
+                    <span>CGST ({cgstRate}%)</span>
+                    <span className="font-bold">{shop?.settings?.currency || '₹'}{cgst.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-700 dark:text-slate-300">
+                    <span>SGST ({sgstRate}%)</span>
+                    <span className="font-bold">{shop?.settings?.currency || '₹'}{sgst.toFixed(2)}</span>
+                  </div>
+                  <p className="text-[9px] text-slate-400 italic text-right">
+                    {shop.settings.inclusive_tax ? '(Item prices are inclusive of GST)' : '(Exclusive: Tax added on items)'}
+                  </p>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Payment info */}
@@ -711,11 +835,28 @@ export function OrderStatusPage() {
           <div className="flex justify-between items-center py-2">
             <span className="font-mono font-black text-slate-850 dark:text-white text-sm uppercase">Total Payable</span>
             <span className="font-black text-2xl tracking-tight text-orange-600">
-              {shop?.settings?.currency || '₹'}{(
-                order.payment_method === 'online' 
-                  ? (Number(order.total_amount) + Number(order.total_amount) * 0.02 + Number(order.total_amount) * 0.03 + (Number(order.total_amount) * 0.03) * 0.18) 
-                  : Number(order.total_amount)
-              ).toFixed(2)}
+              {(() => {
+                const isGstEnabled = Boolean(shop?.settings?.gst_enabled);
+                const cgstRate = Number(shop?.settings?.cgst_rate || 0);
+                const sgstRate = Number(shop?.settings?.sgst_rate || 0);
+                const totalTaxRate = cgstRate + sgstRate;
+                const isExclusive = isGstEnabled && !shop?.settings?.inclusive_tax;
+
+                const items = (order.items || []).filter((it: any) => !it.is_cancelled);
+                const itemsSubtotal = items.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+                let baseOrderAmount = Number(order.total_amount || 0);
+
+                if (isExclusive && totalTaxRate > 0 && baseOrderAmount <= itemsSubtotal + 0.05) {
+                  const tax = Math.round((itemsSubtotal * (totalTaxRate / 100)) * 100) / 100;
+                  baseOrderAmount = Math.round((itemsSubtotal + tax) * 100) / 100;
+                }
+
+                const finalPayable = order.payment_method === 'online'
+                  ? (baseOrderAmount + baseOrderAmount * 0.02 + baseOrderAmount * 0.03 + (baseOrderAmount * 0.03) * 0.18)
+                  : baseOrderAmount;
+
+                return `${shop?.settings?.currency || '₹'}${finalPayable.toFixed(2)}`;
+              })()}
             </span>
           </div>
 
@@ -770,6 +911,11 @@ export function OrderStatusPage() {
             >
               *SCAN OR CLICK TO TRACK LIVE STATUS*
             </button>
+            {shop?.settings?.tax_invoice_notes && (
+              <p className="mt-2 text-[8px] font-mono text-slate-400 text-center max-w-[240px] leading-tight">
+                {shop.settings.tax_invoice_notes}
+              </p>
+            )}
           </div>
 
           {/* Print button footer */}
@@ -788,21 +934,39 @@ export function OrderStatusPage() {
         </motion.div>
 
         {/* Awaiting Vendor Acceptance */}
-        {/* Awaiting Vendor Acceptance */}
-        {order.order_status === 'PENDING_VENDOR' && (
+        {isPendingVendor && (
           <div className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/60 text-blue-800 dark:text-blue-300 text-xs font-medium flex items-center gap-3">
             <Clock size={18} className="text-blue-600 shrink-0 animate-spin" />
             <div>
               <p className="font-bold text-blue-900 dark:text-blue-200">Awaiting Merchant Acceptance</p>
               <p className="text-[11px] text-blue-700 dark:text-blue-400 mt-0.5">
-                The restaurant is reviewing your order. Please wait...
+                {isDineIn
+                  ? 'The restaurant is reviewing your order. You can complete payment once your order is accepted.'
+                  : 'The restaurant is reviewing your order. Please complete your payment below to proceed.'}
               </p>
             </div>
           </div>
         )}
 
-        {/* Payment Action Options — Displayed whenever the order is unpaid and active */}
-        {isUnpaid && !isCancelled && (
+        {/* Payment Locked Notice for Dine-In pending acceptance */}
+        {isUnpaid && !isCancelled && isPaymentDisabledForDineIn && (
+          <div className="p-4 sm:p-5 rounded-3xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-2xl bg-slate-200/80 dark:bg-slate-800 flex items-center justify-center text-slate-500 shrink-0">
+              <Lock size={18} />
+            </div>
+            <div>
+              <h3 className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                Payment Available After Acceptance
+              </h3>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5 leading-snug">
+                Since you are dining in, payment options will be activated once the restaurant accepts your order.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Payment Action Options — Displayed whenever the order is unpaid and payment is permitted */}
+        {canPayNow && (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -862,21 +1026,7 @@ export function OrderStatusPage() {
               </div>
             )}
 
-            {/* Direct UPI App Option if configured */}
-            {shop?.settings?.upi_id && (
-              <motion.button
-                whileHover={{ scale: 1.01 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => {
-                  const upiUrl = `upi://pay?pa=${encodeURIComponent(shop.settings.upi_id!)}&pn=${encodeURIComponent(shop.name || 'Restaurant')}&am=${Number(order.total_amount).toFixed(2)}&cu=INR&tn=${encodeURIComponent(`Order #${order.id.slice(0,8)}`)}`;
-                  toast.success("Opening UPI app to complete payment...");
-                  window.open(upiUrl, '_blank');
-                }}
-                className="w-full py-3 px-4 rounded-2xl text-slate-800 dark:text-white bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 font-extrabold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 border border-slate-200 dark:border-slate-700 cursor-pointer"
-              >
-                <span>Pay via UPI App ({currencySymbol}{Number(order.total_amount).toFixed(2)})</span>
-              </motion.button>
-            )}
+
 
             {/* Cash on Delivery / Counter information note */}
             {(order.payment_method === 'cash' || order.payment_method === 'cash_on_delivery') && (
@@ -919,7 +1069,7 @@ export function OrderStatusPage() {
       {/* Floating Premium Bottom Actions Dock */}
       <div className="fixed bottom-4 left-4 right-4 sm:bottom-6 sm:left-1/2 sm:-translate-x-1/2 sm:w-[380px] z-40 print:hidden">
         <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl rounded-[20px] shadow-[0_10px_35px_rgba(0,0,0,0.12)] border border-slate-100 dark:border-slate-800 p-1.5 flex gap-2">
-          {isUnpaid && !isCancelled && shop?.settings?.online_payments_enabled !== false ? (
+          {canPayNow && shop?.settings?.online_payments_enabled !== false ? (
             <button
               onClick={handlePayOnline}
               disabled={isRedirecting}
@@ -934,6 +1084,11 @@ export function OrderStatusPage() {
                 </>
               )}
             </button>
+          ) : isPaymentDisabledForDineIn ? (
+            <div className="flex-1 py-2 text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 rounded-lg font-bold text-[10px] uppercase tracking-wider flex items-center justify-center gap-1.5 text-center">
+              <Clock size={12} className="text-blue-500 shrink-0 animate-spin" />
+              <span>Awaiting Acceptance</span>
+            </div>
           ) : (
             <button
               onClick={() => navigate(`/shop/${id}/orders`)}

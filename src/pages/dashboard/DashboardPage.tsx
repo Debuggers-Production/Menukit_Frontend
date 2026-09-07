@@ -118,7 +118,7 @@ export function DashboardPage() {
           title="Welcome to Menukit!"
           description="Let's get started by setting up your restaurant profile. It only takes a minute."
           action={
-            <Button size="lg" onClick={() => navigate('/shop-setup')}>
+            <Button size="lg" onClick={() => navigate('/shop-setup?create=true', { state: { createNew: true } })}>
               Create Your Shop Profile
               <ArrowRight className="ml-2" size={18} />
             </Button>

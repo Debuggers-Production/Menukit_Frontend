@@ -6,6 +6,7 @@ import {
   Sparkles, Download, ExternalLink, ArrowUpRight, Wallet, FileText, Calendar, CheckCircle2, CreditCard, Banknote
 } from 'lucide-react';
 import { api } from '@/services/api';
+import toast from 'react-hot-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useHeaderStore } from '@/store/useHeaderStore';
@@ -21,9 +22,12 @@ export function AnalyticsPage() {
   const { shop } = useShopStore();
   const currencySymbol = shop?.currency_symbol || '₹';
 
-  const [activeTab, setActiveTab] = useState<'revenue' | 'scans'>('revenue');
+  const [activeTab, setActiveTab] = useState<'revenue' | 'scans' | 'gst'>('revenue');
   const [data, setData] = useState<any>(null);
   const [revenueData, setRevenueData] = useState<any>(null);
+  const [gstData, setGstData] = useState<any>(null);
+  const [isGstLoading, setIsGstLoading] = useState(false);
+  const [gstSearch, setGstSearch] = useState('');
   const [repeatedCustomers, setRepeatedCustomers] = useState<RepeatedCustomer[]>([]);
   const [subscriptionInfo, setSubscriptionInfo] = useState<{is_active: boolean, is_all_access: boolean, active_modules: string[], is_expired?: boolean} | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -55,11 +59,94 @@ export function AnalyticsPage() {
     return `/analytics/revenue?days=${typeof dateFilter === 'number' ? dateFilter : 30}`;
   };
 
+  const getGstApiUrl = () => {
+    if (dateFilter === 'custom' && customStart && customEnd) {
+      return `/analytics/gst-report?start_date=${customStart}&end_date=${customEnd}`;
+    }
+    return `/analytics/gst-report?days=${typeof dateFilter === 'number' ? dateFilter : 30}`;
+  };
+
+  const handleExportGstCsv = () => {
+    if (!gstData || !gstData.invoices || gstData.invoices.length === 0) {
+      toast.error("No tax invoices found for this timeframe.");
+      return;
+    }
+    const headers = [
+      "Invoice Number",
+      "Order ID",
+      "Invoice Date",
+      "Customer Name",
+      "Customer Mobile",
+      "Payment Mode",
+      "Payment Status",
+      "Taxable Turnover (INR)",
+      "CGST Rate (%)",
+      "CGST Amount (INR)",
+      "SGST Rate (%)",
+      "SGST Amount (INR)",
+      "Total GST (INR)",
+      "Gross Total (INR)"
+    ];
+
+    const rows = gstData.invoices.map((inv: any) => [
+      `"${inv.bill_number || ''}"`,
+      `"${inv.order_id || ''}"`,
+      `"${new Date(inv.created_at).toLocaleString()}"`,
+      `"${(inv.customer_name || 'Walk-in').replace(/"/g, '""')}"`,
+      `"${inv.customer_phone || ''}"`,
+      `"${inv.payment_method || ''}"`,
+      `"${inv.payment_status || ''}"`,
+      Number(inv.taxable_value || 0).toFixed(2),
+      Number(inv.cgst_rate || 0),
+      Number(inv.cgst_amount || 0).toFixed(2),
+      Number(inv.sgst_rate || 0),
+      Number(inv.sgst_amount || 0).toFixed(2),
+      Number(inv.total_tax || 0).toFixed(2),
+      Number(inv.gross_total || 0).toFixed(2)
+    ]);
+
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `GSTR_Sales_Register_${typeof dateFilter === 'number' ? `${dateFilter}_days` : 'custom'}_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("GSTR CSV exported successfully!");
+  };
+
+  const filteredGstInvoices = useMemo(() => {
+    if (!gstData?.invoices) return [];
+    if (!gstSearch.trim()) return gstData.invoices;
+    const query = gstSearch.toLowerCase().trim();
+    return gstData.invoices.filter((inv: any) =>
+      inv.bill_number?.toLowerCase().includes(query) ||
+      inv.order_id?.toLowerCase().includes(query) ||
+      inv.customer_name?.toLowerCase().includes(query) ||
+      inv.customer_phone?.includes(query)
+    );
+  }, [gstData?.invoices, gstSearch]);
+
   const { setTitle } = useHeaderStore();
 
   useEffect(() => {
     setTitle('Product Analytics & Sales', 'Real-time order revenue, item popularity ranking, payment gateway charges, and invoice records.');
   }, [setTitle]);
+
+  // Fetch GST report whenever tab is 'gst' or date filter changes
+  useEffect(() => {
+    if (activeTab === 'gst') {
+      setIsGstLoading(true);
+      api.get(getGstApiUrl())
+        .then(res => setGstData(res.data))
+        .catch(err => {
+          console.error("Failed to fetch GST report", err);
+          toast.error("Failed to load GST tax reports");
+        })
+        .finally(() => setIsGstLoading(false));
+    }
+  }, [activeTab, dateFilter, customStart, customEnd]);
 
   // Dedicated fetch for Customer Search Data
   useEffect(() => {
@@ -211,7 +298,7 @@ export function AnalyticsPage() {
         <div className="bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl flex items-center gap-1 border border-slate-200/60 dark:border-slate-700/60 shrink-0">
           <button
             onClick={() => setActiveTab('revenue')}
-            className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
+            className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
               activeTab === 'revenue' 
                 ? 'bg-white dark:bg-slate-900 text-primary shadow-sm' 
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
@@ -221,13 +308,23 @@ export function AnalyticsPage() {
           </button>
           <button
             onClick={() => setActiveTab('scans')}
-            className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
+            className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
               activeTab === 'scans' 
                 ? 'bg-white dark:bg-slate-900 text-primary shadow-sm' 
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
             }`}
           >
             <QrCode size={14} /> Traffic
+          </button>
+          <button
+            onClick={() => setActiveTab('gst')}
+            className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+              activeTab === 'gst' 
+                ? 'bg-white dark:bg-slate-900 text-primary shadow-sm' 
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+            }`}
+          >
+            <Receipt size={14} /> GST Reports
           </button>
         </div>
       </HeaderActions>
@@ -856,6 +953,256 @@ export function AnalyticsPage() {
 
 
           </div>
+        </div>
+      )}
+
+      {/* TAB 3: GST & COMPLIANCES REPORTS */}
+      {activeTab === 'gst' && (
+        <div className="space-y-5 sm:space-y-6 animate-fade-in">
+          {/* Header Action Bar for GST */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-gradient-to-r from-orange-50 via-amber-50 to-white dark:from-slate-850 dark:to-slate-900 p-4 sm:p-5 rounded-2xl border border-orange-200/70 dark:border-slate-800 shadow-xs">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-orange-500/10 text-orange-600 dark:text-orange-400 shrink-0">
+                  <Receipt size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
+                    GST & Government Tax Reports
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                    Automated B2C tax register for GSTR-1 & GSTR-3B filing, CGST, and SGST breakdowns.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <Button
+              onClick={handleExportGstCsv}
+              disabled={isGstLoading || !gstData?.invoices?.length}
+              className="bg-primary hover:bg-primary/90 text-white font-extrabold text-xs uppercase tracking-wider px-4 py-2.5 rounded-xl shadow-md flex items-center gap-2 cursor-pointer shrink-0 active:scale-95 transition-all disabled:opacity-50"
+            >
+              <Download size={14} /> Export GSTR CSV
+            </Button>
+          </div>
+
+          {/* Compliance Profile Banner */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 flex-1 text-xs">
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">GSTIN Identifier</p>
+                <p className="text-sm font-extrabold text-slate-850 dark:text-slate-150 mt-0.5">
+                  {gstData?.compliance?.gstin ? (
+                    <span className="font-mono font-black text-slate-900 dark:text-white">{gstData.compliance.gstin}</span>
+                  ) : (
+                    <span className="text-amber-500 font-semibold italic">Not Configured</span>
+                  )}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Legal Entity Name</p>
+                <p className="text-sm font-extrabold text-slate-850 dark:text-slate-150 mt-0.5 truncate">
+                  {gstData?.compliance?.legal_name || shop?.name || '—'}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">FSSAI License</p>
+                <p className="text-sm font-extrabold text-slate-850 dark:text-slate-150 mt-0.5">
+                  {gstData?.compliance?.fssai_license ? (
+                    <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{gstData.compliance.fssai_license}</span>
+                  ) : (
+                    <span className="text-slate-400 font-medium">None</span>
+                  )}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tax Calculation Mode</p>
+                <span className={`inline-block mt-0.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                  gstData?.compliance?.inclusive_tax 
+                    ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300' 
+                    : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300'
+                }`}>
+                  {gstData?.compliance?.inclusive_tax ? 'Inclusive in Menu' : 'Exclusive (Added)'}
+                </span>
+              </div>
+            </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate('/settings')}
+              className="text-xs font-bold border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 shrink-0 cursor-pointer"
+            >
+              Configure Compliances →
+            </Button>
+          </div>
+
+          {/* 5 GST KPI Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+            {/* Taxable Turnover */}
+            <Card className="border-emerald-100 dark:border-emerald-950/40 bg-gradient-to-br from-emerald-50/40 via-white to-white dark:from-emerald-950/20 dark:to-slate-900">
+              <CardContent className="p-4 sm:p-5">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Taxable Turnover</p>
+                <h3 className="text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 font-heading">
+                  {currencySymbol}{Number(gstData?.total_taxable_turnover || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </h3>
+                <p className="text-[10px] text-slate-400 mt-1 font-medium">Net base sales</p>
+              </CardContent>
+            </Card>
+
+            {/* Total GST Collected */}
+            <Card className="border-orange-100 dark:border-orange-950/40 bg-gradient-to-br from-orange-50/40 via-white to-white dark:from-orange-950/20 dark:to-slate-900">
+              <CardContent className="p-4 sm:p-5">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Total GST Collected</p>
+                <h3 className="text-xl sm:text-2xl font-black text-orange-600 dark:text-orange-400 font-heading">
+                  {currencySymbol}{Number(gstData?.total_gst || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </h3>
+                <p className="text-[10px] text-slate-400 mt-1 font-medium">Total tax liability</p>
+              </CardContent>
+            </Card>
+
+            {/* CGST */}
+            <Card className="border-blue-100 dark:border-blue-950/40 bg-gradient-to-br from-blue-50/40 via-white to-white dark:from-blue-950/20 dark:to-slate-900">
+              <CardContent className="p-4 sm:p-5">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">CGST (Central)</p>
+                <h3 className="text-xl sm:text-2xl font-black text-blue-600 dark:text-blue-400 font-heading">
+                  {currencySymbol}{Number(gstData?.total_cgst || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </h3>
+                <p className="text-[10px] text-slate-400 mt-1 font-medium">{gstData?.compliance?.cgst_rate || 2.5}% rate</p>
+              </CardContent>
+            </Card>
+
+            {/* SGST */}
+            <Card className="border-indigo-100 dark:border-indigo-950/40 bg-gradient-to-br from-indigo-50/40 via-white to-white dark:from-indigo-950/20 dark:to-slate-900">
+              <CardContent className="p-4 sm:p-5">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">SGST (State)</p>
+                <h3 className="text-xl sm:text-2xl font-black text-indigo-600 dark:text-indigo-400 font-heading">
+                  {currencySymbol}{Number(gstData?.total_sgst || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </h3>
+                <p className="text-[10px] text-slate-400 mt-1 font-medium">{gstData?.compliance?.sgst_rate || 2.5}% rate</p>
+              </CardContent>
+            </Card>
+
+            {/* Invoices Count */}
+            <Card className="border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900">
+              <CardContent className="p-4 sm:p-5">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Tax Invoices</p>
+                <h3 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white font-heading">
+                  {gstData?.invoices_count || 0}
+                </h3>
+                <p className="text-[10px] text-slate-400 mt-1 font-medium">B2C bills generated</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Invoices Tax Register Table Card */}
+          <Card className="border-slate-200/80 dark:border-slate-800">
+            <CardHeader className="p-4 sm:p-5 pb-3">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <CardTitle className="text-sm sm:text-base font-bold flex items-center gap-2">
+                  <FileText size={18} className="text-primary" /> Tax Invoices Register
+                </CardTitle>
+
+                {/* Search Bar for Invoices */}
+                <div className="relative w-full sm:w-72">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={gstSearch}
+                    onChange={(e) => setGstSearch(e.target.value)}
+                    placeholder="Search bill number, customer, phone..."
+                    className="w-full pl-8 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium focus:outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+            </CardHeader>
+
+            <CardContent className="p-0">
+              {isGstLoading ? (
+                <div className="p-12 text-center space-y-2">
+                  <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
+                  <p className="text-xs text-slate-400 font-medium">Calculating GST tax register...</p>
+                </div>
+              ) : filteredGstInvoices.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                        <th className="p-3 pl-4">Invoice / Date</th>
+                        <th className="p-3">Customer</th>
+                        <th className="p-3">Payment</th>
+                        <th className="p-3 text-right">Taxable Turnover</th>
+                        <th className="p-3 text-right">CGST</th>
+                        <th className="p-3 text-right">SGST</th>
+                        <th className="p-3 text-right">Total GST</th>
+                        <th className="p-3 pr-4 text-right">Gross Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {filteredGstInvoices.map((inv: any, idx: number) => (
+                        <tr key={idx} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/30 transition-colors font-medium">
+                          <td className="p-3 pl-4">
+                            <span className="font-mono font-bold text-slate-900 dark:text-white block">
+                              {inv.bill_number}
+                            </span>
+                            <span className="text-[10px] text-slate-400">
+                              {new Date(inv.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <span className="text-slate-800 dark:text-slate-200 font-bold block">
+                              {inv.customer_name || 'Walk-in'}
+                            </span>
+                            {inv.customer_phone && (
+                              <span className="text-[10px] text-slate-400 font-mono">
+                                {inv.customer_phone}
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-3">
+                            <span className="capitalize font-bold text-slate-700 dark:text-slate-300 block">
+                              {inv.payment_method}
+                            </span>
+                            <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${
+                              inv.payment_status === 'paid'
+                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                            }`}>
+                              {inv.payment_status}
+                            </span>
+                          </td>
+                          <td className="p-3 text-right font-mono font-bold text-slate-800 dark:text-slate-200">
+                            {currencySymbol}{Number(inv.taxable_value || 0).toFixed(2)}
+                          </td>
+                          <td className="p-3 text-right font-mono text-blue-600 dark:text-blue-400">
+                            {currencySymbol}{Number(inv.cgst_amount || 0).toFixed(2)}
+                          </td>
+                          <td className="p-3 text-right font-mono text-indigo-600 dark:text-indigo-400">
+                            {currencySymbol}{Number(inv.sgst_amount || 0).toFixed(2)}
+                          </td>
+                          <td className="p-3 text-right font-mono font-bold text-orange-600 dark:text-orange-400">
+                            {currencySymbol}{Number(inv.total_tax || 0).toFixed(2)}
+                          </td>
+                          <td className="p-3 pr-4 text-right font-mono font-black text-slate-900 dark:text-white">
+                            {currencySymbol}{Number(inv.gross_total || 0).toFixed(2)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-center py-12 text-slate-400">
+                  <Receipt size={32} className="mx-auto mb-2 opacity-40" />
+                  <p className="text-xs font-bold text-slate-600 dark:text-slate-300">No GST invoices found</p>
+                  <p className="text-[10px] text-slate-400 mt-1">Try adjusting your date range filter or search term.</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
       )}
     </div>

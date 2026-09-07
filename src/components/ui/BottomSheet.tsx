@@ -80,7 +80,7 @@ export function BottomSheet({ isOpen, onClose, title, children, footer, classNam
             </div>
 
             {/* Header */}
-            <div className="flex items-center justify-between px-6 pb-3 border-b border-slate-100 dark:border-slate-800 shrink-0">
+            <div className="flex items-center justify-between px-4 sm:px-6 pb-3 border-b border-slate-100 dark:border-slate-800 shrink-0">
               {title ? (
                 <h2 className="text-base font-extrabold text-slate-800 dark:text-white font-heading">{title}</h2>
               ) : (
@@ -96,13 +96,13 @@ export function BottomSheet({ isOpen, onClose, title, children, footer, classNam
             </div>
 
             {/* Scrollable Content Container */}
-            <div className="flex-1 overflow-y-auto p-6 scrollbar-thin">
+            <div className="flex-1 overflow-y-auto px-4 py-3.5 sm:p-6 scrollbar-thin">
               {children}
             </div>
 
             {/* Fixed Footer */}
             {footer && (
-              <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
+              <div className="py-3 px-4 sm:p-6 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
                 {footer}
               </div>
             )}

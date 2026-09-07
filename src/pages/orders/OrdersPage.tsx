@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
-import { RefreshCw, ShoppingBag, Clock, XCircle, ChevronDown, Check, CheckCircle2, List, User, MapPin, Phone, Share2, Copy, ExternalLink, Navigation, Lock, Search, Plus, Filter, X, Calendar, Printer } from 'lucide-react';
+import { RefreshCw, ShoppingBag, Clock, XCircle, ChevronDown, Check, CheckCircle2, List, User, MapPin, Phone, Share2, Copy, ExternalLink, Navigation, Lock, Search, Plus, Filter, X, Calendar, Printer, UtensilsCrossed, Flame, RotateCcw, Eye } from 'lucide-react';
 
 import { api } from '@/services/api';
 import { useHeaderStore } from '@/store/useHeaderStore';
@@ -15,9 +15,14 @@ import { Badge } from '@/components/ui/Badge';
 import { InfiniteScrollTrigger } from '@/components/ui/InfiniteScrollTrigger';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { DatePicker } from '@/components/ui/DatePicker';
+import { Input } from '@/components/ui/Input';
 import toast from 'react-hot-toast';
 import { CreateOrderModal } from './CreateOrderModal';
 import { ThermalBillModal } from '@/components/orders/ThermalBillModal';
+import { ThermalKotModal } from '@/components/orders/ThermalKotModal';
+import { usePrinterStore } from '@/store/usePrinterStore';
+import { printOrderToStations, printBillToPrinter, printBillToAllPrinters, isNewlyAddedItem } from '@/utils/thermalPrinter';
+import { useIsMobile } from '@/hooks/useMediaQuery';
 
 const getTodayDateStr = () => {
   const now = new Date();
@@ -148,7 +153,15 @@ function generateOrderBillText(order: any) {
         details += ` (${vStr})`;
       } catch { }
     }
-    return `• ${details}`;
+    const isCancelled = Boolean(it.is_cancelled);
+    if (isCancelled) {
+      const isReplaced = it.cancellation_reason?.toLowerCase().includes('replace');
+      const tag = isReplaced ? '[REPLACED]' : '[CANCELLED]';
+      const reason = it.cancellation_reason ? ` (${it.cancellation_reason})` : '';
+      return `• ~${details}~ ${tag}${reason}`;
+    }
+    const isNew = isNewlyAddedItem(it, order);
+    return `• ${it.name}${isNew ? ' (new)' : ''} x${it.quantity} - ₹${(it.price * it.quantity).toFixed(2)}`;
   }).join('\n');
 
   let bill = `🧾 *ORDER BILL #${orderId}*\n`;
@@ -438,6 +451,7 @@ let cachedOrders: any[] = [];
 /* ── Main Page ───────────────────────────────────────────────────────────── */
 export function OrdersPage() {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const [orders, setOrders] = useState<any[]>(cachedOrders);
   const [isLoading, setIsLoading] = useState(() => cachedOrders.length === 0);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -459,6 +473,12 @@ export function OrdersPage() {
   const [itemsModalOrder, setItemsModalOrder] = useState<any | null>(null);
   const [customerModalOrder, setCustomerModalOrder] = useState<any | null>(null);
   const [thermalPrintOrder, setThermalPrintOrder] = useState<any | null>(null);
+  const [thermalPrintInitialMode, setThermalPrintInitialMode] = useState<'all' | 'new_only'>('all');
+  const [thermalKotOrder, setThermalKotOrder] = useState<any | null>(null);
+  const [thermalKotMode, setThermalKotMode] = useState<'full' | 'new_only' | 'cancelled'>('full');
+  const [replacingItemOrder, setReplacingItemOrder] = useState<{ order: any; item: any } | null>(null);
+  const [cancellingItemOrder, setCancellingItemOrder] = useState<{ orderId: string; itemId: string; itemName: string; item?: any } | null>(null);
+  const [cancelItemReason, setCancelItemReason] = useState<string>('');
   const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
   const [cancelOrderReason, setCancelOrderReason] = useState<string>('');
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
@@ -466,7 +486,70 @@ export function OrdersPage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [targetOrderForAdd, setTargetOrderForAdd] = useState<any | null>(null);
   const { setTitle } = useHeaderStore();
-  const { shop } = useShopStore();
+  const { shop, menuItems, setMenuItems } = useShopStore();
+  const { 
+    paperWidth: defaultPaperWidth, 
+    autoPrintOnAccept, 
+    stations, 
+    printedOrders, 
+    markOrderKotPrinted, 
+    isOrderKotPrinted,
+    billingPrinter,
+    billingPrinters,
+    autoPrintOnPayment,
+  } = usePrinterStore();
+
+  const handleDirectPrintKot = useCallback(async (
+    targetOrder: any, 
+    mode: 'full' | 'new_only' | 'cancelled' = 'full',
+    silent: boolean = false,
+    options?: {
+      customItems?: any[];
+      reason?: string;
+      kotTitle?: string;
+      kotNumber?: string;
+    }
+  ) => {
+    if (!targetOrder) return;
+    const toastId = silent ? undefined : toast.loading('Sending KOT directly to kitchen printer...');
+    try {
+      const ok = await printOrderToStations(
+        targetOrder,
+        shop,
+        menuItems,
+        stations,
+        defaultPaperWidth,
+        mode,
+        options
+      );
+      if (ok) {
+        markOrderKotPrinted(targetOrder.id);
+        if (toastId) toast.success('KOT printed successfully!', { id: toastId });
+        else if (mode === 'cancelled') toast.success(`Void KOT sent to station for Order #${targetOrder.id.slice(0, 8).toUpperCase()}`);
+        else toast.success(`Auto-printed KOT for Order #${targetOrder.id.slice(0, 8).toUpperCase()}`);
+      } else {
+        if (toastId) toast.error('Printer unavailable or print failed', { id: toastId });
+      }
+    } catch (err: any) {
+      console.error('Print KOT failed:', err);
+      if (toastId) toast.error(err?.message || 'Failed to print KOT', { id: toastId });
+    }
+  }, [shop, menuItems, stations, defaultPaperWidth, markOrderKotPrinted]);
+
+  const autoPrintRef = useRef(autoPrintOnAccept);
+  autoPrintRef.current = autoPrintOnAccept;
+  const isOrderKotPrintedRef = useRef(isOrderKotPrinted);
+  isOrderKotPrintedRef.current = isOrderKotPrinted;
+  const handleDirectPrintKotRef = useRef(handleDirectPrintKot);
+  handleDirectPrintKotRef.current = handleDirectPrintKot;
+
+  useEffect(() => {
+    if (!menuItems || menuItems.length === 0) {
+      api.get('/menu-items', { params: { limit: 500 } })
+        .then(res => setMenuItems(res.data || []))
+        .catch(err => console.error('Failed to prefetch menu items for KOT routing', err));
+    }
+  }, [menuItems, setMenuItems]);
 
   useEffect(() => {
     setTitle('Orders Queue', 'Manage your incoming live orders, dine-in tickets, and deliveries.');
@@ -551,19 +634,31 @@ export function OrdersPage() {
     }
   }, [filterStatus, filterType, debouncedSearch, selectedDate]);
 
+  // Fetch initial/filtered orders
   useEffect(() => {
     fetchOrdersData(0, true);
+  }, [fetchOrdersData]);
 
+  // Realtime updates listener (mounted once, using stable refs)
+  useEffect(() => {
     const handleRealtimeUpdate = (e: any) => {
       const notif = e.detail;
-      if (!notif || notif.type === 'NEW_ORDER' || notif.type === 'ORDER_STATUS') {
+      if (!notif) return;
+      if (notif.type === 'NEW_ORDER' || notif.type === 'ORDER_STATUS') {
         fetchOrdersData(0, true);
+        if (autoPrintRef.current && notif.order) {
+          const ord = notif.order;
+          const isAwaiting = ord.order_status === 'ACCEPTED' || ord.order_status === 'PREPARING' || (ord.order_type === 'dine_in' && ord.order_status === 'PAYMENT_PENDING');
+          if (isAwaiting && !isOrderKotPrintedRef.current(ord.id)) {
+            handleDirectPrintKotRef.current(ord, 'full', true);
+          }
+        }
       }
     };
 
     window.addEventListener('menukit-realtime-update', handleRealtimeUpdate);
     return () => window.removeEventListener('menukit-realtime-update', handleRealtimeUpdate);
-  }, [filterStatus, filterType, debouncedSearch, selectedDate, fetchOrdersData]);
+  }, [fetchOrdersData]);
 
 
   const handleLoadMore = () => {
@@ -587,6 +682,26 @@ export function OrdersPage() {
       toast.success(`Order marked as ${newStatus}`);
       fetchStatusCounts();
       setOrders(prev => prev.map(o => o.id === orderId ? { ...o, order_status: res.data.order_status, cancellation_reason: res.data.cancellation_reason } : o));
+
+      // Auto-Print KOT to registered printer stations on order acceptance / preparing
+      const isAccepting = newStatus === 'ACCEPTED' || newStatus === 'PREPARING';
+      if (isAccepting && autoPrintOnAccept && !isOrderKotPrinted(orderId)) {
+        const targetOrder = orders.find(o => o.id === orderId) || res.data;
+        if (targetOrder) {
+          await handleDirectPrintKot(targetOrder, 'full', true);
+        }
+      }
+
+      // Auto-Print Customer Bill on completion if configured
+      if (newStatus === 'COMPLETED' && (autoPrintOnPayment || billingPrinter?.autoPrintOnPayment)) {
+        const targetOrder = orders.find(o => o.id === orderId) || res.data;
+        if (targetOrder) {
+          const activePrinters = (billingPrinters && billingPrinters.length > 0)
+            ? billingPrinters.filter(p => p.enabled !== false)
+            : [billingPrinter];
+          printBillToAllPrinters(targetOrder, shop, activePrinters).catch(e => console.error('Auto bill print failed:', e));
+        }
+      }
     } catch (err: any) {
       toast.error(err.response?.data?.detail || 'Failed to update order status');
     } finally {
@@ -602,9 +717,9 @@ export function OrdersPage() {
     try {
       const res = await api.put(`/orders/${orderId}/items/${itemId}/toggle-complete`);
       const updatedOrder = res.data;
-      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, items: updatedOrder.items } : o));
+      setOrders(prev => prev.map(o => o.id === orderId ? updatedOrder : o));
       if (itemsModalOrder && itemsModalOrder.id === orderId) {
-        setItemsModalOrder((prev: any) => prev ? { ...prev, items: updatedOrder.items } : prev);
+        setItemsModalOrder(updatedOrder);
       }
       toast.success('Item status updated');
     } catch (err: any) {
@@ -614,18 +729,83 @@ export function OrdersPage() {
     }
   };
 
-  const handleToggleItemCancel = async (orderId: string, itemId: string) => {
+  const handleRestoreItem = async (orderId: string, itemId: string) => {
     setTogglingCancelItemId(itemId);
     try {
       const res = await api.put(`/orders/${orderId}/items/${itemId}/toggle-cancel`);
       const updatedOrder = res.data;
-      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, items: updatedOrder.items } : o));
+      setOrders(prev => {
+        if (filterStatus === 'cancelled' && updatedOrder.order_status !== 'CANCELLED') {
+          return prev.filter(o => o.id !== orderId);
+        }
+        return prev.map(o => o.id === orderId ? updatedOrder : o);
+      });
       if (itemsModalOrder && itemsModalOrder.id === orderId) {
-        setItemsModalOrder((prev: any) => prev ? { ...prev, items: updatedOrder.items } : prev);
+        setItemsModalOrder(updatedOrder);
       }
-      toast.success('Item cancellation status updated');
+      fetchStatusCounts();
+      toast.success('Item restored to order');
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || 'Failed to update item cancellation status');
+      toast.error(err.response?.data?.detail || 'Failed to restore item');
+    } finally {
+      setTogglingCancelItemId(null);
+    }
+  };
+
+  const submitCancelItem = async () => {
+    if (!cancellingItemOrder) return;
+    const { orderId, itemId } = cancellingItemOrder;
+    setTogglingCancelItemId(itemId);
+    try {
+      const finalReason = cancelItemReason.trim() || 'Item Cancelled';
+      const payload = { reason: finalReason };
+      const res = await api.put(`/orders/${orderId}/items/${itemId}/toggle-cancel`, payload);
+      const updatedOrder = res.data;
+      const allCancelled = (updatedOrder.items || []).length > 0 &&
+        (updatedOrder.items || []).every((it: any) => it.is_cancelled);
+      const isOrderCancelled = updatedOrder.order_status === 'CANCELLED' || allCancelled;
+
+      setOrders(prev => {
+        if (filterStatus !== 'all' && filterStatus !== 'cancelled' && isOrderCancelled) {
+          // If all items are cancelled, remove order from active queue tabs
+          return prev.filter(o => o.id !== orderId);
+        }
+        return prev.map(o => o.id === orderId ? updatedOrder : o);
+      });
+      if (itemsModalOrder && itemsModalOrder.id === orderId) {
+        setItemsModalOrder(updatedOrder);
+      }
+      fetchStatusCounts();
+      if (isOrderCancelled) {
+        toast.success('All items cancelled. Order moved to Cancelled.');
+      } else {
+        toast.success('Item cancelled');
+      }
+
+      const cancelledItem = (updatedOrder.items || []).find((it: any) => it.id === itemId) || {
+        ...(cancellingItemOrder.item || {}),
+        id: itemId,
+        name: cancellingItemOrder.itemName,
+        quantity: 1,
+        is_cancelled: true,
+        cancellation_reason: finalReason,
+      };
+
+      setCancellingItemOrder(null);
+      setCancelItemReason('');
+
+      // Directly send VOID KOT to the cancelled item's station printer only
+      await handleDirectPrintKot(updatedOrder, 'cancelled', true, {
+        customItems: [{
+          ...cancelledItem,
+          is_cancelled: true,
+          cancellation_reason: finalReason,
+        }],
+        kotTitle: 'VOID KOT - ITEM CANCELLED',
+        reason: finalReason,
+      });
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || 'Failed to cancel item');
     } finally {
       setTogglingCancelItemId(null);
     }
@@ -882,46 +1062,80 @@ export function OrdersPage() {
       ) : (
 
         <div className="flex flex-col gap-4 max-w-3xl mx-auto">
-          {orders.map(order => {
-            const status = order.order_status;
-            const isDineIn = order.order_type === 'dine_in';
-            
-            // New logic booleans
-            const isPendingVendor = status === 'PENDING_VENDOR' || status === 'pending';
-            const isPaymentPending = status === 'PAYMENT_PENDING' && !isDineIn;
-            const isPaid = status === 'PAID';
-            const isPreparing = status === 'PREPARING' || status === 'accepted' || status === 'ACCEPTED' || (status === 'PAYMENT_PENDING' && isDineIn);
-            const isReady = status === 'READY';
-            
-            const isCancellable = isPendingVendor || isPaymentPending || isPaid || isPreparing;
-            
-            const { date, time } = formatDateTime(order.created_at);
-            
-            // Colors
-            const borderColor = isPendingVendor ? '#f59e0b' : isPaymentPending ? '#f97316' : (isPaid || isPreparing || isReady) ? '#06b6d4' : status === 'completed' || status === 'DELIVERED' ? '#10b981' : '#ef4444';
-            
-            // Sort items so active/unserved items appear first, completed next, and cancelled at the end
-            const sortedItems = [...(order.items ?? [])].sort((a: any, b: any) => {
-              if (Boolean(a.is_cancelled) !== Boolean(b.is_cancelled)) return a.is_cancelled ? 1 : -1;
-              if (Boolean(a.is_completed) !== Boolean(b.is_completed)) return a.is_completed ? 1 : -1;
-              return 0;
-            });
-            const previewItems = sortedItems.slice(0, 3);
-            const extraCount = sortedItems.length - previewItems.length;
+          {orders
+            .filter(order => {
+              if (filterStatus === 'all' || filterStatus === 'cancelled') return true;
+              const allItemsCancelled = Boolean(order.items && order.items.length > 0 && order.items.every((it: any) => it.is_cancelled));
+              const isCancelled = allItemsCancelled || order.order_status === 'CANCELLED' || order.order_status === 'REJECTED';
+              return !isCancelled;
+            })
+            .map(order => {
+              const allItemsCancelled = Boolean(order.items && order.items.length > 0 && order.items.every((it: any) => it.is_cancelled));
+              const status = allItemsCancelled ? 'CANCELLED' : order.order_status;
+              const normStatus = (status || '').toUpperCase();
+              const isDineIn = order.order_type === 'dine_in';
+              
+              // Status booleans
+              const isPendingVendor = !allItemsCancelled && (normStatus === 'PENDING_VENDOR' || normStatus === 'PENDING');
+              const isPaymentPending = !allItemsCancelled && (normStatus === 'PAYMENT_PENDING' && !isDineIn);
+              const isPaid = !allItemsCancelled && normStatus === 'PAID';
+              const isPreparing = !allItemsCancelled && (normStatus === 'PREPARING' || normStatus === 'ACCEPTED' || (normStatus === 'PAYMENT_PENDING' && isDineIn));
+              const isReady = !allItemsCancelled && normStatus === 'READY';
+              const isCompleted = !allItemsCancelled && (normStatus === 'COMPLETED' || normStatus === 'DELIVERED');
+              const isCancelled = allItemsCancelled || normStatus === 'CANCELLED' || normStatus === 'REJECTED';
+              
+              const isCancellable = isPendingVendor || isPaymentPending || isPaid || isPreparing;
+              
+              const { date, time } = formatDateTime(order.created_at);
+              
+              // Colors: Completed/Delivered orders show emerald green border (#10b981)
+              const borderColor = isPendingVendor
+                ? '#f59e0b'
+                : isPaymentPending
+                  ? '#f97316'
+                  : (isPaid || isPreparing || isReady)
+                    ? '#06b6d4'
+                    : isCompleted
+                      ? '#10b981'
+                      : isCancelled
+                        ? '#ef4444'
+                        : '#94a3b8';
+              
+              // Sort items so active/unserved items appear first, completed next, and cancelled at the end
+              const sortedItems = [...(order.items ?? [])].sort((a: any, b: any) => {
+                if (Boolean(a.is_cancelled) !== Boolean(b.is_cancelled)) return a.is_cancelled ? 1 : -1;
+                if (Boolean(a.is_completed) !== Boolean(b.is_completed)) return a.is_completed ? 1 : -1;
+                return 0;
+              });
+              const previewItems = sortedItems.slice(0, 3);
+              const extraCount = sortedItems.length - previewItems.length;
 
+              return (
+                <Card key={order.id} className="relative overflow-hidden border-l-4 shadow-sm hover:shadow-md transition-all rounded-2xl bg-card" style={{ borderLeftColor: borderColor }}>
+                  <CardContent className="p-4 sm:p-5 space-y-4">
 
+                    {/* Top Bar: Order ID, Copy Action, Type, Date/Time & Status Dropdown */}
+                    <div className="flex items-start justify-between gap-2.5 pb-3 border-b border-border/60">
+                      <div className="space-y-1 min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono text-base font-extrabold text-foreground tracking-tight">
+                              #{order.id.slice(0, 8).toUpperCase()}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(order.id);
+                                toast.success('Order ID copied');
+                              }}
+                              className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors"
+                              title="Copy Full Order ID"
+                            >
+                              <Copy size={13} />
+                            </button>
+                          </div>
 
-            return (
-              <Card key={order.id} className="relative overflow-hidden border-l-4 shadow-sm hover:shadow-md transition-shadow" style={{ borderLeftColor: borderColor }}>
-                <CardContent className="p-4 sm:p-5 space-y-3.5">
-
-                  {/* Top Bar: Order ID, Type, Date/Time & Status Dropdown */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-border/60">
-                    <div className="flex items-center justify-between sm:justify-start gap-2.5">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-base font-extrabold text-foreground">#{order.id.slice(0, 8).toUpperCase()}</span>
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-black uppercase tracking-wider ${
+                          <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-black uppercase tracking-wider ${
                             order.order_type === 'dine_in' ? 'text-indigo-600 bg-indigo-50 border border-indigo-100 dark:text-indigo-400 dark:bg-indigo-950/40 dark:border-indigo-900/40' :
                             order.order_type === 'takeaway' ? 'text-amber-600 bg-amber-50 border border-amber-100 dark:text-amber-400 dark:bg-amber-950/40 dark:border-amber-900/40' :
                             'text-fuchsia-600 bg-fuchsia-50 border border-fuchsia-100 dark:text-fuchsia-400 dark:bg-fuchsia-950/40 dark:border-fuchsia-900/40'
@@ -929,141 +1143,148 @@ export function OrdersPage() {
                             {order.order_type === 'delivery' ? 'Delivery' : order.order_type?.replace('_', ' ')}
                           </span>
                         </div>
-                        <div className="flex items-center gap-1 mt-0.5 text-xs text-muted-foreground">
-                          <Clock size={12} />
+
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <Clock size={11} />
                           <span>{date} &bull; {time}</span>
                         </div>
                       </div>
+
+                      <div className="shrink-0 pt-0.5">
+                        <OrderStatusDropdown
+                          orderId={order.id}
+                          orderStatus={status}
+                          paymentStatus={order.payment_status}
+                          orderType={order.order_type}
+                          onSelect={handleUpdateStatus}
+                        />
+                      </div>
                     </div>
 
-                    <div className="shrink-0 self-start sm:self-auto">
-                      <OrderStatusDropdown
-                        orderId={order.id}
-                        orderStatus={order.order_status}
-                        paymentStatus={order.payment_status}
-                        orderType={order.order_type}
-                        onSelect={handleUpdateStatus}
-                      />
-                    </div>
-                  </div>
-
-
-                  {/* Content Grid: Customer & Items Side-by-Side on Desktop */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {/* Customer Information */}
+                  {/* Content Grid: Customer & Items Side-by-Side */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                    {/* Customer Information Box */}
                     <div
                       onClick={() => setCustomerModalOrder(order)}
-                      className="p-3 bg-muted/40 hover:bg-muted/70 rounded-xl text-xs space-y-1.5 cursor-pointer transition-colors border border-border/50 flex flex-col justify-center"
+                      className="p-3.5 bg-muted/40 hover:bg-muted/70 rounded-xl text-xs space-y-2 cursor-pointer transition-colors border border-border/50 flex flex-col justify-between"
                       title="Click to view full customer details"
                     >
                       <div className="flex items-center justify-between">
-                        <span className="font-semibold text-muted-foreground flex items-center gap-1">
-                          <User size={13} /> Customer
+                        <span className="font-bold text-muted-foreground flex items-center gap-1.5">
+                          <User size={13} className="text-primary/70" /> Customer
                         </span>
-                        <span className="font-extrabold text-foreground">{order.customer_name}</span>
+                        <span className="font-extrabold text-foreground text-sm">{order.customer_name}</span>
                       </div>
-                      {order.customer_phone && (
-                        <div className="flex justify-between items-center pt-1 border-t border-border/40 border-dashed">
-                          <span className="text-muted-foreground font-semibold flex items-center gap-1">
-                            <Phone size={12} /> Phone
+
+                      <div className="space-y-1.5 pt-1.5 border-t border-border/40 border-dashed">
+                        <div className="flex justify-between items-center">
+                          <span className="text-muted-foreground font-medium flex items-center gap-1.5">
+                            <Phone size={12} /> Contact
                           </span>
-                          <span className="font-mono text-foreground font-bold">{order.customer_phone}</span>
+                          <span className="font-mono text-foreground font-semibold">
+                            {order.customer_phone || <span className="text-muted-foreground/80 font-normal italic">Walk-in</span>}
+                          </span>
                         </div>
-                      )}
-                      {order.table_number && (
-                        <div className="flex justify-between items-center pt-1 border-t border-border/40 border-dashed">
-                          <span className="text-muted-foreground font-semibold">Table</span>
-                          <span className="font-black text-primary">Table #{order.table_number}</span>
-                        </div>
-                      )}
+                        {order.table_number && (
+                          <div className="flex justify-between items-center pt-1 border-t border-border/30">
+                            <span className="text-muted-foreground font-medium">Table</span>
+                            <span className="font-black text-primary bg-primary/10 px-2 py-0.5 rounded-md">
+                              #{order.table_number}
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </div>
 
-                    {/* Order Items Preview */}
+                    {/* Order Items Preview Box */}
                     <div
                       onClick={() => setItemsModalOrder(order)}
-                      className="cursor-pointer group bg-muted/40 hover:bg-muted/70 p-3 rounded-xl border border-border/50 transition-colors flex flex-col justify-between"
+                      className="cursor-pointer group bg-muted/40 hover:bg-muted/70 p-3.5 rounded-xl border border-border/50 transition-colors flex flex-col justify-between"
+                      title="Click to view all items & notes"
                     >
-                      <div className="flex justify-between items-center mb-1.5">
-                        <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                          <ShoppingBag size={12} /> Items
-                        </span>
-                        <div className="flex items-center gap-1">
-                          {order.items?.some((it: any) => it.is_cancelled) && (
-                            <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 bg-rose-100 dark:bg-rose-950/60 px-1.5 py-0.2 rounded">
-                              {order.items.filter((it: any) => it.is_cancelled).length} Cancelled
-                            </span>
-                          )}
-                          {order.items?.some((it: any) => it.is_completed && !it.is_cancelled) && (
-                            <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/60 px-1.5 py-0.2 rounded">
-                              {order.items.filter((it: any) => it.is_completed && !it.is_cancelled).length}/{order.items.filter((it: any) => !it.is_cancelled).length} Given
-                            </span>
-                          )}
-                          <Badge variant="secondary" className="text-[10px] bg-background">
-                            {order.items?.reduce((acc: number, cur: any) => acc + cur.quantity, 0) || 0} Item(s)
-                          </Badge>
-                        </div>
-                      </div>
-                      <ul className="text-xs space-y-1">
-                        {previewItems.map((item: any, i: number) => {
-                          const isDone = Boolean(item.is_completed);
-                          const isCancelled = Boolean(item.is_cancelled);
-                          const hasMixed = order.items?.some((it: any) => it.is_completed && !it.is_cancelled) && order.items?.some((it: any) => !it.is_completed && !it.is_cancelled);
-                          const isNewUnserved = !isDone && !isCancelled && hasMixed;
-                          return (
-                            <li key={i} className={`flex justify-between items-center ${isCancelled ? 'line-through text-rose-400/80 dark:text-rose-500/80 opacity-70' : isDone ? 'line-through text-slate-400 dark:text-slate-500 opacity-60' : 'text-foreground'}`}>
-                              <span className="truncate pr-2 font-medium group-hover:text-primary transition-colors flex items-center gap-1.5">
-                                {isCancelled ? (
-                                  <XCircle size={12} className="text-rose-500 shrink-0" />
-                                ) : isDone ? (
-                                  <CheckCircle2 size={12} className="text-emerald-500 shrink-0" />
-                                ) : (
-                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
-                                )}
-                                <span>{item.name}</span>
-                                {isCancelled && (
-                                  <span className="text-[8.5px] font-black tracking-wider bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 px-1 py-0.2 rounded shrink-0">
-                                    CANCELLED
-                                  </span>
-                                )}
-                                {isNewUnserved && (
-                                  <span className="text-[9px] font-black tracking-wider bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 px-1.5 py-0.2 rounded shrink-0">
-                                    NEW
-                                  </span>
-                                )}
+                      <div>
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                            <ShoppingBag size={12} className="text-amber-500" /> Items
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            {order.items?.some((it: any) => it.is_cancelled) && (
+                              <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 bg-rose-100 dark:bg-rose-950/60 px-1.5 py-0.5 rounded">
+                                {order.items.filter((it: any) => it.is_cancelled).length} Cancelled
                               </span>
-                              <span className={`font-bold shrink-0 text-[11px] ${isCancelled ? 'text-rose-400' : 'text-foreground'}`}>x{item.quantity}</span>
+                            )}
+                            {order.items?.some((it: any) => it.is_completed && !it.is_cancelled) && (
+                              <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded">
+                                {order.items.filter((it: any) => it.is_completed && !it.is_cancelled).length}/{order.items.filter((it: any) => !it.is_cancelled).length} Given
+                              </span>
+                            )}
+                            <Badge variant="secondary" className="text-[10px] font-bold bg-background border border-border/60">
+                              {order.items?.reduce((acc: number, cur: any) => acc + cur.quantity, 0) || 0} Item(s)
+                            </Badge>
+                          </div>
+                        </div>
+
+                        <ul className="text-xs space-y-1.5">
+                          {previewItems.map((item: any, i: number) => {
+                            const isDone = Boolean(item.is_completed);
+                            const isCancelled = Boolean(item.is_cancelled);
+                            const hasMixed = order.items?.some((it: any) => it.is_completed && !it.is_cancelled) && order.items?.some((it: any) => !it.is_completed && !it.is_cancelled);
+                            const isNewUnserved = !isDone && !isCancelled && (hasMixed || isNewlyAddedItem(item, order));
+                            return (
+                              <li key={i} className={`flex justify-between items-center ${isCancelled ? 'line-through text-rose-400/80 dark:text-rose-500/80 opacity-70' : isDone ? 'line-through text-slate-400 dark:text-slate-500 opacity-60' : 'text-foreground'}`}>
+                                <span className="truncate pr-2 font-medium group-hover:text-primary transition-colors flex items-center gap-1.5">
+                                  {isCancelled ? (
+                                    <XCircle size={12} className="text-rose-500 shrink-0" />
+                                  ) : isDone ? (
+                                    <CheckCircle2 size={12} className="text-emerald-500 shrink-0" />
+                                  ) : (
+                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                                  )}
+                                  <span>{item.name}</span>
+                                  {isCancelled && (
+                                    <span className="text-[8.5px] font-black tracking-wider bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 px-1 py-0.2 rounded shrink-0">
+                                      CANCELLED
+                                    </span>
+                                  )}
+                                  {isNewUnserved && (
+                                    <span className="text-[9px] font-black tracking-wider bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 px-1.5 py-0.2 rounded shrink-0">
+                                      NEW
+                                    </span>
+                                  )}
+                                </span>
+                                <span className={`font-bold shrink-0 text-[11px] ${isCancelled ? 'text-rose-400' : 'text-foreground'}`}>x{item.quantity}</span>
+                              </li>
+                            );
+                          })}
+
+                          {extraCount > 0 && (
+                            <li className="text-[10px] font-bold text-muted-foreground pt-0.5 text-center">
+                              + {extraCount} more items
                             </li>
-                          );
-                        })}
-
-                        {extraCount > 0 && (
-                          <li className="text-[10px] font-bold text-muted-foreground pt-0.5 text-center">
-                            + {extraCount} more items
-                          </li>
-                        )}
-                      </ul>
-
-
+                          )}
+                        </ul>
+                      </div>
                     </div>
                   </div>
 
                   {/* Cancellation Reason if cancelled */}
-                  {status === 'CANCELLED' && order.cancellation_reason && (
+                  {status === 'CANCELLED' && (order.cancellation_reason || allItemsCancelled) && (
                     <div className="p-3 bg-rose-50 dark:bg-rose-950/30 rounded-xl border border-rose-100 dark:border-rose-900/30 text-xs">
                       <span className="block font-bold text-rose-700 dark:text-rose-400 mb-0.5">Cancellation Reason</span>
                       <p className="text-rose-600 dark:text-rose-300 font-medium">
-                        {order.cancellation_reason}
+                        {order.cancellation_reason || 'All items in this order were cancelled.'}
                       </p>
                     </div>
                   )}
 
-                  {/* Bottom Bar: Payment Status & Actions */}
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-3 border-t border-border/60">
-                    <div className="flex items-center justify-between md:justify-start gap-4">
-                      <div>
+                  {/* Bottom Bar: Payment, Total, and Cleanly Structured Actions */}
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 pt-3.5 border-t border-border/60">
+                    {/* Financial Summary */}
+                    <div className="flex items-center justify-between sm:justify-start gap-4 shrink-0">
+                      <div className="space-y-0.5">
                         <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Payment</span>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <span className="font-extrabold capitalize text-xs text-foreground shrink-0">{order.payment_method}</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold capitalize text-xs text-foreground shrink-0">{order.payment_method}</span>
                           <PayDropdown
                             orderId={order.id}
                             paymentStatus={order.payment_status}
@@ -1075,112 +1296,168 @@ export function OrdersPage() {
                         </div>
                       </div>
 
-                      <div className="text-right md:text-left border-l border-border/40 pl-4">
-                        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Total</span>
-                        <span className="font-black text-base text-foreground font-mono">
-                          ₹{Number(order.total_amount).toFixed(2)}
-                        </span>
+                      <div className="h-8 w-px bg-border/60" />
+
+                      {(() => {
+                        const isGstEnabled = Boolean(shop?.settings?.gst_enabled);
+                        const cgstRate = Number(shop?.settings?.cgst_rate || 0);
+                        const sgstRate = Number(shop?.settings?.sgst_rate || 0);
+                        const totalTaxRate = cgstRate + sgstRate;
+                        const isExclusiveTax = isGstEnabled && !shop?.settings?.inclusive_tax;
+
+                        const items = (order.items || []).filter((it: any) => !it.is_cancelled);
+                        const itemsSubtotal = items.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+                        const orderTotal = Number(order.total_amount ?? itemsSubtotal);
+
+                        let finalTotal = orderTotal;
+                        let taxAmount = 0;
+
+                        if (isGstEnabled && totalTaxRate > 0) {
+                          if (isExclusiveTax) {
+                            taxAmount = Math.round((itemsSubtotal * (totalTaxRate / 100)) * 100) / 100;
+                            if (orderTotal <= itemsSubtotal + 0.05) {
+                              finalTotal = Math.round((itemsSubtotal + taxAmount) * 100) / 100;
+                            } else {
+                              finalTotal = orderTotal;
+                            }
+                          } else {
+                            const taxable = itemsSubtotal / (1 + totalTaxRate / 100);
+                            taxAmount = Math.round((itemsSubtotal - taxable) * 100) / 100;
+                            finalTotal = orderTotal;
+                          }
+                        }
+
+                        return (
+                          <div className="space-y-0.5">
+                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Total Amount</span>
+                            <div className="flex items-baseline gap-1.5 flex-wrap">
+                              <span className="font-black text-lg text-foreground font-mono tracking-tight">
+                                ₹{finalTotal.toFixed(2)}
+                              </span>
+                              {isGstEnabled && totalTaxRate > 0 && (
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded tracking-tight ${
+                                  isExclusiveTax
+                                    ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30'
+                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                                }`}>
+                                  {isExclusiveTax ? `+₹${taxAmount.toFixed(2)} GST (${totalTaxRate}%)` : `incl. ₹${taxAmount.toFixed(2)} GST`}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Action Controls (Takes full space on mobile, compact on desktop) */}
+                    <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 w-full lg:w-auto lg:justify-end">
+                      {/* Kitchen KOT Controls */}
+                      {status !== 'COMPLETED' && status !== 'CANCELLED' && !isPendingVendor && (
+                        printedOrders[order.id] ? (
+                          <div className="w-full sm:w-auto inline-flex items-center justify-between rounded-xl border border-emerald-300/80 dark:border-emerald-800/80 bg-emerald-50/80 dark:bg-emerald-950/40 overflow-hidden shadow-2xs h-9">
+                            <span className="flex-1 sm:flex-none justify-center px-3 py-1 text-xs font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5 border-r border-emerald-200 dark:border-emerald-800/80">
+                              <CheckCircle2 size={13} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                              <span>KOT Printed</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleDirectPrintKot(order, 'full')}
+                              className="flex-1 sm:flex-none justify-center px-3 py-1 text-xs font-semibold text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors flex items-center gap-1 cursor-pointer"
+                              title="Reprint KOT"
+                            >
+                              <RotateCcw size={12} />
+                              <span>Reprint</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="w-full sm:w-auto inline-flex items-center rounded-xl border border-amber-500/40 bg-amber-500/10 overflow-hidden shadow-2xs h-9">
+                            <button
+                              type="button"
+                              onClick={() => handleDirectPrintKot(order, 'full')}
+                              className="w-full sm:w-auto justify-center px-4 py-1 text-xs font-bold text-amber-800 dark:text-amber-300 hover:bg-amber-500/20 transition-colors flex items-center gap-1.5 cursor-pointer"
+                              title="Print KOT directly to kitchen printer"
+                            >
+                              <UtensilsCrossed size={13} className="text-amber-500 shrink-0" />
+                              <span>Print KOT</span>
+                            </button>
+                          </div>
+                        )
+                      )}
+
+                      {/* Operational Order Actions (Add Items, Complete, Accept, Cancel, Print Bill) */}
+                      <div className="flex items-center gap-2 w-full sm:w-auto">
+                        {/* Add Items Button */}
+                        {status !== 'COMPLETED' && status !== 'CANCELLED' && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setTargetOrderForAdd(order)}
+                            leftIcon={<Plus size={13} />}
+                            className="flex-1 sm:flex-none border-primary/40 text-primary hover:bg-primary/10 text-xs font-bold h-9 justify-center"
+                          >
+                            Add Items
+                          </Button>
+                        )}
+
+                        {/* Bill Print Button (For completed orders) */}
+                        {status === 'COMPLETED' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setThermalPrintOrder(order);
+                            }}
+                            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3.5 py-1 text-xs font-bold rounded-xl shadow-xs h-9 bg-emerald-600 hover:bg-emerald-700 text-white transition-colors cursor-pointer"
+                            title="Open bill receipt and print to all registered cashier printers"
+                          >
+                            <Printer size={13} />
+                            <span>Print Bill</span>
+                          </button>
+                        )}
+
+                        {/* Cancel Button */}
+                        {isCancellable && order.payment_status !== 'paid' && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            className="flex-1 sm:flex-none bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 border border-rose-200/60 dark:border-rose-900/40 text-xs font-bold h-9 px-3 justify-center"
+                            onClick={() => setCancellingOrderId(order.id)}
+                            disabled={updatingOrderId === order.id}
+                            leftIcon={<XCircle size={13} />}
+                          >
+                            Cancel
+                          </Button>
+                        )}
+
+                        {/* Primary Order Progress Action: Accept Order */}
+                        {isPendingVendor && (
+                          <Button
+                            size="sm"
+                            className="flex-1 sm:flex-none text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white h-9 shadow-xs px-4 justify-center"
+                            onClick={() => {
+                              const nextStatus = order.order_type === 'dine_in' ? 'PREPARING' : 'PAYMENT_PENDING';
+                              handleUpdateStatus(order.id, nextStatus);
+                            }}
+                            isLoading={updatingOrderId === order.id}
+                          >
+                            Accept Order
+                          </Button>
+                        )}
+
+                        {/* Primary Order Progress Action: Complete Order */}
+                        {!isPendingVendor && status !== 'COMPLETED' && status !== 'CANCELLED' && status !== 'REJECTED' && (
+                          <Button
+                            size="sm"
+                            className="flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold h-9 shadow-xs px-4 justify-center"
+                            onClick={() => handleUpdateStatus(order.id, 'COMPLETED')}
+                            isLoading={updatingOrderId === order.id}
+                            leftIcon={<Check size={14} />}
+                          >
+                            Complete Order
+                          </Button>
+                        )}
                       </div>
                     </div>
-
-                    {/* Action Buttons Row */}
-                    <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 justify-end pt-2 md:pt-0 border-t md:border-t-0 border-border/40">
-                      {status !== 'COMPLETED' && status !== 'CANCELLED' && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setTargetOrderForAdd(order)}
-                          leftIcon={<Plus size={13} />}
-                          className="border-primary/40 text-primary hover:bg-primary/10 text-xs font-bold w-full sm:w-auto h-9"
-                        >
-                          Add Items
-                        </Button>
-
-                      )}
-
-                      {/* Prominent Print Bill Button for Completed bills */}
-                      {status === 'COMPLETED' && (
-                        <Button
-                          size="sm"
-                          onClick={() => setThermalPrintOrder(order)}
-                          leftIcon={<Printer size={14} />}
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold w-full sm:w-auto h-9 shadow-xs px-3.5"
-                          title="Print Thermal Bill Receipt"
-                        >
-                          Print Bill
-                        </Button>
-                      )}
-
-                      {/* Print Button for active orders */}
-                      {status !== 'COMPLETED' && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setThermalPrintOrder(order)}
-                          leftIcon={<Printer size={13} />}
-                          className="text-xs text-muted-foreground hover:text-foreground w-full sm:w-auto h-9"
-                          title="Print Thermal Bill Receipt"
-                        >
-                          Print
-                        </Button>
-                      )}
-
-                      <Button 
-                        size="sm" 
-                        variant="outline" 
-                        onClick={() => { navigator.clipboard.writeText(order.id); toast.success('Order ID copied'); }} 
-                        leftIcon={<Copy size={13} />} 
-                        className="text-xs text-muted-foreground w-full sm:w-auto h-9"
-                      >
-                        Copy
-                      </Button>
-                      
-                      {isCancellable && order.payment_status !== 'paid' && (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          className="bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 border border-rose-200/60 dark:border-rose-900/40 text-xs font-bold w-full sm:w-auto h-9 px-4"
-                          onClick={() => setCancellingOrderId(order.id)}
-                          disabled={updatingOrderId === order.id}
-                          leftIcon={<XCircle size={13} />}
-                        >
-                          Cancel
-                        </Button>
-                      )}
-                      
-                      {isPendingVendor && (
-                        <Button
-                          size="sm"
-                          className="text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white w-full sm:w-auto h-9 shadow-xs px-4"
-                          onClick={() => {
-                            const nextStatus = order.order_type === 'dine_in' ? 'PREPARING' : 'PAYMENT_PENDING';
-                            handleUpdateStatus(order.id, nextStatus);
-                          }}
-                          isLoading={updatingOrderId === order.id}
-                        >
-                          Accept Order
-                        </Button>
-                      )}
-
-
-
-                      {!isPendingVendor && status !== 'COMPLETED' && status !== 'CANCELLED' && status !== 'REJECTED' && (
-                        <Button
-                          size="sm"
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold w-full sm:w-auto h-9 shadow-xs px-4"
-                          onClick={() => handleUpdateStatus(order.id, 'COMPLETED')}
-                          isLoading={updatingOrderId === order.id}
-                          leftIcon={<Check size={14} />}
-                        >
-                          Complete Order
-                        </Button>
-                      )}
-
-                    </div>
                   </div>
-
-
-
 
                 </CardContent>
               </Card>
@@ -1196,9 +1473,9 @@ export function OrdersPage() {
       )}
 
 
-      {/* Customer Info Modal (Desktop only via isOpen check) */}
+      {/* Customer Info Modal (Desktop only via isMobile check) */}
       <Modal
-        isOpen={!!customerModalOrder && window.innerWidth >= 640}
+        isOpen={!!customerModalOrder && !isMobile}
         onClose={() => setCustomerModalOrder(null)}
         title="Customer & Delivery Details"
       >
@@ -1302,9 +1579,9 @@ export function OrdersPage() {
         )}
       </Modal>
 
-      {/* Customer Info Bottom Sheet (Mobile only via isOpen check) */}
+      {/* Customer Info Bottom Sheet (Mobile only via isMobile check) */}
       <BottomSheet
-        isOpen={!!customerModalOrder && window.innerWidth < 640}
+        isOpen={!!customerModalOrder && isMobile}
         onClose={() => setCustomerModalOrder(null)}
         title="Customer & Delivery Details"
       >
@@ -1408,16 +1685,93 @@ export function OrdersPage() {
         )}
       </BottomSheet>
 
-      {/* Items Detail Modal (Desktop only via isOpen check) */}
+      {/* Items Detail Modal (Desktop / Responsive via isMobile check) */}
       <Modal
-        isOpen={!!itemsModalOrder && window.innerWidth >= 640}
+        isOpen={!!itemsModalOrder && !isMobile}
         onClose={() => setItemsModalOrder(null)}
         title={`Order #${itemsModalOrder?.id?.slice(0, 8)?.toUpperCase()} — Items (${itemsModalOrder?.items?.length ?? 0})`}
+        className="max-w-2xl sm:max-w-3xl"
+        footer={
+          itemsModalOrder ? (
+            <div className="w-full flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              {/* Row 1 on mobile: Total Amount Bar / Right side on desktop */}
+              <div className="flex items-center justify-between sm:order-2 border-b sm:border-b-0 pb-2 sm:pb-0 border-slate-200/80 dark:border-slate-800">
+                <div className="flex items-center gap-1.5 sm:hidden">
+                  <span className="font-extrabold text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider">Total Amount</span>
+                  <span className="text-xs text-slate-400 font-medium">({itemsModalOrder.items?.length ?? 0} items)</span>
+                </div>
+                <div className="flex items-baseline gap-2 shrink-0 ml-auto sm:ml-0">
+                  <span className="hidden sm:inline font-extrabold text-xs text-slate-400 uppercase tracking-wider">Total</span>
+                  <span className="text-primary font-black text-xl sm:text-2xl font-mono">
+                    ₹{Number(itemsModalOrder.total_amount).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Row 2 on mobile: 50% Action buttons / Left side on desktop */}
+              <div className="flex items-center gap-2 w-full sm:w-auto sm:order-1">
+                {itemsModalOrder.order_status !== 'COMPLETED' && itemsModalOrder.order_status !== 'CANCELLED' && itemsModalOrder.order_status !== 'PENDING' && itemsModalOrder.order_status !== 'PENDING_VENDOR' && (
+                  printedOrders[itemsModalOrder.id] ? (
+                    <div className="flex-1 sm:flex-initial inline-flex items-center justify-center rounded-xl border border-emerald-300/80 dark:border-emerald-800/80 bg-emerald-50/80 dark:bg-emerald-950/40 overflow-hidden h-10 sm:h-9 text-xs">
+                      <span className="px-2.5 sm:px-3 py-1 font-bold text-emerald-700 dark:text-emerald-400 flex items-center justify-center gap-1 border-r border-emerald-200 dark:border-emerald-800/80 whitespace-nowrap flex-1 sm:flex-initial">
+                        <CheckCircle2 size={13} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                        <span>KOT Printed</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleDirectPrintKot(itemsModalOrder, 'full')}
+                        className="px-2.5 sm:px-3 py-1 font-semibold text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap flex-1 sm:flex-initial"
+                        title="Reprint KOT"
+                      >
+                        <RotateCcw size={12} className="shrink-0" />
+                        <span>Reprint</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 sm:flex-initial border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 font-bold text-xs h-10 sm:h-9 justify-center whitespace-nowrap"
+                      onClick={() => handleDirectPrintKot(itemsModalOrder, 'full')}
+                      leftIcon={<UtensilsCrossed size={13} className="shrink-0" />}
+                    >
+                      Print KOT
+                    </Button>
+                  )
+                )}
+
+                {itemsModalOrder.order_status !== 'COMPLETED' && itemsModalOrder.order_status !== 'CANCELLED' ? (
+                  <Button
+                    size="sm"
+                    className="flex-1 sm:flex-initial bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs h-10 sm:h-9 justify-center whitespace-nowrap shadow-xs"
+                    onClick={() => {
+                      const ord = itemsModalOrder;
+                      setItemsModalOrder(null);
+                      setTargetOrderForAdd(ord);
+                    }}
+                    leftIcon={<Plus size={14} className="shrink-0" />}
+                  >
+                    Add Items
+                  </Button>
+                ) : itemsModalOrder.order_status === 'COMPLETED' ? (
+                  <Button
+                    size="sm"
+                    className="flex-1 sm:flex-initial bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-10 sm:h-9 justify-center whitespace-nowrap shadow-xs"
+                    onClick={() => setThermalPrintOrder(itemsModalOrder)}
+                    leftIcon={<Printer size={13} className="shrink-0" />}
+                  >
+                    Print Bill
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          ) : null
+        }
       >
         {itemsModalOrder && (
           <div className="space-y-4 pt-1">
-            {/* Top Order Status & Items Summary Banner */}
-            <div className="bg-slate-50 dark:bg-slate-900/60 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            {/* Top Order Context & Items Summary Banner */}
+            <div className="bg-slate-50 dark:bg-slate-900/60 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-3 flex-wrap">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className={`px-2.5 py-1 rounded-lg text-xs font-black uppercase tracking-wider ${orderStatusStyle(itemsModalOrder.order_status).badgeClass || 'bg-primary/10 text-primary'}`}>
                   {orderStatusStyle(itemsModalOrder.order_status).label}
@@ -1432,11 +1786,25 @@ export function OrdersPage() {
                   </span>
                 )}
               </div>
+
+              {/* Order Meta Info */}
+              <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                <span>{itemsModalOrder.customer_name || 'Walk-in'}</span>
+                <span>•</span>
+                <span className="capitalize font-bold text-slate-700 dark:text-slate-300">{itemsModalOrder.order_type?.replace('_', ' ')}</span>
+                {itemsModalOrder.table_number && (
+                  <>
+                    <span>•</span>
+                    <span className="font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 rounded-md border border-amber-200/80 dark:border-amber-900/40">
+                      Table #{itemsModalOrder.table_number}
+                    </span>
+                  </>
+                )}
+              </div>
             </div>
 
-
             {/* Items List */}
-            <div className="overflow-y-auto max-h-[420px] pr-1 space-y-2.5" style={{ scrollbarWidth: 'thin' }}>
+            <div className="space-y-3">
               {[...(itemsModalOrder.items || [])].sort((a: any, b: any) => {
                 if (Boolean(a.is_cancelled) !== Boolean(b.is_cancelled)) return a.is_cancelled ? 1 : -1;
                 if (Boolean(a.is_completed) !== Boolean(b.is_completed)) return a.is_completed ? 1 : -1;
@@ -1467,22 +1835,35 @@ export function OrdersPage() {
                 return (
                   <div
                     key={it.id ?? idx}
-                    className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl p-4 border transition-all ${
+                    className={`rounded-2xl p-4 border transition-all ${
                       isItemCancelled
-                        ? 'bg-rose-50/30 dark:bg-rose-950/20 border-rose-200/60 dark:border-rose-800/40 opacity-80'
+                        ? 'bg-rose-50/20 dark:bg-rose-950/15 border-rose-200/60 dark:border-rose-800/40 opacity-80'
                         : isItemDone
-                        ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200/60 dark:border-emerald-800/40'
+                        ? 'bg-emerald-50/30 dark:bg-emerald-950/20 border-emerald-200/60 dark:border-emerald-800/40'
                         : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-2xs'
                     }`}
                   >
-                    <div className="flex-1 min-w-0 space-y-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`font-bold text-sm sm:text-base ${isItemCancelled ? 'line-through text-rose-500/80 dark:text-rose-400/80' : isItemDone ? 'line-through text-slate-400 dark:text-slate-500' : 'text-slate-900 dark:text-slate-100'}`}>
+                    {/* Top row: Name & Badges on Left, Price on Right */}
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-center gap-2.5 flex-wrap min-w-0">
+                        <span className={`font-bold text-base ${
+                          isItemCancelled 
+                            ? 'line-through text-rose-500/80 dark:text-rose-400/80' 
+                            : isItemDone 
+                            ? 'text-slate-500 dark:text-slate-400' 
+                            : 'text-slate-900 dark:text-slate-100'
+                        }`}>
                           {it.name}
                         </span>
-                        <span className={`text-xs font-black px-2 py-0.5 rounded-full ${isItemCancelled ? 'bg-rose-100 dark:bg-rose-900/40 text-rose-600' : 'bg-primary/10 text-primary'}`}>
+
+                        <span className={`text-xs font-black px-2.5 py-0.5 rounded-lg ${
+                          isItemCancelled 
+                            ? 'bg-rose-100 dark:bg-rose-900/40 text-rose-600' 
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono'
+                        }`}>
                           ×{it.quantity}
                         </span>
+
                         {isItemCancelled && (
                           <span className="text-[10px] font-black tracking-wider bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 px-2 py-0.5 rounded-md flex items-center gap-1">
                             <XCircle size={11} /> CANCELLED
@@ -1499,129 +1880,200 @@ export function OrdersPage() {
                           </span>
                         )}
                       </div>
-                      {variantLabel && (
-                        <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                          <span className="font-semibold text-slate-600 dark:text-slate-300">Variant:</span> {variantLabel}
-                        </p>
-                      )}
-                      {addons.length > 0 && (
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                          <span className="font-semibold text-slate-600 dark:text-slate-300">Add-ons:</span> {addons.join(', ')}
-                        </p>
-                      )}
-                    </div>
 
-                    <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-800">
-                      <span className={`font-black text-sm sm:text-base font-mono ${isItemCancelled ? 'line-through text-slate-400 dark:text-slate-600' : 'text-slate-900 dark:text-slate-100'}`}>
-                        ₹{(it.price * it.quantity).toFixed(2)}
-                      </span>
-
-                      <div className="flex items-center gap-2">
-                        {isItemCancelled ? (
-                          <button
-                            type="button"
-                            onClick={() => handleToggleItemCancel(itemsModalOrder.id, it.id)}
-                            disabled={togglingCancelItemId === it.id}
-                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs active:scale-[0.98]"
-                            title="Restore this item"
-                          >
-                            <RefreshCw size={12} className={togglingCancelItemId === it.id ? 'animate-spin' : ''} />
-                            <span>Restore Item</span>
-                          </button>
-                        ) : (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => handleToggleItemComplete(itemsModalOrder.id, it.id)}
-                              disabled={togglingItemId === it.id}
-                              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer active:scale-[0.98] ${
-                                isItemDone
-                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700 hover:bg-emerald-200'
-                                  : 'bg-amber-500 hover:bg-amber-600 text-white shadow-xs'
-                              }`}
-                            >
-                              {isItemDone ? (
-                                <>
-                                  <CheckCircle2 size={13} className="text-emerald-600 dark:text-emerald-300" />
-                                  <span>Served</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Clock size={13} />
-                                  <span>Mark Given</span>
-                                </>
-                              )}
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => handleToggleItemCancel(itemsModalOrder.id, it.id)}
-                              disabled={togglingCancelItemId === it.id}
-                              className="px-2.5 py-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1 active:scale-[0.98]"
-                              title="Cancel this item"
-                            >
-                              <XCircle size={13} />
-                              <span className="hidden sm:inline">Cancel</span>
-                            </button>
-                          </>
+                      {/* Item Total Price */}
+                      <div className="shrink-0 text-right">
+                        <span className={`font-black text-base font-mono ${isItemCancelled ? 'line-through text-slate-400 dark:text-slate-600' : 'text-slate-900 dark:text-slate-100'}`}>
+                          ₹{(it.price * it.quantity).toFixed(2)}
+                        </span>
+                        {it.quantity > 1 && (
+                          <p className="text-[10px] text-slate-400 font-mono">₹{Number(it.price).toFixed(2)} each</p>
                         )}
                       </div>
+                    </div>
+
+                    {/* Variant & Addons Details */}
+                    {(variantLabel || addons.length > 0) && (
+                      <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800/60 flex flex-wrap gap-x-4 text-xs text-slate-500 dark:text-slate-400">
+                        {variantLabel && (
+                          <p>
+                            <span className="font-semibold text-slate-600 dark:text-slate-300">Variant:</span> {variantLabel}
+                          </p>
+                        )}
+                        {addons.length > 0 && (
+                          <p>
+                            <span className="font-semibold text-slate-600 dark:text-slate-300">Add-ons:</span> {addons.join(', ')}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Bottom Action Row */}
+                    <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-end gap-2">
+                      {isItemCancelled ? (
+                        <button
+                          type="button"
+                          onClick={() => handleRestoreItem(itemsModalOrder.id, it.id)}
+                          disabled={togglingCancelItemId === it.id}
+                          className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs active:scale-[0.98]"
+                          title="Restore this item"
+                        >
+                          <RefreshCw size={12} className={togglingCancelItemId === it.id ? 'animate-spin' : ''} />
+                          <span>Restore Item</span>
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleItemComplete(itemsModalOrder.id, it.id)}
+                            disabled={togglingItemId === it.id}
+                            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer active:scale-[0.98] ${
+                              isItemDone
+                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700 hover:bg-emerald-200'
+                                : 'bg-amber-500 hover:bg-amber-600 text-white shadow-xs'
+                            }`}
+                          >
+                            {isItemDone ? (
+                              <>
+                                <CheckCircle2 size={13} className="text-emerald-600 dark:text-emerald-300" />
+                                <span>Served</span>
+                              </>
+                            ) : (
+                              <>
+                                <Clock size={13} />
+                                <span>Mark Given</span>
+                              </>
+                            )}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setReplacingItemOrder({ order: itemsModalOrder, item: it })}
+                            className="px-3 py-1.5 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40 border border-amber-300 dark:border-amber-800/60 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1 active:scale-[0.98]"
+                            title="Replace this item with another"
+                          >
+                            <RotateCcw size={12} />
+                            <span>Replace</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCancellingItemOrder({ orderId: itemsModalOrder.id, itemId: it.id, itemName: it.name, item: it });
+                              setCancelItemReason('');
+                            }}
+                            disabled={togglingCancelItemId === it.id}
+                            className="px-3 py-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1 active:scale-[0.98]"
+                            title="Cancel this item"
+                          >
+                            <XCircle size={13} />
+                            <span>Cancel</span>
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 );
               })}
             </div>
-
-            {/* Modal Footer (Clean & Spacious) */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3.5 border-t border-slate-200 dark:border-slate-800 mt-2">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-500 font-medium">
-                  {itemsModalOrder.customer_name || 'Walk-in'} • <span className="capitalize font-bold text-slate-700 dark:text-slate-300">{itemsModalOrder.order_type?.replace('_', ' ')}</span>
-                  {itemsModalOrder.table_number && ` • Table ${itemsModalOrder.table_number}`}
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between sm:justify-end gap-3">
-                <Button
-                  size="sm"
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-8"
-                  onClick={() => setThermalPrintOrder(itemsModalOrder)}
-                  leftIcon={<Printer size={13} />}
-                >
-                  Print Bill
-                </Button>
-                <div className="flex items-center gap-1.5">
-                  <span className="font-extrabold text-xs text-slate-400 uppercase tracking-wider">Grand Total:</span>
-                  <span className="text-primary font-black text-xl">₹{Number(itemsModalOrder.total_amount).toFixed(2)}</span>
-                </div>
-              </div>
-            </div>
           </div>
         )}
       </Modal>
 
-      {/* Items Detail Bottom Sheet (Mobile only via isOpen check) */}
+      {/* Items Detail Bottom Sheet (Mobile only via isMobile check) */}
       <BottomSheet
-        isOpen={!!itemsModalOrder && window.innerWidth < 640}
+        isOpen={!!itemsModalOrder && isMobile}
         onClose={() => setItemsModalOrder(null)}
         title={`Order #${itemsModalOrder?.id?.slice(0, 8)?.toUpperCase()} — Items (${itemsModalOrder?.items?.length ?? 0})`}
+        footer={
+          itemsModalOrder ? (
+            <div className="space-y-3 w-full">
+              {/* Row 1: Total Amount Bar */}
+              <div className="flex items-center justify-between px-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-extrabold text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider">Total Amount</span>
+                  <span className="text-xs text-slate-400 font-medium">({itemsModalOrder.items?.length ?? 0} items)</span>
+                </div>
+                <span className="text-primary font-black text-xl font-mono">
+                  ₹{Number(itemsModalOrder.total_amount).toFixed(2)}
+                </span>
+              </div>
+
+              {/* Row 2: Full Width Actions */}
+              <div className="flex items-center gap-2 w-full">
+                {itemsModalOrder.order_status !== 'COMPLETED' && itemsModalOrder.order_status !== 'CANCELLED' && itemsModalOrder.order_status !== 'PENDING' && itemsModalOrder.order_status !== 'PENDING_VENDOR' && (
+                  printedOrders[itemsModalOrder.id] ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 border-emerald-300 dark:border-emerald-800 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 font-bold text-xs h-10 justify-center whitespace-nowrap"
+                      onClick={() => handleDirectPrintKot(itemsModalOrder, 'full')}
+                      leftIcon={<RotateCcw size={13} className="shrink-0" />}
+                    >
+                      Reprint KOT
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 font-bold text-xs h-10 justify-center whitespace-nowrap"
+                      onClick={() => handleDirectPrintKot(itemsModalOrder, 'full')}
+                      leftIcon={<UtensilsCrossed size={13} className="shrink-0" />}
+                    >
+                      Print KOT
+                    </Button>
+                  )
+                )}
+
+                {itemsModalOrder.order_status !== 'COMPLETED' && itemsModalOrder.order_status !== 'CANCELLED' ? (
+                  <Button
+                    size="sm"
+                    className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs h-10 justify-center whitespace-nowrap shadow-xs"
+                    onClick={() => {
+                      const ord = itemsModalOrder;
+                      setItemsModalOrder(null);
+                      setTargetOrderForAdd(ord);
+                    }}
+                    leftIcon={<Plus size={14} className="shrink-0" />}
+                  >
+                    Add Items
+                  </Button>
+                ) : itemsModalOrder.order_status === 'COMPLETED' ? (
+                  <Button
+                    size="sm"
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-10 justify-center whitespace-nowrap shadow-xs"
+                    onClick={() => setThermalPrintOrder(itemsModalOrder)}
+                    leftIcon={<Printer size={13} className="shrink-0" />}
+                  >
+                    Print Bill
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          ) : null
+        }
       >
         {itemsModalOrder && (
           <div className="space-y-3.5 pb-2">
             {/* Mobile Summary Banner */}
-            <div className="bg-slate-50 dark:bg-slate-900/60 p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className={`px-2 py-0.5 rounded-lg text-[11px] font-black uppercase tracking-wider ${orderStatusStyle(itemsModalOrder.order_status).badgeClass || 'bg-primary/10 text-primary'}`}>
-                  {orderStatusStyle(itemsModalOrder.order_status).label}
-                </span>
-                <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
-                  {itemsModalOrder.items.filter((i: any) => i.is_completed && !i.is_cancelled).length}/{itemsModalOrder.items.filter((i: any) => !i.is_cancelled).length} Served
-                </span>
-                {itemsModalOrder.items.some((i: any) => i.is_cancelled) && (
-                  <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-md bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400">
-                    {itemsModalOrder.items.filter((i: any) => i.is_cancelled).length} Cancelled
+            <div className="bg-slate-50 dark:bg-slate-900/60 p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800 space-y-2">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className={`px-2 py-0.5 rounded-lg text-[11px] font-black uppercase tracking-wider ${orderStatusStyle(itemsModalOrder.order_status).badgeClass || 'bg-primary/10 text-primary'}`}>
+                    {orderStatusStyle(itemsModalOrder.order_status).label}
                   </span>
-                )}
+                  <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
+                    {itemsModalOrder.items.filter((i: any) => i.is_completed && !i.is_cancelled).length}/{itemsModalOrder.items.filter((i: any) => !i.is_cancelled).length} Served
+                  </span>
+                  {itemsModalOrder.items.some((i: any) => i.is_cancelled) && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-md bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400">
+                      {itemsModalOrder.items.filter((i: any) => i.is_cancelled).length} Cancelled
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  {itemsModalOrder.customer_name || 'Walk-in'} • {itemsModalOrder.table_number ? `Table #${itemsModalOrder.table_number}` : itemsModalOrder.order_type?.replace('_', ' ')}
+                </div>
               </div>
             </div>
 
@@ -1659,19 +2111,20 @@ export function OrdersPage() {
                     key={it.id ?? idx}
                     className={`flex flex-col gap-2 rounded-2xl p-3.5 border transition-all ${
                       isItemCancelled
-                        ? 'bg-rose-50/30 dark:bg-rose-950/20 border-rose-200/60 dark:border-rose-800/40 opacity-80'
+                        ? 'bg-rose-50/20 dark:bg-rose-950/15 border-rose-200/60 dark:border-rose-800/40 opacity-80'
                         : isItemDone
-                        ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200/60 dark:border-emerald-800/40'
-                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
+                        ? 'bg-emerald-50/30 dark:bg-emerald-950/20 border-emerald-200/60 dark:border-emerald-800/40'
+                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-2xs'
                     }`}
                   >
+                    {/* Top Row: Name, Quantity, Badges on Left, Price on Right */}
                     <div className="flex items-start justify-between gap-2">
                       <div className="space-y-0.5 flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className={`font-bold text-xs sm:text-sm ${isItemCancelled ? 'line-through text-rose-500/80 dark:text-rose-400/80' : isItemDone ? 'line-through text-slate-400 dark:text-slate-500' : 'text-slate-800 dark:text-slate-100'}`}>
                             {it.name}
                           </span>
-                          <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full ${isItemCancelled ? 'bg-rose-100 dark:bg-rose-900/40 text-rose-600' : 'bg-primary/10 text-primary'}`}>
+                          <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-md ${isItemCancelled ? 'bg-rose-100 dark:bg-rose-900/40 text-rose-600' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono'}`}>
                             ×{it.quantity}
                           </span>
                           {isItemCancelled && (
@@ -1697,18 +2150,20 @@ export function OrdersPage() {
                         )}
                       </div>
 
-                      <span className={`font-black text-xs font-mono shrink-0 ${isItemCancelled ? 'line-through text-slate-400' : 'text-slate-800 dark:text-slate-100'}`}>
-                        ₹{(it.price * it.quantity).toFixed(2)}
-                      </span>
+                      <div className="shrink-0 text-right">
+                        <span className={`font-black text-xs font-mono ${isItemCancelled ? 'line-through text-slate-400' : 'text-slate-800 dark:text-slate-100'}`}>
+                          ₹{(it.price * it.quantity).toFixed(2)}
+                        </span>
+                      </div>
                     </div>
 
-                    <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100 dark:border-slate-800/60">
+                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800/60">
                       {isItemCancelled ? (
                         <button
                           type="button"
-                          onClick={() => handleToggleItemCancel(itemsModalOrder.id, it.id)}
+                          onClick={() => handleRestoreItem(itemsModalOrder.id, it.id)}
                           disabled={togglingCancelItemId === it.id}
-                          className="px-3 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1"
+                          className="px-3 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 active:scale-[0.98]"
                         >
                           <RefreshCw size={11} className={togglingCancelItemId === it.id ? 'animate-spin' : ''} />
                           <span>Restore</span>
@@ -1719,7 +2174,7 @@ export function OrdersPage() {
                             type="button"
                             onClick={() => handleToggleItemComplete(itemsModalOrder.id, it.id)}
                             disabled={togglingItemId === it.id}
-                            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer active:scale-[0.98] ${
                               isItemDone
                                 ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700'
                                 : 'bg-amber-500 text-white'
@@ -1740,9 +2195,22 @@ export function OrdersPage() {
 
                           <button
                             type="button"
-                            onClick={() => handleToggleItemCancel(itemsModalOrder.id, it.id)}
+                            onClick={() => setReplacingItemOrder({ order: itemsModalOrder, item: it })}
+                            className="px-2 py-1.5 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 border border-amber-300 dark:border-amber-800/60 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 active:scale-[0.98]"
+                            title="Replace this item"
+                          >
+                            <RotateCcw size={11} />
+                            <span>Replace</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCancellingItemOrder({ orderId: itemsModalOrder.id, itemId: it.id, itemName: it.name, item: it });
+                              setCancelItemReason('');
+                            }}
                             disabled={togglingCancelItemId === it.id}
-                            className="px-2.5 py-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-200/80 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1"
+                            className="px-2.5 py-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-200/80 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 active:scale-[0.98]"
                             title="Cancel this item"
                           >
                             <XCircle size={13} />
@@ -1754,23 +2222,6 @@ export function OrdersPage() {
                   </div>
                 );
               })}
-            </div>
-
-            {/* Mobile Sheet Footer */}
-            <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-200 dark:border-slate-700 mt-2">
-              <Button
-                size="sm"
-                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-8 px-3"
-                onClick={() => setThermalPrintOrder(itemsModalOrder)}
-                leftIcon={<Printer size={13} />}
-              >
-                Print Bill
-              </Button>
-
-              <div className="flex items-center gap-1.5">
-                <span className="font-extrabold text-xs text-slate-400 uppercase tracking-wider">Total:</span>
-                <span className="text-primary font-black text-lg">₹{Number(itemsModalOrder.total_amount).toFixed(2)}</span>
-              </div>
             </div>
           </div>
         )}
@@ -1825,7 +2276,12 @@ export function OrdersPage() {
       <CreateOrderModal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
-        onOrderCreated={() => fetchOrdersData(0, true)}
+        onOrderCreated={async (createdOrder) => {
+          fetchOrdersData(0, true);
+          if (createdOrder && autoPrintOnAccept) {
+            await handleDirectPrintKot(createdOrder, 'full', true);
+          }
+        }}
       />
 
       {/* Add Items to Active Order Modal */}
@@ -1833,7 +2289,85 @@ export function OrdersPage() {
         isOpen={!!targetOrderForAdd}
         onClose={() => setTargetOrderForAdd(null)}
         targetOrder={targetOrderForAdd}
-        onOrderCreated={() => fetchOrdersData(0, true)}
+        onOrderCreated={async (updatedOrder, newlyAddedItems) => {
+          fetchOrdersData(0, true);
+          if (updatedOrder && autoPrintOnAccept) {
+            await handleDirectPrintKot(updatedOrder, 'new_only', true, {
+              customItems: newlyAddedItems,
+              kotTitle: 'KOT - NEW ADDITIONS'
+            });
+          }
+        }}
+      />
+
+      {/* Item Cancellation Modal */}
+      <Modal
+        isOpen={!!cancellingItemOrder}
+        onClose={() => { setCancellingItemOrder(null); setCancelItemReason(''); }}
+        title={`Cancel Item: ${cancellingItemOrder?.itemName || 'Item'}`}
+      >
+        <div className="space-y-4 pt-2">
+          <p className="text-sm text-slate-600 dark:text-slate-400">
+            Provide a reason for cancelling this item. The item amount will be deducted from the bill and a Void KOT can be printed for the kitchen.
+          </p>
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+              Cancellation Reason
+            </label>
+            <Input
+              placeholder="e.g. Customer cancelled, Out of stock, Spilled..."
+              value={cancelItemReason}
+              onChange={(e) => setCancelItemReason(e.target.value)}
+              autoFocus
+            />
+          </div>
+          <div className="flex gap-3 pt-2">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => { setCancellingItemOrder(null); setCancelItemReason(''); }}
+            >
+              Go Back
+            </Button>
+            <Button
+              className="flex-1 bg-rose-600 hover:bg-rose-700 text-white border-0"
+              onClick={submitCancelItem}
+              isLoading={togglingCancelItemId !== null}
+            >
+              Confirm Cancel Item
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Item Replacement Modal (Using rich menu selection UI) */}
+      <CreateOrderModal
+        isOpen={!!replacingItemOrder}
+        onClose={() => setReplacingItemOrder(null)}
+        replacingItem={replacingItemOrder}
+        onItemReplaced={async (updatedOrder, previousItem, newItem) => {
+          setOrders(prev => prev.map(o => o.id === updatedOrder.id ? updatedOrder : o));
+          if (itemsModalOrder && itemsModalOrder.id === updatedOrder.id) {
+            setItemsModalOrder(updatedOrder);
+          }
+          fetchOrdersData(0, true);
+
+          // 1. Send VOID KOT for the cancelled previous item to its station printer
+          if (previousItem && autoPrintOnAccept) {
+            await handleDirectPrintKot(updatedOrder, 'cancelled', true, {
+              customItems: [previousItem],
+              kotTitle: 'VOID KOT - ITEM REPLACED',
+              reason: previousItem.cancellation_reason || 'Replaced with another item'
+            });
+          }
+          // 2. Send KOT for the newly replaced item to its station printer
+          if (newItem && autoPrintOnAccept) {
+            await handleDirectPrintKot(updatedOrder, 'new_only', true, {
+              customItems: [newItem],
+              kotTitle: 'KOT - REPLACEMENT ITEM'
+            });
+          }
+        }}
       />
 
       {/* Thermal Bill Receipt Modal */}
@@ -1842,6 +2376,16 @@ export function OrdersPage() {
         onClose={() => setThermalPrintOrder(null)}
         order={thermalPrintOrder}
         shop={shop}
+        initialMode={thermalPrintInitialMode}
+      />
+
+      {/* Thermal Kitchen Order Ticket (KOT) Modal */}
+      <ThermalKotModal
+        isOpen={!!thermalKotOrder}
+        onClose={() => setThermalKotOrder(null)}
+        order={thermalKotOrder}
+        shop={shop}
+        initialMode={thermalKotMode}
       />
 
       {/* Floating Action Button (FAB) for Create Order */}

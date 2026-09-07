@@ -65,15 +65,6 @@ const BrandLandingPage = lazy(() => import('@/pages/public/BrandLandingPage').th
 const PublicContestPage = lazy(() => import('./pages/public/PublicContestPage').then(m => ({ default: m.PublicContestPage })));
 const CustomerProfilePage = lazy(() => import('./pages/public/CustomerProfilePage').then(m => ({ default: m.CustomerProfilePage })));
 
-const AdminPlaceholder = () => (
-  <div className="flex items-center justify-center min-h-[60vh]">
-    <div className="text-center">
-      <h1 className="text-2xl font-bold font-heading mb-2">Admin Dashboard</h1>
-      <p className="text-slate-500">Super admin management area coming soon.</p>
-    </div>
-  </div>
-);
-
 import Lenis from 'lenis';
 
 function App() {
@@ -117,7 +108,7 @@ function App() {
       <Route element={<ProtectedRoute />}>
         <Route element={<ThemeProvider><DashboardLayout /></ThemeProvider>}>
           <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/shop-setup" element={<PermissionGuard module="settings"><ShopSetupPage /></PermissionGuard>} />
+          <Route path="/shop-setup" element={<ShopSetupPage />} />
           <Route path="/categories" element={<PermissionGuard module="menu_categories"><CategoriesPage /></PermissionGuard>} />
           <Route path="/menu-items" element={<PermissionGuard module="menu_items"><MenuItemsPage /></PermissionGuard>} />
           <Route path="/bulk-upload" element={<PermissionGuard module="menu_items"><BulkUploadPage /></PermissionGuard>} />
@@ -137,7 +128,6 @@ function App() {
           <Route path="/subscription" element={<PermissionGuard module="subscription"><SubscriptionMarketplacePage /></PermissionGuard>} />
           <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/internal-bulk" element={<InternalBulkPage />} />
-          <Route path="/admin" element={<AdminPlaceholder />} />
         </Route>
       </Route>
 

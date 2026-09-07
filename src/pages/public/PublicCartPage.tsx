@@ -419,7 +419,25 @@ export function PublicCartPage() {
     return baseCharge + (steps * extraRate);
   }, [orderType, shop?.settings, deliveryDistanceKm]);
 
-  const { subtotal, automaticDiscountAmount, manualDiscountAmount, finalTotal, appliedAutoDiscounts, platformFee, pgFee, gstOnFee, grandTotal } = useMemo(() => {
+  const {
+    subtotal,
+    automaticDiscountAmount,
+    manualDiscountAmount,
+    isGstEnabled,
+    isInclusive,
+    taxableAmount,
+    cgstRate,
+    sgstRate,
+    cgstAmount,
+    sgstAmount,
+    totalTaxAmount,
+    finalTotal,
+    appliedAutoDiscounts,
+    platformFee,
+    pgFee,
+    gstOnFee,
+    grandTotal,
+  } = useMemo(() => {
     let subtotal = 0;
     let autoDiscountTotal = 0;
     const appliedAutoDiscounts = new Set<string>();
@@ -502,7 +520,41 @@ export function PublicCartPage() {
       }
     }
 
-    const finalTotal = Math.max(0, subtotal - autoDiscountTotal - manualDiscountAmount + deliveryFee);
+    const foodSubtotalAfterDiscounts = Math.max(0, subtotal - autoDiscountTotal - manualDiscountAmount);
+
+    // GST & Compliances Calculation
+    const isGstEnabled = Boolean(shop?.settings?.gst_enabled);
+    const isInclusive = Boolean(shop?.settings?.inclusive_tax);
+    const cgstRate = Number(shop?.settings?.cgst_rate || 0);
+    const sgstRate = Number(shop?.settings?.sgst_rate || 0);
+    const totalTaxRate = cgstRate + sgstRate;
+
+    let taxableAmount = foodSubtotalAfterDiscounts;
+    let cgstAmount = 0;
+    let sgstAmount = 0;
+    let totalTaxAmount = 0;
+
+    if (isGstEnabled && totalTaxRate > 0) {
+      if (isInclusive) {
+        // Tax is already part of item prices
+        taxableAmount = parseFloat((foodSubtotalAfterDiscounts / (1 + totalTaxRate / 100)).toFixed(2));
+        totalTaxAmount = parseFloat((foodSubtotalAfterDiscounts - taxableAmount).toFixed(2));
+        cgstAmount = parseFloat((totalTaxAmount * (cgstRate / totalTaxRate)).toFixed(2));
+        sgstAmount = parseFloat((totalTaxAmount - cgstAmount).toFixed(2));
+      } else {
+        // Tax is added exclusively on top of food subtotal
+        taxableAmount = foodSubtotalAfterDiscounts;
+        cgstAmount = parseFloat((foodSubtotalAfterDiscounts * (cgstRate / 100)).toFixed(2));
+        sgstAmount = parseFloat((foodSubtotalAfterDiscounts * (sgstRate / 100)).toFixed(2));
+        totalTaxAmount = parseFloat((cgstAmount + sgstAmount).toFixed(2));
+      }
+    }
+
+    const foodTotalWithTax = isGstEnabled && !isInclusive
+      ? foodSubtotalAfterDiscounts + totalTaxAmount
+      : foodSubtotalAfterDiscounts;
+
+    const finalTotal = Math.max(0, parseFloat((foodTotalWithTax + deliveryFee).toFixed(2)));
 
     // Online payment fees (Razorpay — delivery/takeaway) — NOT for dine_in/cash/UPI
     const isOnlineFeeApplicable = paymentMethod === 'online';
@@ -517,6 +569,14 @@ export function PublicCartPage() {
       subtotal,
       automaticDiscountAmount: autoDiscountTotal,
       manualDiscountAmount,
+      isGstEnabled,
+      isInclusive,
+      taxableAmount,
+      cgstRate,
+      sgstRate,
+      cgstAmount,
+      sgstAmount,
+      totalTaxAmount,
       finalTotal,
       appliedAutoDiscounts: Array.from(appliedAutoDiscounts),
       platformFee,
@@ -524,7 +584,7 @@ export function PublicCartPage() {
       gstOnFee,
       grandTotal,
     };
-  }, [items, availableDiscounts, manualDiscountId, memberStatus, deliveryFee, paymentMethod]);
+  }, [items, availableDiscounts, manualDiscountId, memberStatus, deliveryFee, paymentMethod, shop?.settings]);
 
   const [showAllItemsModal, setShowAllItemsModal] = useState(false);
   const [showAllOffersModal, setShowAllOffersModal] = useState(false);
@@ -1188,6 +1248,41 @@ export function PublicCartPage() {
                   </div>
                 )}
 
+                {/* GST Tax Breakdown */}
+                {isGstEnabled && totalTaxAmount > 0 && (
+                  <div className="space-y-1.5 pt-1 border-t border-slate-100">
+                    {!isInclusive ? (
+                      <>
+                        <div className="flex justify-between text-xs font-semibold text-slate-700">
+                          <span className="underline underline-offset-2 decoration-slate-300 decoration-dashed">CGST ({cgstRate}%)</span>
+                          <span className="text-slate-900 font-bold">+{currencySymbol}{cgstAmount.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between text-xs font-semibold text-slate-700">
+                          <span className="underline underline-offset-2 decoration-slate-300 decoration-dashed">SGST ({sgstRate}%)</span>
+                          <span className="text-slate-900 font-bold">+{currencySymbol}{sgstAmount.toFixed(2)}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex justify-between items-center text-[10px] font-medium text-slate-500 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100">
+                        <span>Includes GST ({cgstRate + sgstRate}%)</span>
+                        <span className="font-bold text-slate-700">CGST: {currencySymbol}{cgstAmount.toFixed(2)} | SGST: {currencySymbol}{sgstAmount.toFixed(2)}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Shop GST & FSSAI Badges */}
+                {(shop?.settings?.gstin || shop?.settings?.fssai_license) && (
+                  <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-1 text-[10px] text-slate-400 font-medium">
+                    {shop.settings.gstin && (
+                      <span>GSTIN: <strong className="text-slate-600 font-bold">{shop.settings.gstin}</strong></span>
+                    )}
+                    {shop.settings.fssai_license && (
+                      <span>FSSAI Lic: <strong className="text-slate-600 font-bold">{shop.settings.fssai_license}</strong></span>
+                    )}
+                  </div>
+                )}
+
                 {/* Grand Total Divider */}
                 <div className="pt-3 border-t border-slate-200/80 flex justify-between items-baseline">
                   <span className="font-extrabold text-slate-900 text-sm">To pay</span>
@@ -1505,6 +1600,29 @@ export function PublicCartPage() {
                     </div>
                   )}
 
+                  {/* GST Tax Breakdown */}
+                  {isGstEnabled && totalTaxAmount > 0 && (
+                    <div className="pt-1.5 border-t border-slate-200 dark:border-slate-800 space-y-1">
+                      {!isInclusive ? (
+                        <>
+                          <div className="flex justify-between font-semibold text-slate-700 dark:text-slate-300">
+                            <span className="underline underline-offset-2 decoration-slate-300 decoration-dashed">CGST ({cgstRate}%)</span>
+                            <span className="text-slate-900 dark:text-white font-bold">+{currencySymbol}{cgstAmount.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between font-semibold text-slate-700 dark:text-slate-300">
+                            <span className="underline underline-offset-2 decoration-slate-300 decoration-dashed">SGST ({sgstRate}%)</span>
+                            <span className="text-slate-900 dark:text-white font-bold">+{currencySymbol}{sgstAmount.toFixed(2)}</span>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="flex justify-between items-center text-[10px] font-medium text-slate-500 bg-slate-100/70 dark:bg-slate-800/80 px-2 py-1 rounded">
+                          <span>Includes GST ({cgstRate + sgstRate}%)</span>
+                          <span className="font-bold text-slate-700 dark:text-slate-300">CGST {currencySymbol}{cgstAmount.toFixed(2)} + SGST {currencySymbol}{sgstAmount.toFixed(2)}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex justify-between items-baseline font-black text-sm text-slate-900 dark:text-white">
                     <span>Total Payable</span>
                     <span className="text-base" style={{ color: primaryColor }}>
@@ -1536,31 +1654,7 @@ export function PublicCartPage() {
                     </label>
                   )}
 
-                  {/* UPI — strictly for Dine-in orders when shop has upi_id */}
-                  {orderType === 'dine_in' && (
-                    shop?.settings?.upi_id ? (
-                      <label className="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all"
-                        style={paymentMethod === 'upi' ? { borderColor: primaryColor, backgroundColor: `${primaryColor}08` } : { borderColor: '#e2e8f0', backgroundColor: '#f8fafc' }}
-                      >
-                        <input
-                          type="radio"
-                          name="payment"
-                          checked={paymentMethod === 'upi'}
-                          onChange={() => setPaymentMethod('upi')}
-                          className="w-4 h-4"
-                          style={{ accentColor: primaryColor }}
-                        />
-                        <div className="flex flex-col flex-1">
-                          <span className="text-sm font-semibold text-slate-850">Pay via UPI</span>
-                          <span className="text-[10px] text-slate-400">Opens your UPI app to pay directly to the shop.</span>
-                        </div>
-                      </label>
-                    ) : (
-                      <p className="text-[11px] text-slate-400 italic px-1">
-                        Note: Direct UPI is currently disabled for this shop (UPI ID not configured).
-                      </p>
-                    )
-                  )}
+
 
                   {/* Delivery & Takeaway payment options based on merchant setting */}
                   {(orderType === 'delivery' || orderType === 'takeaway') && (

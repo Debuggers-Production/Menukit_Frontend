@@ -1,4 +1,5 @@
 import { ReactNode } from 'react';
+import { useLocation } from 'react-router';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useShopStore } from '@/store/shopStore';
 import { AccessDenied } from './ui/AccessDenied';
@@ -12,6 +13,14 @@ interface PermissionGuardProps {
 export function PermissionGuard({ module, children, requireWrite = false }: PermissionGuardProps) {
   const { shop } = useShopStore();
   const { canRead, canWrite } = usePermissions(module);
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const isCreateNew = location.state?.createNew === true || searchParams.get('create') === 'true' || searchParams.get('new') === 'true';
+
+  // Always allow creating a new shop
+  if (isCreateNew && location.pathname === '/shop-setup') {
+    return <>{children}</>;
+  }
 
   if (!shop) {
     if (module === 'settings') {

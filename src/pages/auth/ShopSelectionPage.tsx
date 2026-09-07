@@ -39,7 +39,7 @@ export function ShopSelectionPage() {
       alert("You already own a shop. Multi-shop ownership is coming soon!");
       return;
     }
-    navigate('/shop-setup');
+    navigate('/shop-setup?create=true', { state: { createNew: true } });
   };
 
   if (isLoading) {
