@@ -589,16 +589,22 @@ export function DashboardLayout() {
           </div>
         )}
 
-        {subStatus && !subStatus.is_expired && !subStatus.is_grace_period && subStatus.days_left <= 3 && (
+        {subStatus && !subStatus.is_expired && !subStatus.is_grace_period && (subStatus.days_left <= 5 || (subStatus.core_days_left !== undefined && subStatus.core_days_left <= 5)) && (
           <div
             onClick={() => navigate('/subscription')}
-            className="bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white px-4 py-1.5 text-[11px] font-bold flex items-center justify-between cursor-pointer shadow-sm hover:brightness-110 transition-all z-30 shrink-0"
-            title="Click to view subscription plans"
+            className="bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white px-4 py-2 text-xs font-bold flex items-center justify-between cursor-pointer shadow-md hover:brightness-110 transition-all z-30 shrink-0"
+            title="Click to view subscription plans and renew"
           >
-            <div className="flex items-center gap-1.5">
-              <span>⏳ <strong>{subStatus.is_trial ? 'Free Trial Ending Soon' : 'Subscription Ending Soon'}:</strong> Only {subStatus.days_left} day{subStatus.days_left !== 1 ? 's' : ''} remaining. Renew now to avoid interruption.</span>
+            <div className="flex items-center gap-2">
+              <span className="text-base animate-pulse">⏳</span>
+              <span>
+                <strong>{subStatus.is_trial ? 'Free Trial Ending Soon' : 'Subscription Ending Soon'}:</strong> Only {subStatus.core_days_left ?? subStatus.days_left} day{(subStatus.core_days_left ?? subStatus.days_left) !== 1 ? 's' : ''} remaining. Renew your plan to avoid losing operations & customer leads.
+              </span>
             </div>
-            <span className="underline text-[10px] font-black uppercase tracking-wider shrink-0">Renew Plan →</span>
+            <div className="flex items-center gap-1 bg-white/20 px-2.5 py-1 rounded-lg hover:bg-white/30 transition-colors uppercase tracking-wider text-[10px] font-black shrink-0">
+              <span>Renew Plan</span>
+              <ArrowRight size={12} />
+            </div>
           </div>
         )}
 

@@ -8,6 +8,177 @@ import { buildKotEscPos, buildReceiptEscPos } from './escpos';
 import { sendEscPosToDevice } from './webUsbPrinter';
 import type { BillingPrinterConfig } from '@/store/usePrinterStore';
 
+/**
+ * Checks the status of the local Menukit Print Bridge (running on the user's laptop/PC at port 9101).
+ */
+export async function checkLocalPrintBridgeStatus(): Promise<{ online: boolean; ip?: string; printers?: any[] }> {
+  const hosts = ['127.0.0.1', 'localhost'];
+  for (const host of hosts) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 1200);
+      const res = await fetch(`http://${host}:9101/api/bridge/status`, {
+        method: 'GET',
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const data = await res.json();
+        return { online: true, ip: data.host_ip || data.ip, printers: data.printers };
+      }
+    } catch {
+      // try next host
+    }
+  }
+  return { online: false };
+}
+
+/**
+ * Tests connection to a network thermal printer station.
+ * Tries the Local Print Bridge (running on user's machine) first so cloud POS can connect
+ * to local Wi-Fi / LAN printers directly. Falls back to cloud backend if bridge is not running.
+ */
+export async function testNetworkPrinterConnection(
+  ipAddress: string,
+  port: number = 9100,
+  stationName: string = 'Kitchen Printer'
+): Promise<{ success: boolean; via: 'bridge' | 'backend'; message: string }> {
+  const targetIp = (ipAddress && ipAddress.trim()) || '127.0.0.1';
+  const targetPort = Number(port) || 9100;
+
+  // 1. Try Local Print Bridge first (local HTTP server on port 9101)
+  const bridgeEndpoints = [
+    'http://127.0.0.1:9101/api/bridge/test',
+    'http://localhost:9101/api/bridge/test',
+  ];
+  if (targetIp !== '127.0.0.1' && targetIp !== 'localhost') {
+    bridgeEndpoints.push(`http://${targetIp}:9101/api/bridge/test`);
+  }
+
+  for (const endpoint of bridgeEndpoints) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ip: targetIp,
+          port: targetPort,
+          station_name: stationName,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.ok) {
+          return {
+            success: true,
+            via: 'bridge',
+            message: data.message || `Connected to printer at ${targetIp}:${targetPort} via Local Bridge!`,
+          };
+        }
+      }
+    } catch {
+      // Continue to next endpoint or fallback
+    }
+  }
+
+  // 2. Fallback to Cloud Backend API
+  try {
+    const res = await api.post('/printer/test-lan', {
+      ip: targetIp,
+      port: targetPort,
+      station_name: stationName,
+    });
+    return {
+      success: true,
+      via: 'backend',
+      message: res.data?.message || `Connected to printer at ${targetIp}:${targetPort}!`,
+    };
+  } catch (err: any) {
+    const isPrivateIp = /^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|127\.)/.test(targetIp);
+    const isCloud = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+
+    let errorDetail = err.response?.data?.detail || err.message || 'Printer unreachable.';
+    if (isPrivateIp && isCloud) {
+      errorDetail = `Printer at ${targetIp}:${targetPort} did not respond. The cloud server cannot reach your local private Wi-Fi network. Please make sure the Menukit Print Bridge ('python -m virtual_kitchen_printer') is running on your computer to bridge print jobs!`;
+    }
+    throw new Error(errorDetail);
+  }
+}
+
+/**
+ * Sends RAW ESC/POS data to a network thermal printer.
+ * Uses Local Print Bridge if available; otherwise falls back to backend API.
+ */
+export async function sendEscPosToNetworkPrinter(
+  ipAddress: string,
+  port: number = 9100,
+  base64Data: string,
+  options: {
+    cutPaper?: boolean;
+    soundBuzzer?: boolean;
+    stationName?: string;
+  } = {}
+): Promise<{ success: boolean; via: 'bridge' | 'backend' }> {
+  const targetIp = (ipAddress && ipAddress.trim()) || '127.0.0.1';
+  const targetPort = Number(port) || 9100;
+  const cutPaper = options.cutPaper ?? true;
+  const soundBuzzer = options.soundBuzzer ?? false;
+
+  // 1. Try Local Print Bridge
+  const bridgeEndpoints = [
+    'http://127.0.0.1:9101/api/bridge/print',
+    'http://localhost:9101/api/bridge/print',
+  ];
+  if (targetIp !== '127.0.0.1' && targetIp !== 'localhost') {
+    bridgeEndpoints.push(`http://${targetIp}:9101/api/bridge/print`);
+  }
+
+  for (const endpoint of bridgeEndpoints) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ip: targetIp,
+          port: targetPort,
+          raw_base64: base64Data,
+          cut_paper: cutPaper,
+          sound_buzzer: soundBuzzer,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.ok) {
+          return { success: true, via: 'bridge' };
+        }
+      }
+    } catch {
+      // Continue to next or fallback
+    }
+  }
+
+  // 2. Fallback to Cloud Backend API
+  await api.post('/printer/print-escpos', {
+    ip: targetIp,
+    port: targetPort,
+    raw_base64: base64Data,
+    cut_paper: cutPaper,
+    sound_buzzer: soundBuzzer,
+  });
+
+  return { success: true, via: 'backend' };
+}
+
 export interface ThermalPrintOptions {
   paperWidth?: '80mm' | '58mm';
   autoPrint?: boolean;
@@ -537,14 +708,12 @@ export async function printBillToPrinter(
         binary += String.fromCharCode(escPosBytes[i]);
       }
       const base64Data = window.btoa(binary);
-      await api.post('/printer/print-escpos', {
-        ip: ipAddress,
-        port: Number(port) || 9100,
-        raw_base64: base64Data,
-        cut_paper: true,
-        sound_buzzer: false,
+      const printResult = await sendEscPosToNetworkPrinter(ipAddress, Number(port) || 9100, base64Data, {
+        cutPaper: true,
+        soundBuzzer: false,
+        stationName: printerName,
       });
-      toast.success(`Bill printed to ${printerName}!`, { id: toastId });
+      toast.success(`Bill printed to ${printerName}${printResult.via === 'bridge' ? ' (via Local Bridge)' : ''}!`, { id: toastId });
       return true;
     } catch (err: any) {
       console.warn(`Network bill print failed for ${printerName} (${ipAddress}:${port}):`, err);
@@ -1065,12 +1234,10 @@ export async function printOrderToStations(
         binary += String.fromCharCode(escPosBytes[i]);
       }
       const base64Data = window.btoa(binary);
-      await api.post('/printer/print-escpos', {
-        ip: '127.0.0.1',
-        port: 9100,
-        raw_base64: base64Data,
-        cut_paper: true,
-        sound_buzzer: true,
+      await sendEscPosToNetworkPrinter('127.0.0.1', 9100, base64Data, {
+        cutPaper: true,
+        soundBuzzer: true,
+        stationName: 'Direct Printer',
       });
       return true;
     } catch (err) {
@@ -1103,7 +1270,7 @@ export async function printOrderToStations(
       const port = station.port || 9100;
 
       if (connectionType === 'network') {
-        // Direct Network LAN Socket via backend port 9100
+        // Direct Network LAN Socket via Local Bridge or backend port
         try {
           const escPosBytes = buildKotEscPos(order, shop, {
             paperWidth,
@@ -1120,12 +1287,10 @@ export async function printOrderToStations(
             binary += String.fromCharCode(escPosBytes[i]);
           }
           const base64Data = window.btoa(binary);
-          await api.post('/printer/print-escpos', {
-            ip: ipAddress,
-            port: port,
-            raw_base64: base64Data,
-            cut_paper: true,
-            sound_buzzer: station.soundBuzzer !== false,
+          await sendEscPosToNetworkPrinter(ipAddress, port, base64Data, {
+            cutPaper: true,
+            soundBuzzer: station.soundBuzzer !== false,
+            stationName: station.name,
           });
         } catch (netErr: any) {
           console.error(`Network LAN print failed for ${station.name} (${ipAddress}:${port}):`, netErr);

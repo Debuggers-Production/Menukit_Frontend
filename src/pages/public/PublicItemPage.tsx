@@ -422,7 +422,9 @@ export function PublicItemPage() {
                   const disc = discounts.find(d => {
                     if (d.visibility_type === 'members_only_hidden' && memberStatus !== 'verified-member') return false;
                     if (d.visibility_type === 'members_only_visible' && memberStatus !== 'verified-member') return false;
-                    if (d.visibility_type === 'unlock_required' && memberStatus === null) return false;
+                    const isUserExisting = Boolean(localStorage.getItem('customer_token') || localStorage.getItem('customer_is_existing') === 'true');
+                    if (d.visibility_type === 'unlock_required' && (memberStatus === null || isUserExisting)) return false;
+                    if (d.discount_type === 'bogo' || d.discount_type === 'combo' || d.discount_type === 'free_item') return false;
                     if (d.applies_to === 'all') return true;
                     if (d.applies_to === 'category' && d.target_ids?.includes(item.category_id)) return true;
                     if (d.applies_to === 'items' && d.target_ids?.includes(item.id)) return true;
@@ -695,6 +697,7 @@ export function PublicItemPage() {
       {isDiscountPopupOpen && shop && (
         <DiscountUnlockPopup
           shopId={shop.id}
+          initialStep="mobile"
           onClose={() => setIsDiscountPopupOpen(false)}
           onUnlock={(customerId) => {
             if (customerId) {
@@ -707,7 +710,10 @@ export function PublicItemPage() {
       )}
 
       {/* Member Verify FAB */}
-      {memberStatus !== 'verified-member' && discounts.some(d => d.visibility_type === 'members_only_hidden' || d.visibility_type === 'members_only_visible' || (d.visibility_type === 'unlock_required' && memberStatus === null)) && (
+      {memberStatus !== 'verified-member' && discounts.some(d => {
+        const isUserExisting = Boolean(localStorage.getItem('customer_token') || localStorage.getItem('customer_is_existing') === 'true');
+        return d.visibility_type === 'members_only_hidden' || d.visibility_type === 'members_only_visible' || (d.visibility_type === 'unlock_required' && !isUserExisting && memberStatus === null);
+      }) && (
         <button
           onClick={() => setIsDiscountPopupOpen(true)}
           className={`fixed bottom-24 right-4 sm:right-6 h-14 px-5 rounded-full bg-slate-900 text-white shadow-xl flex items-center justify-center gap-2 hover:scale-105 transition-all duration-300 z-[45] border-4 border-slate-700/50 backdrop-blur-md animate-bounce hover:animate-none ${isScrollingDown ? 'translate-y-32 opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}

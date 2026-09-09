@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { ShoppingBag, Plus, Minus, Info, ChevronLeft, ChevronRight, CheckCircle, Key, MapPin, Navigation, Map, Armchair, Gift, Sparkles, Percent, Banknote, Truck } from 'lucide-react';
+import { ShoppingBag, Plus, Minus, Info, ChevronLeft, ChevronRight, CheckCircle, Key, MapPin, Navigation, Map, Armchair, Gift, Sparkles, Percent, Banknote, Truck, Tag } from 'lucide-react';
 import { useCartStore } from '@/store/cartStore';
 import { api } from '@/services/api';
 import { Shop, Discount } from '@/types';
@@ -83,6 +83,40 @@ export function PublicCartPage() {
   const isPanning = useRef(false);
   const [selectedBalloonDiscount, setSelectedBalloonDiscount] = useState<Discount | null>(null);
   const [poppingId, setPoppingId] = useState<string | null>(null);
+
+  const [discountCodeInput, setDiscountCodeInput] = useState('');
+  const [isVerifyingCode, setIsVerifyingCode] = useState(false);
+  const [discountCodeError, setDiscountCodeError] = useState('');
+
+  const handleVerifyDiscountCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!shop?.id || !discountCodeInput.trim()) return;
+
+    setIsVerifyingCode(true);
+    setDiscountCodeError('');
+
+    try {
+      const res = await api.post(`/public/shop/${shop.id}/discounts/verify-code`, {
+        code: discountCodeInput.trim()
+      });
+      const verifiedDisc: Discount = res.data;
+      
+      setAvailableDiscounts(prev => {
+        if (prev.some(d => d.id === verifiedDisc.id)) return prev;
+        return [...prev, verifiedDisc];
+      });
+
+      setManualDiscount(verifiedDisc.id);
+      triggerHaptic(HAPTIC_PATTERNS.successUnlock);
+      confetti({ particleCount: 60, spread: 60, origin: { y: 0.7 } });
+      toast.success(`Discount code "${verifiedDisc.code || verifiedDisc.title}" applied!`);
+    } catch (err: any) {
+      setDiscountCodeError(err.response?.data?.detail || 'Invalid or expired discount code');
+      triggerHaptic(HAPTIC_PATTERNS.error);
+    } finally {
+      setIsVerifyingCode(false);
+    }
+  };
   
   const handleBalloonClick = (disc: Discount) => {
     triggerHaptic(HAPTIC_PATTERNS.balloonClick);
@@ -482,8 +516,7 @@ export function PublicCartPage() {
 
           const disc = availableDiscounts.find(d => {
             if (d.id === manualDiscountId) return false;
-            if (d.visibility_type === 'members_only_hidden' && memberStatus !== 'verified-member') return false;
-            if (d.visibility_type === 'members_only_visible' && memberStatus !== 'verified-member') return false;
+            if ((d.visibility_type === 'members_only_hidden' || d.visibility_type === 'members_only_visible') && memberStatus !== 'verified-member') return false;
             if (d.visibility_type === 'unlock_required' && memberStatus === null) return false;
             if (d.discount_type === 'bogo' || d.discount_type === 'combo') return false;
             if (d.applies_to === 'all') return true;
@@ -704,7 +737,12 @@ export function PublicCartPage() {
   const visibleItems = items.slice(0, 3);
   const remainingItemsCount = items.length - 3;
 
-  const applicableDiscounts = availableDiscounts.filter(d => ['percentage', 'flat'].includes(d.discount_type) && d.visibility_type !== ('hidden' as any));
+  const applicableDiscounts = availableDiscounts.filter(d => {
+    if (!['percentage', 'flat'].includes(d.discount_type)) return false;
+    if (d.visibility_type === ('hidden' as any)) return false;
+    if ((d.visibility_type === 'members_only_hidden' || d.visibility_type === 'members_only_visible') && memberStatus !== 'verified-member') return false;
+    return true;
+  });
   const visibleDiscounts = applicableDiscounts.slice(0, 2);
   const remainingDiscountsCount = applicableDiscounts.length - 2;
 
@@ -1080,6 +1118,83 @@ export function PublicCartPage() {
                 </div>
               );
             })()}
+
+            {/* Promo / Discount Code Box */}
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+              <div className="flex items-center justify-between mb-2.5">
+                <h3 className="font-black text-slate-800 text-sm flex items-center gap-2">
+                  <Tag size={16} style={{ color: primaryColor }} />
+                  Have a Discount Code?
+                </h3>
+                {manualDiscountId && availableDiscounts.find(d => d.id === manualDiscountId) && (
+                  <span className="text-[11px] font-extrabold text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                    Code Applied
+                  </span>
+                )}
+              </div>
+
+              {manualDiscountId && availableDiscounts.find(d => d.id === manualDiscountId) ? (() => {
+                const appliedDisc = availableDiscounts.find(d => d.id === manualDiscountId)!;
+                return (
+                  <div className="flex items-center justify-between p-3 bg-emerald-50/80 border border-emerald-200 rounded-xl">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-500 text-white flex items-center justify-center shrink-0 font-bold text-xs shadow-xs">
+                        ✓
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-mono font-bold text-emerald-950 text-xs sm:text-sm tracking-wide truncate">
+                          {appliedDisc.code || appliedDisc.title}
+                        </p>
+                        <p className="text-[11px] text-emerald-700 font-medium">
+                          {appliedDisc.discount_type === 'percentage'
+                            ? `${Number(appliedDisc.discount_value)}% discount applied`
+                            : `₹${Number(appliedDisc.discount_value)} flat discount applied`}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setManualDiscount(null);
+                        setDiscountCodeInput('');
+                        toast.success('Discount code removed');
+                      }}
+                      className="text-xs font-bold text-rose-600 hover:text-rose-700 px-2.5 py-1.5 rounded-lg hover:bg-rose-50 transition-colors shrink-0"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                );
+              })() : (
+                <form onSubmit={handleVerifyDiscountCode} className="space-y-2">
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type="text"
+                        value={discountCodeInput}
+                        onChange={(e) => {
+                          setDiscountCodeInput(e.target.value.toUpperCase());
+                          setDiscountCodeError('');
+                        }}
+                        placeholder="Enter code (e.g. NEWCOMER10)"
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm uppercase tracking-wider text-slate-800 placeholder:normal-case placeholder:font-sans placeholder:tracking-normal placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={isVerifyingCode || !discountCodeInput.trim()}
+                      className="px-4 py-2.5 rounded-xl text-white font-extrabold text-xs tracking-wider uppercase disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-110 active:scale-95 transition-all shrink-0"
+                      style={{ backgroundColor: primaryColor }}
+                    >
+                      {isVerifyingCode ? 'Verifying...' : 'Verify'}
+                    </button>
+                  </div>
+                  {discountCodeError && (
+                    <p className="text-xs font-medium text-rose-500 pl-1">{discountCodeError}</p>
+                  )}
+                </form>
+              )}
+            </div>
 
             {/* Offers (Balloon Garden) */}
             <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">

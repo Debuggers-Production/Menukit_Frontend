@@ -83,6 +83,11 @@ export const membershipService = {
     return response.data;
   },
 
+  batchConvertMembers: async (shop_id: string, customer_ids?: string[]): Promise<{ message: string; converted_count: number }> => {
+    const response = await api.post(`/memberships/retailer/${shop_id}/members/batch-convert`, { customer_ids });
+    return response.data;
+  },
+
   editMember: async (shop_id: string, customer_id: string, name: string, mobile_number: string): Promise<{ message: string }> => {
     const response = await api.put(`/memberships/retailer/${shop_id}/members/${customer_id}`, { name, mobile_number });
     return response.data;

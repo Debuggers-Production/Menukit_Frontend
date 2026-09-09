@@ -4,13 +4,14 @@ import {
   Mail, Store, Shield, Smartphone, ChevronRight, Sliders, Globe, 
   Coins, Truck, ShoppingBag, QrCode, Tag, MapPin, Zap, CheckCircle2, Lock, Info, AlertCircle,
   CreditCard, Printer, Plus, Trash2, Edit2, UtensilsCrossed, FileText, Check, RotateCcw,
-  Wifi, Usb, Volume2, Terminal, Copy, Receipt, Search, X, Tags, Layers
+  Wifi, Usb, Volume2, Terminal, Copy, Receipt, Search, X, Tags, Layers, Sparkles, Eye, EyeOff, Loader2
 } from 'lucide-react';
+import confetti from 'canvas-confetti';
 import { toast } from 'react-hot-toast';
 import { useAuthStore } from '@/store/authStore';
 import { useShopStore } from '@/store/shopStore';
 import { usePrinterStore, PrinterStation, BillingPrinterConfig, BillingPrinter } from '@/store/usePrinterStore';
-import { printThermalKot, printBillToPrinter } from '@/utils/thermalPrinter';
+import { printThermalKot, printBillToPrinter, testNetworkPrinterConnection, checkLocalPrintBridgeStatus } from '@/utils/thermalPrinter';
 import { requestWebUsbPrinter, sendEscPosToDevice } from '@/utils/webUsbPrinter';
 import { buildKotEscPos } from '@/utils/escpos';
 import { api } from '@/services/api';
@@ -22,6 +23,20 @@ import { useHeaderStore } from '@/store/useHeaderStore';
 import { HeaderActions } from '@/components/HeaderActions';
 import { Switch } from '@/components/ui/Switch';
 import { SearchableSelect } from '@/components/ui/SearchableSelect';
+import menukitLogo from '@/assets/menukit-logo.svg';
+const loadRazorpayScript = (): Promise<boolean> => {
+  return new Promise((resolve) => {
+    if ((window as any).Razorpay) {
+      resolve(true);
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+};
 
 // Sleek Clean Setting Row with Right-Aligned Toggle
 function SettingRow({
@@ -108,6 +123,7 @@ export function SettingsPage() {
   const [editingStationId, setEditingStationId] = useState<string | null>(null);
   const [isTestingLan, setIsTestingLan] = useState(false);
   const [pairedUsbName, setPairedUsbName] = useState<string | null>(null);
+  const [bridgeStatus, setBridgeStatus] = useState<{ online: boolean; ip?: string } | null>(null);
 
   // Quick Multi-Category Assign Modal State
   const [quickAssignStation, setQuickAssignStation] = useState<PrinterStation | null>(null);
@@ -191,14 +207,13 @@ export function SettingsPage() {
     setIsTestingLan(true);
     const toastId = toast.loading(`Connecting to LAN printer at ${ip}:${port}...`);
     try {
-      const res = await api.post('/printer/test-lan', {
-        ip: ip.trim(),
-        port: Number(port) || 9100,
-        station_name: name,
-      });
-      toast.success(res.data.message || 'Connected to printer and printed test slip!', { id: toastId });
+      const res = await testNetworkPrinterConnection(ip, port, name);
+      toast.success(res.message, { id: toastId });
+      if (res.via === 'bridge') {
+        setBridgeStatus({ online: true, ip });
+      }
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || 'Printer unreachable. Verify IP, power, and LAN cable.', { id: toastId });
+      toast.error(err.message || 'Printer unreachable. Verify IP, power, and LAN cable.', { id: toastId, duration: 6000 });
     } finally {
       setIsTestingLan(false);
     }
@@ -323,6 +338,13 @@ export function SettingsPage() {
     enabled: true,
     isDefault: false,
   });
+
+  // Check Local Print Bridge health when printer settings or modals are opened
+  useEffect(() => {
+    if (activeTab === 'printers' || isStationModalOpen || isBillingModalOpen) {
+      checkLocalPrintBridgeStatus().then(setBridgeStatus);
+    }
+  }, [activeTab, isStationModalOpen, isBillingModalOpen]);
 
   const openNewBillingPrinterModal = () => {
     setEditingBillingPrinterId(null);
@@ -483,6 +505,23 @@ export function SettingsPage() {
   // Delivery Preview Test State
   const [testDistance, setTestDistance] = useState<number>(2);
 
+  const [isDiscoveryModalOpen, setIsDiscoveryModalOpen] = useState(false);
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [subscriptionStatus, setSubscriptionStatus] = useState<any>(null);
+
+  const fetchSubscriptionStatus = async () => {
+    try {
+      const res = await api.get('/subscription/current');
+      setSubscriptionStatus(res.data);
+    } catch (err) {
+      console.error("Failed to fetch subscription status", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchSubscriptionStatus();
+  }, []);
+
   // Shop Settings State
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [settingsData, setSettingsData] = useState({
@@ -492,6 +531,7 @@ export function SettingsPage() {
     show_offers: shop?.settings?.show_offers !== false,
     is_discoverable: shop?.settings?.is_discoverable !== false,
     show_menus_in_discovery: shop?.settings?.show_menus_in_discovery !== false,
+    hide_discovery_badge: shop?.settings?.hide_discovery_badge || false,
     delivery_enabled: shop?.settings?.delivery_enabled || false,
     base_delivery_charge: shop?.settings?.base_delivery_charge ?? 0,
     base_delivery_distance: shop?.settings?.base_delivery_distance ?? 0,
@@ -514,6 +554,21 @@ export function SettingsPage() {
     inclusive_tax: shop?.settings?.inclusive_tax || false,
     tax_invoice_notes: shop?.settings?.tax_invoice_notes || '',
   });
+
+  const discoveryModInfo = subscriptionStatus?.module_expirations?.['hide-discovery-badge'];
+  const discoveryDaysLeft = discoveryModInfo?.days_left ?? subscriptionStatus?.days_left ?? 0;
+  const discoveryExpiresAt = discoveryModInfo?.expires_at
+    ? new Date(discoveryModInfo.expires_at).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })
+    : null;
+
+  const isPaidDiscoveryActive = Boolean(
+    (
+      subscriptionStatus?.active_modules?.includes('hide-discovery-badge') ||
+      (settingsData.is_discoverable && settingsData.hide_discovery_badge)
+    ) &&
+    discoveryDaysLeft > 0 &&
+    !subscriptionStatus?.is_expired
+  );
 
   // Fetch shop settings on mount
   useEffect(() => {
@@ -540,6 +595,7 @@ export function SettingsPage() {
         show_offers: shop.settings.show_offers !== false,
         is_discoverable: shop.settings.is_discoverable !== false,
         show_menus_in_discovery: shop.settings.show_menus_in_discovery !== false,
+        hide_discovery_badge: shop.settings.hide_discovery_badge || false,
         delivery_enabled: shop.settings.delivery_enabled || false,
         base_delivery_charge: shop.settings.base_delivery_charge ?? 0,
         base_delivery_distance: shop.settings.base_delivery_distance ?? 0,
@@ -613,6 +669,144 @@ export function SettingsPage() {
       toast.error(error.response?.data?.detail || 'Failed to update shop settings');
     } finally {
       setIsSavingSettings(false);
+    }
+  };
+
+  const handleSelectFreeDiscoveryOption = async () => {
+    if (isPaidDiscoveryActive) {
+      toast.error(`You have an active paid subscription for Discovery option (₹49/mo) with ${discoveryDaysLeft} day${discoveryDaysLeft === 1 ? '' : 's'} remaining. You cannot switch to Free until it expires.`);
+      return;
+    }
+    try {
+      const updated = {
+        ...settingsData,
+        is_discoverable: false,
+        hide_discovery_badge: true,
+        show_prices: false,
+        show_offers: false,
+        show_menus_in_discovery: false,
+      };
+      setSettingsData(updated);
+      await api.put('/shops/me/settings', updated);
+      if (shop) {
+        setShop({ ...shop, settings: { ...shop.settings, ...updated } });
+      }
+      setIsDiscoveryModalOpen(false);
+      toast.success('Store discovery disabled and Discover button removed from your menu.');
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || 'Failed to update discovery settings');
+    }
+  };
+
+  const handleSelectPaidDiscoveryOption = async () => {
+    setIsProcessingPayment(true);
+    try {
+      // 1. Create order for the hide-discovery-badge module (₹49/mo)
+      const res = await api.post('/subscription/create-order', {
+        is_all_access: false,
+        selected_modules: ['hide-discovery-badge'],
+        billing_cycle: 'monthly',
+      });
+
+      const orderData = res.data;
+
+      const activatePaidDiscovery = async () => {
+        const updated = {
+          ...settingsData,
+          is_discoverable: true,
+          hide_discovery_badge: true,
+          show_prices: true,
+          show_offers: true,
+          show_menus_in_discovery: true,
+        };
+        setSettingsData(updated);
+        await api.put('/shops/me/settings', updated);
+        if (shop) {
+          setShop({ ...shop, settings: { ...shop.settings, ...updated } });
+        }
+        await fetchSubscriptionStatus();
+        setIsDiscoveryModalOpen(false);
+        confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
+        toast.success('Paid Discovery activated! Your shop remains on discovery, and menu label is hidden.');
+      };
+
+      if (orderData.mock_mode) {
+        await api.post('/subscription/verify', {
+          razorpay_order_id: orderData.order_id,
+          razorpay_payment_id: `pay_mock_${Date.now()}`,
+          razorpay_signature: 'mock_signature_bypass',
+        });
+        await activatePaidDiscovery();
+        setIsProcessingPayment(false);
+        return;
+      }
+
+      const isLoaded = await loadRazorpayScript();
+      if (!isLoaded) {
+        toast.error('Razorpay SDK failed to load. Please check your connection.');
+        setIsProcessingPayment(false);
+        return;
+      }
+
+      const options = {
+        key: orderData.key,
+        amount: orderData.amount,
+        currency: orderData.currency,
+        name: 'Menukit',
+        description: 'Paid Discovery: Hide Menu Label (₹49/mo)',
+        order_id: orderData.order_id,
+        handler: async function (response: any) {
+          try {
+            await api.post('/subscription/verify', {
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+            });
+            await activatePaidDiscovery();
+          } catch (error) {
+            toast.error('Payment verification failed. Please contact support.');
+          } finally {
+            setIsProcessingPayment(false);
+          }
+        },
+        theme: { color: '#f97316' },
+      };
+
+      const paymentObject = new (window as any).Razorpay(options);
+      paymentObject.on('payment.failed', function () {
+        toast.error('Payment cancelled or failed. Please try again.');
+        setIsProcessingPayment(false);
+      });
+      paymentObject.open();
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || 'Failed to initiate payment.');
+      setIsProcessingPayment(false);
+    }
+  };
+
+  const handleResetToStandardDiscovery = async () => {
+    if (isPaidDiscoveryActive) {
+      toast.error(`You have an active paid subscription for Discovery option (₹49/mo) with ${discoveryDaysLeft} day${discoveryDaysLeft === 1 ? '' : 's'} remaining. You cannot switch to Free until it expires.`);
+      return;
+    }
+    try {
+      const updated = {
+        ...settingsData,
+        is_discoverable: true,
+        hide_discovery_badge: false,
+        show_prices: true,
+        show_offers: true,
+        show_menus_in_discovery: true,
+      };
+      setSettingsData(updated);
+      await api.put('/shops/me/settings', updated);
+      if (shop) {
+        setShop({ ...shop, settings: { ...shop.settings, ...updated } });
+      }
+      setIsDiscoveryModalOpen(false);
+      toast.success('Standard discovery enabled: Your shop is on the map and Discover label is visible on your menu.');
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || 'Failed to update discovery settings');
     }
   };
 
@@ -1112,23 +1306,144 @@ export function SettingsPage() {
           {activeTab === 'discovery' && (
             <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs animate-in fade-in duration-300">
               <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-slate-50/50 dark:bg-slate-900/50">
-                <CardTitle className="text-base font-bold">Public App Discovery</CardTitle>
-                <CardDescription className="text-xs">Control your visibility on the customer map and search.</CardDescription>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <CardTitle className="text-base font-bold">Public App Discovery</CardTitle>
+                    <CardDescription className="text-xs">Control your visibility on the customer map and search.</CardDescription>
+                  </div>
+                  {/* Current Active Mode Badge */}
+                  {settingsData.is_discoverable && settingsData.hide_discovery_badge ? (
+                    <span className="text-[11px] font-bold px-3 py-1 rounded-full bg-amber-100 text-amber-900 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 flex items-center gap-1.5 w-fit">
+                      <img src={menukitLogo} alt="Menukit" className="w-3.5 h-3.5 object-contain shrink-0" />
+                      Paid Discovery (₹49/mo){discoveryDaysLeft > 0 ? ` · ${discoveryDaysLeft}d left` : ''}
+                    </span>
+                  ) : settingsData.is_discoverable ? (
+                    <span className="text-[11px] font-bold px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 flex items-center gap-1.5 w-fit">
+                      <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
+                      Standard Discovery (Free)
+                    </span>
+                  ) : (
+                    <span className="text-[11px] font-bold px-3 py-1 rounded-full bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 flex items-center gap-1.5 w-fit">
+                      <EyeOff size={13} className="shrink-0" />
+                      Discovery Disabled
+                    </span>
+                  )}
+                </div>
               </CardHeader>
-              <CardContent className="p-4 sm:p-6">
+              <CardContent className="p-4 sm:p-6 space-y-6">
                 <SettingRow
                   icon={MapPin}
                   title="Enable Store Discovery"
-                  description="Allow customers to discover your restaurant on the public map, view menu links, prices, and active offers."
+                  description={
+                    settingsData.is_discoverable && settingsData.hide_discovery_badge
+                      ? `Paid mode active (${discoveryDaysLeft} days left): Shop is discoverable on public map, and 'Discover' label is hidden on your public menu.`
+                      : settingsData.is_discoverable
+                      ? "Standard mode active: Shop is discoverable on public map, and 'Discover' label is shown on your public menu."
+                      : "Discovery disabled: Shop is removed from public map, and 'Discover' label is hidden on your menu."
+                  }
                   checked={settingsData.is_discoverable}
-                  onChange={(c) => setSettingsData(prev => ({
-                    ...prev,
-                    is_discoverable: c,
-                    show_prices: c,
-                    show_offers: c,
-                    show_menus_in_discovery: c,
-                  }))}
+                  onChange={(c) => {
+                    if (isPaidDiscoveryActive && !c) {
+                      toast.error(`You have an active paid subscription for Discovery option (₹49/mo) with ${discoveryDaysLeft} days remaining. You cannot switch to the Free option until it expires.`);
+                      setIsDiscoveryModalOpen(true);
+                      return;
+                    }
+                    if (!c) {
+                      // Turning off -> show the 2 options modal!
+                      setIsDiscoveryModalOpen(true);
+                    } else {
+                      // Turning back on -> standard discovery
+                      handleResetToStandardDiscovery();
+                    }
+                  }}
                 />
+
+                {/* Option summary cards */}
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                      Discovery & Menu Label Options
+                    </h4>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsDiscoveryModalOpen(true)}
+                      className="text-xs h-8 cursor-pointer"
+                    >
+                      Change Option
+                    </Button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {/* Free Option Card */}
+                    <div
+                      onClick={() => setIsDiscoveryModalOpen(true)}
+                      className={`p-4 rounded-xl border transition-all cursor-pointer ${
+                        !settingsData.is_discoverable
+                          ? 'border-purple-500 bg-purple-50/40 dark:bg-purple-950/20 ring-1 ring-purple-500'
+                          : isPaidDiscoveryActive
+                          ? 'border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/20 opacity-80'
+                          : 'border-border bg-card hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                          <EyeOff size={14} className="text-slate-500" />
+                          Option 1: Free Option
+                        </span>
+                        {isPaidDiscoveryActive ? (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300 flex items-center gap-1">
+                            <Lock size={10} /> Locked
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                            ₹0 Free
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        Hides your shop completely from the public discovery map, and removes the "Discover" label from your customer menu.
+                      </p>
+                      {isPaidDiscoveryActive ? (
+                        <div className="mt-2 text-[11px] font-medium text-amber-700 dark:text-amber-400 flex items-center gap-1">
+                          <Lock size={12} /> Locked until paid subscription expires ({discoveryDaysLeft}d left)
+                        </div>
+                      ) : !settingsData.is_discoverable ? (
+                        <div className="mt-2 text-[11px] font-bold text-purple-700 dark:text-purple-400 flex items-center gap-1">
+                          <Check size={12} strokeWidth={3} /> Currently Active
+                        </div>
+                      ) : null}
+                    </div>
+
+                    {/* Paid Option Card */}
+                    <div
+                      onClick={() => setIsDiscoveryModalOpen(true)}
+                      className={`p-4 rounded-xl border transition-all cursor-pointer ${
+                        settingsData.is_discoverable && settingsData.hide_discovery_badge
+                          ? 'border-amber-500 bg-amber-50/40 dark:bg-amber-950/20 ring-1 ring-amber-500'
+                          : 'border-border bg-card hover:border-amber-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                          <img src={menukitLogo} alt="Menukit" className="w-3.5 h-3.5 object-contain shrink-0" />
+                          Option 2: Paid Option
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300">
+                          ₹49 / mo
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        Shows your shop on public discovery map & search, but completely removes the "Discover" label from your customer menu. Included in next renewal.
+                      </p>
+                      {settingsData.is_discoverable && settingsData.hide_discovery_badge && (
+                        <div className="mt-2 text-[11px] font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1">
+                          <Check size={12} strokeWidth={3} /> Currently Active {discoveryDaysLeft > 0 ? `(${discoveryDaysLeft} days left)` : ''}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           )}
@@ -2418,13 +2733,49 @@ export function SettingsPage() {
             {/* Network LAN IP Config Fields */}
             {stationForm.connectionType === 'network' && (
               <div className="p-3 bg-blue-50/60 dark:bg-blue-950/30 rounded-xl border border-blue-200/80 dark:border-blue-800/60 space-y-2.5 animate-fade-in">
+                {bridgeStatus?.online ? (
+                  <div className="flex items-center justify-between p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-[11px] text-emerald-800 dark:text-emerald-300">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                      <span className="font-bold">Local Print Bridge Active</span>
+                      <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono">({bridgeStatus.ip || '127.0.0.1'}:9101)</span>
+                    </div>
+                    <span className="text-[9px] font-extrabold uppercase bg-emerald-100 dark:bg-emerald-900/60 px-1.5 py-0.5 rounded text-emerald-700 dark:text-emerald-300">Direct LAN</span>
+                  </div>
+                ) : (
+                  <div className="p-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-[11px] text-amber-800 dark:text-amber-300 flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+                      <span className="truncate">For cloud to local printing, run <code className="font-mono font-bold">python -m virtual_kitchen_printer</code></span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => checkLocalPrintBridgeStatus().then(setBridgeStatus)}
+                      className="text-[10px] font-bold text-amber-700 dark:text-amber-300 underline hover:text-amber-900 ml-2 shrink-0 cursor-pointer"
+                    >
+                      Check Bridge
+                    </button>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-3 gap-2">
                   <div className="col-span-2 space-y-1">
-                    <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Printer IP Address *</label>
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Printer IP Address *</label>
+                      {bridgeStatus?.ip && stationForm.ipAddress !== bridgeStatus.ip && (
+                        <button
+                          type="button"
+                          onClick={() => setStationForm(prev => ({ ...prev, ipAddress: bridgeStatus.ip! }))}
+                          className="text-[10px] text-primary hover:underline font-semibold cursor-pointer"
+                        >
+                          Use Wi-Fi IP ({bridgeStatus.ip})
+                        </button>
+                      )}
+                    </div>
                     <Input
                       value={stationForm.ipAddress}
                       onChange={(e) => setStationForm(prev => ({ ...prev, ipAddress: e.target.value }))}
-                      placeholder="e.g. 192.168.1.150"
+                      placeholder="e.g. 192.168.1.150 or 127.0.0.1"
                       className="bg-white dark:bg-slate-900 text-xs h-9"
                     />
                   </div>
@@ -2690,9 +3041,45 @@ export function SettingsPage() {
             {/* Network LAN IP Config Fields */}
             {billingPrinterForm.connectionType === 'network' && (
               <div className="p-3 bg-blue-50/60 dark:bg-blue-950/30 rounded-xl border border-blue-200/80 dark:border-blue-800/60 space-y-2.5 animate-fade-in">
+                {bridgeStatus?.online ? (
+                  <div className="flex items-center justify-between p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-[11px] text-emerald-800 dark:text-emerald-300">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                      <span className="font-bold">Local Print Bridge Active</span>
+                      <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono">({bridgeStatus.ip || '127.0.0.1'}:9101)</span>
+                    </div>
+                    <span className="text-[9px] font-extrabold uppercase bg-emerald-100 dark:bg-emerald-900/60 px-1.5 py-0.5 rounded text-emerald-700 dark:text-emerald-300">Direct LAN</span>
+                  </div>
+                ) : (
+                  <div className="p-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-[11px] text-amber-800 dark:text-amber-300 flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+                      <span className="truncate">For cloud to local printing, run <code className="font-mono font-bold">python -m virtual_kitchen_printer</code></span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => checkLocalPrintBridgeStatus().then(setBridgeStatus)}
+                      className="text-[10px] font-bold text-amber-700 dark:text-amber-300 underline hover:text-amber-900 ml-2 shrink-0 cursor-pointer"
+                    >
+                      Check Bridge
+                    </button>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-3 gap-2">
                   <div className="col-span-2 space-y-1">
-                    <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Printer IP Address *</label>
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Printer IP Address *</label>
+                      {bridgeStatus?.ip && billingPrinterForm.ipAddress !== bridgeStatus.ip && (
+                        <button
+                          type="button"
+                          onClick={() => setBillingPrinterForm(prev => ({ ...prev, ipAddress: bridgeStatus.ip! }))}
+                          className="text-[10px] text-primary hover:underline font-semibold cursor-pointer"
+                        >
+                          Use Wi-Fi IP ({bridgeStatus.ip})
+                        </button>
+                      )}
+                    </div>
                     <Input
                       value={billingPrinterForm.ipAddress}
                       onChange={(e) => setBillingPrinterForm(prev => ({ ...prev, ipAddress: e.target.value }))}
@@ -2801,6 +3188,176 @@ export function SettingsPage() {
             </div>
           </div>
         </form>
+      </Modal>
+
+      {/* Discovery Options Modal */}
+      <Modal
+        isOpen={isDiscoveryModalOpen}
+        onClose={() => setIsDiscoveryModalOpen(false)}
+        title="Store Discovery Options"
+        description="Choose how you want your store discovery and public menu to behave"
+        className="max-w-xl"
+      >
+        <div className="space-y-4 py-2">
+          {/* Option 1: Free Option */}
+          <div className={`p-4 rounded-2xl border transition-all space-y-3 ${
+            isPaidDiscoveryActive 
+              ? 'border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40 opacity-85' 
+              : 'border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/40'
+          }`}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center shrink-0">
+                  <EyeOff size={20} />
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm text-foreground flex items-center gap-1.5">
+                    Option 1: Free Option
+                    {isPaidDiscoveryActive && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300 flex items-center gap-1">
+                        <Lock size={10} /> Locked
+                      </span>
+                    )}
+                  </h4>
+                  <p className="text-xs text-muted-foreground">Remove from Discovery & Hide Menu Label</p>
+                </div>
+              </div>
+              <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-200">
+                ₹0 Free
+              </span>
+            </div>
+
+            <ul className="text-xs text-muted-foreground space-y-1.5 pl-1">
+              <li className="flex items-center gap-2">
+                <span className="text-rose-500 font-bold">✕</span>
+                <span>Will <strong>NOT</strong> show your shop on public discovery map & search.</span>
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="text-rose-500 font-bold">✕</span>
+                <span>Will <strong>NOT</strong> show the "Discover" label on your public menu.</span>
+              </li>
+            </ul>
+
+            {/* Lock explanation notice if paid discovery is active */}
+            {isPaidDiscoveryActive && (
+              <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-800/60 flex items-start gap-2 text-amber-900 dark:text-amber-300 text-xs">
+                <Lock size={15} className="shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+                <div>
+                  <span className="font-bold">Active Paid Subscription:</span> You have already paid ₹49/mo for Discovery Option. Switching to Free is locked until your billing cycle expires in <strong>{discoveryDaysLeft} day{discoveryDaysLeft === 1 ? '' : 's'}</strong>{discoveryExpiresAt ? ` (${discoveryExpiresAt})` : ''}.
+                </div>
+              </div>
+            )}
+
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isPaidDiscoveryActive}
+              className={`w-full ${
+                isPaidDiscoveryActive 
+                  ? 'opacity-60 cursor-not-allowed bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-700' 
+                  : 'cursor-pointer'
+              }`}
+              onClick={handleSelectFreeDiscoveryOption}
+            >
+              {isPaidDiscoveryActive ? (
+                <span className="flex items-center justify-center gap-1.5">
+                  <Lock size={14} /> Locked (Cannot Change to Free Until It Expires)
+                </span>
+              ) : (
+                'Select Free Option (Turn Off Discovery)'
+              )}
+            </Button>
+          </div>
+
+          {/* Option 2: Paid Option */}
+          <div className="p-4 rounded-2xl border-2 border-amber-300 dark:border-amber-700/60 bg-amber-50/50 dark:bg-amber-950/20 space-y-3 relative overflow-hidden">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center shrink-0 shadow-xs p-2">
+                  <img src={menukitLogo} alt="Menukit" className="w-6 h-6 object-contain shrink-0" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className="font-bold text-sm text-amber-950 dark:text-amber-200">Option 2: Paid Option</h4>
+                    {isPaidDiscoveryActive ? (
+                      <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300 uppercase tracking-wide border border-emerald-300">
+                        Active Plan
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 dark:bg-amber-800 dark:text-amber-100 uppercase tracking-wide">
+                        Recommended
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-amber-800/80 dark:text-amber-400">Keep on Discovery Map, Hide Menu Label</p>
+                </div>
+              </div>
+              <span className="text-xs font-black px-2.5 py-1 rounded-full bg-amber-500 text-white shadow-xs">
+                ₹49 / month
+              </span>
+            </div>
+
+            <ul className="text-xs text-amber-900/90 dark:text-amber-300 space-y-1.5 pl-1">
+              <li className="flex items-center gap-2">
+                <span className="text-emerald-600 font-bold">✓</span>
+                <span><strong>WILL show your shop</strong> on public discovery map & search for new customers.</span>
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="text-emerald-600 font-bold">✓</span>
+                <span><strong>Hides the "Discover" label</strong> on your public menu so customers stay on your menu.</span>
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="text-emerald-600 font-bold">✓</span>
+                <span>Next time on your subscription renewal, this ₹49/mo module is <strong>automatically included</strong>.</span>
+              </li>
+            </ul>
+
+            {isPaidDiscoveryActive && (
+              <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 flex items-center justify-between text-xs text-emerald-900 dark:text-emerald-200">
+                <div className="flex items-center gap-2 font-medium">
+                  <CheckCircle2 size={15} className="text-emerald-600 shrink-0" />
+                  <span>Currently Paid & Active: <strong>{discoveryDaysLeft} days remaining</strong>{discoveryExpiresAt ? ` (Expires ${discoveryExpiresAt})` : ''}</span>
+                </div>
+              </div>
+            )}
+
+            <Button
+              type="button"
+              isLoading={isProcessingPayment}
+              disabled={isProcessingPayment}
+              className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold shadow-md shadow-amber-500/20 cursor-pointer"
+              onClick={handleSelectPaidDiscoveryOption}
+            >
+              {isProcessingPayment 
+                ? 'Processing...' 
+                : isPaidDiscoveryActive 
+                ? 'Extend / Renew Paid Discovery (₹49 / month)' 
+                : 'Pay ₹49 / Month & Activate'}
+            </Button>
+          </div>
+
+          {/* Reset Option (Standard Discovery) */}
+          {!isPaidDiscoveryActive && (!settingsData.is_discoverable || settingsData.hide_discovery_badge) && (
+            <div className="pt-1 text-center">
+              <button
+                type="button"
+                onClick={handleResetToStandardDiscovery}
+                className="text-xs font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors underline cursor-pointer"
+              >
+                Reset to Standard Discovery (Show on Map & Show Menu Label — Free)
+              </button>
+            </div>
+          )}
+
+          {isPaidDiscoveryActive && (
+            <div className="pt-1 text-center">
+              <p className="text-[11px] text-muted-foreground flex items-center justify-center gap-1.5 font-medium">
+                <Lock size={12} className="text-amber-500 shrink-0" />
+                Free Discovery option cannot be selected until current paid period expires ({discoveryDaysLeft} days left)
+              </p>
+            </div>
+          )}
+        </div>
       </Modal>
     </div>
   );

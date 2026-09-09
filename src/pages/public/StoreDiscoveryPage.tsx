@@ -1319,11 +1319,13 @@ export function StoreDiscoveryPage() {
                         {disc.discount_type === 'flat' && `₹${Number(disc.discount_value)}`}
                         {disc.discount_type === 'bogo' && 'BOGO'}
                         {disc.discount_type === 'combo' && 'COMBO'}
+                        {disc.discount_type === 'free_item' && 'FREE'}
                       </div>
                       <div className="text-[10px] sm:text-xs font-bold uppercase tracking-widest mt-0.5 opacity-90 text-center">
                         {['percentage', 'flat'].includes(disc.discount_type) && 'Off'}
                         {disc.discount_type === 'bogo' && `Buy ${disc.buy_quantity} Get ${disc.get_quantity}`}
                         {disc.discount_type === 'combo' && `₹${Number(disc.discount_value)}`}
+                        {disc.discount_type === 'free_item' && (disc.discount_value ? `On ₹${Number(disc.discount_value)}+` : 'Gift Item')}
                       </div>
                     </div>
 

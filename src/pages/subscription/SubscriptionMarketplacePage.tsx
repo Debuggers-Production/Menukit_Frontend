@@ -11,6 +11,7 @@ import confetti from 'canvas-confetti';
 import { api } from '@/services/api';
 import menukitLogo from '@/assets/menukit-logo.svg';
 import { CountryFlag } from '@/components/CountryFlag';
+import { Button } from '@/components/ui/Button';
 
 const CATEGORY_TAG_STYLES: Record<string, string> = {
   'Online Ordering': 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800',
@@ -109,6 +110,13 @@ const INITIAL_ADDONS: Feature[] = [
     price: 129,
     description: 'Unlock 7-day, 30-day, Custom Date range filters, and detailed customer insights reports.',
     category: 'Analytics',
+  },
+  {
+    id: 'hide-discovery-badge',
+    name: 'Featured Discovery (No Menu Badge)',
+    price: 49,
+    description: 'Keep your shop discoverable on the public map & search while removing the outward Discover label from your customer menu.',
+    category: 'Discovery',
   },
 ];
 
@@ -229,14 +237,12 @@ export function SubscriptionMarketplacePage() {
 
   const subscribedAddons = useMemo(() => {
     if (!activeSubscription) return [];
-    if (activeSubscription.is_all_access) return dynamicModules;
+    if (activeSubscription.is_all_access) {
+      return dynamicModules.filter(m => m.id !== 'analytics-advanced-filters' && m.id !== 'analytics-customer-insights');
+    }
     if (Array.isArray(activeSubscription.active_modules)) {
       return dynamicModules.filter(addon => 
-        activeSubscription.active_modules.includes(addon.id) ||
-        (addon.id === 'analytics-advanced' && (
-          activeSubscription.active_modules.includes('analytics-advanced-filters') ||
-          activeSubscription.active_modules.includes('analytics-customer-insights')
-        ))
+        activeSubscription.active_modules.includes(addon.id)
       );
     }
     return [];
@@ -467,8 +473,10 @@ export function SubscriptionMarketplacePage() {
                     : activeSubscription.is_grace_period
                     ? `Grace Period Active: ${activeSubscription.grace_days_left} day${activeSubscription.grace_days_left !== 1 ? 's' : ''} left`
                     : activeSubscription.is_trial
-                    ? `Free Trial Active: ${activeSubscription.days_left ?? 30} Day${(activeSubscription.days_left ?? 30) !== 1 ? 's' : ''} Remaining (${activeSubscription.current_period_end ? `Expires ${new Date(activeSubscription.current_period_end).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''})`
-                    : `Expires on ${activeSubscription.current_period_end ? new Date(activeSubscription.current_period_end).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Active'}`
+                    ? `Free Trial Active: ${activeSubscription.core_days_left ?? activeSubscription.days_left ?? 30} Day${(activeSubscription.core_days_left ?? activeSubscription.days_left ?? 30) !== 1 ? 's' : ''} Remaining (${activeSubscription.current_period_end ? `Expires ${new Date(activeSubscription.current_period_end).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''})`
+                    : (activeSubscription.core_days_left !== undefined && activeSubscription.core_days_left <= 5)
+                    ? `⚠️ Core modules expiring soon (${activeSubscription.core_days_left} days left) · Extend or renew to avoid service loss.`
+                    : `Active subscription: ${activeSubscription.core_days_left ?? activeSubscription.days_left} days remaining`
                   }
                 </p>
               </div>
@@ -481,11 +489,13 @@ export function SubscriptionMarketplacePage() {
                     "flex items-center gap-1.5 px-3 py-1.5 rounded-xl border shadow-xs font-black text-xs",
                     activeSubscription.is_trial 
                       ? "bg-indigo-600 text-white border-indigo-500" 
+                      : (activeSubscription.days_left <= 5 || (activeSubscription.core_days_left !== undefined && activeSubscription.core_days_left <= 5))
+                      ? "bg-amber-500 text-white border-amber-600"
                       : "bg-white/80 dark:bg-slate-900/80 border-slate-200/80 dark:border-slate-800 text-slate-800 dark:text-slate-200"
                   )}>
                     <Clock size={14} className={activeSubscription.is_trial ? "text-indigo-200" : "text-primary"} />
                     <span>
-                      {activeSubscription.days_left !== undefined ? `${activeSubscription.days_left} Days Left` : 'Active'}
+                      {(activeSubscription.core_days_left !== undefined ? activeSubscription.core_days_left : activeSubscription.days_left)} Days Left
                     </span>
                   </div>
                 )}
@@ -502,6 +512,38 @@ export function SubscriptionMarketplacePage() {
               </span>
             </div>
           </div>
+
+          {/* Prominent Intimation Banner for Ending Subscription */}
+          {!activeSubscription.is_expired && !activeSubscription.is_grace_period && (activeSubscription.days_left <= 5 || (activeSubscription.core_days_left !== undefined && activeSubscription.core_days_left <= 5)) && (
+            <div className="mt-4 p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-orange-500/15 to-amber-600/15 border-2 border-amber-500/40 text-amber-950 dark:text-amber-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 font-bold text-lg shadow-sm">
+                  ⏳
+                </div>
+                <div>
+                  <h5 className="font-extrabold text-sm text-amber-950 dark:text-white flex items-center gap-2">
+                    <span>{activeSubscription.is_trial ? 'Free Trial Ending Soon' : 'Subscription Ending Soon'}</span>
+                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-500 text-white uppercase tracking-wider">
+                      {activeSubscription.core_days_left ?? activeSubscription.days_left} Days Left
+                    </span>
+                  </h5>
+                  <p className="text-xs text-amber-900/90 dark:text-amber-200/90 mt-0.5">
+                    Your core operations (Online Ordering, Customer Memberships, Analytics) expire in <strong>{activeSubscription.core_days_left ?? activeSubscription.days_left} days</strong>. Renew your plan below so your customer orders and leads are not interrupted!
+                  </p>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => {
+                  const el = document.getElementById('marketplace-heading');
+                  el?.scrollIntoView({ behavior: 'smooth' });
+                }}
+                className="bg-amber-600 hover:bg-amber-700 text-white font-black text-xs shrink-0 shadow-sm cursor-pointer"
+              >
+                Renew Plan Below ↓
+              </Button>
+            </div>
+          )}
 
           {subscribedAddons.length > 0 && (
             <div className="mt-3 pt-3 border-t border-slate-200/60 dark:border-slate-800/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 text-[11px] text-slate-600 dark:text-slate-400">
@@ -529,7 +571,9 @@ export function SubscriptionMarketplacePage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {subscribedAddons.map((addon) => {
                   const modExp = activeSubscription?.module_expirations?.[addon.id];
-                  const modDaysLeft = modExp?.days_left !== undefined ? modExp.days_left : activeSubscription.days_left;
+                  const modDaysLeft = modExp?.days_left !== undefined 
+                    ? modExp.days_left 
+                    : (activeSubscription.is_all_access ? activeSubscription.days_left : (activeSubscription.core_days_left ?? activeSubscription.days_left));
 
                   return (
                     <div key={addon.id} className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex items-center justify-between gap-2">
@@ -564,7 +608,7 @@ export function SubscriptionMarketplacePage() {
                 <img src={menukitLogo} alt="Menukit" className="w-4 h-4 object-contain" />
                 <span>MODULAR MARKETPLACE</span>
               </div>
-              <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
+              <h2 id="marketplace-heading" className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
                 Select Your <span className="bg-gradient-to-r from-primary via-orange-500 to-orange-600 bg-clip-text text-transparent">Add-On Modules</span>
               </h2>
               <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">

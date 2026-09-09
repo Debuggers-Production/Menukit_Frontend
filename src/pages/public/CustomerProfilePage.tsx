@@ -17,6 +17,7 @@ import { Shop } from '@/types';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import { DiscountUnlockPopup } from '@/components/public/DiscountUnlockPopup';
+import { getUniqueCustomerDiscountCode } from '@/utils/discountCodeHelper';
 
 export function CustomerProfilePage() {
   const { id } = useParams();
@@ -336,28 +337,46 @@ export function CustomerProfilePage() {
                         <h4 className="font-black text-base mt-0.5">{r.title}</h4>
                         <p className="text-xs opacity-90 font-medium mt-0.5">{r.description}</p>
                       </div>
-                      <span className="px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm border shadow-2xs">
+                      <span className={`px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider backdrop-blur-sm border shadow-2xs ${
+                        r.status === 'REDEEMED'
+                          ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border-rose-200'
+                          : 'bg-white/90 dark:bg-slate-900/90 text-emerald-700 dark:text-emerald-300'
+                      }`}>
                         {r.status || 'READY TO USE'}
                       </span>
                     </div>
 
-                    {r.code && (
-                      <div className="flex items-center justify-between pt-2 border-t border-current/10 text-xs">
-                        <div>
-                          <span className="opacity-70 text-[10px] uppercase font-bold block">Coupon Code</span>
-                          <span className="font-mono font-black tracking-wider text-sm">{r.code}</span>
+                    {(() => {
+                      const codeToDisplay = r.code || getUniqueCustomerDiscountCode(r);
+                      const isRedeemed = r.status === 'REDEEMED';
+                      return codeToDisplay ? (
+                        <div className="flex items-center justify-between pt-2 border-t border-current/10 text-xs">
+                          <div>
+                            <span className="opacity-70 text-[10px] uppercase font-bold block">
+                              {isRedeemed ? 'Coupon Code (Used)' : 'Coupon Code'}
+                            </span>
+                            <span className={`font-mono font-black tracking-wider text-sm ${isRedeemed ? 'line-through opacity-60' : ''}`}>
+                              {codeToDisplay}
+                            </span>
+                          </div>
+                          {isRedeemed ? (
+                            <span className="px-2.5 py-1 rounded-lg bg-black/10 dark:bg-white/10 text-[11px] font-bold text-muted-foreground">
+                              Already Used
+                            </span>
+                          ) : (
+                            <button 
+                              onClick={() => {
+                                navigator.clipboard.writeText(codeToDisplay);
+                                toast.success(`Coupon code ${codeToDisplay} copied!`);
+                              }}
+                              className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-extrabold text-xs shadow-2xs hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                            >
+                              Copy Code
+                            </button>
+                          )}
                         </div>
-                        <button 
-                          onClick={() => {
-                            navigator.clipboard.writeText(r.code);
-                            toast.success(`Coupon code ${r.code} copied!`);
-                          }}
-                          className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-extrabold text-xs shadow-2xs hover:scale-105 active:scale-95 transition-all cursor-pointer"
-                        >
-                          Copy Code
-                        </button>
-                      </div>
-                    )}
+                      ) : null;
+                    })()}
                   </div>
                 ))
               )}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Gift, Phone, ShieldCheck, User, ChevronDown } from 'lucide-react';
+import { Gift, Phone, ShieldCheck, User, ChevronDown, X } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { triggerHaptic, HAPTIC_PATTERNS } from '@/utils/haptic';
 import { customerService } from '../../services/customers';
@@ -18,7 +18,7 @@ const COUNTRY_CODES = [
 interface DiscountUnlockPopupProps {
   shopId: string;
   onClose: () => void;
-  onUnlock: (customerId: string | null) => void;
+  onUnlock: (customerId: string | null, isExisting?: boolean) => void;
   /** Skip the intro/offers screen and go straight to phone entry */
   initialStep?: 'intro' | 'mobile';
 }
@@ -33,6 +33,12 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
   const [error, setError] = useState('');
   const [isStrictMember, setIsStrictMember] = useState(false);
   const [isVerified, setIsVerified] = useState(false);
+  const [isExistingCustomer, setIsExistingCustomer] = useState<boolean>(() => {
+    return Boolean(
+      localStorage.getItem('customer_token') ||
+      localStorage.getItem('customer_is_existing') === 'true'
+    );
+  });
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   
@@ -95,11 +101,15 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
 
   const handleClose = () => {
     if (isVerified) {
-      onUnlock(isStrictMember ? 'verified-member' : 'unlocked');
+      onUnlock(isStrictMember ? 'verified-member' : 'unlocked', isExistingCustomer);
     } else if (step === 'no_offers') {
-      onUnlock(null);
+      onUnlock(null, isExistingCustomer);
     } else {
-      onClose();
+      if (isExistingCustomer) {
+        onUnlock(null, true);
+      } else {
+        onClose();
+      }
     }
   };
 
@@ -142,6 +152,13 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
     setLoading(true);
     try {
       const res = await customerService.verifyMobile(`${countryCode}${mobileNumber}`, shopId);
+      const isExisting = Boolean(res.is_global_customer || res.is_member);
+      if (isExisting) {
+        setIsExistingCustomer(true);
+        localStorage.setItem('customer_is_existing', 'true');
+        sessionStorage.setItem('customer_is_existing', 'true');
+      }
+
       if (res.otp_required === false) {
         // Token was valid and matched!
         if (res.access_token) {
@@ -200,6 +217,15 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
     setLoading(true);
     try {
       const res = await customerService.verifyOtp(`${countryCode}${mobileNumber}`, otpCode, shopId);
+      const isExisting = Boolean(res.is_global_customer || res.is_member);
+      if (isExisting) {
+        setIsExistingCustomer(true);
+        localStorage.setItem('customer_is_existing', 'true');
+        sessionStorage.setItem('customer_is_existing', 'true');
+      }
+      if (res.access_token) {
+        localStorage.setItem('customer_token', res.access_token);
+      }
       localStorage.setItem('customer_mobile', `${countryCode}${mobileNumber}`);
       if (res.customer_name) {
         localStorage.setItem('customer_name', res.customer_name);
@@ -239,6 +265,9 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
       if (res.delivery_address) {
         localStorage.setItem('customer_address', res.delivery_address);
       }
+      if (res.access_token) {
+        localStorage.setItem('customer_token', res.access_token);
+      }
       setIsStrictMember(false); // newly registered users are not strict members
       triggerConfetti();
       setIsVerified(true);
@@ -259,6 +288,13 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
         exit={{ opacity: 0, scale: 0.9, y: 20 }}
         className="bg-white rounded-2xl shadow-2xl w-full max-w-md relative"
       >
+        <button
+          onClick={handleClose}
+          className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-all z-10"
+          aria-label="Close"
+        >
+          <X size={20} />
+        </button>
 
         <AnimatePresence mode="wait">
           {step === 'intro' && (
@@ -512,13 +548,17 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
                 <Gift className="w-12 h-12 text-green-500" />
               </div>
               <h2 className="text-3xl font-bold text-gray-900 mb-4">
-                🎉 Congratulations!
+                {isExistingCustomer ? '🎉 Welcome Back!' : '🎉 Congratulations!'}
               </h2>
               <p className="text-xl text-green-600 font-medium mb-4">
-                You have unlocked exclusive member discounts.
+                {isExistingCustomer
+                  ? 'Your member account is verified.'
+                  : 'You have unlocked exclusive newcomer offers!'}
               </p>
               <p className="text-gray-500 mb-8">
-                Applying all member-only discounts immediately...
+                {isExistingCustomer
+                  ? 'Applying all your active member discounts immediately...'
+                  : 'Applying all eligible newcomer & shop discounts immediately...'}
               </p>
               <button 
                 onClick={handleClose}

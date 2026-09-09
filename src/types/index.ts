@@ -21,6 +21,7 @@ export interface ShopSettings {
   show_offers: boolean;
   is_discoverable: boolean;
   show_menus_in_discovery: boolean;
+  hide_discovery_badge?: boolean;
   delivery_enabled?: boolean;
   base_delivery_charge?: number;
   base_delivery_distance?: number;
@@ -184,8 +185,9 @@ export interface Discount {
   id: string;
   shop_id: string;
   title: string;
+  code?: string | null;
   description: string | null;
-  discount_type: 'percentage' | 'flat' | 'bogo' | 'combo';
+  discount_type: 'percentage' | 'flat' | 'bogo' | 'combo' | 'free_item';
   discount_value: string | null;
   buy_quantity?: number | null;
   get_quantity?: number | null;

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router';
-import { Search, Flame, MapPin, Phone, Info, UtensilsCrossed, X, Star, LayoutGrid, List as ListIcon, Clock, Sparkles, ExternalLink, SlidersHorizontal, Check, Languages, Tag, Crown, Calendar, ShoppingBag, ArrowUpRight, ChevronDown, QrCode, Download, History, Trophy, ChefHat, User, Truck, CheckCircle2, XCircle } from 'lucide-react';
+import { Search, Flame, MapPin, Phone, Info, UtensilsCrossed, X, Star, LayoutGrid, List as ListIcon, Clock, Sparkles, ExternalLink, SlidersHorizontal, Check, Languages, Tag, Crown, Calendar, ShoppingBag, ArrowUpRight, ChevronDown, QrCode, Download, History, Trophy, ChefHat, User, Truck, CheckCircle2, XCircle, Lock, Copy, RefreshCw, AlertCircle, ShieldCheck } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 import { api } from '@/services/api';
 import { APP_CONFIG } from '@/config';
 import { Shop, Category, MenuItem, Discount } from '@/types';
@@ -22,6 +23,7 @@ import { contestService } from '@/services/contestService';
 import { triggerHaptic, HAPTIC_PATTERNS } from '@/utils/haptic';
 import { publicCache } from '@/utils/publicCache';
 import { loadGoogleFont } from '@/utils/fontLoader';
+import { getUniqueCustomerDiscountCode, getCustomerIdentifier, getClaimedDiscountIds, markDiscountClaimed } from '@/utils/discountCodeHelper';
 
 const triggerWelcomeEffect = () => {
   triggerHaptic(HAPTIC_PATTERNS.successUnlock);
@@ -347,16 +349,158 @@ export function PublicMenuPage() {
   const [categorySearchQuery, setCategorySearchQuery] = useState('');
   const [isEntertainmentHubOpen, setIsEntertainmentHubOpen] = useState(false);
   const [isDiscountPopupOpen, setIsDiscountPopupOpen] = useState(false);
+  const [discountPopupInitialStep, setDiscountPopupInitialStep] = useState<'intro' | 'mobile'>('mobile');
   const cartItems = useCartStore((state) => state.items);
   const cartItemCount = cartItems.reduce((acc, item) => acc + item.quantity, 0);
-  const [memberStatus, setMemberStatus] = useState<'unlocked' | 'verified-member' | null>(() => {
-    return sessionStorage.getItem('member_status') as 'unlocked' | 'verified-member' | null;
+  const [isCustomerLoggedIn, setIsCustomerLoggedIn] = useState<boolean>(() => {
+    return Boolean(localStorage.getItem('customer_token'));
   });
+  const [isExistingCustomer, setIsExistingCustomer] = useState<boolean>(() => {
+    return Boolean(
+      localStorage.getItem('customer_token') ||
+      localStorage.getItem('customer_is_existing') === 'true'
+    );
+  });
+  const [memberStatus, setMemberStatus] = useState<'unlocked' | 'verified-member' | null>(() => {
+    const s = sessionStorage.getItem('member_status');
+    if (s) return s as 'unlocked' | 'verified-member';
+    return null;
+  });
+
+  const [isBecomeMemberModalOpen, setIsBecomeMemberModalOpen] = useState(false);
+  const [isCheckingMember, setIsCheckingMember] = useState(false);
+  const [memberCheckMessage, setMemberCheckMessage] = useState<{
+    type: 'idle' | 'success' | 'not_member' | 'error';
+    text: string;
+  }>({ type: 'idle', text: '' });
+
+  // Verify membership status against backend using customer logged-in token
+  useEffect(() => {
+    const checkInitialMembership = async () => {
+      const token = localStorage.getItem('customer_token');
+      if (!id || !token) return;
+
+      try {
+        const res = await api.get(`/public/shop/${id}/check-membership`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.data?.is_strict_member) {
+          setMemberStatus('verified-member');
+          sessionStorage.setItem('member_status', 'verified-member');
+          if (res.data?.mobile_number) {
+            localStorage.setItem('customer_mobile', res.data.mobile_number);
+          }
+        } else if (sessionStorage.getItem('member_status') === 'verified-member') {
+          sessionStorage.removeItem('member_status');
+          setMemberStatus(null);
+        }
+      } catch (err) {
+        // Silent catch
+      }
+    };
+    checkInitialMembership();
+  }, [id]);
+
+  const handleCheckMembershipStatus = async () => {
+    const token = localStorage.getItem('customer_token');
+    if (!token) {
+      setIsBecomeMemberModalOpen(false);
+      setDiscountPopupInitialStep('mobile');
+      setIsDiscountPopupOpen(true);
+      toast.info('Please log in with your mobile number first');
+      return;
+    }
+
+    setIsCheckingMember(true);
+    setMemberCheckMessage({ type: 'idle', text: '' });
+
+    try {
+      // Backend extracts the mobile number from the Authorization customer JWT token
+      const res = await api.get(`/public/shop/${id}/check-membership`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      const data = res.data;
+      if (data?.authenticated === false) {
+        localStorage.removeItem('customer_token');
+        setIsCustomerLoggedIn(false);
+        setMemberCheckMessage({
+          type: 'error',
+          text: 'Your login session has expired. Please log in again.'
+        });
+        toast.error('Session expired. Please log in again.');
+        return;
+      }
+
+      if (data?.is_strict_member) {
+        setMemberStatus('verified-member');
+        sessionStorage.setItem('member_status', 'verified-member');
+        if (data.mobile_number) {
+          localStorage.setItem('customer_mobile', data.mobile_number);
+        }
+        if (data.name) {
+          localStorage.setItem('customer_name', data.name);
+        }
+        if (data.access_token) {
+          localStorage.setItem('customer_token', data.access_token);
+        }
+
+        triggerHaptic(HAPTIC_PATTERNS.successUnlock);
+        confetti({
+          particleCount: 120,
+          spread: 80,
+          origin: { y: 0.6 },
+          colors: ['#f59e0b', '#d97706', '#10b981', '#6366f1'],
+          zIndex: 9999
+        });
+
+        setMemberCheckMessage({
+          type: 'success',
+          text: 'Verified! You are registered as a hotel member. Offer unlocked!'
+        });
+        toast.success('Membership verified! Discount code unlocked.');
+
+        setTimeout(() => {
+          setIsBecomeMemberModalOpen(false);
+          setMemberCheckMessage({ type: 'idle', text: '' });
+        }, 1200);
+      } else {
+        const phoneDisplay = data?.mobile_number || localStorage.getItem('customer_mobile') || localStorage.getItem('customer_phone') || '';
+        setMemberCheckMessage({
+          type: 'not_member',
+          text: phoneDisplay
+            ? `Your mobile number (${phoneDisplay}) is not registered as a hotel member yet. Please ask the hotel staff or cashier at the counter to add your number, then tap Check Membership Status again.`
+            : 'Your account is not registered as a hotel member yet. Please ask the hotel staff or cashier at the counter to add your number as a member, then tap Check Membership Status again.'
+        });
+        toast.error('Not registered as a hotel member yet. Please ask the hotel staff.');
+      }
+    } catch (err: any) {
+      console.error('Failed to check membership', err);
+      setMemberCheckMessage({
+        type: 'error',
+        text: err.response?.data?.detail || 'Could not verify status. Please try again or ask hotel staff.'
+      });
+      toast.error('Could not verify membership status.');
+    } finally {
+      setIsCheckingMember(false);
+    }
+  };
+
+
+  const isUserExisting = isCustomerLoggedIn || isExistingCustomer;
+
+  const isDiscountVisible = (d: Discount) => {
+    if (d.visibility_type === 'members_only_hidden' && memberStatus !== 'verified-member') {
+      return false;
+    }
+    return true;
+  };
 
   useEffect(() => {
     if (!id || memberStatus === 'verified-member' || sessionStorage.getItem(`discount_popup_seen_${id}`)) return;
 
     const timer = setTimeout(() => {
+      setDiscountPopupInitialStep('intro');
       setIsDiscountPopupOpen(true);
       sessionStorage.setItem(`discount_popup_seen_${id}`, 'true');
     }, 10000);
@@ -552,7 +696,8 @@ export function PublicMenuPage() {
     if (append) setIsLoadingMoreDiscounts(true);
 
     try {
-      const discountRes = await api.get(`/public/shop/${id}/discounts?limit=${DISCOUNTS_LIMIT}&offset=${currentOffset}`);
+      const custId = getCustomerIdentifier();
+      const discountRes = await api.get(`/public/shop/${id}/discounts?limit=${DISCOUNTS_LIMIT}&offset=${currentOffset}&customer_id=${custId}`);
       const data = discountRes.data || [];
       
       if (data.length < DISCOUNTS_LIMIT) {
@@ -597,6 +742,12 @@ export function PublicMenuPage() {
 
   useEffect(() => {
     if (id) fetchDiscounts(0, false);
+
+    const handleFocus = () => {
+      if (id) fetchDiscounts(0, false);
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
   }, [id, memberStatus]);
 
   const handleLoadMoreDiscounts = () => {
@@ -1008,7 +1159,7 @@ export function PublicMenuPage() {
                 </button>
               </div>
 
-              {activeDiscounts.length > 0 && (
+              {activeDiscounts.filter(isDiscountVisible).length > 0 && (
                 <button
                   onClick={() => setIsDiscountsModalOpen(true)}
                   className="p-1.5 rounded-lg flex items-center justify-center shrink-0 transition-colors relative"
@@ -1017,7 +1168,7 @@ export function PublicMenuPage() {
                 >
                   <Tag size={18} />
                   <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center shadow-sm border border-white">
-                    {activeDiscounts.length}
+                    {activeDiscounts.filter(isDiscountVisible).length}
                   </span>
                 </button>
               )}
@@ -1156,14 +1307,21 @@ export function PublicMenuPage() {
           <h1 className="text-3xl font-bold font-heading">{shop.name}</h1>
           <button
             onClick={() => setIsOrderTypeModalOpen(true)}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-bold inline-flex items-center gap-1.5 transition-all shadow-xs ${
-              orderType === 'delivery'
+            className={`px-3.5 py-1.5 rounded-full text-xs font-bold inline-flex items-center gap-1.5 transition-all shadow-xs cursor-pointer ${
+              orderType === 'dine_in'
+                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100'
+                : orderType === 'delivery'
                 ? 'bg-blue-600 text-white hover:bg-blue-700 ring-2 ring-blue-200'
                 : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-50'
             }`}
             title="Click to switch order mode"
           >
-            {orderType === 'delivery' ? (
+            {orderType === 'dine_in' ? (
+              <>
+                <UtensilsCrossed size={14} className="text-emerald-600 dark:text-emerald-400" />
+                <span>Dine-in Mode</span>
+              </>
+            ) : orderType === 'delivery' ? (
               <>
                 <Truck size={14} className="text-white" />
                 <span>Delivery Mode</span>
@@ -1351,10 +1509,10 @@ export function PublicMenuPage() {
         )}
 
         {/* Active Offers Banner */}
-        {activeDiscounts.filter(d => d.visibility_type !== 'members_only_hidden' || memberStatus !== null).length > 0 && (
+        {activeDiscounts.filter(isDiscountVisible).length > 0 && (
           <div className="mb-6 w-full -mx-4 px-4 sm:mx-0 sm:px-0">
             <div className="flex gap-4 overflow-x-auto pb-4 pt-1 snap-x snap-mandatory scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-              {activeDiscounts.filter(d => d.visibility_type !== 'members_only_hidden' || memberStatus !== null).map(disc => (
+              {activeDiscounts.filter(isDiscountVisible).map(disc => (
                 <div
                   key={disc.id}
                   onClick={() => setSelectedDiscountForModal(disc)}
@@ -1373,11 +1531,13 @@ export function PublicMenuPage() {
                       {disc.discount_type === 'flat' && `${settings?.currency || '₹'}${Number(disc.discount_value)}`}
                       {disc.discount_type === 'bogo' && 'BOGO'}
                       {disc.discount_type === 'combo' && 'COMBO'}
+                      {disc.discount_type === 'free_item' && 'FREE'}
                     </div>
                     <div className="text-[10px] sm:text-xs font-bold uppercase tracking-widest mt-0.5 opacity-90 text-center">
                       {['percentage', 'flat'].includes(disc.discount_type) && 'Off'}
                       {disc.discount_type === 'bogo' && `Buy ${disc.buy_quantity} Get ${disc.get_quantity}`}
                       {disc.discount_type === 'combo' && `${settings?.currency || '₹'}${Number(disc.discount_value)}`}
+                      {disc.discount_type === 'free_item' && (disc.discount_value ? `On ₹${Number(disc.discount_value)}+` : 'Gift Item')}
                     </div>
                   </div>
 
@@ -1412,6 +1572,11 @@ export function PublicMenuPage() {
                               <Crown size={10} className="shrink-0" />
                               <span className="truncate">Members Only</span>
                             </span>
+                          ) : disc.visibility_type === 'unlock_required' ? (
+                            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md shadow-sm flex items-center gap-1 bg-amber-100 text-amber-800 min-w-0">
+                              {memberStatus ? <Sparkles size={10} className="shrink-0" /> : <Lock size={10} className="shrink-0" />}
+                              <span className="truncate">{memberStatus ? 'Unlocked' : 'Unlock Required'}</span>
+                            </span>
                           ) : (
                             <span
                               className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md shadow-sm truncate min-w-0"
@@ -1422,7 +1587,10 @@ export function PublicMenuPage() {
                           )}
                         </div>
                         <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 group-hover:text-slate-600 transition-colors flex items-center gap-1 shrink-0 whitespace-nowrap">
-                          Tap to use
+                          {((disc.visibility_type === 'unlock_required' && !memberStatus) || 
+                            ((disc.visibility_type === 'members_only_visible' || disc.visibility_type === 'members_only_hidden') && memberStatus !== 'verified-member')) 
+                            ? 'Tap to unlock' 
+                            : 'Tap to use'}
                         </span>
                       </div>
                     </div>
@@ -1690,10 +1858,13 @@ export function PublicMenuPage() {
 
                               if (!offerPrice && activeDiscounts.length > 0) {
                                 const disc = activeDiscounts.find(d => {
-                                  if (d.visibility_type === 'members_only_hidden' && memberStatus === null) return false;
-                                  if (d.visibility_type === 'members_only_visible' && memberStatus === null) return false;
-                                  if (d.visibility_type === 'unlock_required' && memberStatus === null) return false;
-                                  if (d.discount_type === 'bogo' || d.discount_type === 'combo') return false;
+                                  if (d.visibility_type === 'members_only_hidden' && memberStatus !== 'verified-member') return false;
+                                  if (d.visibility_type === 'members_only_visible' && memberStatus !== 'verified-member') return false;
+                                  if (d.visibility_type === 'unlock_required') {
+                                    if (isUserExisting) return false;
+                                    if (!memberStatus) return false;
+                                  }
+                                  if (d.discount_type === 'bogo' || d.discount_type === 'combo' || d.discount_type === 'free_item') return false;
                                   if (d.applies_to === 'all') return true;
                                   if (d.applies_to === 'category' && d.target_ids?.includes(item.category_id)) return true;
                                   if (d.applies_to === 'items' && d.target_ids?.includes(item.id)) return true;
@@ -1900,7 +2071,10 @@ export function PublicMenuPage() {
       {/* Offers Crown Floating Button */}
       {memberStatus === null && activeDiscounts.some(d => d.visibility_type === 'members_only_hidden' || d.visibility_type === 'members_only_visible' || d.visibility_type === 'unlock_required') && (
         <button
-          onClick={() => setIsDiscountPopupOpen(true)}
+          onClick={() => {
+            setDiscountPopupInitialStep('mobile');
+            setIsDiscountPopupOpen(true);
+          }}
           className={`fixed bottom-48 right-4 sm:right-6 w-14 h-14 rounded-full text-white shadow-xl flex items-center justify-center hover:scale-105 transition-all duration-300 z-40 border-4 border-white/50 backdrop-blur-md animate-bounce hover:animate-none ${isScrollingDown ? 'translate-x-full opacity-0 pointer-events-none' : 'translate-x-0 opacity-100'}`}
           style={{ backgroundColor: primaryColor }}
           title="Unlock Member Offers"
@@ -2016,32 +2190,40 @@ export function PublicMenuPage() {
       {isDiscountPopupOpen && shop && (
         <DiscountUnlockPopup
           shopId={shop.id}
+          initialStep={discountPopupInitialStep}
           onClose={() => setIsDiscountPopupOpen(false)}
-          onUnlock={(customerId) => {
+          onUnlock={(customerId, isExisting) => {
             if (customerId) {
               setMemberStatus(customerId as any);
               sessionStorage.setItem('member_status', customerId);
             }
+            if (isExisting || localStorage.getItem('customer_is_existing') === 'true' || localStorage.getItem('customer_token')) {
+              setIsExistingCustomer(true);
+              setIsCustomerLoggedIn(Boolean(localStorage.getItem('customer_token')));
+            }
             setIsDiscountPopupOpen(false);
+            fetchDiscounts(0, false);
           }}
         />
       )}
 
       {/* 🏷️ Zomato District Style Side Tab (Clings to right wall, slides completely right out of sight on down-scroll) */}
-      <div 
-        className={`fixed right-0 bottom-22 z-50 transition-all duration-300 transform ${
-          isScrollingDown ? 'translate-x-full opacity-0' : 'translate-x-0 opacity-100'
-        }`}
-      >
-        <button
-          onClick={() => navigate('/discover')}
-          className="flex items-center justify-center gap-1.5 pl-4 pr-3 h-[42px] rounded-l-full font-black text-white shadow-[0_4px_16px_rgba(0,0,0,0.15)] border-l border-y border-white/20 active:scale-95 group transition-transform hover:brightness-110"
-          style={{ backgroundColor: primaryColor }}
+      {shop?.settings?.is_discoverable !== false && !shop?.settings?.hide_discovery_badge && (
+        <div 
+          className={`fixed right-0 bottom-22 z-50 transition-all duration-300 transform ${
+            isScrollingDown ? 'translate-x-full opacity-0' : 'translate-x-0 opacity-100'
+          }`}
         >
-          <span className="tracking-wide text-xs">Discover</span>
-          <ArrowUpRight size={14} strokeWidth={3} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
-        </button>
-      </div>
+          <button
+            onClick={() => navigate('/discover')}
+            className="flex items-center justify-center gap-1.5 pl-4 pr-3 h-[42px] rounded-l-full font-black text-white shadow-[0_4px_16px_rgba(0,0,0,0.15)] border-l border-y border-white/20 active:scale-95 group transition-transform hover:brightness-110"
+            style={{ backgroundColor: primaryColor }}
+          >
+            <span className="tracking-wide text-xs">Discover</span>
+            <ArrowUpRight size={14} strokeWidth={3} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+          </button>
+        </div>
+      )}
 
       {/* 🧱 Premium Floating Bottom Asymmetric Sized Navigation Dock Frame */}
       <div className={`fixed bottom-4 left-4 right-4 sm:bottom-6 sm:left-1/2 sm:-translate-x-1/2 sm:w-[480px] z-40 transition-transform duration-300 ${isScrollingDown ? 'translate-y-32 opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}>
@@ -2160,10 +2342,19 @@ export function PublicMenuPage() {
             <div className="flex flex-col items-center text-center pb-5 border-b border-slate-100">
               {(() => {
                 const isCashLook = selectedDiscountForModal.discount_type === 'flat' || selectedDiscountForModal.discount_type === 'combo';
+                const isFreeItem = selectedDiscountForModal.discount_type === 'free_item';
                 return isCashLook ? (
                   <div className="min-w-[8rem] w-auto h-20 px-8 flex items-center justify-center shrink-0 text-white font-bold mb-4 transform hover:scale-105 transition-transform duration-300 relative overflow-hidden" style={{ backgroundColor: '#16a34a', borderRadius: '8px', boxShadow: '0 12px 32px #16a34a60' }}>
                     <div className="absolute inset-1.5 border-2 border-white/30 border-dashed rounded-[4px]" />
                     <span className="text-3xl tracking-tight z-10 font-mono">{settings?.currency || '₹'}{Number(selectedDiscountForModal.discount_value)}</span>
+                  </div>
+                ) : isFreeItem ? (
+                  <div className="min-w-[8rem] w-auto h-24 px-8 flex items-center justify-center shrink-0 text-white font-bold mb-4 transform hover:scale-105 transition-transform duration-300 relative overflow-hidden" style={{ backgroundColor: '#e11d48', borderRadius: '16px', boxShadow: '0 12px 32px #e11d4860' }}>
+                    <div className="absolute -left-4 top-1/2 -translate-y-1/2 w-8 h-8 bg-white rounded-full shadow-[inset_0_0_10px_rgba(0,0,0,0.1)]" />
+                    <div className="absolute -right-4 top-1/2 -translate-y-1/2 w-8 h-8 bg-white rounded-full shadow-[inset_0_0_10px_rgba(0,0,0,0.1)]" />
+                    <span className="text-2xl font-black tracking-tight z-10 text-center px-2">
+                      FREE ITEM
+                    </span>
                   </div>
                 ) : (
                   <div className="min-w-[8rem] w-auto h-24 px-8 flex items-center justify-center shrink-0 text-white font-bold mb-4 transform hover:scale-105 transition-transform duration-300 relative overflow-hidden" style={{ backgroundColor: primaryColor, borderRadius: '16px', boxShadow: `0 12px 32px ${primaryColor}60` }}>
@@ -2190,31 +2381,282 @@ export function PublicMenuPage() {
               </div>
             )}
 
+            {(() => {
+              const isOfferUnlockRequired = selectedDiscountForModal.visibility_type === 'unlock_required' && !memberStatus;
+              const isOfferMemberRequired = (selectedDiscountForModal.visibility_type === 'members_only_visible' || selectedDiscountForModal.visibility_type === 'members_only_hidden') && memberStatus !== 'verified-member';
+
+              if (isOfferMemberRequired) {
+                return (
+                  <div className="pt-2">
+                    <div className="bg-gradient-to-r from-amber-50 to-orange-50/70 border border-amber-200/90 rounded-2xl p-4 flex items-center gap-3.5 shadow-xs">
+                      <div className="w-11 h-11 rounded-xl bg-amber-500/15 text-amber-600 flex items-center justify-center shrink-0 shadow-xs border border-amber-500/20">
+                        <Crown className="w-6 h-6 text-amber-600" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-black uppercase tracking-wider text-amber-900">Hotel Member Exclusive</span>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 text-amber-900">Locked</span>
+                        </div>
+                        <p className="text-xs text-amber-800/85 mt-1 leading-snug">
+                          This discount code is reserved exclusively for hotel members. Become a member to reveal and copy your unique code.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
+              if (isOfferUnlockRequired) {
+                return (
+                  <div className="pt-2">
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex items-center gap-3.5">
+                      <div className="w-10 h-10 rounded-xl bg-slate-200 text-slate-600 flex items-center justify-center shrink-0">
+                        <Lock className="w-5 h-5 text-slate-600" />
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="text-sm font-bold text-slate-900">Unlock Required</h4>
+                        <p className="text-xs text-slate-500 mt-0.5 leading-snug">
+                          Verify your mobile number to unlock and view the discount code.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
+              const uniqueCode = getUniqueCustomerDiscountCode(selectedDiscountForModal);
+              return (
+                <div className="pt-2">
+                  <div className="bg-amber-50/80 border border-amber-200/90 rounded-2xl p-3.5 flex items-center justify-between gap-3 shadow-xs">
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-800/80 block">Unique Discount Code</span>
+                      <span className="font-mono font-black text-lg sm:text-xl text-amber-950 tracking-wider select-all truncate block">
+                        {uniqueCode}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(uniqueCode);
+                        toast.success(`Discount code "${uniqueCode}" copied!`);
+                      }}
+                      className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all active:scale-95 flex items-center gap-1.5 shrink-0 cursor-pointer"
+                    >
+                      <Copy size={13} />
+                      <span>Copy Code</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
             <div className="pt-4">
-              <button
-                onClick={() => { setActiveDiscountFilter(selectedDiscountForModal.id); setSelectedDiscountForModal(null); window.scrollTo({ top: 300, behavior: 'smooth' }); }}
-                className="w-full py-4 px-4 rounded-2xl font-bold text-white transition-all transform hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2"
-                style={{ backgroundColor: primaryColor, boxShadow: `0 8px 24px ${primaryColor}50` }}
-              >
-                View Applicable Items
-              </button>
+              {(() => {
+                const isOfferUnlockRequired = selectedDiscountForModal.visibility_type === 'unlock_required' && !memberStatus;
+                const isOfferMemberRequired = (selectedDiscountForModal.visibility_type === 'members_only_visible' || selectedDiscountForModal.visibility_type === 'members_only_hidden') && memberStatus !== 'verified-member';
+
+                if (isOfferMemberRequired) {
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsBecomeMemberModalOpen(true);
+                      }}
+                      className="w-full py-4 px-4 rounded-2xl font-bold text-white transition-all transform hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2 shadow-lg cursor-pointer bg-gradient-to-r from-amber-500 via-amber-600 to-orange-500 hover:from-amber-600 hover:to-orange-600 shadow-amber-500/25 text-base"
+                    >
+                      <Crown size={20} className="shrink-0 text-amber-100" />
+                      <span>Become a Member</span>
+                    </button>
+                  );
+                }
+
+                if (isOfferUnlockRequired) {
+                  return (
+                    <button
+                      onClick={() => {
+                        setSelectedDiscountForModal(null);
+                        setDiscountPopupInitialStep('mobile');
+                        setIsDiscountPopupOpen(true);
+                      }}
+                      className="w-full py-4 px-4 rounded-2xl font-bold text-white transition-all transform hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2 shadow-lg cursor-pointer"
+                      style={{ backgroundColor: primaryColor, boxShadow: `0 8px 24px ${primaryColor}50` }}
+                    >
+                      <Lock size={18} className="shrink-0" />
+                      <span>Unlock Offer</span>
+                    </button>
+                  );
+                }
+
+                return (
+                  <button
+                    onClick={() => {
+                      setActiveDiscountFilter(selectedDiscountForModal.id);
+                      setSelectedDiscountForModal(null);
+                      window.scrollTo({ top: 300, behavior: 'smooth' });
+                    }}
+                    className="w-full py-4 px-4 rounded-2xl font-bold text-white transition-all transform hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2 shadow-lg cursor-pointer"
+                    style={{ backgroundColor: primaryColor, boxShadow: `0 8px 24px ${primaryColor}50` }}
+                  >
+                    View Applicable Items
+                  </button>
+                );
+              })()}
             </div>
           </div>
         )}
       </Modal>
 
+      {/* Become a Member Modal */}
+      <Modal
+        isOpen={isBecomeMemberModalOpen}
+        onClose={() => {
+          setIsBecomeMemberModalOpen(false);
+          setMemberCheckMessage({ type: 'idle', text: '' });
+        }}
+        title="Become a Hotel Member"
+        className="bg-white text-slate-900 max-w-md relative z-[110]"
+      >
+        <div className="space-y-4 mt-2">
+          {/* Top Banner */}
+          <div className="text-center pb-4 border-b border-slate-100 flex flex-col items-center">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-500 to-amber-400 text-white flex items-center justify-center shadow-lg shadow-amber-500/30 mb-3 transform hover:scale-105 transition-transform">
+              <Crown size={28} className="text-white" />
+            </div>
+            <h3 className="text-xl font-bold font-heading text-slate-900">Hotel Member Exclusive Offer</h3>
+            <p className="text-xs text-slate-500 mt-1 max-w-[280px]">
+              This discount code is reserved exclusively for registered hotel members.
+            </p>
+          </div>
+
+          {/* Account Status Display */}
+          {localStorage.getItem('customer_token') ? (
+            <div className="bg-slate-50 border border-slate-200/90 rounded-2xl p-3.5 flex items-center justify-between">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold shrink-0">
+                  <User size={18} />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Logged-In Account</span>
+                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 bg-emerald-100 rounded-full">
+                      <ShieldCheck size={10} /> Verified
+                    </span>
+                  </div>
+                  <p className="text-sm font-bold text-slate-800 font-mono truncate">
+                    {localStorage.getItem('customer_mobile') || localStorage.getItem('customer_phone') || 'Active Customer Session'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsBecomeMemberModalOpen(false);
+                  setDiscountPopupInitialStep('mobile');
+                  setIsDiscountPopupOpen(true);
+                }}
+                className="text-[11px] font-semibold text-amber-600 hover:text-amber-700 hover:underline cursor-pointer ml-2 shrink-0"
+              >
+                Switch
+              </button>
+            </div>
+          ) : (
+            <div className="bg-amber-50/80 border border-amber-200 rounded-2xl p-4 text-center space-y-2.5">
+              <p className="text-xs font-semibold text-amber-950 leading-relaxed">
+                Please log in with your mobile number first so we can verify your membership token.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsBecomeMemberModalOpen(false);
+                  setDiscountPopupInitialStep('mobile');
+                  setIsDiscountPopupOpen(true);
+                }}
+                className="w-full py-2.5 px-4 rounded-xl font-bold text-white bg-amber-600 hover:bg-amber-700 shadow-md text-xs cursor-pointer transition-colors"
+              >
+                Log in with Mobile Number
+              </button>
+            </div>
+          )}
+
+          {/* Instructions Card */}
+          <div className="bg-amber-50/70 border border-amber-200/80 rounded-2xl p-4 space-y-2.5">
+            <div className="flex items-start gap-2.5">
+              <span className="w-5 h-5 rounded-full bg-amber-200 text-amber-900 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">1</span>
+              <p className="text-xs font-semibold text-amber-950 leading-snug">
+                Ask the hotel staff or cashier at the counter to <span className="underline decoration-amber-500 underline-offset-2">add your mobile number as a member</span>.
+              </p>
+            </div>
+            <div className="flex items-start gap-2.5">
+              <span className="w-5 h-5 rounded-full bg-amber-200 text-amber-900 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">2</span>
+              <p className="text-xs font-semibold text-amber-950 leading-snug">
+                Tap <span className="font-bold text-amber-900">Check Membership Status</span> below to verify your token from the backend and unlock the code.
+              </p>
+            </div>
+          </div>
+
+          {/* Status feedback message */}
+          {memberCheckMessage.text && (
+            <div
+              className={`p-3.5 rounded-xl border text-xs font-medium flex items-start gap-2.5 animate-fadeIn ${
+                memberCheckMessage.type === 'success'
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  : memberCheckMessage.type === 'not_member'
+                  ? 'bg-amber-50 border-amber-200 text-amber-900'
+                  : 'bg-rose-50 border-rose-200 text-rose-800'
+              }`}
+            >
+              {memberCheckMessage.type === 'success' ? (
+                <CheckCircle2 size={16} className="text-emerald-600 shrink-0 mt-0.5" />
+              ) : memberCheckMessage.type === 'not_member' ? (
+                <AlertCircle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+              ) : (
+                <XCircle size={16} className="text-rose-600 shrink-0 mt-0.5" />
+              )}
+              <span className="leading-relaxed">{memberCheckMessage.text}</span>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="pt-2 space-y-2">
+            <button
+              type="button"
+              disabled={isCheckingMember || !localStorage.getItem('customer_token')}
+              onClick={() => handleCheckMembershipStatus()}
+              className="w-full py-3.5 px-4 rounded-xl font-bold text-white transition-all transform hover:scale-[1.01] active:scale-98 flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer bg-gradient-to-r from-amber-500 via-amber-600 to-orange-500 hover:from-amber-600 hover:to-orange-600 shadow-amber-500/25"
+            >
+              <RefreshCw size={17} className={`shrink-0 ${isCheckingMember ? 'animate-spin' : ''}`} />
+              <span>{isCheckingMember ? 'Checking Status...' : 'Check Membership Status'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setIsBecomeMemberModalOpen(false);
+                setMemberCheckMessage({ type: 'idle', text: '' });
+              }}
+              className="w-full py-2.5 px-4 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 transition-colors cursor-pointer"
+            >
+              Back to Offer
+            </button>
+          </div>
+        </div>
+      </Modal>
+
       {/* All Discounts Modal */}
       <Modal isOpen={isDiscountsModalOpen} onClose={() => setIsDiscountsModalOpen(false)} title="Active Offers" className="bg-white text-slate-900 max-w-md">
         <div className="space-y-4 mt-4 max-h-[60vh] overflow-y-auto scrollbar-hide">
-          {activeDiscounts.length === 0 ? (
+          {activeDiscounts.filter(isDiscountVisible).length === 0 ? (
             <p className="text-slate-500 text-sm text-center py-8">No active offers at the moment.</p>
           ) : (
-            activeDiscounts.map(disc => (
+            activeDiscounts.filter(isDiscountVisible).map(disc => (
               <div key={disc.id} onClick={() => { setIsDiscountsModalOpen(false); setSelectedDiscountForModal(disc); }} className="relative w-full flex shadow-sm rounded-xl overflow-hidden cursor-pointer transition-all duration-300 hover:shadow-md active:scale-[0.98] group bg-white" style={{ border: `1px solid ${primaryColor}30` }}>
                 <div className="relative w-24 flex flex-col items-center justify-center text-white p-3 shrink-0" style={{ backgroundColor: primaryColor }}>
                   <div className="text-xl font-black tracking-tight drop-shadow-md text-center">
                     {disc.discount_type === 'percentage' && `${Number(disc.discount_value)}%`}
                     {disc.discount_type === 'flat' && `${settings?.currency || '₹'}${Number(disc.discount_value)}`}
+                    {disc.discount_type === 'bogo' && 'BOGO'}
+                    {disc.discount_type === 'combo' && 'COMBO'}
+                    {disc.discount_type === 'free_item' && 'FREE'}
                   </div>
                 </div>
                 <div className="flex-1 p-3 flex flex-col justify-center relative bg-white overflow-hidden min-w-0">

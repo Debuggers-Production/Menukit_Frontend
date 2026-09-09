@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
-import { Users, ShieldCheck, Smartphone, Plus, Edit2, Search, Lock, RefreshCw, AlertCircle, Trophy } from 'lucide-react';
+import { Users, ShieldCheck, Smartphone, Plus, Edit2, Search, Lock, RefreshCw, AlertCircle, Trophy, Clock, CheckCircle2 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -57,6 +57,7 @@ export function MembersPage() {
   const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
   const [isDeletingAll, setIsDeletingAll] = useState(false);
   const [isConverting, setIsConverting] = useState(false);
+  const [selectedCustomerIds, setSelectedCustomerIds] = useState<string[]>([]);
 
   // Debounce search query input (350ms)
   useEffect(() => {
@@ -110,6 +111,7 @@ export function MembersPage() {
 
       if (reset) {
         setMembersList(res.items || []);
+        setSelectedCustomerIds([]);
       } else {
         setMembersList((prev) => [...prev, ...(res.items || [])]);
       }
@@ -173,13 +175,45 @@ export function MembersPage() {
     try {
       await membershipService.convertToMember(shop.id, memberId);
       toast.success('Customer converted to verified member!');
+      setSelectedCustomerIds(prev => prev.filter(id => id !== memberId));
       fetchAnalyticsSummary();
-      setActiveTab('existing');
+      loadMembersData(0, true);
     } catch (err: any) {
       toast.error(err.response?.data?.detail || 'Failed to convert customer');
     } finally {
       setIsConverting(false);
     }
+  };
+
+  const handleBatchConvert = async (specificIds?: string[]) => {
+    if (!shop?.id) return;
+    const idsToConvert = specificIds || (selectedCustomerIds.length > 0 ? selectedCustomerIds : undefined);
+    setIsConverting(true);
+    try {
+      const res = await membershipService.batchConvertMembers(shop.id, idsToConvert);
+      toast.success(res.message || 'Customers verified and added successfully!');
+      setSelectedCustomerIds([]);
+      fetchAnalyticsSummary();
+      loadMembersData(0, true);
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || 'Failed to verify and add members');
+    } finally {
+      setIsConverting(false);
+    }
+  };
+
+  const handleToggleSelectAll = () => {
+    if (selectedCustomerIds.length === membersList.length) {
+      setSelectedCustomerIds([]);
+    } else {
+      setSelectedCustomerIds(membersList.map(m => m.id));
+    }
+  };
+
+  const handleToggleSelectOne = (id: string) => {
+    setSelectedCustomerIds(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
   };
 
   const handleAddMember = async (e: React.FormEvent) => {
@@ -323,7 +357,7 @@ export function MembersPage() {
             {/* Custom Tab Switcher */}
             <div className="flex items-center gap-1.5 p-1 bg-slate-200/60 dark:bg-slate-800 rounded-xl max-w-fit">
               <button
-                onClick={() => setActiveTab('existing')}
+                onClick={() => { setActiveTab('existing'); setSelectedCustomerIds([]); }}
                 className={`px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 ${
                   activeTab === 'existing'
                     ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
@@ -338,7 +372,7 @@ export function MembersPage() {
 
 
               <button
-                onClick={() => setActiveTab('new')}
+                onClick={() => { setActiveTab('new'); setSelectedCustomerIds([]); }}
                 className={`px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 ${
                   activeTab === 'new'
                     ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
@@ -352,7 +386,7 @@ export function MembersPage() {
               </button>
 
               <button
-                onClick={() => setActiveTab('repeated')}
+                onClick={() => { setActiveTab('repeated'); setSelectedCustomerIds([]); }}
                 className={`px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 ${
                   activeTab === 'repeated'
                     ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
@@ -383,6 +417,36 @@ export function MembersPage() {
                 </div>
               )}
 
+              {activeTab === 'new' && !isDetailsLocked && membersList.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleToggleSelectAll}
+                    className="text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={membersList.length > 0 && selectedCustomerIds.length === membersList.length}
+                      onChange={handleToggleSelectAll}
+                      className="w-3.5 h-3.5 rounded border-slate-300 dark:border-slate-600 text-emerald-600 focus:ring-emerald-500 cursor-pointer pointer-events-none accent-emerald-600"
+                    />
+                    <span>{selectedCustomerIds.length === membersList.length ? 'Deselect All' : 'Select All'}</span>
+                  </button>
+
+                  <Button
+                    onClick={() => handleBatchConvert()}
+                    disabled={isConverting}
+                    size="sm"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold gap-1.5 shadow-xs transition-all"
+                  >
+                    <ShieldCheck size={14} />
+                    {selectedCustomerIds.length > 0
+                      ? `Verify & Add (${selectedCustomerIds.length})`
+                      : `Verify & Add All (${analytics?.auto_registered ?? membersList.length})`}
+                  </Button>
+                </div>
+              )}
+
               {activeTab === 'existing' && !isDetailsLocked && (
                 <Button
                   onClick={() => {
@@ -410,6 +474,31 @@ export function MembersPage() {
               className="w-full pl-9 pr-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-primary font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400"
             />
           </div>
+
+          {/* Active selection banner for New tab */}
+          {activeTab === 'new' && selectedCustomerIds.length > 0 && (
+            <div className="flex items-center justify-between bg-emerald-50/90 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-xl px-3.5 py-2 mt-2.5 text-xs animate-fade-in">
+              <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-200 font-bold">
+                <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                <span>{selectedCustomerIds.length} customer{selectedCustomerIds.length > 1 ? 's' : ''} selected</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedCustomerIds([])}
+                  className="text-emerald-600 dark:text-emerald-400 underline font-normal ml-1.5 hover:text-emerald-700 cursor-pointer text-[11px]"
+                >
+                  Clear selection
+                </button>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => handleBatchConvert()}
+                disabled={isConverting}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold h-7 px-3 rounded-lg shadow-xs"
+              >
+                <ShieldCheck size={13} /> Verify & Add Selected ({selectedCustomerIds.length})
+              </Button>
+            </div>
+          )}
         </div>
 
         <CardContent className="p-0">
@@ -439,24 +528,69 @@ export function MembersPage() {
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="bg-slate-50 dark:bg-slate-800/50 text-[10px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800">
+                    {activeTab === 'new' && (
+                      <th className="py-3 px-4 w-10 text-center">
+                        <input
+                          type="checkbox"
+                          checked={membersList.length > 0 && selectedCustomerIds.length === membersList.length}
+                          onChange={handleToggleSelectAll}
+                          className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-emerald-600 focus:ring-emerald-500 cursor-pointer accent-emerald-600"
+                          title={selectedCustomerIds.length === membersList.length ? 'Deselect all' : 'Select all'}
+                        />
+                      </th>
+                    )}
                     <th className="py-3 px-4">Name</th>
                     <th className="py-3 px-4">Mobile Number</th>
                     <th className="py-3 px-4">Joined On</th>
+                    <th className="py-3 px-4">Time</th>
                     {activeTab === 'repeated' && <th className="py-3 px-4 text-center">Visits</th>}
                     <th className="py-3 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 font-medium">
-                  {membersList.map((m, index) => (
-                    <tr key={`${m.id}-${index}`} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
+                  {membersList.map((m, index) => {
+                    const isSelected = selectedCustomerIds.includes(m.id);
+                    return (
+                    <tr
+                      key={`${m.id}-${index}`}
+                      className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors ${
+                        isSelected ? 'bg-emerald-50/40 dark:bg-emerald-950/20' : ''
+                      }`}
+                    >
+                      {activeTab === 'new' && (
+                        <td className="py-3 px-4 w-10 text-center">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleToggleSelectOne(m.id)}
+                            className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-emerald-600 focus:ring-emerald-500 cursor-pointer accent-emerald-600"
+                          />
+                        </td>
+                      )}
                       <td className="py-3 px-4 font-bold text-slate-800 dark:text-slate-200">
                         {m.name || 'Unnamed Customer'}
                       </td>
                       <td className="py-3 px-4 font-mono text-slate-600 dark:text-slate-400">
                         {m.mobile_number}
                       </td>
-                      <td className="py-3 px-4 text-slate-500 font-mono text-[11px]">
-                        {new Date(m.joined_at).toLocaleDateString()}
+                      <td className="py-3 px-4 font-mono text-[11px] whitespace-nowrap font-semibold text-slate-700 dark:text-slate-300">
+                        {new Date(m.joined_at).toLocaleDateString(undefined, {
+                          year: 'numeric',
+                          month: 'numeric',
+                          day: 'numeric'
+                        })}
+                      </td>
+                      <td className="py-3 px-4 font-mono text-[11px] whitespace-nowrap text-slate-500 dark:text-slate-400">
+                        <div className="flex items-center gap-1.5 font-sans">
+                          <Clock size={12} className="text-slate-400 shrink-0" />
+                          <span>
+                            {new Date(m.joined_at).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              hour12: true
+                            })}
+                          </span>
+                        </div>
                       </td>
                       {activeTab === 'repeated' && (
                         <td className="py-3 px-4 text-center font-extrabold text-indigo-600 dark:text-indigo-400">
@@ -487,7 +621,8 @@ export function MembersPage() {
                         ) : null}
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
 
