@@ -4,7 +4,8 @@ import {
   Mail, Store, Shield, Smartphone, ChevronRight, Sliders, Globe, 
   Coins, Truck, ShoppingBag, QrCode, Tag, MapPin, Zap, CheckCircle2, Lock, Info, AlertCircle,
   CreditCard, Printer, Plus, Trash2, Edit2, UtensilsCrossed, FileText, Check, RotateCcw,
-  Wifi, Usb, Volume2, Terminal, Copy, Receipt, Search, X, Tags, Layers, Sparkles, Eye, EyeOff, Loader2
+  Wifi, Usb, Volume2, Terminal, Copy, Receipt, Search, X, Tags, Layers, Sparkles, Eye, EyeOff, Loader2, Save,
+  Laptop, Download
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { toast } from 'react-hot-toast';
@@ -23,6 +24,7 @@ import { useHeaderStore } from '@/store/useHeaderStore';
 import { HeaderActions } from '@/components/HeaderActions';
 import { Switch } from '@/components/ui/Switch';
 import { SearchableSelect } from '@/components/ui/SearchableSelect';
+import { usePWAInstall } from '@/hooks/usePWAInstall';
 import menukitLogo from '@/assets/menukit-logo.svg';
 const loadRazorpayScript = (): Promise<boolean> => {
   return new Promise((resolve) => {
@@ -81,6 +83,7 @@ export function SettingsPage() {
   const { user, changeEmail } = useAuthStore();
   const { shop, setShop, categories, setCategories } = useShopStore();
   const navigate = useNavigate();
+  const { isInstalled, promptInstall } = usePWAInstall();
 
   // Tab State
   const [activeTab, setActiveTab] = useState<'general' | 'ordering' | 'discovery' | 'payments' | 'gst' | 'printers' | 'account'>('general');
@@ -1083,6 +1086,7 @@ export function SettingsPage() {
   return (
     <div className="space-y-6 max-w-6xl mx-auto animate-fade-in pb-24 lg:pb-12">
       
+      {/* Desktop Header Actions (Portals to Desktop Top Bar) */}
       <HeaderActions>
         <Button
           onClick={handleSaveShopSettings}
@@ -1092,6 +1096,23 @@ export function SettingsPage() {
           {isSavingSettings ? 'Saving...' : 'Save Settings'}
         </Button>
       </HeaderActions>
+
+      {/* Mobile-Only Top Action Bar */}
+      <div className="flex lg:hidden items-center justify-between gap-3 p-3.5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
+        <div>
+          <h2 className="text-sm font-bold text-slate-900 dark:text-white leading-tight">Shop Settings</h2>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 capitalize">{activeTab} tab</p>
+        </div>
+        <Button
+          onClick={handleSaveShopSettings}
+          disabled={isSavingSettings}
+          size="sm"
+          className="font-bold bg-primary hover:bg-primary-600 text-white rounded-xl shadow-xs transition-all px-4 py-2 gap-1.5 shrink-0"
+        >
+          {isSavingSettings ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+          {isSavingSettings ? 'Saving...' : 'Save Settings'}
+        </Button>
+      </div>
 
       <div className="flex flex-col md:flex-row gap-6 md:items-start pt-2">
         
@@ -1113,6 +1134,56 @@ export function SettingsPage() {
               GENERAL SETTINGS TAB
           ========================================= */}
           {activeTab === 'general' && (
+            <>
+            {/* Desktop Web App Installation Card */}
+            <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs animate-in fade-in duration-300">
+              <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-slate-50/50 dark:bg-slate-900/50">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                      <Laptop size={20} />
+                    </div>
+                    <div>
+                      <CardTitle className="text-base font-bold">Desktop Web App</CardTitle>
+                      <CardDescription className="text-xs">Run Menukit as a native desktop application on Windows, Mac, or Linux.</CardDescription>
+                    </div>
+                  </div>
+                  {isInstalled ? (
+                    <span className="text-[11px] font-bold px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 flex items-center gap-1.5 w-fit">
+                      <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
+                      App Installed
+                    </span>
+                  ) : (
+                    <Button
+                      type="button"
+                      onClick={promptInstall}
+                      size="sm"
+                      className="font-bold bg-primary hover:bg-primary-600 text-white rounded-xl shadow-xs gap-1.5 cursor-pointer shrink-0 w-fit"
+                    >
+                      <Download size={14} />
+                      Install on Desktop
+                    </Button>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="p-4 sm:p-6">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
+                    <p className="font-bold text-slate-800 dark:text-slate-200 mb-1">⚡ Dedicated Window</p>
+                    <p className="text-slate-500 dark:text-slate-400 text-[11px]">Opens like a native software without browser tabs and search bars.</p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
+                    <p className="font-bold text-slate-800 dark:text-slate-200 mb-1">🖨️ POS & Receipt Printers</p>
+                    <p className="text-slate-500 dark:text-slate-400 text-[11px]">Direct integration with local USB and Wi-Fi kitchen thermal receipt printers.</p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
+                    <p className="font-bold text-slate-800 dark:text-slate-200 mb-1">🔔 Live Order Ringing</p>
+                    <p className="text-slate-500 dark:text-slate-400 text-[11px]">Desktop notifications and continuous bell sound on incoming orders.</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs animate-in fade-in duration-300">
               <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-slate-50/50 dark:bg-slate-900/50">
                 <CardTitle className="text-base font-bold">Regional & Currency</CardTitle>
@@ -1168,6 +1239,7 @@ export function SettingsPage() {
                 </div>
               </CardContent>
             </Card>
+            </>
           )}
 
           {/* =========================================

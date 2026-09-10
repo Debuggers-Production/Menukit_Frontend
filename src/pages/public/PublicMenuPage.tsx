@@ -14,7 +14,7 @@ import { EntertainmentHub } from '@/components/games/EntertainmentHub';
 import { Gamepad2 } from 'lucide-react';
 import { DiscountUnlockPopup } from '@/components/public/DiscountUnlockPopup';
 import { OrderTypeModal } from '@/components/public/OrderTypeModal';
-import { useCartStore } from '@/store/cartStore';
+import { useCartStore, useShopCart } from '@/store/cartStore';
 import { useActiveOrders } from '@/hooks/useActiveOrders';
 import { InfiniteScrollTrigger } from '@/components/ui/InfiniteScrollTrigger';
 import QRCodeStyling from 'qr-code-styling';
@@ -144,7 +144,7 @@ export function PublicMenuPage() {
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [showProfileVerifyPopup, setShowProfileVerifyPopup] = useState(false);
 
-  const { orderType, isOrderTypeSet, setOrderType } = useCartStore();
+  const { orderType, isOrderTypeSet, setOrderType, items: cartItems, cartItemCount } = useShopCart(id);
   const [isOrderTypeModalOpen, setIsOrderTypeModalOpen] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const [welcomePhase, setWelcomePhase] = useState<'entering' | 'visible' | 'exiting' | 'hidden'>('hidden');
@@ -163,11 +163,11 @@ export function PublicMenuPage() {
       Boolean(tableParam) || 
       qrParam === 'true';
 
-    if (isQR) {
+    if (isQR && (!isOrderTypeSet || orderType !== 'dine_in')) {
       // Scanned QR code -> Auto-default to Dine-In mode for in-store QR scans
       setOrderType('dine_in', true);
     }
-  }, [searchParams, setOrderType]);
+  }, [searchParams, isOrderTypeSet, orderType, setOrderType]);
 
   const handleProfileClick = () => {
     const token = localStorage.getItem('customer_token');
@@ -397,8 +397,6 @@ export function PublicMenuPage() {
   const [isEntertainmentHubOpen, setIsEntertainmentHubOpen] = useState(false);
   const [isDiscountPopupOpen, setIsDiscountPopupOpen] = useState(false);
   const [discountPopupInitialStep, setDiscountPopupInitialStep] = useState<'intro' | 'mobile'>('intro');
-  const cartItems = useCartStore((state) => state.items);
-  const cartItemCount = cartItems.reduce((acc, item) => acc + item.quantity, 0);
   const [isCustomerLoggedIn, setIsCustomerLoggedIn] = useState<boolean>(() => {
     return Boolean(localStorage.getItem('customer_token'));
   });

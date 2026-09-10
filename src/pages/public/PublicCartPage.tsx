@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { ShoppingBag, Plus, Minus, Info, ChevronLeft, ChevronRight, CheckCircle, Key, MapPin, Navigation, Map, Armchair, Gift, Sparkles, Percent, Banknote, Truck, Tag } from 'lucide-react';
-import { useCartStore } from '@/store/cartStore';
+import { useCartStore, useShopCart } from '@/store/cartStore';
 import { api } from '@/services/api';
 import { Shop, Discount } from '@/types';
 import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
@@ -45,7 +45,7 @@ function MapEventsHandler({ onClick, center }: { onClick: (lat: number, lng: num
 export function PublicCartPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { items, updateQuantity, removeFromCart, manualDiscountId, setManualDiscount, orderType, setOrderType } = useCartStore();
+  const { items, updateQuantity, removeFromCart, clearCart, manualDiscountId, setManualDiscount, orderType, setOrderType, isOrderTypeSet } = useShopCart(id);
   
   const [shop, setShop] = useState<Shop | null>(null);
   const currencySymbol = shop?.settings?.currency || '₹';
@@ -299,7 +299,7 @@ export function PublicCartPage() {
 
   // Set default order type once shop settings are loaded if not already set
   useEffect(() => {
-    if (shop?.settings && !useCartStore.getState().isOrderTypeSet) {
+    if (shop?.settings && !isOrderTypeSet) {
       if (shop.settings.dinein_enabled) {
         setOrderType('dine_in', false);
       } else if (shop.settings.takeaway_enabled) {
@@ -308,7 +308,7 @@ export function PublicCartPage() {
         setOrderType('delivery', false);
       }
     }
-  }, [shop]);
+  }, [shop, isOrderTypeSet]);
 
   const loadRazorpaySDK = (): Promise<boolean> => {
     return new Promise((resolve) => {
@@ -397,7 +397,7 @@ export function PublicCartPage() {
 
       // Navigate immediately to the order tracking page.
       // Payment will happen there ONLY AFTER the shop accepts the order.
-      useCartStore.getState().clearCart();
+      clearCart();
       triggerHaptic(HAPTIC_PATTERNS.successUnlock);
       confetti({ particleCount: 100, spread: 65, origin: { y: 0.6 }, colors: [primaryColor, '#22c55e', '#3b82f6'], zIndex: 9999 });
       toast.success("Order sent! Waiting for shop to accept...");

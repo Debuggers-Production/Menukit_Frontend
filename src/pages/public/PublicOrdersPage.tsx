@@ -6,7 +6,7 @@ import { APP_CONFIG } from '@/config';
 import { Shop } from '@/types';
 import { DiscountUnlockPopup } from '@/components/public/DiscountUnlockPopup';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { useCartStore } from '@/store/cartStore';
+import { useCartStore, useShopCart } from '@/store/cartStore';
 import toast from 'react-hot-toast';
 import { useActiveOrders } from '@/hooks/useActiveOrders';
 import { contestService } from '@/services/contestService';
@@ -17,8 +17,7 @@ import { triggerHaptic, HAPTIC_PATTERNS } from '@/utils/haptic';
 export function PublicOrdersPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { items: cartItems } = useCartStore();
-  const cartItemCount = cartItems.reduce((acc, item) => acc + item.quantity, 0);
+  const { items: cartItems, cartItemCount } = useShopCart(id);
   const { currentOrder, totalActiveCount } = useActiveOrders(id);
   
   const [shop, setShop] = useState<Shop | null>(null);

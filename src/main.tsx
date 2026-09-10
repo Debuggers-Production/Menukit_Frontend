@@ -56,4 +56,14 @@ createRoot(document.getElementById('root')!).render(
         <Toaster position="top-center" />
       </BrowserRouter>
     </QueryClientProvider>
-)
+);
+
+// Register PWA Service Worker for Desktop Web App installability
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((err) => {
+      console.warn('PWA service worker registration:', err);
+    });
+  });
+}
+

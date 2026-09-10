@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { ShoppingBag, X, Plus, Minus, Info } from 'lucide-react';
-import { useCartStore } from '@/store/cartStore';
+import { useCartStore, useShopCart } from '@/store/cartStore';
 import { Discount, Shop } from '@/types';
 
 interface CartModalProps {
@@ -12,7 +12,7 @@ interface CartModalProps {
 }
 
 export function CartModal({ isOpen, onClose, shop, availableDiscounts, memberStatus }: CartModalProps) {
-  const { items, updateQuantity, removeFromCart, manualDiscountId, setManualDiscount } = useCartStore();
+  const { items, updateQuantity, removeFromCart, manualDiscountId, setManualDiscount } = useShopCart(shop?.id);
   
     
   const primaryColor = shop.theme?.primary_color || '#ea580c';

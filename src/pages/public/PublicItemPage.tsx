@@ -8,7 +8,7 @@ import { Shop, MenuItem, ReviewSummary, Discount } from '@/types';
 import { Lightbox } from '@/components/ui/Lightbox';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { DiscountUnlockPopup } from '@/components/public/DiscountUnlockPopup';
-import { useCartStore } from '@/store/cartStore';
+import { useCartStore, useShopCart } from '@/store/cartStore';
 import toast from 'react-hot-toast';
 
 const PRESET_TIMINGS: Record<string, string> = {
@@ -35,7 +35,7 @@ export function PublicItemPage() {
   // Interaction state
   const [selectedVariantIdx, setSelectedVariantIdx] = useState(0);
   const [selectedAddons, setSelectedAddons] = useState<number[]>([]);
-  const { addToCart, items: cartItems, removeFromCart, updateQuantity, orderType } = useCartStore();
+  const { addToCart, items: cartItems, removeFromCart, updateQuantity, orderType } = useShopCart(id);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
 
   const existingCartItem = useMemo(() => {

@@ -32,7 +32,9 @@ import {
   TrendingUp,
   Layers,
   Megaphone,
-  Sliders
+  Sliders,
+  Laptop,
+  Download
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { useShopStore } from '@/store/shopStore';
@@ -46,6 +48,8 @@ import { NotificationBell } from '@/components/ui/NotificationBell';
 import { api } from '@/services/api';
 import logo from "@/assets/menukit-logo.svg";
 import { ShopSwitcherDropdown } from '@/components/ShopSwitcherDropdown';
+import { usePWAInstall } from '@/hooks/usePWAInstall';
+import { DesktopInstallModal } from '@/components/DesktopInstallModal';
 
 export function DashboardLayout() {
   const navigate = useNavigate();
@@ -53,6 +57,7 @@ export function DashboardLayout() {
   const [isSignOutModalOpen, setIsSignOutModalOpen] = useState(false);
   const [isLanguageModalOpen, setIsLanguageModalOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
+  const { isInstalled, promptInstall, isModalOpen, setIsModalOpen } = usePWAInstall();
   const [subStatus, setSubStatus] = useState<any>(null);
   const headerTitle = useHeaderStore((state) => state.title);
   const headerSubtitle = useHeaderStore((state) => state.subtitle);
@@ -510,6 +515,28 @@ export function DashboardLayout() {
           })}
         </nav>
 
+        {/* PWA Desktop Web App Installation Banner in Sidebar */}
+        {!isInstalled && (
+          <div className="p-2.5 border-t border-slate-100 dark:border-slate-800">
+            <button
+              onClick={promptInstall}
+              className="w-full p-2.5 rounded-xl bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-orange-500/5 hover:from-orange-500/20 hover:to-amber-500/20 border border-orange-500/20 text-left transition-all group cursor-pointer flex items-center justify-between shadow-2xs"
+              title="Install Menukit Desktop Web App"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-7 h-7 rounded-lg bg-primary text-white flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform">
+                  <Laptop size={14} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-tight">Install Desktop App</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">Faster POS & Printing</p>
+                </div>
+              </div>
+              <Download size={14} className="text-primary shrink-0 opacity-70 group-hover:opacity-100 transition-opacity ml-1" />
+            </button>
+          </div>
+        )}
+
         {/* Sidebar Footer - Logged in user info */}
         <div className="p-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/60 shrink-0 flex items-center justify-between gap-2.5">
           <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -547,6 +574,16 @@ export function DashboardLayout() {
             <div id="header-actions-portal" className="flex items-center gap-3"></div>
             <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 mx-2"></div>
             <div className="flex items-center gap-2">
+              {!isInstalled && (
+                <button
+                  onClick={promptInstall}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 hover:bg-primary/20 text-primary font-bold text-xs border border-primary/25 transition-all shadow-2xs hover:scale-105 active:scale-95 cursor-pointer shrink-0 mr-1"
+                  title="Install Menukit as Desktop App"
+                >
+                  <Laptop size={13} />
+                  <span>Install Desktop App</span>
+                </button>
+              )}
               <NotificationBell />
               <button
                 onClick={() => setIsLanguageModalOpen(true)}
@@ -579,6 +616,15 @@ export function DashboardLayout() {
 
           {/* Right Action Icons */}
           <div className="flex items-center gap-1.5 shrink-0 z-20">
+            {!isInstalled && (
+              <button
+                onClick={promptInstall}
+                className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center hover:bg-primary/20 transition-colors border border-primary/25"
+                title="Install Web App"
+              >
+                <Download size={15} />
+              </button>
+            )}
             <NotificationBell />
             <button
               onClick={() => setIsLanguageModalOpen(true)}
@@ -801,6 +847,12 @@ export function DashboardLayout() {
       <LanguageSelectorModal
         isOpen={isLanguageModalOpen}
         onClose={() => setIsLanguageModalOpen(false)}
+      />
+
+      <DesktopInstallModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onInstall={promptInstall}
       />
     </div>
   );
