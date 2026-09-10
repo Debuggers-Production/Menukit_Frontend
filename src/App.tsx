@@ -28,29 +28,54 @@ const MCPAuthPage = lazy(() => import('@/pages/auth/MCPAuthPage').then(m => ({ d
 const OAuthConsentPage = lazy(() => import('@/pages/auth/OAuthConsentPage').then(m => ({ default: m.OAuthConsentPage })));
 const VerifyEmployeePage = lazy(() => import('@/pages/auth/VerifyEmployeePage').then(m => ({ default: m.VerifyEmployeePage })));
 
-// Dashboard Pages
-const DashboardPage = lazy(() => import('@/pages/dashboard/DashboardPage').then(m => ({ default: m.DashboardPage })));
-const ShopSetupPage = lazy(() => import('@/pages/shop/ShopSetupPage').then(m => ({ default: m.ShopSetupPage })));
-const CategoriesPage = lazy(() => import('@/pages/menu/CategoriesPage').then(m => ({ default: m.CategoriesPage })));
-const MenuItemsPage = lazy(() => import('@/pages/menu/MenuItemsPage').then(m => ({ default: m.MenuItemsPage })));
-const BulkUploadPage = lazy(() => import('@/pages/menu/BulkUploadPage').then(m => ({ default: m.BulkUploadPage })));
-const JsonBulkUploadPage = lazy(() => import('@/pages/menu/JsonBulkUploadPage').then(m => ({ default: m.JsonBulkUploadPage })));
-const CustomizeThemePage = lazy(() => import('@/pages/theme/CustomizeThemePage').then(m => ({ default: m.CustomizeThemePage })));
-const QRCodePage = lazy(() => import('@/pages/qr/QRCodePage').then(m => ({ default: m.QRCodePage })));
-const AnalyticsPage = lazy(() => import('@/pages/analytics/AnalyticsPage').then(m => ({ default: m.AnalyticsPage })));
-const DiscountsPage = lazy(() => import('@/pages/discounts/DiscountsPage').then(m => ({ default: m.DiscountsPage })));
-const ContestsPage = lazy(() => import('@/pages/contests/ContestsPage').then(m => ({ default: m.ContestsPage })));
-const CampaignsPage = lazy(() => import('@/pages/marketing/CampaignsPage').then(m => ({ default: m.CampaignsPage })));
-const InternalBulkPage = lazy(() => import('@/pages/admin/InternalBulkPage').then(m => ({ default: m.InternalBulkPage })));
+import { lazyWithPreload, registerPreload } from '@/utils/lazyWithPreload';
 
-const MembersPage = lazy(() => import('@/pages/members/MembersPage').then(m => ({ default: m.MembersPage })));
-const SettingsPage = lazy(() => import('@/pages/settings/SettingsPage').then(m => ({ default: m.SettingsPage })));
-const TeamPage = lazy(() => import('@/pages/settings/TeamPage').then(m => ({ default: m.TeamPage })));
-const SettlementsPage = lazy(() => import('@/pages/settlements/SettlementsPage').then(m => ({ default: m.SettlementsPage })));
-const SubscriptionMarketplacePage = lazy(() => import('@/pages/subscription/SubscriptionMarketplacePage').then(m => ({ default: m.SubscriptionMarketplacePage })));
-const NotificationsPage = lazy(() => import('@/pages/notifications/NotificationsPage').then(m => ({ default: m.NotificationsPage })));
-const OrdersPage = lazy(() => import('@/pages/orders/OrdersPage').then(m => ({ default: m.OrdersPage })));
-const ShopSelectionPage = lazy(() => import('@/pages/auth/ShopSelectionPage').then(m => ({ default: m.ShopSelectionPage })));
+// Dashboard Pages
+const DashboardPage = lazyWithPreload(() => import('@/pages/dashboard/DashboardPage').then(m => ({ default: m.DashboardPage })));
+const ShopSetupPage = lazyWithPreload(() => import('@/pages/shop/ShopSetupPage').then(m => ({ default: m.ShopSetupPage })));
+const CategoriesPage = lazyWithPreload(() => import('@/pages/menu/CategoriesPage').then(m => ({ default: m.CategoriesPage })));
+const MenuItemsPage = lazyWithPreload(() => import('@/pages/menu/MenuItemsPage').then(m => ({ default: m.MenuItemsPage })));
+const BulkUploadPage = lazyWithPreload(() => import('@/pages/menu/BulkUploadPage').then(m => ({ default: m.BulkUploadPage })));
+const JsonBulkUploadPage = lazyWithPreload(() => import('@/pages/menu/JsonBulkUploadPage').then(m => ({ default: m.JsonBulkUploadPage })));
+const CustomizeThemePage = lazyWithPreload(() => import('@/pages/theme/CustomizeThemePage').then(m => ({ default: m.CustomizeThemePage })));
+const QRCodePage = lazyWithPreload(() => import('@/pages/qr/QRCodePage').then(m => ({ default: m.QRCodePage })));
+const AnalyticsPage = lazyWithPreload(() => import('@/pages/analytics/AnalyticsPage').then(m => ({ default: m.AnalyticsPage })));
+const DiscountsPage = lazyWithPreload(() => import('@/pages/discounts/DiscountsPage').then(m => ({ default: m.DiscountsPage })));
+const ContestsPage = lazyWithPreload(() => import('@/pages/contests/ContestsPage').then(m => ({ default: m.ContestsPage })));
+const CampaignsPage = lazyWithPreload(() => import('@/pages/marketing/CampaignsPage').then(m => ({ default: m.CampaignsPage })));
+const InternalBulkPage = lazyWithPreload(() => import('@/pages/admin/InternalBulkPage').then(m => ({ default: m.InternalBulkPage })));
+
+const MembersPage = lazyWithPreload(() => import('@/pages/members/MembersPage').then(m => ({ default: m.MembersPage })));
+const SettingsPage = lazyWithPreload(() => import('@/pages/settings/SettingsPage').then(m => ({ default: m.SettingsPage })));
+const TeamPage = lazyWithPreload(() => import('@/pages/settings/TeamPage').then(m => ({ default: m.TeamPage })));
+const SettlementsPage = lazyWithPreload(() => import('@/pages/settlements/SettlementsPage').then(m => ({ default: m.SettlementsPage })));
+const SubscriptionMarketplacePage = lazyWithPreload(() => import('@/pages/subscription/SubscriptionMarketplacePage').then(m => ({ default: m.SubscriptionMarketplacePage })));
+const NotificationsPage = lazyWithPreload(() => import('@/pages/notifications/NotificationsPage').then(m => ({ default: m.NotificationsPage })));
+const OrdersPage = lazyWithPreload(() => import('@/pages/orders/OrdersPage').then(m => ({ default: m.OrdersPage })));
+const ShopSelectionPage = lazyWithPreload(() => import('@/pages/auth/ShopSelectionPage').then(m => ({ default: m.ShopSelectionPage })));
+
+// Register Dashboard Preloaders
+registerPreload('/dashboard', DashboardPage.preload);
+registerPreload('/shop-setup', ShopSetupPage.preload);
+registerPreload('/categories', CategoriesPage.preload);
+registerPreload('/menu-items', MenuItemsPage.preload);
+registerPreload('/bulk-upload', BulkUploadPage.preload);
+registerPreload('/json-bulk-upload', JsonBulkUploadPage.preload);
+registerPreload('/customize', CustomizeThemePage.preload);
+registerPreload('/qr-code', QRCodePage.preload);
+registerPreload('/analytics', AnalyticsPage.preload);
+registerPreload('/orders', OrdersPage.preload);
+registerPreload('/discounts', DiscountsPage.preload);
+registerPreload('/contests', ContestsPage.preload);
+registerPreload('/campaigns', CampaignsPage.preload);
+registerPreload('/members', MembersPage.preload);
+registerPreload('/settings', SettingsPage.preload);
+registerPreload('/settings/team', TeamPage.preload);
+registerPreload('/settlements', SettlementsPage.preload);
+registerPreload('/subscription', SubscriptionMarketplacePage.preload);
+registerPreload('/notifications', NotificationsPage.preload);
+registerPreload('/internal-bulk', InternalBulkPage.preload);
+registerPreload('/select-shop', ShopSelectionPage.preload);
 
 // Public Pages
 const PublicMenuPage = lazy(() => import('@/pages/public/PublicMenuPage').then(m => ({ default: m.PublicMenuPage })));

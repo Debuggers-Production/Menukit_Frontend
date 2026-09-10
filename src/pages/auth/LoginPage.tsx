@@ -14,6 +14,7 @@ export function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isLoading) return;
     if (!email) {
       toast.error('Please enter your email address');
       return;

@@ -144,9 +144,9 @@ export function SubscriptionMarketplacePage() {
     description: string;
   }>({
     name: 'All-Access Pack',
-    price: 399,
-    monthly_price: 399,
-    yearly_price: 3990,
+    price: 449,
+    monthly_price: 449,
+    yearly_price: 4490,
     currency: 'INR',
     currency_symbol: '₹',
     description: 'Unlock everything — all current and future modules included without restrictions.',

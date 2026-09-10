@@ -1,6 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router';
 import Lenis from 'lenis';
+import { DashboardRouteLoading } from '@/components/DashboardRouteLoading';
+import { preloadRoute, preloadAllRoutes } from '@/utils/lazyWithPreload';
 import {
   LayoutDashboard,
   Store,
@@ -58,6 +60,44 @@ export function DashboardLayout() {
   const { shop, setShop } = useShopStore();
   const location = useLocation();
   const mainRef = useRef<HTMLElement>(null);
+
+  // Fast route titles for instant header synchronization on click
+  const ROUTE_META: Record<string, { title: string; subtitle: string }> = {
+    '/dashboard': { title: 'Dashboard', subtitle: 'Overview of your shop' },
+    '/campaigns': { title: 'Campaigns', subtitle: 'Engage customers directly with rich WhatsApp broadcast campaigns.' },
+    '/contests': { title: 'Contests Manager', subtitle: 'Create customer drawing or Kavithai contests with minimum targets.' },
+    '/orders': { title: 'Orders', subtitle: 'Manage incoming and completed orders' },
+    '/categories': { title: 'Categories', subtitle: 'Manage menu categories' },
+    '/menu-items': { title: 'Menus', subtitle: 'Manage your food & drink items' },
+    '/discounts': { title: 'Discounts', subtitle: 'Create special offers and promos' },
+    '/members': { title: 'Members', subtitle: 'View customer loyalty and profiles' },
+    '/qr-code': { title: 'QR Code', subtitle: 'Download & customize your shop QR code' },
+    '/analytics': { title: 'Analytics', subtitle: 'Insights and performance reports' },
+    '/customize': { title: 'Customize Theme', subtitle: 'Personalize your digital menu design' },
+    '/shop-setup': { title: 'Shop Settings', subtitle: 'Manage your shop profile' },
+    '/settings/team': { title: 'Staff & Team', subtitle: 'Manage employee access' },
+    '/subscription': { title: 'Subscription', subtitle: 'Manage your plans and billing' },
+    '/settlements': { title: 'Settlements', subtitle: 'Track payouts and finances' },
+    '/settings': { title: 'Settings', subtitle: 'General preferences' },
+    '/notifications': { title: 'Notifications', subtitle: 'Recent shop alerts and updates' },
+    '/internal-bulk': { title: 'Bulk Data Upload', subtitle: 'Import categories, menus, or discounts directly' },
+  };
+
+  // Immediate title synchronization on route change so previous page title doesn't linger
+  useEffect(() => {
+    const meta = ROUTE_META[location.pathname] || Object.entries(ROUTE_META).find(([p]) => location.pathname.startsWith(p))?.[1];
+    if (meta) {
+      useHeaderStore.getState().setTitle(meta.title, meta.subtitle);
+    }
+  }, [location.pathname]);
+
+  // Preload all dashboard page chunks in the background during idle time
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      preloadAllRoutes();
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     const fetchCurrentShop = async () => {
@@ -447,6 +487,9 @@ export function DashboardLayout() {
 
                           <NavLink
                             to={item.path}
+                            onMouseEnter={() => preloadRoute(item.path)}
+                            onFocus={() => preloadRoute(item.path)}
+                            onTouchStart={() => preloadRoute(item.path)}
                             className={cn(
                               "w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-bold transition-all ml-1",
                               isActive
@@ -615,7 +658,9 @@ export function DashboardLayout() {
           onScroll={(e) => setIsScrolled(e.currentTarget.scrollTop > 20)}
         >
           <div className="min-h-full">
-            <Outlet />
+            <Suspense fallback={<DashboardRouteLoading />}>
+              <Outlet />
+            </Suspense>
           </div>
         </main>
       </div>
@@ -631,6 +676,9 @@ export function DashboardLayout() {
             <NavLink
               key={item.path}
               to={item.path}
+              onMouseEnter={() => preloadRoute(item.path)}
+              onFocus={() => preloadRoute(item.path)}
+              onTouchStart={() => preloadRoute(item.path)}
               onClick={() => triggerHaptic(HAPTIC_PATTERNS.tap)}
               className={cn(
                 "flex flex-col items-center justify-center w-full h-full space-y-1 transition-all",
@@ -679,6 +727,8 @@ export function DashboardLayout() {
                     <NavLink
                       key={item.path}
                       to={item.path}
+                      onMouseEnter={() => preloadRoute(item.path)}
+                      onTouchStart={() => preloadRoute(item.path)}
                       onClick={() => {
                         triggerHaptic(HAPTIC_PATTERNS.tap);
                         setIsMoreMenuOpen(false);
