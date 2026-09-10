@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Clock, ChevronUp, ChevronDown } from 'lucide-react';
+import { Clock, ChevronUp, ChevronDown, X } from 'lucide-react';
 import { cn } from '@/utils/cn';
 
 interface TimePickerProps {
@@ -8,9 +8,10 @@ interface TimePickerProps {
   onChange?: (value: string) => void;
   placeholder?: string;
   direction?: 'auto' | 'up' | 'down';
+  className?: string;
 }
 
-export function TimePicker({ label, value, onChange, placeholder, direction = 'auto' }: TimePickerProps) {
+export function TimePicker({ label, value, onChange, placeholder, direction = 'auto', className }: TimePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [openUpwards, setOpenUpwards] = useState(false);
   const [hour, setHour] = useState(12);
@@ -103,7 +104,7 @@ export function TimePicker({ label, value, onChange, placeholder, direction = 'a
     : '';
 
   return (
-    <div className="w-full space-y-1.5 text-left" ref={ref}>
+    <div className={cn("w-full space-y-1.5 text-left", className)} ref={ref}>
       {label && (
         <label className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
           <Clock size={14} />
@@ -115,16 +116,29 @@ export function TimePicker({ label, value, onChange, placeholder, direction = 'a
           type="button"
           onClick={() => setIsOpen(v => !v)}
           className={cn(
-            "flex h-11 w-full items-center rounded-xl border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:bg-slate-900",
-            isOpen && "ring-2 ring-primary border-primary",
-            !displayValue && "text-muted-foreground"
+            "w-full h-9 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold flex items-center justify-between transition-all hover:bg-slate-100 dark:hover:bg-slate-750 focus:outline-none focus:ring-2 focus:ring-primary/40 cursor-pointer",
+            displayValue ? "text-slate-900 dark:text-white" : "text-slate-400"
           )}
         >
-          <Clock size={16} className="mr-2 text-slate-400 shrink-0" />
-          <span className={cn("flex-1 text-left", !displayValue && "text-slate-400")}>
-            {displayValue || placeholder || 'Select time'}
-          </span>
-          <ChevronDown size={16} className={cn("text-slate-400 transition-transform", isOpen && "rotate-180")} />
+          <div className="flex items-center gap-2 truncate flex-1 min-w-0">
+            <Clock size={14} className="text-slate-400 shrink-0" />
+            <span className="truncate">{displayValue || placeholder || 'Select time'}</span>
+          </div>
+          {value ? (
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={(e) => {
+                e.stopPropagation();
+                onChange?.('');
+              }}
+              className="p-0.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 transition-colors ml-1"
+            >
+              <X size={12} />
+            </div>
+          ) : (
+            <ChevronDown size={14} className={cn("text-slate-400 transition-transform ml-1", isOpen && "rotate-180")} />
+          )}
         </button>
 
         {isOpen && (

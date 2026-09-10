@@ -27,10 +27,10 @@ export function PublicItemPage() {
   const { id, itemId } = useParams();
   const navigate = useNavigate();
 
-  const [shop, setShop] = useState<Shop | null>(null);
-  const [item, setItem] = useState<MenuItem | null>(null);
-  const [discounts, setDiscounts] = useState<Discount[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [shop, setShop] = useState<Shop | null>(() => (id ? publicCache.get(`shop_${id}`) : null));
+  const [item, setItem] = useState<MenuItem | null>(() => (itemId ? publicCache.get(`item_${itemId}`) : null));
+  const [discounts, setDiscounts] = useState<Discount[]>(() => (id ? publicCache.get(`discounts_${id}`) || [] : []));
+  const [isLoading, setIsLoading] = useState(() => !(itemId && publicCache.get(`item_${itemId}`)));
 
   // Interaction state
   const [selectedVariantIdx, setSelectedVariantIdx] = useState(0);
@@ -49,8 +49,8 @@ export function PublicItemPage() {
   }, [cartItems, item, selectedVariantIdx, selectedAddons]);
 
   // Reviews state
-  const [reviewsSummary, setReviewsSummary] = useState<ReviewSummary | null>(null);
-  const [isLoadingReviews, setIsLoadingReviews] = useState(true);
+  const [reviewsSummary, setReviewsSummary] = useState<ReviewSummary | null>(() => itemId ? publicCache.get(`item_reviews_${itemId}`) : null);
+  const [isLoadingReviews, setIsLoadingReviews] = useState(() => !(itemId && publicCache.get(`item_reviews_${itemId}`)));
   const [reviewRating, setReviewRating] = useState(0);
   const [reviewHover, setReviewHover] = useState(0);
   const [reviewName, setReviewName] = useState('');
@@ -89,17 +89,34 @@ export function PublicItemPage() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Trigger popup after 10 seconds if not already verified and haven't seen it
+  // Show discount unlock popup every 10 seconds if user hasn't entered their mobile number
   useEffect(() => {
-    if (!id || memberStatus === 'verified-member' || sessionStorage.getItem(`discount_popup_seen_${id}`)) return;
+    const hasProvidedNumber = Boolean(
+      localStorage.getItem('customer_mobile') ||
+      localStorage.getItem('customer_phone') ||
+      localStorage.getItem('customer_token') ||
+      memberStatus === 'verified-member' ||
+      memberStatus === 'unlocked'
+    );
+
+    if (!id || hasProvidedNumber || isDiscountPopupOpen) return;
 
     const timer = setTimeout(() => {
-      setIsDiscountPopupOpen(true);
-      sessionStorage.setItem(`discount_popup_seen_${id}`, 'true');
+      const stillNoNumber = !Boolean(
+        localStorage.getItem('customer_mobile') ||
+        localStorage.getItem('customer_phone') ||
+        localStorage.getItem('customer_token') ||
+        memberStatus === 'verified-member' ||
+        memberStatus === 'unlocked'
+      );
+
+      if (stillNoNumber) {
+        setIsDiscountPopupOpen(true);
+      }
     }, 10000);
 
     return () => clearTimeout(timer);
-  }, [id, memberStatus]);
+  }, [id, memberStatus, isDiscountPopupOpen]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
@@ -107,6 +124,7 @@ export function PublicItemPage() {
     document.body.scrollTop = 0;
     setSelectedVariantIdx(0);
     setSelectedAddons([]);
+
     const fetchData = async () => {
       try {
         let cachedShop = id ? publicCache.get(`shop_${id}`) : null;
@@ -114,27 +132,59 @@ export function PublicItemPage() {
           cachedShop = null; // Stale cache without theme, refetch
         }
         const cachedDiscounts = id ? publicCache.get(`discounts_${id}`) : null;
+        const cachedItem = itemId ? publicCache.get<MenuItem>(`item_${itemId}`) : null;
 
         if (cachedShop) setShop(cachedShop);
         if (cachedDiscounts) setDiscounts(cachedDiscounts);
+        if (cachedItem) setItem(cachedItem);
 
-        const promises: Promise<any>[] = [api.get(`/public/shop/${id}/items/${itemId}`)];
-        if (!cachedShop) promises.push(api.get(`/public/shop/${id}`));
-        if (!cachedDiscounts) promises.push(api.get(`/public/shop/${id}/discounts`));
+        // If item is already cached, reuse it and do not call the API again
+        if (cachedItem && (cachedShop || !id) && (cachedDiscounts || !id)) {
+          setIsLoading(false);
+          return;
+        }
+
+        const promises: Promise<any>[] = [];
+        let fetchItemIdx = -1;
+        let fetchShopIdx = -1;
+        let fetchDiscountsIdx = -1;
+
+        if (!cachedItem) {
+          fetchItemIdx = promises.length;
+          promises.push(api.get(`/public/shop/${id}/items/${itemId}`));
+        }
+        if (!cachedShop) {
+          fetchShopIdx = promises.length;
+          promises.push(api.get(`/public/shop/${id}`));
+        }
+        if (!cachedDiscounts) {
+          fetchDiscountsIdx = promises.length;
+          promises.push(api.get(`/public/shop/${id}/discounts`));
+        }
+
+        if (promises.length === 0) {
+          setIsLoading(false);
+          return;
+        }
 
         const results = await Promise.all(promises);
-        const itemRes = results[0];
-        setItem(itemRes.data);
 
-        let idx = 1;
-        if (!cachedShop && results[idx]) {
-          setShop(results[idx].data);
-          if (id) publicCache.set(`shop_${id}`, results[idx].data);
-          idx++;
+        if (fetchItemIdx !== -1 && results[fetchItemIdx]) {
+          const itemData = results[fetchItemIdx].data;
+          setItem(itemData);
+          if (itemId) publicCache.set(`item_${itemId}`, itemData);
         }
-        if (!cachedDiscounts && results[idx]) {
-          setDiscounts(results[idx].data);
-          if (id) publicCache.set(`discounts_${id}`, results[idx].data);
+
+        if (fetchShopIdx !== -1 && results[fetchShopIdx]) {
+          const shopData = results[fetchShopIdx].data;
+          setShop(shopData);
+          if (id) publicCache.set(`shop_${id}`, shopData);
+        }
+
+        if (fetchDiscountsIdx !== -1 && results[fetchDiscountsIdx]) {
+          const discountsData = results[fetchDiscountsIdx].data;
+          setDiscounts(discountsData);
+          if (id) publicCache.set(`discounts_${id}`, discountsData);
         }
       } catch (err) {
         console.error('Failed to load item page', err);
@@ -147,6 +197,7 @@ export function PublicItemPage() {
         }, 10);
       }
     };
+
     if (id && itemId) fetchData();
   }, [id, itemId]);
 
@@ -165,8 +216,18 @@ export function PublicItemPage() {
 
   useEffect(() => {
     if (id && itemId) {
+      const cachedReviews = publicCache.get<ReviewSummary>(`item_reviews_${itemId}`);
+      if (cachedReviews) {
+        setReviewsSummary(cachedReviews);
+        setIsLoadingReviews(false);
+        return;
+      }
+
       api.get(`/public/shop/${id}/items/${itemId}/reviews`)
-        .then(res => setReviewsSummary(res.data))
+        .then(res => {
+          setReviewsSummary(res.data);
+          publicCache.set(`item_reviews_${itemId}`, res.data);
+        })
         .catch(() => setReviewsSummary({ average_rating: 0, total_reviews: 0, rating_distribution: {}, reviews: [] }))
         .finally(() => setIsLoadingReviews(false));
     }
@@ -207,6 +268,7 @@ export function PublicItemPage() {
       setReviewSubmitted(true);
       const res = await api.get(`/public/shop/${id}/items/${item.id}/reviews`);
       setReviewsSummary(res.data);
+      publicCache.set(`item_reviews_${item.id}`, res.data);
       setReviewRating(0);
       setReviewName('');
       setReviewComment('');
@@ -289,8 +351,14 @@ export function PublicItemPage() {
       <div className="sticky top-0 z-45 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md border-b border-slate-100 dark:border-slate-800 p-4 flex items-center justify-between">
         <div className="flex items-center gap-3 min-w-0">
           <button
-            onClick={() => navigate(`/shop/${id}`)}
-            className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
+            onClick={() => {
+              if (window.history.length > 1) {
+                navigate(-1);
+              } else {
+                navigate(`/shop/${id}`);
+              }
+            }}
+            className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0 cursor-pointer"
           >
             <ChevronLeft size={24} />
           </button>
@@ -697,7 +765,7 @@ export function PublicItemPage() {
       {isDiscountPopupOpen && shop && (
         <DiscountUnlockPopup
           shopId={shop.id}
-          initialStep="mobile"
+          initialStep="intro"
           onClose={() => setIsDiscountPopupOpen(false)}
           onUnlock={(customerId) => {
             if (customerId) {

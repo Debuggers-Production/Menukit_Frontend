@@ -118,7 +118,8 @@ const SortableCategoryItem = ({
 };
 
 export function CategoriesPage() {
-  const { categories, setCategories } = useShopStore();
+  const { categories: rawCategories, setCategories } = useShopStore();
+  const categories = Array.isArray(rawCategories) ? rawCategories : [];
   const [isLoading, setIsLoading] = useState(() => categories.length === 0);
   
   // Pagination & Search
@@ -186,7 +187,7 @@ export function CategoriesPage() {
       }
 
       const res = await api.get('/categories', { params });
-      const newItems: Category[] = res.data;
+      const newItems: Category[] = Array.isArray(res.data) ? res.data : (res.data?.items || res.data?.categories || []);
       const serverHasMore = res.headers['x-has-more'] === 'true' || newItems.length === PAGE_SIZE;
 
       setHasMore(serverHasMore);
@@ -195,7 +196,7 @@ export function CategoriesPage() {
       if (isReset) {
         setCategories(newItems);
       } else {
-        setCategories((prev) => [...prev, ...newItems]);
+        setCategories((prev) => [...(Array.isArray(prev) ? prev : []), ...newItems]);
       }
     } catch (error) {
       toast.error('Failed to load categories');
@@ -424,10 +425,10 @@ export function CategoriesPage() {
             onDragEnd={handleDragEnd}
           >
             <SortableContext
-              items={categories.map(c => c.id)}
+              items={(categories || []).map(c => c.id)}
               strategy={verticalListSortingStrategy}
             >
-              {categories.map((cat) => (
+              {(categories || []).map((cat) => (
                 <SortableCategoryItem
                   key={cat.id}
                   cat={cat}

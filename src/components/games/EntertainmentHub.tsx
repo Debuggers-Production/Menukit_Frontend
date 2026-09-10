@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Modal } from '@/components/ui/Modal';
-import { Gamepad2, Lightbulb, Trophy, RefreshCcw, Cookie, Palette, HelpCircle, XCircle, Circle, Heart, X, PlaySquare, CheckCircle2 } from 'lucide-react';
+import { Gamepad2, Lightbulb, Trophy, RefreshCcw, Cookie, Palette, HelpCircle, XCircle, Circle, Heart, X, PlaySquare, CheckCircle2, Loader2, Sparkles, Globe } from 'lucide-react';
 import { MenuItem } from '@/types';
 
 interface EntertainmentHubProps {
@@ -45,6 +45,68 @@ const FORTUNES = [
   "Share your fries today, and receive good karma tomorrow. 🍟"
 ];
 
+interface TriviaQuestion {
+  q: string;
+  options: string[];
+  a: string;
+  category?: string;
+}
+
+const FORTUNE_EMOJIS = ['🥠', '✨', '🍀', '🌟', '🍕', '🍰', '☕', '🧁', '🍜', '🍓', '🥑'];
+
+const decodeHtml = (html: string): string => {
+  if (typeof document === 'undefined') return html;
+  const txt = document.createElement('textarea');
+  txt.innerHTML = html;
+  return txt.value;
+};
+
+const fetchRandomFortune = async (): Promise<string> => {
+  try {
+    const res = await fetch(`https://api.adviceslip.com/advice?t=${Date.now()}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.slip?.advice) {
+        const emoji = FORTUNE_EMOJIS[Math.floor(Math.random() * FORTUNE_EMOJIS.length)];
+        return `${data.slip.advice} ${emoji}`;
+      }
+    }
+  } catch (e) {
+    console.warn('AdviceSlip API fetch failed, trying fallback', e);
+  }
+
+  try {
+    const res = await fetch('https://dummyjson.com/quotes/random');
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.quote) {
+        const emoji = FORTUNE_EMOJIS[Math.floor(Math.random() * FORTUNE_EMOJIS.length)];
+        return `${data.quote} ${emoji}`;
+      }
+    }
+  } catch (e) {
+    console.warn('Quote fallback failed', e);
+  }
+
+  return FORTUNES[Math.floor(Math.random() * FORTUNES.length)];
+};
+
+const fetchRandomFact = async (): Promise<string> => {
+  try {
+    const res = await fetch('https://uselessfacts.jsph.pl/api/v2/facts/random');
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.text) {
+        return data.text;
+      }
+    }
+  } catch (e) {
+    console.warn('UselessFacts API fetch failed, using fallback', e);
+  }
+
+  return FUN_FOOD_FACTS[Math.floor(Math.random() * FUN_FOOD_FACTS.length)];
+};
+
 export const EntertainmentHub: React.FC<EntertainmentHubProps> = ({ isOpen, onClose, primaryColor = '#f97316', menuItems = [], currency = '₹' }) => {
   const [activeTab, setActiveTab] = useState<'games' | 'facts' | 'fortune' | 'doodle' | 'cricket' | 'swiper' | 'shorts'>('swiper');
   const [subTab, setSubTab] = useState<'memory' | 'tictactoe' | 'trivia' | 'funfacts'>('memory');
@@ -77,15 +139,19 @@ export const EntertainmentHub: React.FC<EntertainmentHubProps> = ({ isOpen, onCl
   const [isVsBot, setIsVsBot] = useState(true);
   const winner = calculateWinner(board);
 
-  // Facts & Trivia State
+  // Facts & Trivia State (Live Real-time)
   const [fact, setFact] = useState<string>(FUN_FOOD_FACTS[0]);
   const [isFactLoading, setIsFactLoading] = useState(false);
+  const [triviaList, setTriviaList] = useState<TriviaQuestion[]>(FOOD_TRIVIA);
   const [triviaIndex, setTriviaIndex] = useState(0);
+  const [isTriviaLoading, setIsTriviaLoading] = useState(false);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
+  const [triviaScore, setTriviaScore] = useState(0);
 
-  // Fortune Cookie State
+  // Fortune Cookie State (Live Real-time)
   const [fortuneOpened, setFortuneOpened] = useState(false);
   const [fortuneText, setFortuneText] = useState("");
+  const [isFortuneLoading, setIsFortuneLoading] = useState(false);
 
   // Doodle State
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -95,7 +161,15 @@ export const EntertainmentHub: React.FC<EntertainmentHubProps> = ({ isOpen, onCl
   useEffect(() => {
     if (isOpen) {
       if (cards.length === 0) initializeMemoryGame();
-      if (!fortuneText) setFortuneText(FORTUNES[Math.floor(Math.random() * FORTUNES.length)]);
+      if (!fortuneText) {
+        fetchRandomFortune().then(txt => setFortuneText(txt));
+      }
+      if (fact === FUN_FOOD_FACTS[0]) {
+        fetchRandomFact().then(txt => setFact(txt));
+      }
+      if (triviaList === FOOD_TRIVIA) {
+        fetchRealtimeTrivia();
+      }
       
       // Default to swiper if there are images, else games
       if (validMenuItems.length > 0 && activeTab !== 'swiper' && activeTab !== 'shorts') {
@@ -226,33 +300,78 @@ export const EntertainmentHub: React.FC<EntertainmentHubProps> = ({ isOpen, onCl
     }
   }, [xIsNext, isVsBot, board, winner, activeTab, subTab]);
 
+  // --- Realtime Trivia Fetching ---
+  const fetchRealtimeTrivia = async () => {
+    setIsTriviaLoading(true);
+    try {
+      const res = await fetch('https://opentdb.com/api.php?amount=10&type=multiple');
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.results && Array.isArray(data.results) && data.results.length > 0) {
+          const formatted: TriviaQuestion[] = data.results.map((r: any) => {
+            const question = decodeHtml(r.question);
+            const correctAnswer = decodeHtml(r.correct_answer);
+            const incorrect = (r.incorrect_answers || []).map((ans: string) => decodeHtml(ans));
+            const allOptions = [...incorrect, correctAnswer].sort(() => Math.random() - 0.5);
+            return {
+              q: question,
+              options: allOptions,
+              a: correctAnswer,
+              category: decodeHtml(r.category || 'Trivia'),
+            };
+          });
+          setTriviaList(formatted);
+          setTriviaIndex(0);
+          setSelectedAnswer(null);
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('Trivia API fetch failed, using fallback', e);
+    } finally {
+      setIsTriviaLoading(false);
+    }
+  };
+
   // --- Facts & Trivia Logic ---
-  const generateFact = () => {
+  const generateFact = async () => {
     setIsFactLoading(true);
-    setTimeout(() => {
-      let newFact;
-      do {
-        newFact = FUN_FOOD_FACTS[Math.floor(Math.random() * FUN_FOOD_FACTS.length)];
-      } while (newFact === fact && FUN_FOOD_FACTS.length > 1);
-      setFact(newFact);
-      setIsFactLoading(false);
-    }, 400);
+    const newFact = await fetchRandomFact();
+    setFact(newFact);
+    setIsFactLoading(false);
   };
 
   const nextTrivia = () => {
     setSelectedAnswer(null);
-    setTriviaIndex((prev) => (prev + 1) % FOOD_TRIVIA.length);
+    if (triviaIndex + 1 < triviaList.length) {
+      setTriviaIndex(prev => prev + 1);
+    } else {
+      fetchRealtimeTrivia();
+    }
   };
 
-  // --- Fortune Cookie Logic ---
-  const openFortune = () => {
+  // --- Fortune Cookie Logic (Live Realtime Fetch) ---
+  const openFortune = async (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (isFortuneLoading) return;
+
     if (!fortuneOpened) {
       setFortuneOpened(true);
+      if (!fortuneText) {
+        setIsFortuneLoading(true);
+        const text = await fetchRandomFortune();
+        setFortuneText(text);
+        setIsFortuneLoading(false);
+      }
     } else {
       setFortuneOpened(false);
+      setIsFortuneLoading(true);
+      const text = await fetchRandomFortune();
       setTimeout(() => {
-        setFortuneText(FORTUNES[Math.floor(Math.random() * FORTUNES.length)]);
-      }, 300);
+        setFortuneText(text);
+        setFortuneOpened(true);
+        setIsFortuneLoading(false);
+      }, 350);
     }
   };
 
@@ -697,33 +816,47 @@ export const EntertainmentHub: React.FC<EntertainmentHubProps> = ({ isOpen, onCl
             <div className="flex flex-col h-full items-center justify-center text-center p-6 bg-gradient-to-b from-amber-50 to-orange-100">
               <div 
                 className="relative cursor-pointer transition-transform hover:scale-105 active:scale-95"
-                onClick={openFortune}
+                onClick={(e) => openFortune(e)}
               >
                 {!fortuneOpened ? (
                   <div className="w-40 h-40 bg-amber-200 rounded-full flex items-center justify-center shadow-2xl animate-bounce border-4 border-amber-300">
                     <Cookie size={80} className="text-amber-600 drop-shadow-md" />
-                    <div className="absolute -bottom-6 font-black text-amber-800 text-sm uppercase tracking-widest whitespace-nowrap bg-white/80 backdrop-blur-sm px-4 py-1 rounded-full shadow-sm">
-                      Tap to Crack
+                    <div className="absolute -bottom-6 font-black text-amber-800 text-sm uppercase tracking-widest whitespace-nowrap bg-white/80 backdrop-blur-sm px-4 py-1 rounded-full shadow-sm flex items-center gap-1">
+                      <Sparkles size={13} className="text-amber-600" /> Tap to Crack
                     </div>
                   </div>
                 ) : (
                   <div className="w-full max-w-sm flex flex-col items-center animate-in fade-in zoom-in duration-500">
-                    <div className="flex gap-4 mb-6 opacity-50">
+                    <div className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-[11px] font-bold mb-4 shadow-xs border border-amber-200">
+                      <Sparkles size={12} className="text-amber-600" /> Live Realtime Fortune
+                    </div>
+
+                    <div className="flex gap-4 mb-5 opacity-50">
                       <Cookie size={40} className="text-amber-600 -rotate-12" />
                       <Cookie size={40} className="text-amber-600 rotate-12" />
                     </div>
-                    <div className="bg-white p-6 rounded-sm shadow-xl border-y-2 border-amber-200 relative">
+
+                    <div className="bg-white p-6 rounded-sm shadow-xl border-y-2 border-amber-200 relative min-h-[110px] w-full flex items-center justify-center">
                       <div className="absolute left-0 top-0 bottom-0 w-2 border-l-4 border-dotted border-amber-300"></div>
                       <div className="absolute right-0 top-0 bottom-0 w-2 border-r-4 border-dotted border-amber-300"></div>
-                      <p className="text-lg font-mono text-slate-800 leading-relaxed font-bold px-4">
-                        "{fortuneText}"
-                      </p>
+                      {isFortuneLoading ? (
+                        <div className="flex items-center gap-2 text-amber-700 font-mono text-sm py-4">
+                          <Loader2 size={16} className="animate-spin text-amber-600" />
+                          <span>Unfolding real-time destiny...</span>
+                        </div>
+                      ) : (
+                        <p className="text-lg font-mono text-slate-800 leading-relaxed font-bold px-4">
+                          "{fortuneText}"
+                        </p>
+                      )}
                     </div>
+                    
                     <button 
-                      onClick={openFortune}
-                      className="mt-8 px-6 py-2 bg-white rounded-full text-xs font-bold text-slate-500 hover:text-amber-600 shadow-sm transition-colors flex items-center gap-1 border border-amber-100"
+                      onClick={(e) => { e.stopPropagation(); openFortune(); }}
+                      disabled={isFortuneLoading}
+                      className="mt-6 px-6 py-2.5 bg-white rounded-full text-xs font-bold text-slate-600 hover:text-amber-600 shadow-sm transition-all hover:shadow flex items-center gap-1.5 border border-amber-200 disabled:opacity-50"
                     >
-                      <RefreshCcw size={12} /> Get another fortune
+                      <RefreshCcw size={13} className={isFortuneLoading ? "animate-spin" : ""} /> Get another fortune
                     </button>
                   </div>
                 )}
@@ -793,21 +926,25 @@ export const EntertainmentHub: React.FC<EntertainmentHubProps> = ({ isOpen, onCl
 
               {subTab === 'funfacts' && (
                 <div className="flex flex-col h-full items-center justify-center text-center p-6 bg-slate-50">
-                  <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mb-8 text-blue-500 shrink-0 shadow-inner border-4 border-white">
-                    <Lightbulb size={40} />
+                  <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-bold mb-4 shadow-xs">
+                    <Globe size={13} className="text-blue-500" /> Live Realtime Fun Fact
+                  </div>
+
+                  <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-6 text-blue-500 shrink-0 shadow-inner border-4 border-white">
+                    <Lightbulb size={32} />
                   </div>
                   
-                  <div className="flex-1 flex items-center justify-center w-full">
+                  <div className="flex-1 flex items-center justify-center w-full max-w-md">
                     {isFactLoading ? (
-                      <div className="w-full space-y-4 animate-pulse max-w-sm">
+                      <div className="w-full space-y-4 animate-pulse p-6 bg-white rounded-3xl shadow-sm border border-slate-100">
                         <div className="h-4 bg-slate-200 rounded w-3/4 mx-auto"></div>
                         <div className="h-4 bg-slate-200 rounded w-full mx-auto"></div>
                         <div className="h-4 bg-slate-200 rounded w-5/6 mx-auto"></div>
                       </div>
                     ) : (
-                      <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 relative">
+                      <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 relative w-full">
                         <div className="absolute -top-4 left-6 text-4xl opacity-20">"</div>
-                        <p className="text-lg sm:text-xl font-bold text-slate-700 leading-relaxed relative z-10 animate-fade-in px-4">
+                        <p className="text-base sm:text-lg font-bold text-slate-700 leading-relaxed relative z-10 animate-fade-in px-3">
                           {fact}
                         </p>
                         <div className="absolute -bottom-6 right-6 text-4xl opacity-20">"</div>
@@ -815,14 +952,15 @@ export const EntertainmentHub: React.FC<EntertainmentHubProps> = ({ isOpen, onCl
                     )}
                   </div>
 
-                  <div className="mt-8 shrink-0">
+                  <div className="mt-6 shrink-0">
                     <button 
                       onClick={generateFact}
                       disabled={isFactLoading}
-                      className="px-8 py-4 rounded-full text-white text-sm font-black shadow-xl hover:shadow-2xl transition-all active:scale-95"
+                      className="px-7 py-3 rounded-full text-white text-xs font-black shadow-lg hover:shadow-xl transition-all active:scale-95 flex items-center gap-2"
                       style={{ backgroundColor: primaryColor }}
                     >
-                      Another Fun Fact!
+                      <RefreshCcw size={14} className={isFactLoading ? "animate-spin" : ""} />
+                      Another Live Fact!
                     </button>
                   </div>
                 </div>
@@ -830,53 +968,98 @@ export const EntertainmentHub: React.FC<EntertainmentHubProps> = ({ isOpen, onCl
 
               {subTab === 'trivia' && (
                 <div className="flex flex-col h-full p-4 sm:p-6 bg-slate-50 overflow-y-auto">
-                  <div className="flex items-center gap-2 mb-6 justify-center">
-                    <HelpCircle className="text-purple-500" size={28} />
-                    <h3 className="font-black text-slate-800 text-xl">Food Trivia</h3>
-                  </div>
-
-                  <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 mb-6 w-full max-w-md mx-auto">
-                    <p className="font-black text-slate-800 mb-6 text-lg text-center">{FOOD_TRIVIA[triviaIndex].q}</p>
-                    
-                    <div className="space-y-3">
-                      {FOOD_TRIVIA[triviaIndex].options.map(option => {
-                        const isSelected = selectedAnswer === option;
-                        const isCorrect = option === FOOD_TRIVIA[triviaIndex].a;
-                        let btnClass = "w-full text-left px-5 py-4 rounded-2xl font-bold border-2 transition-all ";
-                        
-                        if (selectedAnswer) {
-                          if (isCorrect) btnClass += "bg-green-100 border-green-500 text-green-800 shadow-sm";
-                          else if (isSelected) btnClass += "bg-red-100 border-red-500 text-red-800 shadow-sm";
-                          else btnClass += "bg-slate-50 border-slate-100 text-slate-400 opacity-50";
-                        } else {
-                          btnClass += "bg-white border-slate-200 hover:border-purple-400 hover:bg-purple-50 shadow-sm hover:shadow-md";
-                        }
-
-                        return (
-                          <button
-                            key={option}
-                            disabled={selectedAnswer !== null}
-                            onClick={() => setSelectedAnswer(option)}
-                            className={btnClass}
-                          >
-                            {option}
-                          </button>
-                        );
-                      })}
+                  <div className="flex items-center justify-between w-full max-w-md mx-auto mb-4">
+                    <div className="flex items-center gap-1.5">
+                      <Globe className="text-purple-500" size={18} />
+                      <h3 className="font-black text-slate-800 text-base">Live Trivia Quiz</h3>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold bg-purple-100 text-purple-700 px-2.5 py-1 rounded-full border border-purple-200">
+                        Score: {triviaScore}
+                      </span>
+                      <span className="text-xs font-bold bg-slate-200 text-slate-700 px-2 py-1 rounded-full">
+                        {triviaList.length > 0 ? `${triviaIndex + 1}/${triviaList.length}` : '0/0'}
+                      </span>
                     </div>
                   </div>
 
-                  {selectedAnswer && (
-                    <div className="mt-auto animate-in fade-in slide-in-from-bottom-4 flex flex-col items-center w-full max-w-md mx-auto">
-                      <div className={`w-full p-4 rounded-2xl font-bold mb-4 text-center border-2 ${selectedAnswer === FOOD_TRIVIA[triviaIndex].a ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-600 border-red-200'}`}>
-                        {selectedAnswer === FOOD_TRIVIA[triviaIndex].a ? 'Correct! 🎉 You know your food!' : `Oops! The correct answer is ${FOOD_TRIVIA[triviaIndex].a}.`}
-                      </div>
-                      <button 
-                        onClick={nextTrivia}
-                        className="w-full py-4 rounded-2xl text-white font-black shadow-lg hover:shadow-xl transition-all active:scale-95"
-                        style={{ backgroundColor: primaryColor }}
-                      >
-                        Next Question
+                  {isTriviaLoading ? (
+                    <div className="flex-1 flex flex-col items-center justify-center py-12 gap-3 text-slate-500">
+                      <Loader2 size={32} className="animate-spin text-purple-600" />
+                      <p className="text-sm font-bold">Fetching real-time questions...</p>
+                    </div>
+                  ) : triviaList.length > 0 ? (
+                    (() => {
+                      const currentTrivia = triviaList[triviaIndex] || triviaList[0];
+                      return (
+                        <>
+                          <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 mb-5 w-full max-w-md mx-auto">
+                            {currentTrivia.category && (
+                              <div className="text-center mb-3">
+                                <span className="inline-block text-[10px] font-black uppercase tracking-wider text-purple-600 bg-purple-50 border border-purple-100 px-2.5 py-0.5 rounded-full">
+                                  {currentTrivia.category}
+                                </span>
+                              </div>
+                            )}
+                            <p className="font-black text-slate-800 mb-5 text-base sm:text-lg text-center leading-snug">
+                              {currentTrivia.q}
+                            </p>
+                            
+                            <div className="space-y-2.5">
+                              {currentTrivia.options.map(option => {
+                                const isSelected = selectedAnswer === option;
+                                const isCorrect = option === currentTrivia.a;
+                                let btnClass = "w-full text-left px-4 py-3 rounded-xl font-bold text-sm border-2 transition-all ";
+                                
+                                if (selectedAnswer) {
+                                  if (isCorrect) btnClass += "bg-green-100 border-green-500 text-green-800 shadow-sm";
+                                  else if (isSelected) btnClass += "bg-red-100 border-red-500 text-red-800 shadow-sm";
+                                  else btnClass += "bg-slate-50 border-slate-100 text-slate-400 opacity-50";
+                                } else {
+                                  btnClass += "bg-white border-slate-200 hover:border-purple-400 hover:bg-purple-50 shadow-xs hover:shadow-sm cursor-pointer";
+                                }
+
+                                return (
+                                  <button
+                                    key={option}
+                                    disabled={selectedAnswer !== null}
+                                    onClick={() => {
+                                      if (selectedAnswer !== null) return;
+                                      setSelectedAnswer(option);
+                                      if (option === currentTrivia.a) {
+                                        setTriviaScore(s => s + 1);
+                                      }
+                                    }}
+                                    className={btnClass}
+                                  >
+                                    {option}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {selectedAnswer && (
+                            <div className="mt-auto animate-in fade-in slide-in-from-bottom-4 flex flex-col items-center w-full max-w-md mx-auto">
+                              <div className={`w-full p-3.5 rounded-2xl font-bold mb-3 text-center border-2 text-sm ${selectedAnswer === currentTrivia.a ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-600 border-red-200'}`}>
+                                {selectedAnswer === currentTrivia.a ? '🎉 Correct! Nicely done!' : `Oops! The correct answer is: ${currentTrivia.a}`}
+                              </div>
+                              <button 
+                                onClick={nextTrivia}
+                                className="w-full py-3.5 rounded-2xl text-white font-black text-sm shadow-md hover:shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2"
+                                style={{ backgroundColor: primaryColor }}
+                              >
+                                {triviaIndex + 1 < triviaList.length ? 'Next Question →' : 'Load More Live Questions 🔄'}
+                              </button>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()
+                  ) : (
+                    <div className="text-center py-12">
+                      <button onClick={fetchRealtimeTrivia} className="px-5 py-2.5 rounded-xl bg-purple-600 text-white text-xs font-bold shadow">
+                        Load Trivia Questions
                       </button>
                     </div>
                   )}

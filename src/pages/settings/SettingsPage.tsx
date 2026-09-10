@@ -1149,20 +1149,21 @@ export function SettingsPage() {
                     <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                       <Globe size={14} className="text-blue-500" /> Menu Language
                     </label>
-                    <select
-                      name="language"
+                    <SearchableSelect
+                      options={[
+                        { id: 'en', name: 'English' },
+                        { id: 'hi', name: 'Hindi' },
+                        { id: 'ta', name: 'Tamil' },
+                        { id: 'te', name: 'Telugu' },
+                        { id: 'es', name: 'Spanish' },
+                        { id: 'fr', name: 'French' },
+                        { id: 'ar', name: 'Arabic' },
+                      ]}
                       value={settingsData.language}
-                      onChange={(e) => setSettingsData(prev => ({ ...prev, language: e.target.value }))}
-                      className="flex h-10 w-full rounded-xl border border-input bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 px-3 py-2 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-primary/40 cursor-pointer"
-                    >
-                      <option value="en">English</option>
-                      <option value="hi">Hindi</option>
-                      <option value="ta">Tamil</option>
-                      <option value="te">Telugu</option>
-                      <option value="es">Spanish</option>
-                      <option value="fr">French</option>
-                      <option value="ar">Arabic</option>
-                    </select>
+                      onChange={(val) => setSettingsData(prev => ({ ...prev, language: val }))}
+                      showSearch={false}
+                      className="bg-white dark:bg-slate-900"
+                    />
                   </div>
                 </div>
               </CardContent>

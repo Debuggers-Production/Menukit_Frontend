@@ -7,8 +7,8 @@ interface ShopState {
   categories: Category[];
   menuItems: MenuItem[];
   setShop: (shop: Shop | null) => void;
-  setCategories: (categories: Category[]) => void;
-  setMenuItems: (items: MenuItem[]) => void;
+  setCategories: (categories: Category[] | ((prev: Category[]) => Category[])) => void;
+  setMenuItems: (items: MenuItem[] | ((prev: MenuItem[]) => MenuItem[])) => void;
   updateTheme: (themeData: Partial<ThemeSettings>) => Promise<void>;
 }
 
@@ -18,8 +18,16 @@ export const useShopStore = create<ShopState>((set) => ({
   menuItems: [],
   
   setShop: (shop) => set({ shop }),
-  setCategories: (categories) => set({ categories }),
-  setMenuItems: (menuItems) => set({ menuItems }),
+  setCategories: (categoriesOrUpdater) => set((state) => ({
+    categories: typeof categoriesOrUpdater === 'function'
+      ? categoriesOrUpdater(Array.isArray(state.categories) ? state.categories : [])
+      : (Array.isArray(categoriesOrUpdater) ? categoriesOrUpdater : [])
+  })),
+  setMenuItems: (itemsOrUpdater) => set((state) => ({
+    menuItems: typeof itemsOrUpdater === 'function'
+      ? itemsOrUpdater(Array.isArray(state.menuItems) ? state.menuItems : [])
+      : (Array.isArray(itemsOrUpdater) ? itemsOrUpdater : [])
+  })),
   updateTheme: async (themeData) => {
     const response = await api.put('/shops/me/theme', themeData);
     set((state) => ({

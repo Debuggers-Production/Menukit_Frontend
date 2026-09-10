@@ -13,6 +13,8 @@ import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
+import { DatePicker } from '@/components/ui/DatePicker';
+import { TimePicker } from '@/components/ui/TimePicker';
 import { useHeaderStore } from '@/store/useHeaderStore';
 import { HeaderActions } from '@/components/HeaderActions';
 import { useShopStore } from '@/store/shopStore';
@@ -174,10 +176,7 @@ export function DiscountsPage() {
  const [isFabOpen, setIsFabOpen] = useState(false);
  const [modalCategory, setModalCategory] = useState<'discount' | 'combo' | 'free_item'>('discount');
  const [itemSearchQuery, setItemSearchQuery] = useState('');
- const [rewardSearchQuery, setRewardSearchQuery] = useState('');
- const [rewardMenuItems, setRewardMenuItems] = useState<MenuItem[]>([]);
  const [isSearchingItems, setIsSearchingItems] = useState(false);
- const [isSearchingReward, setIsSearchingReward] = useState(false);
 
   // Verification & Redemption Modal State
   const [isVerifyModalOpen, setIsVerifyModalOpen] = useState(false);
@@ -226,7 +225,6 @@ export function DiscountsPage() {
         ]);
         setCategories(catRes.data);
         setMenuItems(itemRes.data);
-        setRewardMenuItems(itemRes.data);
       }
     } catch {
       toast.error('Failed to load categories and items');
@@ -308,39 +306,6 @@ export function DiscountsPage() {
     return () => clearTimeout(timer);
   }, [itemSearchQuery, isModalOpen, formData.applies_to]);
 
-  // Backend search for BOGO & Free Item Reward items
-  useEffect(() => {
-    if (!isModalOpen || (formData.discount_type !== 'bogo' && formData.discount_type !== 'free_item')) return;
-
-    const timer = setTimeout(async () => {
-      try {
-        setIsSearchingReward(true);
-        const params: Record<string, any> = { limit: 100 };
-        if (rewardSearchQuery.trim()) {
-          params.search = rewardSearchQuery.trim();
-        }
-        const res = await api.get('/menu-items', { params });
-        const fetchedItems: MenuItem[] = res.data || [];
-
-        setRewardMenuItems(prev => {
-          const selected = prev.filter(item => formData.reward_target_ids.includes(item.id));
-          const result = [...fetchedItems];
-          for (const item of selected) {
-            if (!result.some(r => r.id === item.id)) {
-              result.unshift(item);
-            }
-          }
-          return result;
-        });
-      } catch (err) {
-        console.error('Failed to search reward items from backend', err);
-      } finally {
-        setIsSearchingReward(false);
-      }
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [rewardSearchQuery, isModalOpen, formData.discount_type]);
 
 
  // ── Modal helpers ──────────────────────────────────────────────────────────
@@ -348,6 +313,16 @@ export function DiscountsPage() {
   const openModal = (defaultType?: 'percentage' | 'flat' | 'bogo' | 'combo' | 'free_item' | Discount, discount?: Discount) => {
     const isEditing = defaultType && typeof defaultType === 'object';
     const targetDiscount = isEditing ? (defaultType as Discount) : discount;
+
+    const safeDate = (val?: string | Date | null) => {
+      if (!val) return '';
+      try {
+        const d = new Date(val);
+        return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 16);
+      } catch {
+        return '';
+      }
+    };
 
     if (targetDiscount) {
       setModalCategory(
@@ -359,25 +334,21 @@ export function DiscountsPage() {
       );
       setEditingDiscount(targetDiscount);
       setFormData({
-        title: targetDiscount.title,
+        title: targetDiscount.title || '',
         description: targetDiscount.description || '',
         code: targetDiscount.code || '',
-        discount_type: targetDiscount.discount_type,
-        discount_value: targetDiscount.discount_value?.toString() || '',
-        buy_quantity: targetDiscount.buy_quantity?.toString() || '',
-        get_quantity: targetDiscount.get_quantity?.toString() || '',
+        discount_type: targetDiscount.discount_type || 'percentage',
+        discount_value: targetDiscount.discount_value !== null && targetDiscount.discount_value !== undefined ? targetDiscount.discount_value.toString() : '',
+        buy_quantity: targetDiscount.buy_quantity !== null && targetDiscount.buy_quantity !== undefined ? targetDiscount.buy_quantity.toString() : '',
+        get_quantity: targetDiscount.get_quantity !== null && targetDiscount.get_quantity !== undefined ? targetDiscount.get_quantity.toString() : (targetDiscount.discount_type === 'free_item' ? '1' : ''),
         reward_target_ids: targetDiscount.reward_target_ids || [],
-        applies_to: targetDiscount.applies_to,
+        applies_to: targetDiscount.applies_to || 'all',
         target_ids: targetDiscount.target_ids || [],
-        start_date: targetDiscount.start_date
-          ? new Date(targetDiscount.start_date).toISOString().slice(0, 16)
-          : '',
-        end_date: targetDiscount.end_date
-          ? new Date(targetDiscount.end_date).toISOString().slice(0, 16)
-          : '',
+        start_date: safeDate(targetDiscount.start_date),
+        end_date: safeDate(targetDiscount.end_date),
         available_days: targetDiscount.available_days || [],
         available_time_presets: targetDiscount.available_time_presets || [],
-        is_active: targetDiscount.is_active,
+        is_active: targetDiscount.is_active ?? true,
         visibility_type: targetDiscount.visibility_type || 'everyone',
       });
     } else {
@@ -399,8 +370,6 @@ export function DiscountsPage() {
       });
     }
     setItemSearchQuery('');
-    setRewardSearchQuery('');
-    setRewardMenuItems(menuItems);
     setCurrentStep(1);
     setIsModalOpen(true);
   };
@@ -419,10 +388,6 @@ export function DiscountsPage() {
       toast.error('Please specify buy and get quantities');
       return;
     }
-    if (formData.discount_type === 'free_item' && (!formData.reward_target_ids || formData.reward_target_ids.length === 0)) {
-      toast.error('Please select at least one free item to give');
-      return;
-    }
 
     setIsSubmitting(true);
     try {
@@ -432,7 +397,7 @@ export function DiscountsPage() {
         discount_value: formData.discount_value ? parseFloat(formData.discount_value) : null,
         buy_quantity: formData.buy_quantity ? parseInt(formData.buy_quantity) : null,
         get_quantity: formData.get_quantity ? parseInt(formData.get_quantity) : (formData.discount_type === 'free_item' ? 1 : null),
-        reward_target_ids: formData.reward_target_ids.length > 0 ? formData.reward_target_ids : null,
+        reward_target_ids: (formData.reward_target_ids && formData.reward_target_ids.length > 0) ? formData.reward_target_ids : null,
         description: formData.description || null,
         start_date: formData.start_date ? new Date(formData.start_date).toISOString() : null,
         end_date: formData.end_date ? new Date(formData.end_date).toISOString() : null,
@@ -839,8 +804,12 @@ export function DiscountsPage() {
  {d.is_active ? <ToggleRight size={20} strokeWidth={2.5} /> : <ToggleLeft size={20} strokeWidth={2.5} />}
  </button>
  <button
- onClick={() => openModal(d)}
- className="p-2 rounded-xl text-muted-foreground hover:bg-blue-50 hover:text-blue-600 transition-all hover:scale-105"
+ type="button"
+ onClick={(e) => {
+ e.stopPropagation();
+ openModal(d);
+ }}
+ className="p-2 rounded-xl text-muted-foreground hover:bg-blue-50 hover:text-blue-600 transition-all hover:scale-105 cursor-pointer"
  title="Edit"
  >
  <Edit2 size={18} strokeWidth={2.5} />
@@ -1184,7 +1153,12 @@ export function DiscountsPage() {
  <button
  key={opt.v}
  type="button"
- onClick={() => setFormData({ ...formData, applies_to: opt.v, target_ids: [] })}
+ onClick={() => setFormData({
+    ...formData,
+    applies_to: opt.v,
+    target_ids: [],
+    ...(opt.v === 'all' ? { reward_target_ids: [] } : {})
+  })}
  className={`flex-1 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors ${
  formData.applies_to === opt.v
  ? 'bg-background shadow text-foreground dark:bg-slate-700 '
@@ -1195,6 +1169,19 @@ export function DiscountsPage() {
  </button>
  ))}
  </div>
+
+  {formData.applies_to === 'all' && (
+    <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/30 flex items-center gap-2.5 text-xs text-emerald-800 dark:text-emerald-300 font-medium">
+      <CheckCircle2 size={16} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+      <span>
+        {formData.discount_type === 'free_item'
+          ? 'All menu items qualify — customer can order any dish from the menu to receive their free gift.'
+          : formData.discount_type === 'bogo'
+          ? 'All menu items qualify — customer can buy any dish from the entire menu.'
+          : 'This discount applies across all items on the entire menu.'}
+      </span>
+    </div>
+  )}
 
  {formData.applies_to === 'category'&& (
  <div className="flex flex-wrap gap-2 p-3 bg-muted/50 rounded-xl border border-border max-h-40 overflow-y-auto">
@@ -1274,84 +1261,6 @@ export function DiscountsPage() {
   )}
  </div>
 
-        {(formData.discount_type === 'bogo' || formData.discount_type === 'free_item') && (
-          <div className="space-y-3 pt-2">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
-                {formData.discount_type === 'free_item' ? (
-                  <>
-                    <Gift size={16} className="text-amber-500" />
-                    Select Free Item(s) to Give (Reward) *
-                  </>
-                ) : (
-                  <>
-                    <Sparkles size={16} className="text-indigo-500" />
-                    Get these items (Reward) *
-                  </>
-                )}
-              </label>
-            </div>
-            <div className="flex flex-col gap-2 p-3 rounded-xl border bg-indigo-50 dark:bg-indigo-900/20 border-indigo-100 dark:border-indigo-800/30">
-              <div className="relative">
-                {isSearchingReward ? (
-                  <Loader2 size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-indigo-600 animate-spin" />
-                ) : (
-                  <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                )}
-                <input
-                  type="text"
-                  placeholder="Search items..."
-                  value={rewardSearchQuery}
-                  onChange={e => setRewardSearchQuery(e.target.value)}
-                  className="w-full pl-8 pr-8 py-1.5 text-sm rounded-lg bg-background shadow-sm focus:outline-none focus:ring-2 border border-indigo-200 dark:border-indigo-800 focus:ring-indigo-500/20"
-                />
-                {rewardSearchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setRewardSearchQuery('')}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    <X size={12} />
-                  </button>
-                )}
-              </div>
-              <div className={`flex flex-col gap-1 max-h-48 overflow-y-auto pr-1 transition-opacity ${isSearchingReward ? 'opacity-60' : ''}`}>
-                {rewardMenuItems.length === 0 ? (
-                  <p className="text-xs text-muted-foreground py-2 text-center">
-                    {isSearchingReward ? 'Searching items...' : 'No items found'}
-                  </p>
-                ) : (
-                  rewardMenuItems
-                    .filter(i => formData.reward_target_ids.includes(i.id) || !rewardSearchQuery.trim() || i.name.toLowerCase().includes(rewardSearchQuery.toLowerCase()))
-                    .map(item => (
-                      <label
-                        key={`reward-${item.id}`}
-                        className={`flex items-center gap-2.5 p-2 rounded-lg cursor-pointer transition-colors ${
-                          formData.reward_target_ids.includes(item.id)
-                            ? 'bg-indigo-100 dark:bg-indigo-800/50'
-                            : 'hover:bg-indigo-100/50 dark:hover:bg-indigo-800/30'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={formData.reward_target_ids.includes(item.id)}
-                          onChange={() => {
-                            const newTargets = formData.reward_target_ids.includes(item.id)
-                              ? formData.reward_target_ids.filter(id => id !== item.id)
-                              : [...formData.reward_target_ids, item.id];
-                            setFormData({ ...formData, reward_target_ids: newTargets });
-                          }}
-                          className="w-4 h-4 rounded accent-indigo-600"
-                        />
-                        <span className="text-sm text-foreground line-clamp-1">{item.name}</span>
-                        <span className="ml-auto text-xs text-muted-foreground">{currencySymbol}{item.price}</span>
-                      </label>
-                    ))
-                )}
-              </div>
-            </div>
-          </div>
-        )}
 
  <div className="p-4 rounded-xl border border-border bg-muted/50 mt-4 transition-all">
  <div className="flex items-center gap-1.5 mb-4">
@@ -1424,73 +1333,73 @@ export function DiscountsPage() {
  {currentStep === 3 && (
  <>
  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
- <div className="space-y-2 p-3 bg-muted/50 rounded-xl border border-border">
- <label className="text-sm font-semibold text-foreground flex items-center gap-1.5 mb-1.5">
- <Calendar size={14} className="text-primary" /> Start Date
+ <div className="space-y-2.5 p-3 bg-muted/50 rounded-xl border border-border">
+ <label className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+ <Calendar size={14} className="text-primary" /> Start Date & Time
  </label>
  <div className="flex flex-col gap-2">
- <input
- type="date"
+ <DatePicker
  value={formData.start_date ? formData.start_date.split('T')[0] : ''}
- onChange={e => {
- const d = e.target.value;
- if (!d) setFormData({ ...formData, start_date: ''});
- else {
- const t = formData.start_date ? formData.start_date.split('T')[1] || '00:00': '00:00';
+ onChange={(d) => {
+ if (!d) {
+ setFormData({ ...formData, start_date: '' });
+ } else {
+ const t = formData.start_date ? formData.start_date.split('T')[1] || '00:00' : '00:00';
  setFormData({ ...formData, start_date: `${d}T${t}` });
  }
  }}
- className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+ placeholder="Choose start date"
  />
- <input
- type="time"
- value={formData.start_date ? formData.start_date.split('T')[1] || '': ''}
- onChange={e => {
- const t = e.target.value;
- if (!t) return;
+ <TimePicker
+ value={formData.start_date ? (formData.start_date.split('T')[1] || '').slice(0, 5) : ''}
+ onChange={(t) => {
+ if (!t) {
+ const d = formData.start_date ? formData.start_date.split('T')[0] : '';
+ setFormData({ ...formData, start_date: d ? `${d}T00:00` : '' });
+ } else {
  const d = formData.start_date ? formData.start_date.split('T')[0] : new Date().toISOString().split('T')[0];
  setFormData({ ...formData, start_date: `${d}T${t}` });
+ }
  }}
- disabled={!formData.start_date}
- className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all disabled:opacity-50 disabled:bg-muted"
+ placeholder="Choose start time"
  />
  </div>
  </div>
 
- <div className="space-y-2 p-3 bg-muted/50 rounded-xl border border-border">
- <label className="text-sm font-semibold text-foreground flex items-center gap-1.5 mb-1.5">
- <Clock size={14} className="text-amber-500" /> End Date
+ <div className="space-y-2.5 p-3 bg-muted/50 rounded-xl border border-border">
+ <label className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+ <Clock size={14} className="text-amber-500" /> End Date & Time
  </label>
  <div className="flex flex-col gap-2">
- <input
- type="date"
+ <DatePicker
  value={formData.end_date ? formData.end_date.split('T')[0] : ''}
- onChange={e => {
- const d = e.target.value;
- if (!d) setFormData({ ...formData, end_date: ''});
- else {
- const t = formData.end_date ? formData.end_date.split('T')[1] || '00:00': '00:00';
+ minDate={formData.start_date ? formData.start_date.split('T')[0] : undefined}
+ onChange={(d) => {
+ if (!d) {
+ setFormData({ ...formData, end_date: '' });
+ } else {
+ const t = formData.end_date ? formData.end_date.split('T')[1] || '23:59' : '23:59';
  setFormData({ ...formData, end_date: `${d}T${t}` });
  }
  }}
- className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+ placeholder="Choose end date"
  />
- <input
- type="time"
- value={formData.end_date ? formData.end_date.split('T')[1] || '': ''}
- onChange={e => {
- const t = e.target.value;
- if (!t) return;
+ <TimePicker
+ value={formData.end_date ? (formData.end_date.split('T')[1] || '').slice(0, 5) : ''}
+ onChange={(t) => {
+ if (!t) {
+ const d = formData.end_date ? formData.end_date.split('T')[0] : '';
+ setFormData({ ...formData, end_date: d ? `${d}T23:59` : '' });
+ } else {
  const d = formData.end_date ? formData.end_date.split('T')[0] : new Date().toISOString().split('T')[0];
  setFormData({ ...formData, end_date: `${d}T${t}` });
+ }
  }}
- disabled={!formData.end_date}
- className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all disabled:opacity-50 disabled:bg-muted"
+ placeholder="Choose end time"
  />
  </div>
  </div>
  </div>
-
  <div className="pt-2 border-t border-border">
  <h4 className="text-sm font-medium text-foreground mb-3">Available Days</h4>
  <div className="flex flex-wrap gap-2">

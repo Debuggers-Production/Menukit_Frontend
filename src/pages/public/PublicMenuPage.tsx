@@ -67,8 +67,6 @@ const triggerWelcomeEffect = () => {
 //   'Mid-night': '(00:00 - 04:00)'
 // };
 
-const menuCache: Record<string, { shop: any, categories: any, timestamp: number }> = {};
-
 interface PublicCategory extends Category {
   items: MenuItem[];
 }
@@ -94,21 +92,38 @@ export function PublicMenuPage() {
     date.setMinutes(parseInt(m, 10));
     return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
   };
+
+  const formatDateTime = (iso: string | null) => {
+    if (!iso) return '';
+    try {
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return iso;
+      return d.toLocaleString([], {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return iso;
+    }
+  };
   
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const [shop, setShop] = useState<Shop | null>(() => (id && menuCache[id]) ? menuCache[id].shop : null);
+  const [shop, setShop] = useState<Shop | null>(() => (id ? publicCache.get<Shop>(`shop_${id}`) : null));
   const { currentOrder, totalActiveCount } = useActiveOrders(id);
-  const [categories, setCategories] = useState<PublicCategory[]>(() => (id && menuCache[id]) ? menuCache[id].categories : []);
-  const [items, setItems] = useState<MenuItem[]>([]);
+  const [categories, setCategories] = useState<PublicCategory[]>(() => (id ? publicCache.get<PublicCategory[]>(`categories_${id}`) || [] : []));
+  const [items, setItems] = useState<MenuItem[]>(() => (id ? publicCache.get<MenuItem[]>(`items_${id}`) || [] : []));
   const [itemsOffset, setItemsOffset] = useState(0);
   const [hasMoreItems, setHasMoreItems] = useState(true);
   const [isLoadingMoreItems, setIsLoadingMoreItems] = useState(false);
-  const [isItemsLoading, setIsItemsLoading] = useState(false);
+  const [isItemsLoading, setIsItemsLoading] = useState(() => !(id && publicCache.get(`items_${id}`)));
   const ITEMS_LIMIT = 50;
 
-  const [isLoading, setIsLoading] = useState(() => !id || !menuCache[id]);
+  const [isLoading, setIsLoading] = useState(() => !(id && publicCache.get(`shop_${id}`) && publicCache.get(`categories_${id}`)));
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
 
@@ -190,8 +205,12 @@ export function PublicMenuPage() {
   }, [contestTexts.length]);
 
 
-  // Handle Scroll
+  // Scroll Restoration when navigating back from product details
+  const hasRestoredScroll = useRef(false);
+
+  // Handle Scroll & Save Position
   useEffect(() => {
+    let scrollSaveTimer: any;
     const handleScroll = () => {
       const currentScrollY = window.scrollY;
 
@@ -208,10 +227,38 @@ export function PublicMenuPage() {
       } else {
         setIsScrolled(currentScrollY > 300);
       }
+
+      if (id && currentScrollY > 0) {
+        clearTimeout(scrollSaveTimer);
+        scrollSaveTimer = setTimeout(() => {
+          sessionStorage.setItem(`menu_scroll_${id}`, currentScrollY.toString());
+        }, 100);
+      }
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      clearTimeout(scrollSaveTimer);
+    };
+  }, [id]);
+
+  useEffect(() => {
+    if (hasRestoredScroll.current) return;
+    const savedScroll = id ? sessionStorage.getItem(`menu_scroll_${id}`) : null;
+    if (savedScroll && items.length > 0 && !isLoading) {
+      const targetY = parseInt(savedScroll, 10);
+      if (!isNaN(targetY) && targetY > 0) {
+        hasRestoredScroll.current = true;
+        window.scrollTo({ top: targetY, behavior: 'instant' });
+        requestAnimationFrame(() => {
+          window.scrollTo({ top: targetY, behavior: 'instant' });
+        });
+        setTimeout(() => {
+          window.scrollTo({ top: targetY, behavior: 'instant' });
+        }, 60);
+      }
+    }
+  }, [id, items.length, isLoading]);
 
   const [isShopInfoOpen, setIsShopInfoOpen] = useState(false);
   const [isLanguageModalOpen, setIsLanguageModalOpen] = useState(false);
@@ -336,7 +383,7 @@ export function PublicMenuPage() {
     }
   };
 
-  const [activeDiscounts, setActiveDiscounts] = useState<Discount[]>([]);
+  const [activeDiscounts, setActiveDiscounts] = useState<Discount[]>(() => (id ? publicCache.get<Discount[]>(`discounts_${id}`) || [] : []));
   const [discountsOffset, setDiscountsOffset] = useState(0);
   const [hasMoreDiscounts, setHasMoreDiscounts] = useState(true);
   const [isLoadingMoreDiscounts, setIsLoadingMoreDiscounts] = useState(false);
@@ -349,7 +396,7 @@ export function PublicMenuPage() {
   const [categorySearchQuery, setCategorySearchQuery] = useState('');
   const [isEntertainmentHubOpen, setIsEntertainmentHubOpen] = useState(false);
   const [isDiscountPopupOpen, setIsDiscountPopupOpen] = useState(false);
-  const [discountPopupInitialStep, setDiscountPopupInitialStep] = useState<'intro' | 'mobile'>('mobile');
+  const [discountPopupInitialStep, setDiscountPopupInitialStep] = useState<'intro' | 'mobile'>('intro');
   const cartItems = useCartStore((state) => state.items);
   const cartItemCount = cartItems.reduce((acc, item) => acc + item.quantity, 0);
   const [isCustomerLoggedIn, setIsCustomerLoggedIn] = useState<boolean>(() => {
@@ -496,17 +543,37 @@ export function PublicMenuPage() {
     return true;
   };
 
+  // Show discount unlock popup every 10 seconds if user hasn't entered their mobile number
   useEffect(() => {
-    if (!id || memberStatus === 'verified-member' || sessionStorage.getItem(`discount_popup_seen_${id}`)) return;
+    const hasProvidedNumber = Boolean(
+      localStorage.getItem('customer_mobile') ||
+      localStorage.getItem('customer_phone') ||
+      localStorage.getItem('customer_token') ||
+      memberStatus === 'verified-member' ||
+      memberStatus === 'unlocked' ||
+      isCustomerLoggedIn
+    );
+
+    if (!id || hasProvidedNumber || isDiscountPopupOpen) return;
 
     const timer = setTimeout(() => {
-      setDiscountPopupInitialStep('intro');
-      setIsDiscountPopupOpen(true);
-      sessionStorage.setItem(`discount_popup_seen_${id}`, 'true');
+      const stillNoNumber = !Boolean(
+        localStorage.getItem('customer_mobile') ||
+        localStorage.getItem('customer_phone') ||
+        localStorage.getItem('customer_token') ||
+        memberStatus === 'verified-member' ||
+        memberStatus === 'unlocked' ||
+        isCustomerLoggedIn
+      );
+
+      if (stillNoNumber) {
+        setDiscountPopupInitialStep('intro');
+        setIsDiscountPopupOpen(true);
+      }
     }, 10000);
 
     return () => clearTimeout(timer);
-  }, [id, memberStatus]);
+  }, [id, memberStatus, isCustomerLoggedIn, isDiscountPopupOpen]);
 
 
   useEffect(() => {
@@ -524,6 +591,10 @@ export function PublicMenuPage() {
       ]);
       setShop(shopRes.data);
       setCategories(catRes.data);
+      if (id) {
+        publicCache.set(`shop_${id}`, shopRes.data);
+        publicCache.set(`categories_${id}`, catRes.data);
+      }
       
       const shopData = shopRes.data as Shop;
       const hasWelcome = Boolean(shopData.welcome_message && !sessionStorage.getItem(`welcome_${id}`));
@@ -561,7 +632,11 @@ export function PublicMenuPage() {
     if (append) {
       setIsLoadingMoreItems(true);
     } else {
-      setIsItemsLoading(true);
+      const isDefaultView = categoryId === 'all' && !search && foodFilter === 'all' && sortOrder === 'default' && extraFilters.length === 0 && !activeDiscountFilter;
+      const hasCached = id && isDefaultView && publicCache.get(`items_${id}`);
+      if (!hasCached) {
+        setIsItemsLoading(true);
+      }
     }
     try {
       const queryParams = new URLSearchParams({
@@ -608,6 +683,9 @@ export function PublicMenuPage() {
         setItems(prev => [...prev, ...data]);
       } else {
         setItems(data);
+        if (id && categoryId === 'all' && !search && foodFilter === 'all' && sortOrder === 'default' && extraFilters.length === 0 && !activeDiscountFilter && currentOffset === 0) {
+          publicCache.set(`items_${id}`, data);
+        }
       }
     } catch (error) {
       console.error("Failed to load items", error);
@@ -732,6 +810,9 @@ export function PublicMenuPage() {
         setActiveDiscounts(prev => [...prev, ...filteredDiscounts]);
       } else {
         setActiveDiscounts(filteredDiscounts);
+        if (id && currentOffset === 0) {
+          publicCache.set(`discounts_${id}`, filteredDiscounts);
+        }
       }
     } catch {
       // ignore
@@ -865,6 +946,13 @@ export function PublicMenuPage() {
   };
 
   const handleItemClick = (item: MenuItem, categoryId: string) => {
+    if (item?.id) {
+      publicCache.set(`item_${item.id}`, item);
+    }
+    if (id) {
+      sessionStorage.setItem(`menu_scroll_${id}`, window.scrollY.toString());
+    }
+    hasRestoredScroll.current = false;
     navigate(`/shop/${id}/item/${item.id}`);
     if (id) {
       api.post(`/public/shop/${id}/view`, { item_id: item.id, category_id: categoryId }).catch(console.error);
@@ -1070,138 +1158,118 @@ export function PublicMenuPage() {
       `}</style>
 
       {/* Sticky Header */}
-      <div className={`fixed top-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-md shadow-sm border-b border-slate-200 transition-all duration-300 transform ${isScrolled ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 pointer-events-none'
+      <div className={`fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md shadow-xs border-b border-slate-200/80 transition-all duration-300 transform ${isScrolled ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 pointer-events-none'
         }`}>
-        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-center gap-2 sm:gap-3 transition-all overflow-x-auto scrollbar-hide no-scrollbar w-full">
-          {!isSearchFocused && (
-            <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 border border-slate-200 bg-white flex items-center justify-center shadow-sm transition-all">
-              {shop.logo_url ? (
-                <img src={shop.logo_url} alt="Logo" className="w-full h-full object-cover" />
-              ) : (
-                <UtensilsCrossed size={20} className="text-slate-400" />
-              )}
-            </div>
-          )}
+        <div className="max-w-3xl mx-auto px-4 py-2.5 flex items-center gap-2 sm:gap-3 transition-all w-full">
+          <div className="w-9 h-9 rounded-xl overflow-hidden shrink-0 border border-slate-200 bg-white flex items-center justify-center shadow-xs transition-all">
+            {shop.logo_url ? (
+              <img src={shop.logo_url} alt="Logo" className="w-full h-full object-cover" />
+            ) : (
+              <UtensilsCrossed size={18} className="text-slate-400" />
+            )}
+          </div>
 
-          <div className={`relative transition-all duration-300 overflow-hidden ${isSearchFocused || searchQuery ? 'flex-1' : 'w-10 sm:flex-1 shrink-0'}`}>
-            <Search className={`absolute top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none transition-all duration-300 z-10 ${isSearchFocused || searchQuery ? 'left-3' : 'left-1/2 -translate-x-1/2 sm:left-3 sm:translate-x-0'
-              }`} />
+          <div className="relative flex-1 min-w-0 transition-all">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none z-10" />
             <input
               type="text"
               placeholder="Search..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              onFocus={() => setIsSearchFocused(true)}
-              onBlur={() => {
-                setTimeout(() => {
-                  if (!searchQuery) {
-                    setIsSearchFocused(false);
-                  }
-                }, 200);
-              }}
-              className={`w-full h-10 rounded-lg bg-white border border-slate-200 shadow-sm focus:outline-none focus:ring-2 transition-all duration-300 text-sm ${isSearchFocused || searchQuery
-                ? 'pl-9 pr-8 text-slate-900 placeholder-slate-400'
-                : 'p-0 sm:pl-9 sm:pr-8 text-transparent sm:text-slate-900 placeholder-transparent sm:placeholder-slate-400 cursor-pointer sm:cursor-text'
-                }`}
+              className="w-full h-10 rounded-xl bg-white border border-slate-200 shadow-xs focus:outline-none focus:ring-2 focus:ring-inset transition-all text-sm pl-9 pr-8 text-slate-900 placeholder-slate-400"
               style={{ '--tw-ring-color': primaryColor } as any}
             />
             {searchQuery && (
               <button
-                onClick={() => {
-                  setSearchQuery('');
-                  setIsSearchFocused(false);
-                }}
-                className="absolute right-3 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100 z-10"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition-colors z-10"
+                title="Clear search"
               >
                 <X size={14} />
               </button>
             )}
           </div>
 
-          {!isSearchFocused && (
-            <>
-              <div className="flex bg-slate-100 rounded-lg p-1 shrink-0 items-center overflow-x-auto scrollbar-hide no-scrollbar">
-                <button
-                  onClick={() => setFoodFilter(foodFilter === 'veg' ? 'all' : 'veg')}
-                  className={`p-1.5 rounded-md transition-colors ${foodFilter === 'veg' ? 'bg-white shadow-sm' : 'opacity-50 hover:opacity-80'}`}
-                  title="Veg Only"
-                >
-                  <span className="w-4 h-4 border-2 border-green-600 rounded-[3px] flex items-center justify-center shrink-0">
-                    <span className="w-2 h-2 bg-green-600 rounded-full"></span>
-                  </span>
-                </button>
-                <button
-                  onClick={() => setFoodFilter(foodFilter === 'non-veg' ? 'all' : 'non-veg')}
-                  className={`p-1.5 rounded-md transition-colors ${foodFilter === 'non-veg' ? 'bg-white shadow-sm' : 'opacity-50 hover:opacity-80'}`}
-                  title="Non-veg Only"
-                >
-                  <span className="w-4 h-4 border-2 border-red-600 rounded-[3px] flex items-center justify-center shrink-0">
-                    <span className="w-0 h-0 border-l-[4px] border-r-[4px] border-b-[6px] border-transparent border-b-red-600"></span>
-                  </span>
-                </button>
-                <button
-                  onClick={() => setFoodFilter(foodFilter === 'egg' ? 'all' : 'egg')}
-                  className={`p-1.5 rounded-md transition-colors ${foodFilter === 'egg' ? 'bg-white shadow-sm' : 'opacity-50 hover:opacity-80'}`}
-                  title="Egg Only"
-                >
-                  <span className="w-4 h-4 border-2 border-yellow-600 rounded-[3px] flex items-center justify-center shrink-0">
-                    <span className="w-2 h-2 bg-yellow-600 rounded-full"></span>
-                  </span>
-                </button>
-                <button
-                  onClick={() => setFoodFilter(foodFilter === 'drink' ? 'all' : 'drink')}
-                  className={`p-1.5 rounded-md transition-colors ${foodFilter === 'drink' ? 'bg-white shadow-sm' : 'opacity-50 hover:opacity-80'}`}
-                  title="Drinks Only"
-                >
-                  <span className="w-4 h-4 border-2 border-blue-600 rounded-[3px] flex items-center justify-center shrink-0">
-                    <span className="w-2 h-2 bg-blue-600 rounded-full"></span>
-                  </span>
-                </button>
-              </div>
+          <div className="hidden sm:flex bg-slate-100 rounded-xl p-1 shrink-0 items-center">
+            <button
+              onClick={() => setFoodFilter(foodFilter === 'veg' ? 'all' : 'veg')}
+              className={`p-1.5 rounded-lg transition-colors ${foodFilter === 'veg' ? 'bg-white shadow-xs' : 'opacity-50 hover:opacity-80'}`}
+              title="Veg Only"
+            >
+              <span className="w-4 h-4 border-2 border-green-600 rounded-[3px] flex items-center justify-center shrink-0">
+                <span className="w-2 h-2 bg-green-600 rounded-full"></span>
+              </span>
+            </button>
+            <button
+              onClick={() => setFoodFilter(foodFilter === 'non-veg' ? 'all' : 'non-veg')}
+              className={`p-1.5 rounded-lg transition-colors ${foodFilter === 'non-veg' ? 'bg-white shadow-xs' : 'opacity-50 hover:opacity-80'}`}
+              title="Non-veg Only"
+            >
+              <span className="w-4 h-4 border-2 border-red-600 rounded-[3px] flex items-center justify-center shrink-0">
+                <span className="w-0 h-0 border-l-[4px] border-r-[4px] border-b-[6px] border-transparent border-b-red-600"></span>
+              </span>
+            </button>
+            <button
+              onClick={() => setFoodFilter(foodFilter === 'egg' ? 'all' : 'egg')}
+              className={`p-1.5 rounded-lg transition-colors ${foodFilter === 'egg' ? 'bg-white shadow-xs' : 'opacity-50 hover:opacity-80'}`}
+              title="Egg Only"
+            >
+              <span className="w-4 h-4 border-2 border-yellow-600 rounded-[3px] flex items-center justify-center shrink-0">
+                <span className="w-2 h-2 bg-yellow-600 rounded-full"></span>
+              </span>
+            </button>
+            <button
+              onClick={() => setFoodFilter(foodFilter === 'drink' ? 'all' : 'drink')}
+              className={`p-1.5 rounded-lg transition-colors ${foodFilter === 'drink' ? 'bg-white shadow-xs' : 'opacity-50 hover:opacity-80'}`}
+              title="Drinks Only"
+            >
+              <span className="w-4 h-4 border-2 border-blue-600 rounded-[3px] flex items-center justify-center shrink-0">
+                <span className="w-2 h-2 bg-blue-600 rounded-full"></span>
+              </span>
+            </button>
+          </div>
 
-              {activeDiscounts.filter(isDiscountVisible).length > 0 && (
-                <button
-                  onClick={() => setIsDiscountsModalOpen(true)}
-                  className="p-1.5 rounded-lg flex items-center justify-center shrink-0 transition-colors relative"
-                  style={{ backgroundColor: `${primaryColor}15`, color: primaryColor }}
-                  title="Active Offers"
-                >
-                  <Tag size={18} />
-                  <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center shadow-sm border border-white">
-                    {activeDiscounts.filter(isDiscountVisible).length}
-                  </span>
-                </button>
-              )}
-
-              <div className="flex bg-slate-100 rounded-lg p-1 shrink-0 items-center">
-                <button
-                  onClick={() => setUserViewMode('grid')}
-                  className={`p-1.5 rounded-md transition-colors ${layoutStyle === 'grid' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
-                  title="Grid View"
-                >
-                  <LayoutGrid size={16} />
-                </button>
-                <button
-                  onClick={() => setUserViewMode('list')}
-                  className={`p-1.5 rounded-md transition-colors ${layoutStyle === 'list' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
-                  title="List View"
-                >
-                  <ListIcon size={16} />
-                </button>
-              </div>
-            </>
+          {activeDiscounts.filter(isDiscountVisible).length > 0 && (
+            <button
+              onClick={() => setIsDiscountsModalOpen(true)}
+              className="p-2 rounded-xl flex items-center justify-center shrink-0 transition-colors relative"
+              style={{ backgroundColor: `${primaryColor}15`, color: primaryColor }}
+              title="Active Offers"
+            >
+              <Tag size={16} />
+              <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center shadow-xs border border-white">
+                {activeDiscounts.filter(isDiscountVisible).length}
+              </span>
+            </button>
           )}
+
+          <div className="flex bg-slate-100 rounded-xl p-1 shrink-0 items-center">
+            <button
+              onClick={() => setUserViewMode('grid')}
+              className={`p-1.5 rounded-lg transition-colors ${layoutStyle === 'grid' ? 'bg-white shadow-xs text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
+              title="Grid View"
+            >
+              <LayoutGrid size={16} />
+            </button>
+            <button
+              onClick={() => setUserViewMode('list')}
+              className={`p-1.5 rounded-lg transition-colors ${layoutStyle === 'list' ? 'bg-white shadow-xs text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
+              title="List View"
+            >
+              <ListIcon size={16} />
+            </button>
+          </div>
         </div>
 
-        <div className="px-4 pb-3 flex gap-2 overflow-x-auto scrollbar-hide no-scrollbar max-w-3xl mx-auto items-center">
+        <div className="px-4 pt-2 pb-2.5 flex gap-2 overflow-x-auto scrollbar-hide no-scrollbar max-w-3xl mx-auto items-center">
           <button
             onClick={() => {
               setActiveCategories(['all']);
               window.scrollTo({ top: 200, behavior: 'smooth' });
             }}
-            className={`px-4 py-1.5 ${categoryPillClass} whitespace-nowrap text-xs font-medium transition-all flex items-center gap-1.5 ${
+            className={`px-4 py-1.5 ${categoryPillClass} whitespace-nowrap text-xs font-medium transition-all flex items-center gap-1.5 shrink-0 ${
               activeCategories.includes('all')
-                ? 'text-white shadow-sm'
+                ? 'text-white shadow-xs'
                 : 'bg-slate-100 text-slate-600 border border-slate-200'
             }`}
             style={activeCategories.includes('all') ? { backgroundColor: primaryColor } : {}}
@@ -1219,9 +1287,9 @@ export function PublicMenuPage() {
                 });
                 window.scrollTo({ top: 200, behavior: 'smooth' });
               }}
-              className={`px-4 py-1.5 ${categoryPillClass} whitespace-nowrap text-xs font-medium transition-all ${
+              className={`px-4 py-1.5 ${categoryPillClass} whitespace-nowrap text-xs font-medium transition-all shrink-0 ${
                 activeCategories.includes(cat.id)
-                  ? 'text-white shadow-sm'
+                  ? 'text-white shadow-xs'
                   : 'bg-slate-100 text-slate-600 border border-slate-200'
               }`}
               style={activeCategories.includes(cat.id) ? { backgroundColor: primaryColor } : {}}
@@ -1232,10 +1300,13 @@ export function PublicMenuPage() {
           {categories.length > 3 && (
             <button
               onClick={() => setIsCategoriesModalOpen(true)}
-              className="px-4 py-1.5 rounded-full whitespace-nowrap text-xs font-bold transition-all bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 flex items-center gap-1 shadow-sm relative"
+              className="px-4 py-1.5 rounded-full whitespace-nowrap text-xs font-bold transition-all bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 flex items-center gap-1 shadow-xs relative shrink-0 mr-2"
             >
               {!activeCategories.includes('all') && activeCategories.some(c => !categories.slice(0, 3).find(cat => cat.id === c)) && (
-                <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full text-white text-[9px] font-bold flex items-center justify-center" style={{ backgroundColor: primaryColor }}>
+                <span
+                  className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full text-white text-[9px] font-bold flex items-center justify-center shadow-xs border-2 border-white"
+                  style={{ backgroundColor: primaryColor }}
+                >
                   {activeCategories.filter(c => c !== 'all' && !categories.slice(0, 3).find(cat => cat.id === c)).length}
                 </span>
               )}
@@ -1338,111 +1409,94 @@ export function PublicMenuPage() {
 
         {/* ❌ REMOVED: `<ContestHub/>` component was successfully pulled from top layout context */}
 
-        {/* Search & View Toggle */}
-        <div className="flex items-center justify-center gap-2 sm:gap-3 mb-3 transition-all overflow-x-auto scrollbar-hide no-scrollbar w-full">
-          <div className={`relative transition-all duration-300 overflow-hidden ${isSearchFocused || searchQuery ? 'flex-1' : 'w-12 sm:flex-1 shrink-0'}`}>
-            <Search className={`absolute top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5 pointer-events-none transition-all duration-300 z-10 ${isSearchFocused || searchQuery ? 'left-4' : 'left-1/2 -translate-x-1/2 sm:left-4 sm:translate-x-0'
-              }`} />
-            <input
-              type="text"
-              placeholder="Search for a dish..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onFocus={() => setIsSearchFocused(true)}
-              onBlur={() => {
-                setTimeout(() => {
-                  if (!searchQuery) {
-                    setIsSearchFocused(false);
-                  }
-                }, 200);
-              }}
-              className={`w-full h-12 rounded-full border shadow-sm focus:outline-none focus:ring-2 transition-all duration-300 bg-white border-slate-200 text-sm sm:text-base ${isSearchFocused || searchQuery
-                ? 'pl-12 pr-10 text-slate-900 placeholder-slate-400'
-                : 'p-0 sm:pl-12 sm:pr-10 text-transparent sm:text-slate-900 placeholder-transparent sm:placeholder-slate-400 cursor-pointer sm:cursor-text'
-                }`}
-              style={{ '--tw-ring-color': primaryColor } as any}
-            />
-            {searchQuery && (
-              <button
-                onClick={() => {
-                  setSearchQuery('');
-                  setIsSearchFocused(false);
-                }}
-                className="absolute right-4 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100 z-10"
-              >
-                <X size={16} />
-              </button>
-            )}
+        {/* Search Bar - Dedicated full width row */}
+        <div className="relative w-full mb-3">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5 pointer-events-none z-10" />
+          <input
+            type="text"
+            placeholder="Search for a dish or drink..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full h-12 rounded-2xl border shadow-xs focus:outline-none focus:ring-2 transition-all duration-200 bg-white border-slate-200 text-sm sm:text-base pl-12 pr-10 text-slate-900 placeholder-slate-400"
+            style={{ '--tw-ring-color': primaryColor } as any}
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition-colors z-10"
+              title="Clear search"
+            >
+              <X size={16} />
+            </button>
+          )}
+        </div>
+
+        {/* Dietary Filters & View Toggle Row */}
+        <div className="flex items-center justify-between gap-2 mb-3.5 w-full">
+          <div className="flex bg-white shadow-xs border border-slate-200 rounded-full p-1 shrink-0 items-center overflow-x-auto no-scrollbar scrollbar-hide">
+            <button
+              onClick={() => setFoodFilter(foodFilter === 'veg' ? 'all' : 'veg')}
+              className={`p-2 rounded-full transition-all shrink-0 ${foodFilter === 'veg' ? 'bg-green-50 shadow-xs ring-1 ring-green-200' : 'text-slate-400 hover:text-slate-600'}`}
+              title="Veg Only"
+            >
+              <span className="w-4 h-4 border-2 border-green-600 rounded-[3px] flex items-center justify-center">
+                <span className="w-2 h-2 bg-green-600 rounded-full"></span>
+              </span>
+            </button>
+            <button
+              onClick={() => setFoodFilter(foodFilter === 'non-veg' ? 'all' : 'non-veg')}
+              className={`p-2 rounded-full transition-all shrink-0 ${foodFilter === 'non-veg' ? 'bg-red-50 shadow-xs ring-1 ring-red-200' : 'text-slate-400 hover:text-slate-600'}`}
+              title="Non-veg Only"
+            >
+              <span className="w-4 h-4 border-2 border-red-600 rounded-[3px] flex items-center justify-center">
+                <span className="w-0 h-0 border-l-[4px] border-r-[4px] border-b-[6px] border-transparent border-b-red-600"></span>
+              </span>
+            </button>
+            <button
+              onClick={() => setFoodFilter(foodFilter === 'egg' ? 'all' : 'egg')}
+              className={`p-2 rounded-full transition-all shrink-0 ${foodFilter === 'egg' ? 'bg-yellow-50 shadow-xs ring-1 ring-yellow-200' : 'text-slate-400 hover:text-slate-600'}`}
+              title="Contains Egg"
+            >
+              <span className="w-4 h-4 border-2 border-yellow-500 rounded-[3px] flex items-center justify-center">
+                <span className="w-2 h-2 bg-yellow-500 rounded-full"></span>
+              </span>
+            </button>
+            <button
+              onClick={() => setFoodFilter(foodFilter === 'drink' ? 'all' : 'drink')}
+              className={`p-2 rounded-full transition-all shrink-0 ${foodFilter === 'drink' ? 'bg-blue-50 shadow-xs ring-1 ring-blue-200' : 'text-slate-400 hover:text-slate-600'}`}
+              title="Drinks Only"
+            >
+              <span className="w-4 h-4 border-2 border-blue-500 rounded-full flex items-center justify-center">
+                <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+              </span>
+            </button>
+            <button
+              onClick={() => setFoodFilter(foodFilter === 'dessert' ? 'all' : 'dessert')}
+              className={`p-2 rounded-full transition-all shrink-0 ${foodFilter === 'dessert' ? 'bg-pink-50 shadow-xs ring-1 ring-pink-200' : 'text-slate-400 hover:text-slate-600'}`}
+              title="Desserts Only"
+            >
+              <span className="w-4 h-4 border-2 border-pink-500 rounded-[3px] flex items-center justify-center">
+                <span className="w-2 h-2 bg-pink-500 rounded-[2px]"></span>
+              </span>
+            </button>
           </div>
 
-          {!isSearchFocused && (
-            <>
-              <div className="flex bg-white shadow-sm border border-slate-200 rounded-full p-1 shrink-0 items-center overflow-x-auto no-scrollbar scrollbar-hide">
-                <button
-                  onClick={() => setFoodFilter(foodFilter === 'veg' ? 'all' : 'veg')}
-                  className={`p-2 rounded-full transition-all shrink-0 ${foodFilter === 'veg' ? 'bg-green-50 shadow-sm ring-1 ring-green-200' : 'text-slate-400 hover:text-slate-600'}`}
-                  title="Veg Only"
-                >
-                  <span className="w-4 h-4 border-2 border-green-600 rounded-[3px] flex items-center justify-center">
-                    <span className="w-2 h-2 bg-green-600 rounded-full"></span>
-                  </span>
-                </button>
-                <button
-                  onClick={() => setFoodFilter(foodFilter === 'non-veg' ? 'all' : 'non-veg')}
-                  className={`p-2 rounded-full transition-all shrink-0 ${foodFilter === 'non-veg' ? 'bg-red-50 shadow-sm ring-1 ring-red-200' : 'text-slate-400 hover:text-slate-600'}`}
-                  title="Non-veg Only"
-                >
-                  <span className="w-4 h-4 border-2 border-red-600 rounded-[3px] flex items-center justify-center">
-                    <span className="w-0 h-0 border-l-[4px] border-r-[4px] border-b-[6px] border-transparent border-b-red-600"></span>
-                  </span>
-                </button>
-                <button
-                  onClick={() => setFoodFilter(foodFilter === 'egg' ? 'all' : 'egg')}
-                  className={`p-2 rounded-full transition-all shrink-0 ${foodFilter === 'egg' ? 'bg-yellow-50 shadow-sm ring-1 ring-yellow-200' : 'text-slate-400 hover:text-slate-600'}`}
-                  title="Contains Egg"
-                >
-                  <span className="w-4 h-4 border-2 border-yellow-500 rounded-[3px] flex items-center justify-center">
-                    <span className="w-2 h-2 bg-yellow-500 rounded-full"></span>
-                  </span>
-                </button>
-                <button
-                  onClick={() => setFoodFilter(foodFilter === 'drink' ? 'all' : 'drink')}
-                  className={`p-2 rounded-full transition-all shrink-0 ${foodFilter === 'drink' ? 'bg-blue-50 shadow-sm ring-1 ring-blue-200' : 'text-slate-400 hover:text-slate-600'}`}
-                  title="Drinks Only"
-                >
-                  <span className="w-4 h-4 border-2 border-blue-500 rounded-full flex items-center justify-center">
-                    <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
-                  </span>
-                </button>
-                <button
-                  onClick={() => setFoodFilter(foodFilter === 'dessert' ? 'all' : 'dessert')}
-                  className={`p-2 rounded-full transition-all shrink-0 ${foodFilter === 'dessert' ? 'bg-pink-50 shadow-sm ring-1 ring-pink-200' : 'text-slate-400 hover:text-slate-600'}`}
-                  title="Desserts Only"
-                >
-                  <span className="w-4 h-4 border-2 border-pink-500 rounded-[3px] flex items-center justify-center">
-                    <span className="w-2 h-2 bg-pink-500 rounded-[2px]"></span>
-                  </span>
-                </button>
-              </div>
-
-              <div className="flex bg-white shadow-sm border border-slate-200 rounded-full p-1 shrink-0 items-center">
-                <button
-                  onClick={() => setUserViewMode('grid')}
-                  className={`p-2 rounded-full transition-colors ${layoutStyle === 'grid' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
-                  title="Grid View"
-                >
-                  <LayoutGrid size={18} />
-                </button>
-                <button
-                  onClick={() => setUserViewMode('list')}
-                  className={`p-2 rounded-full transition-colors ${layoutStyle === 'list' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
-                  title="List View"
-                >
-                  <ListIcon size={18} />
-                </button>
-              </div>
-            </>
-          )}
+          <div className="flex bg-white shadow-xs border border-slate-200 rounded-full p-1 shrink-0 items-center">
+            <button
+              onClick={() => setUserViewMode('grid')}
+              className={`p-2 rounded-full transition-colors ${layoutStyle === 'grid' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
+              title="Grid View"
+            >
+              <LayoutGrid size={18} />
+            </button>
+            <button
+              onClick={() => setUserViewMode('list')}
+              className={`p-2 rounded-full transition-colors ${layoutStyle === 'list' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
+              title="List View"
+            >
+              <ListIcon size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Active filter indicators */}
@@ -1558,12 +1612,26 @@ export function PublicMenuPage() {
                     )}
 
                     <div className="mt-auto flex flex-col gap-2">
-                      {disc.available_days && disc.available_days.length > 0 && (
+                      {disc.available_days && disc.available_days.length > 0 ? (
                         <div className="flex items-center gap-1.5 text-[10px] text-slate-500 font-semibold">
                           <Calendar size={12} className="text-slate-400 shrink-0" />
                           <span className="truncate">{formatDays(disc.available_days)}</span>
                         </div>
-                      )}
+                      ) : (disc.start_date || disc.end_date) ? (
+                        <div className="flex items-center gap-1.5 text-[10px] text-slate-500 font-semibold">
+                          <Calendar size={12} className="text-slate-400 shrink-0" />
+                          <span className="truncate">
+                            {disc.end_date
+                              ? `Until ${new Date(disc.end_date).toLocaleDateString([], { month: 'short', day: 'numeric' })}`
+                              : 'Limited time'}
+                          </span>
+                        </div>
+                      ) : (disc.available_time_presets && disc.available_time_presets.length > 0) ? (
+                        <div className="flex items-center gap-1.5 text-[10px] text-slate-500 font-semibold">
+                          <Clock size={12} className="text-slate-400 shrink-0" />
+                          <span className="truncate">{disc.available_time_presets.join(', ')}</span>
+                        </div>
+                      ) : null}
 
                       <div className="flex items-center justify-between gap-2 min-w-0">
                         <div className="flex gap-1.5 min-w-0 shrink">
@@ -1622,16 +1690,16 @@ export function PublicMenuPage() {
         `}</style>
 
         {/* Categories Tab */}
-        <div className="mt-6 mb-3">
+        <div className="mt-6 mb-2">
           <h2 className="text-lg font-extrabold text-slate-800 tracking-tight">Categories</h2>
         </div>
-        <div ref={categoriesRef} className="flex gap-2 overflow-x-auto pb-4 scrollbar-hide no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
+        <div ref={categoriesRef} className="flex items-center gap-2 overflow-x-auto pt-2 pb-3 scrollbar-hide no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
           <button
             onClick={() => setActiveCategories(['all'])}
-            className={`px-5 py-2 rounded-full flex items-center gap-2 whitespace-nowrap text-sm font-medium transition-all ${
+            className={`px-5 py-2 rounded-full flex items-center gap-2 whitespace-nowrap text-sm font-medium transition-all shrink-0 ${
               activeCategories.includes('all')
-                ? 'text-white shadow-md scale-105'
-                : 'bg-white text-slate-700 border-slate-200 border shadow-sm hover:border-slate-300'
+                ? 'text-white shadow-md'
+                : 'bg-white text-slate-700 border-slate-200 border shadow-xs hover:border-slate-300'
             }`}
             style={{ backgroundColor: activeCategories.includes('all') ? primaryColor : undefined }}
           >
@@ -1651,10 +1719,10 @@ export function PublicMenuPage() {
                   return next.includes(cat.id) ? (next.length === 1 ? ['all'] : next.filter(c => c !== cat.id)) : [...next, cat.id];
                 });
               }}
-              className={`px-5 py-2 rounded-full flex items-center gap-2 whitespace-nowrap text-sm font-medium transition-all ${
+              className={`px-5 py-2 rounded-full flex items-center gap-2 whitespace-nowrap text-sm font-medium transition-all shrink-0 ${
                 activeCategories.includes(cat.id)
-                  ? 'text-white shadow-md scale-105'
-                  : 'bg-white text-slate-700 border-slate-200 border shadow-sm hover:border-slate-300'
+                  ? 'text-white shadow-md'
+                  : 'bg-white text-slate-700 border-slate-200 border shadow-xs hover:border-slate-300'
               }`}
               style={{ backgroundColor: activeCategories.includes(cat.id) ? primaryColor : undefined }}
             >
@@ -1669,10 +1737,13 @@ export function PublicMenuPage() {
           {categories.length > 4 && (
             <button
               onClick={() => setIsCategoriesModalOpen(true)}
-              className="px-5 py-2 rounded-full flex items-center gap-2 whitespace-nowrap text-sm font-medium transition-all bg-white text-slate-700 border-slate-200 border shadow-sm hover:border-slate-300 relative"
+              className="px-5 py-2 rounded-full flex items-center gap-2 whitespace-nowrap text-sm font-medium transition-all bg-white text-slate-700 border-slate-200 border shadow-xs hover:border-slate-300 relative shrink-0 mr-2"
             >
               {!activeCategories.includes('all') && activeCategories.some(c => !categories.slice(0, 4).find(cat => cat.id === c)) && (
-                <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full text-white text-[9px] font-bold flex items-center justify-center" style={{ backgroundColor: primaryColor }}>
+                <span
+                  className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full text-white text-[10px] font-bold flex items-center justify-center shadow-xs border-2 border-white"
+                  style={{ backgroundColor: primaryColor }}
+                >
                   {activeCategories.filter(c => c !== 'all' && !categories.slice(0, 4).find(cat => cat.id === c)).length}
                 </span>
               )}
@@ -2069,21 +2140,31 @@ export function PublicMenuPage() {
       </Modal>
 
       {/* Offers Crown Floating Button */}
-      {memberStatus === null && activeDiscounts.some(d => d.visibility_type === 'members_only_hidden' || d.visibility_type === 'members_only_visible' || d.visibility_type === 'unlock_required') && (
+      {activeDiscounts.length > 0 && (
         <button
           onClick={() => {
-            setDiscountPopupInitialStep('mobile');
-            setIsDiscountPopupOpen(true);
+            if (memberStatus === 'verified-member') {
+              setIsBecomeMemberModalOpen(true);
+            } else {
+              setDiscountPopupInitialStep('intro');
+              setIsDiscountPopupOpen(true);
+            }
           }}
-          className={`fixed bottom-48 right-4 sm:right-6 w-14 h-14 rounded-full text-white shadow-xl flex items-center justify-center hover:scale-105 transition-all duration-300 z-40 border-4 border-white/50 backdrop-blur-md animate-bounce hover:animate-none ${isScrollingDown ? 'translate-x-full opacity-0 pointer-events-none' : 'translate-x-0 opacity-100'}`}
-          style={{ backgroundColor: primaryColor }}
-          title="Unlock Member Offers"
+          className={`fixed bottom-48 right-4 sm:right-6 w-14 h-14 rounded-full text-white shadow-xl flex items-center justify-center hover:scale-105 transition-all duration-300 z-40 border-4 border-white/50 backdrop-blur-md cursor-pointer ${
+            memberStatus === 'verified-member' 
+              ? 'bg-gradient-to-tr from-amber-500 to-amber-400' 
+              : 'animate-bounce hover:animate-none'
+          } ${isScrollingDown ? 'translate-x-full opacity-0 pointer-events-none' : 'translate-x-0 opacity-100'}`}
+          style={memberStatus !== 'verified-member' ? { backgroundColor: primaryColor } : undefined}
+          title={memberStatus === 'verified-member' ? "Hotel Member Active" : "Exclusive Member Offers"}
         >
           <Crown size={24} className="text-white" />
-          <span className="absolute top-0 right-0 flex h-4 w-4">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-4 w-4 bg-red-500 border-2 border-white"></span>
-          </span>
+          {memberStatus !== 'verified-member' && (
+            <span className="absolute top-0 right-0 flex h-4 w-4">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-4 w-4 bg-red-500 border-2 border-white"></span>
+            </span>
+          )}
         </button>
       )}
 
@@ -2113,12 +2194,28 @@ export function PublicMenuPage() {
         title="Sort & Filter"
         footer={
           <div className="flex gap-3">
-            <button onClick={() => { setSortOrder('default'); setExtraFilters([]); }} className="flex-1 py-3 px-4 rounded-xl font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors text-sm">Reset</button>
-            <button onClick={() => setIsFilterModalOpen(false)} className="flex-[2] py-3 px-4 rounded-xl font-semibold text-white shadow-lg hover:shadow-xl transition-all text-sm" style={{ backgroundColor: primaryColor }}>Show Results</button>
+            <button
+              onClick={() => {
+                setSortOrder('default');
+                setFoodFilter('all');
+                setExtraFilters([]);
+              }}
+              className="flex-1 py-3 px-4 rounded-xl font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors text-sm cursor-pointer"
+            >
+              Reset
+            </button>
+            <button
+              onClick={() => setIsFilterModalOpen(false)}
+              className="flex-[2] py-3 px-4 rounded-xl font-semibold text-white shadow-lg hover:shadow-xl transition-all text-sm cursor-pointer"
+              style={{ backgroundColor: primaryColor }}
+            >
+              Show Results
+            </button>
           </div>
         }
       >
         <div className="space-y-6">
+          {/* Sort By */}
           <div>
             <h3 className="text-xs font-bold mb-3 opacity-70 uppercase tracking-wider">Sort By</h3>
             <div className="space-y-2">
@@ -2146,6 +2243,71 @@ export function PublicMenuPage() {
             </div>
           </div>
 
+          {/* Dietary Preference */}
+          <div>
+            <h3 className="text-xs font-bold mb-3 opacity-70 uppercase tracking-wider">Dietary Type</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {[
+                { 
+                  id: 'all', 
+                  label: 'All Items', 
+                  icon: <span className="w-4 h-4 rounded-full border-2 border-slate-400 flex items-center justify-center shrink-0"><span className="w-1.5 h-1.5 bg-slate-400 rounded-full" /></span> 
+                },
+                { 
+                  id: 'veg', 
+                  label: 'Pure Veg', 
+                  icon: <span className="w-4 h-4 border-2 border-green-600 rounded-[3px] flex items-center justify-center shrink-0"><span className="w-2 h-2 bg-green-600 rounded-full" /></span> 
+                },
+                { 
+                  id: 'non-veg', 
+                  label: 'Non-Veg', 
+                  icon: <span className="w-4 h-4 border-2 border-red-600 rounded-[3px] flex items-center justify-center shrink-0"><span className="w-0 h-0 border-l-[4px] border-r-[4px] border-b-[6px] border-transparent border-b-red-600" /></span> 
+                },
+                { 
+                  id: 'egg', 
+                  label: 'Contains Egg', 
+                  icon: <span className="w-4 h-4 border-2 border-yellow-500 rounded-[3px] flex items-center justify-center shrink-0"><span className="w-2 h-2 bg-yellow-500 rounded-full" /></span> 
+                },
+                { 
+                  id: 'drink', 
+                  label: 'Drinks Only', 
+                  icon: <span className="w-4 h-4 border-2 border-blue-500 rounded-full flex items-center justify-center shrink-0"><span className="w-2 h-2 bg-blue-500 rounded-full" /></span> 
+                },
+                { 
+                  id: 'dessert', 
+                  label: 'Desserts Only', 
+                  icon: <span className="w-4 h-4 border-2 border-pink-500 rounded-[3px] flex items-center justify-center shrink-0"><span className="w-2 h-2 bg-pink-500 rounded-[2px]" /></span> 
+                },
+              ].map(item => {
+                const isSelected = foodFilter === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setFoodFilter(item.id as any)}
+                    className={`relative flex items-center gap-2 py-3 px-3 rounded-xl border cursor-pointer transition-all text-left ${
+                      isSelected
+                        ? 'shadow-xs border-slate-900 bg-slate-50'
+                        : 'border-slate-200 bg-white hover:bg-slate-50'
+                    }`}
+                    style={isSelected ? { borderColor: primaryColor, backgroundColor: `${primaryColor}12` } : undefined}
+                  >
+                    <div className="shrink-0">{item.icon}</div>
+                    <span className={`text-xs truncate ${isSelected ? 'text-slate-900 font-bold' : 'text-slate-600 font-medium'}`}>
+                      {item.label}
+                    </span>
+                    {isSelected && (
+                      <div className="ml-auto shrink-0">
+                        <Check size={14} style={{ color: primaryColor }} />
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Quick Filters */}
           <div>
             <h3 className="text-xs font-bold mb-3 opacity-70 uppercase tracking-wider">Quick Filters</h3>
             <div className="grid grid-cols-2 gap-2">
@@ -2165,6 +2327,7 @@ export function PublicMenuPage() {
             </div>
           </div>
 
+          {/* Availability */}
           <div>
             <h3 className="text-xs font-bold mb-3 opacity-70 uppercase tracking-wider">Availability</h3>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -2370,16 +2533,64 @@ export function PublicMenuPage() {
               {selectedDiscountForModal.description && <p className="text-sm text-slate-500 mt-2 max-w-[280px] leading-relaxed">{selectedDiscountForModal.description}</p>}
             </div>
 
-            {(selectedDiscountForModal.start_date || selectedDiscountForModal.end_date || (selectedDiscountForModal.available_days && selectedDiscountForModal.available_days.length > 0)) && (
-              <div className="pt-2">
-                <h4 className="text-xs font-bold text-slate-400 mb-2 uppercase tracking-wider flex items-center gap-2"><Clock size={14} className="text-blue-500" /> Availability</h4>
-                <div className="bg-slate-50 rounded-2xl p-3 border border-slate-100 flex flex-col gap-2">
-                  {selectedDiscountForModal.available_days && selectedDiscountForModal.available_days.length > 0 && (
-                    <p className="text-sm font-medium text-slate-700 flex items-center gap-2"><Calendar size={14} className="text-slate-400 shrink-0" /><span className="truncate">{formatDays(selectedDiscountForModal.available_days)}</span></p>
-                  )}
+            {(() => {
+              const hasDates = Boolean(selectedDiscountForModal.start_date || selectedDiscountForModal.end_date);
+              const hasDays = Boolean(selectedDiscountForModal.available_days && selectedDiscountForModal.available_days.length > 0);
+              const hasTimings = Boolean(selectedDiscountForModal.available_time_presets && selectedDiscountForModal.available_time_presets.length > 0);
+              const hasAppliesTo = Boolean(selectedDiscountForModal.applies_to);
+
+              if (!hasDates && !hasDays && !hasTimings && !hasAppliesTo) return null;
+
+              return (
+                <div className="pt-2">
+                  <h4 className="text-xs font-bold text-slate-400 mb-2 uppercase tracking-wider flex items-center gap-2">
+                    <Clock size={14} className="text-blue-500" /> Availability & Terms
+                  </h4>
+                  <div className="bg-slate-50 rounded-2xl p-3.5 border border-slate-100 flex flex-col gap-2.5">
+                    {hasDates && (
+                      <div className="flex items-start gap-2.5 text-xs sm:text-sm font-medium text-slate-700">
+                        <Calendar size={15} className="text-slate-400 shrink-0 mt-0.5" />
+                        <span className="leading-snug">
+                          {selectedDiscountForModal.start_date && selectedDiscountForModal.end_date
+                            ? `${formatDateTime(selectedDiscountForModal.start_date)} — ${formatDateTime(selectedDiscountForModal.end_date)}`
+                            : selectedDiscountForModal.start_date
+                            ? `Valid from ${formatDateTime(selectedDiscountForModal.start_date)}`
+                            : `Valid until ${formatDateTime(selectedDiscountForModal.end_date)}`}
+                        </span>
+                      </div>
+                    )}
+                    {hasDays && (
+                      <div className="flex items-start gap-2.5 text-xs sm:text-sm font-medium text-slate-700">
+                        <Calendar size={15} className="text-slate-400 shrink-0 mt-0.5" />
+                        <span className="leading-snug">
+                          {formatDays(selectedDiscountForModal.available_days!)}
+                        </span>
+                      </div>
+                    )}
+                    {hasTimings && (
+                      <div className="flex items-start gap-2.5 text-xs sm:text-sm font-medium text-slate-700">
+                        <Clock size={15} className="text-slate-400 shrink-0 mt-0.5" />
+                        <span className="leading-snug">
+                          {selectedDiscountForModal.available_time_presets!.join(', ')}
+                        </span>
+                      </div>
+                    )}
+                    {hasAppliesTo && (
+                      <div className="flex items-start gap-2.5 text-xs sm:text-sm font-medium text-slate-700">
+                        <ShoppingBag size={15} className="text-slate-400 shrink-0 mt-0.5" />
+                        <span className="leading-snug">
+                          {selectedDiscountForModal.applies_to === 'all'
+                            ? 'Applicable on all menu items'
+                            : selectedDiscountForModal.applies_to === 'category'
+                            ? `Applicable on ${(selectedDiscountForModal.target_ids?.length || 0)} ${(selectedDiscountForModal.target_ids?.length === 1) ? 'category' : 'categories'}`
+                            : `Applicable on ${(selectedDiscountForModal.target_ids?.length || 0)} ${(selectedDiscountForModal.target_ids?.length === 1) ? 'item' : 'items'}`}
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {(() => {
               const isOfferUnlockRequired = selectedDiscountForModal.visibility_type === 'unlock_required' && !memberStatus;

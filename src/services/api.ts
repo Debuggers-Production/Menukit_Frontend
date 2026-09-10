@@ -7,7 +7,7 @@ const BASE_URL = APP_CONFIG.API_URL;
 
 export const api = axios.create({
   baseURL: `${BASE_URL}/api/v1`,
-  timeout: 15_000,  // 15 second timeout — prevents requests from hanging indefinitely
+  timeout: 60_000,  // 60 second timeout — allows slower mobile networks, large payloads, and backend operations without timing out
   headers: {
     'Content-Type': 'application/json',
   },
@@ -56,9 +56,11 @@ api.interceptors.response.use(
         }
         
         // Request new access token
-        const res = await axios.post(`${BASE_URL}/api/v1/auth/refresh`, {
-          refresh_token: refreshToken
-        });
+        const res = await axios.post(
+          `${BASE_URL}/api/v1/auth/refresh`,
+          { refresh_token: refreshToken },
+          { timeout: 60_000 }
+        );
         
         const { access_token, refresh_token: new_refresh_token } = res.data;
         
