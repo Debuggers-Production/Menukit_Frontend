@@ -54,6 +54,16 @@ export interface ThemeSettings {
   menu_item_style: 'default' | 'elevated' | 'flat' | 'bordered';
 }
 
+export interface Chalkboard {
+  id?: string;
+  shop_id?: string;
+  is_enabled: boolean;
+  title?: string | null;
+  message: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface Shop {
   id: string;
   name: string;
@@ -75,6 +85,7 @@ export interface Shop {
   employee_permissions?: Record<string, string[]>;
   settings: ShopSettings | null;
   theme: ThemeSettings | null;
+  chalkboard?: Chalkboard | null;
   created_at: string;
 }
 

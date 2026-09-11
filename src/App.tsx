@@ -52,6 +52,7 @@ const SettlementsPage = lazyWithPreload(() => import('@/pages/settlements/Settle
 const SubscriptionMarketplacePage = lazyWithPreload(() => import('@/pages/subscription/SubscriptionMarketplacePage').then(m => ({ default: m.SubscriptionMarketplacePage })));
 const NotificationsPage = lazyWithPreload(() => import('@/pages/notifications/NotificationsPage').then(m => ({ default: m.NotificationsPage })));
 const OrdersPage = lazyWithPreload(() => import('@/pages/orders/OrdersPage').then(m => ({ default: m.OrdersPage })));
+const ChalkboardPage = lazyWithPreload(() => import('@/pages/chalkboard/ChalkboardPage').then(m => ({ default: m.ChalkboardPage })));
 const ShopSelectionPage = lazyWithPreload(() => import('@/pages/auth/ShopSelectionPage').then(m => ({ default: m.ShopSelectionPage })));
 
 // Register Dashboard Preloaders
@@ -62,6 +63,7 @@ registerPreload('/menu-items', MenuItemsPage.preload);
 registerPreload('/bulk-upload', BulkUploadPage.preload);
 registerPreload('/json-bulk-upload', JsonBulkUploadPage.preload);
 registerPreload('/customize', CustomizeThemePage.preload);
+registerPreload('/chalkboard', ChalkboardPage.preload);
 registerPreload('/qr-code', QRCodePage.preload);
 registerPreload('/analytics', AnalyticsPage.preload);
 registerPreload('/orders', OrdersPage.preload);
@@ -139,12 +141,13 @@ function App() {
           <Route path="/bulk-upload" element={<PermissionGuard module="menu_items"><BulkUploadPage /></PermissionGuard>} />
           <Route path="/json-bulk-upload" element={<PermissionGuard module="menu_items"><JsonBulkUploadPage /></PermissionGuard>} />
           <Route path="/customize" element={<PermissionGuard module="settings"><CustomizeThemePage /></PermissionGuard>} />
+          <Route path="/chalkboard" element={<PermissionGuard module="chalkboard"><ChalkboardPage /></PermissionGuard>} />
           <Route path="/qr-code" element={<QRCodePage />} />
           <Route path="/analytics" element={<PermissionGuard module="analytics"><AnalyticsPage /></PermissionGuard>} />
           <Route path="/orders" element={<PermissionGuard module="orders"><OrdersPage /></PermissionGuard>} />
           <Route path="/discounts" element={<PermissionGuard module="discounts"><DiscountsPage /></PermissionGuard>} />
           <Route path="/contests" element={<PermissionGuard module="contests"><ContestsPage /></PermissionGuard>} />
-          <Route path="/campaigns" element={<PermissionGuard module="marketing"><CampaignsPage /></PermissionGuard>} />
+          <Route path="/campaigns" element={<PermissionGuard module="campaigns"><CampaignsPage /></PermissionGuard>} />
           <Route path="/members" element={<PermissionGuard module="customers"><MembersPage /></PermissionGuard>} />
 
           <Route path="/settings" element={<PermissionGuard module="settings"><SettingsPage /></PermissionGuard>} />

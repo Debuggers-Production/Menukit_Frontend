@@ -24,6 +24,8 @@ import { triggerHaptic, HAPTIC_PATTERNS } from '@/utils/haptic';
 import { publicCache } from '@/utils/publicCache';
 import { loadGoogleFont } from '@/utils/fontLoader';
 import { getUniqueCustomerDiscountCode, getCustomerIdentifier, getClaimedDiscountIds, markDiscountClaimed } from '@/utils/discountCodeHelper';
+import { FloatingChalkboard } from '@/components/chalkboard/FloatingChalkboard';
+import { resolveChalkboardMessage } from '@/components/chalkboard/chalkboardUtils';
 
 const triggerWelcomeEffect = () => {
   triggerHaptic(HAPTIC_PATTERNS.successUnlock);
@@ -1020,6 +1022,10 @@ export function PublicMenuPage() {
   
   const borderRadiusClass = (theme as any)?.border_radius === 'sharp' ? 'rounded-none' : (theme as any)?.border_radius === 'pill' ? 'rounded-[32px]' : 'rounded-2xl';
   const categoryPillClass = (theme as any)?.border_radius === 'sharp' ? 'rounded-none' : 'rounded-full';
+
+  const chalkboardMessage = useMemo(() => {
+    return resolveChalkboardMessage(shop?.chalkboard?.message);
+  }, [shop?.chalkboard?.message]);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-20 animate-fade-in" style={{ fontFamily: theme?.font_family || 'Inter' }}>
@@ -2136,6 +2142,15 @@ export function PublicMenuPage() {
           </div>
         </div>
       </Modal>
+
+      {/* Floating Sidewalk A-Frame Chalkboard Sign */}
+      {shop?.chalkboard?.is_enabled !== false && (
+        <FloatingChalkboard
+          message={chalkboardMessage}
+          title={shop?.chalkboard?.title}
+          className={isScrollingDown ? '-translate-x-32 opacity-0 pointer-events-none' : 'translate-x-0 opacity-100'}
+        />
+      )}
 
       {/* Offers Crown Floating Button */}
       {activeDiscounts.length > 0 && (

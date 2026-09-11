@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, Suspense } from 'react';
+﻿import { useState, useEffect, useRef, Suspense } from 'react';
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router';
 import Lenis from 'lenis';
 import { DashboardRouteLoading } from '@/components/DashboardRouteLoading';
@@ -34,7 +34,8 @@ import {
   Megaphone,
   Sliders,
   Laptop,
-  Download
+  Download,
+  PenTool
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { useShopStore } from '@/store/shopStore';
@@ -50,6 +51,7 @@ import logo from "@/assets/menukit-logo.svg";
 import { ShopSwitcherDropdown } from '@/components/ShopSwitcherDropdown';
 import { usePWAInstall } from '@/hooks/usePWAInstall';
 import { DesktopInstallModal } from '@/components/DesktopInstallModal';
+import { WhatsNewModal } from '@/components/WhatsNewModal';
 
 export function DashboardLayout() {
   const navigate = useNavigate();
@@ -79,6 +81,7 @@ export function DashboardLayout() {
     '/qr-code': { title: 'QR Code', subtitle: 'Download & customize your shop QR code' },
     '/analytics': { title: 'Analytics', subtitle: 'Insights and performance reports' },
     '/customize': { title: 'Customize Theme', subtitle: 'Personalize your digital menu design' },
+    '/chalkboard': { title: 'Chalkboard Sign', subtitle: 'Manage your sidewalk A-frame chalkboard sign and daily specials' },
     '/shop-setup': { title: 'Shop Settings', subtitle: 'Manage your shop profile' },
     '/settings/team': { title: 'Staff & Team', subtitle: 'Manage employee access' },
     '/subscription': { title: 'Subscription', subtitle: 'Manage your plans and billing' },
@@ -265,6 +268,12 @@ export function DashboardLayout() {
         border: 'border-pink-200/80 dark:border-pink-800/50',
         text: 'text-pink-950 dark:text-pink-200 font-semibold'
       },
+      '/chalkboard': {
+        icon: 'text-amber-600 dark:text-amber-400',
+        bg: 'bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/50',
+        border: 'border-amber-200/80 dark:border-amber-800/50',
+        text: 'text-amber-950 dark:text-amber-200 font-semibold'
+      },
       '/subscription': {
         icon: 'text-purple-500 dark:text-purple-400',
         bg: 'bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/40 dark:hover:bg-purple-900/50',
@@ -312,10 +321,11 @@ export function DashboardLayout() {
     {
       section: 'Marketing & Growth',
       items: [
-        { name: 'Campaigns', path: '/campaigns', icon: Megaphone, iconColor: 'text-purple-500', permissionModule: 'marketing' },
+        { name: 'Campaigns', path: '/campaigns', icon: Megaphone, iconColor: 'text-purple-500', permissionModule: 'campaigns' },
         { name: 'Members', path: '/members', icon: Users, iconColor: 'text-teal-500', permissionModule: 'customers' },
         { name: 'Discounts', path: '/discounts', icon: Tag, iconColor: 'text-rose-500', permissionModule: 'discounts' },
         { name: 'Contests', path: '/contests', icon: Trophy, iconColor: 'text-yellow-500', permissionModule: 'contests' },
+        { name: 'Chalkboard', path: '/chalkboard', icon: PenTool, iconColor: 'text-amber-500', permissionModule: 'chalkboard' },
         { name: 'QR Code', path: '/qr-code', icon: QrCode, iconColor: 'text-indigo-500' },
       ]
     },
@@ -345,8 +355,14 @@ export function DashboardLayout() {
     if (isOwner) return true; // Owner has all permissions
     if (!shop) return false;
 
-    // Employee / Collaborator permission check
-    const perms = shop.employee_permissions ? shop.employee_permissions[module] : undefined;
+    // Employee / Collaborator permission check with aliases
+    let perms = shop.employee_permissions ? shop.employee_permissions[module] : undefined;
+    if (!perms && (module === 'campaigns' || module === 'marketing')) {
+      perms = shop.employee_permissions ? (shop.employee_permissions['campaigns'] || shop.employee_permissions['marketing']) : undefined;
+    }
+    if (!perms && module === 'chalkboard') {
+      perms = shop.employee_permissions ? (shop.employee_permissions['chalkboard'] || shop.employee_permissions['settings']) : undefined;
+    }
     return Boolean(perms && (perms.includes('read') || perms.includes('write')));
   };
 
@@ -490,8 +506,7 @@ export function DashboardLayout() {
                             <div className="absolute left-0 top-1/2 w-3.5 h-0.5 bg-slate-200 dark:bg-slate-800 rounded-r" />
                           </div>
 
-                          <NavLink
-                            to={item.path}
+                          <NavLink id={item.path === '/chalkboard' ? 'sidebar-nav-chalkboard' : undefined} to={item.path}
                             onMouseEnter={() => preloadRoute(item.path)}
                             onFocus={() => preloadRoute(item.path)}
                             onTouchStart={() => preloadRoute(item.path)}
@@ -651,7 +666,7 @@ export function DashboardLayout() {
             title="Click to open subscription renewal page"
           >
             <div className="flex items-center gap-2">
-              <span className="animate-pulse text-base">🚨</span>
+              <span className="animate-pulse text-base">ðŸš¨</span>
               <span>Your subscription has ended. Please renew to restore full feature access.</span>
             </div>
             <div className="flex items-center gap-1 bg-white/20 px-2.5 py-1 rounded-lg hover:bg-white/30 transition-colors uppercase tracking-wider text-[10px] font-black shrink-0">
@@ -668,7 +683,7 @@ export function DashboardLayout() {
             title="Click to open subscription renewal page"
           >
             <div className="flex items-center gap-2">
-              <span className="animate-bounce text-base">⚠️</span>
+              <span className="animate-bounce text-base">âš ï¸</span>
               <span>Subscription Ended: Grace Period Active ({subStatus.grace_days_left} day{subStatus.grace_days_left !== 1 ? 's' : ''} left). Please renew now.</span>
             </div>
             <div className="flex items-center gap-1 bg-black/20 px-2.5 py-1 rounded-lg hover:bg-black/30 transition-colors uppercase tracking-wider text-[10px] font-black shrink-0">
@@ -685,7 +700,7 @@ export function DashboardLayout() {
             title="Click to view subscription plans and renew"
           >
             <div className="flex items-center gap-2">
-              <span className="text-base animate-pulse">⏳</span>
+              <span className="text-base animate-pulse">â³</span>
               <span>
                 <strong>{subStatus.is_trial ? 'Free Trial Ending Soon' : 'Subscription Ending Soon'}:</strong> Only {subStatus.core_days_left ?? subStatus.days_left} day{(subStatus.core_days_left ?? subStatus.days_left) !== 1 ? 's' : ''} remaining. Renew your plan to avoid losing operations & customer leads.
               </span>
@@ -854,6 +869,11 @@ export function DashboardLayout() {
         onClose={() => setIsModalOpen(false)}
         onInstall={promptInstall}
       />
+
+      <WhatsNewModal />
     </div>
   );
 }
+
+
+

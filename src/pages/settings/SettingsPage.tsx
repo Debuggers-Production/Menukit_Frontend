@@ -25,6 +25,8 @@ import { HeaderActions } from '@/components/HeaderActions';
 import { Switch } from '@/components/ui/Switch';
 import { SearchableSelect } from '@/components/ui/SearchableSelect';
 import { usePWAInstall } from '@/hooks/usePWAInstall';
+import { APP_VERSION } from '@/config/version';
+import { WhatsNewModal } from '@/components/WhatsNewModal';
 import menukitLogo from '@/assets/menukit-logo.svg';
 const loadRazorpayScript = (): Promise<boolean> => {
   return new Promise((resolve) => {
@@ -80,6 +82,7 @@ function SettingRow({
 }
 
 export function SettingsPage() {
+  const [isWhatsNewOpen, setIsWhatsNewOpen] = useState(false);
   const { user, changeEmail } = useAuthStore();
   const { shop, setShop, categories, setCategories } = useShopStore();
   const navigate = useNavigate();
@@ -1199,9 +1202,9 @@ export function SettingsPage() {
                       options={[
                         { id: '₹', name: 'Indian Rupee (₹)' },
                         { id: '$', name: 'US Dollar ($)' },
-                        { id: '€', name: 'Euro (€)' },
-                        { id: '£', name: 'British Pound (£)' },
-                        { id: '¥', name: 'Japanese Yen (¥)' },
+                        { id: 'â‚¬', name: 'Euro (â‚¬)' },
+                        { id: 'Â£', name: 'British Pound (Â£)' },
+                        { id: 'Â¥', name: 'Japanese Yen (Â¥)' },
                         { id: 'AED', name: 'Emirati Dirham (AED)' },
                         { id: 'SAR', name: 'Saudi Riyal (SAR)' },
                         { id: 'A$', name: 'Australian Dollar (A$)' },
@@ -1608,14 +1611,14 @@ export function SettingsPage() {
                   {shop?.settings?.bank_account_last4 && (
                     <div className="flex items-center gap-3 mt-4 pt-4 border-t border-slate-100">
                       <p className="text-xs text-green-600 font-bold">
-                        ✓ Linked (ending in {shop.settings.bank_account_last4})
+                        âœ“ Linked (ending in {shop.settings.bank_account_last4})
                       </p>
                       {(liveRazorpayStatus || shop.settings.razorpay_route_status) && (() => {
                         const status = liveRazorpayStatus || shop.settings.razorpay_route_status;
                         const isVerified = status === 'activated' || status === 'active';
                         return (
                           <div className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase ${isVerified ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                            {isVerified ? '✓ Verified & Active' : '⏳ Verification Pending'}
+                            {isVerified ? 'âœ“ Verified & Active' : 'â³ Verification Pending'}
                           </div>
                         );
                       })()}
@@ -2529,7 +2532,7 @@ export function SettingsPage() {
                                       }}
                                       className="text-[11px] font-bold text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 hover:underline cursor-pointer"
                                     >
-                                      ★ Set as Primary Bill Printer
+                                      â˜… Set as Primary Bill Printer
                                     </button>
                                   )}
                                 </div>
@@ -2603,11 +2606,9 @@ export function SettingsPage() {
                   <div className="bg-slate-50 rounded-2xl p-4 flex justify-between items-center text-xs">
                     <div>
                       <p className="font-bold text-slate-700">App Version & Mode</p>
-                      <p className="text-slate-500">v1.0.0 ({import.meta.env.MODE || 'production'})</p>
+                      <p className="text-slate-500 dark:text-slate-400">v{APP_VERSION} ({import.meta.env.MODE || 'production'})</p>
                     </div>
-                    <div className="bg-emerald-100 text-emerald-700 font-bold px-3 py-1 rounded-full uppercase text-[10px]">
-                      Stable
-                    </div>
+                    <div className="flex items-center gap-2"><button type="button" onClick={() => setIsWhatsNewOpen(true)} className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-950/60 text-amber-700 dark:text-amber-400 border border-amber-200/80 dark:border-amber-800/60 rounded-full font-bold text-[10px] transition-colors cursor-pointer shadow-2xs"><Sparkles size={11} className="text-amber-500" /><span>What's New</span></button><div className="bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 font-bold px-3 py-1 rounded-full uppercase text-[10px]">Stable</div></div>
                   </div>
                 </CardContent>
               </Card>
@@ -3302,11 +3303,11 @@ export function SettingsPage() {
 
             <ul className="text-xs text-muted-foreground space-y-1.5 pl-1">
               <li className="flex items-center gap-2">
-                <span className="text-rose-500 font-bold">✕</span>
+                <span className="text-rose-500 font-bold">âœ•</span>
                 <span>Will <strong>NOT</strong> show your shop on public discovery map & search.</span>
               </li>
               <li className="flex items-center gap-2">
-                <span className="text-rose-500 font-bold">✕</span>
+                <span className="text-rose-500 font-bold">âœ•</span>
                 <span>Will <strong>NOT</strong> show the "Discover" label on your public menu.</span>
               </li>
             </ul>
@@ -3372,15 +3373,15 @@ export function SettingsPage() {
 
             <ul className="text-xs text-amber-900/90 dark:text-amber-300 space-y-1.5 pl-1">
               <li className="flex items-center gap-2">
-                <span className="text-emerald-600 font-bold">✓</span>
+                <span className="text-emerald-600 font-bold">âœ“</span>
                 <span><strong>WILL show your shop</strong> on public discovery map & search for new customers.</span>
               </li>
               <li className="flex items-center gap-2">
-                <span className="text-emerald-600 font-bold">✓</span>
+                <span className="text-emerald-600 font-bold">âœ“</span>
                 <span><strong>Hides the "Discover" label</strong> on your public menu so customers stay on your menu.</span>
               </li>
               <li className="flex items-center gap-2">
-                <span className="text-emerald-600 font-bold">✓</span>
+                <span className="text-emerald-600 font-bold">âœ“</span>
                 <span>Next time on your subscription renewal, this ₹49/mo module is <strong>automatically included</strong>.</span>
               </li>
             </ul>
@@ -3417,7 +3418,7 @@ export function SettingsPage() {
                 onClick={handleResetToStandardDiscovery}
                 className="text-xs font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors underline cursor-pointer"
               >
-                Reset to Standard Discovery (Show on Map & Show Menu Label — Free)
+                Reset to Standard Discovery (Show on Map & Show Menu Label – Free)
               </button>
             </div>
           )}
@@ -3431,7 +3432,16 @@ export function SettingsPage() {
             </div>
           )}
         </div>
-      </Modal>
+            </Modal>
+
+      <WhatsNewModal
+        isOpen={isWhatsNewOpen}
+        onClose={() => setIsWhatsNewOpen(false)}
+        forceOpen={isWhatsNewOpen}
+      />
     </div>
   );
 }
+
+
+

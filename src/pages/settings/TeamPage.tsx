@@ -19,6 +19,22 @@ interface ServiceAccess {
   level: PermissionLevel;
 }
 
+export const DEFAULT_SERVICES: ServiceAccess[] = [
+  { id: 'menu_categories', label: 'Categories', level: 'none' },
+  { id: 'menu_items', label: 'Menus', level: 'none' },
+  { id: 'orders', label: 'Orders Management', level: 'none' },
+  { id: 'discounts', label: 'Discounts & Offers', level: 'none' },
+  { id: 'contests', label: 'Contests & Rewards', level: 'none' },
+  { id: 'customers', label: 'Members & Customers', level: 'none' },
+  { id: 'campaigns', label: 'Campaigns & Marketing', level: 'none' },
+  { id: 'chalkboard', label: 'Chalkboard Sign', level: 'none' },
+  { id: 'analytics', label: 'Analytics & Reports', level: 'none' },
+  { id: 'team', label: 'Team Management', level: 'none' },
+  { id: 'subscription', label: 'Subscriptions', level: 'none' },
+  { id: 'settlements', label: 'Settlements & Payouts', level: 'none' },
+  { id: 'settings', label: 'Shop Settings', level: 'none' },
+];
+
 export function TeamPage() {
   const [employees, setEmployees] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -29,20 +45,7 @@ export function TeamPage() {
   
   // New employee state
   const [email, setEmail] = useState('');
-  const [services, setServices] = useState<ServiceAccess[]>([
-    { id: 'menu_categories', label: 'Categories', level: 'none' },
-    { id: 'menu_items', label: 'Menus', level: 'none' },
-    { id: 'orders', label: 'Orders Management', level: 'none' },
-    { id: 'discounts', label: 'Discounts & Offers', level: 'none' },
-    { id: 'contests', label: 'Contests & Rewards', level: 'none' },
-    { id: 'customers', label: 'Members & Customers', level: 'none' },
-    { id: 'marketing', label: 'Marketing & Campaigns (Broadcasts)', level: 'none' },
-    { id: 'analytics', label: 'Analytics & Reports', level: 'none' },
-    { id: 'team', label: 'Team Management', level: 'none' },
-    { id: 'subscription', label: 'Subscriptions', level: 'none' },
-    { id: 'settlements', label: 'Settlements & Payouts', level: 'none' },
-    { id: 'settings', label: 'Shop Settings', level: 'none' },
-  ]);
+  const [services, setServices] = useState<ServiceAccess[]>(DEFAULT_SERVICES);
 
   const [editingPermissions, setEditingPermissions] = useState<Record<string, Record<string, string[]>>>({});
   const [isUpdating, setIsUpdating] = useState(false);
@@ -97,8 +100,14 @@ export function TeamPage() {
     try {
       const permissions: Record<string, string[]> = {};
       services.forEach(s => {
-        if (s.level === 'read') permissions[s.id] = ['read'];
-        if (s.level === 'write') permissions[s.id] = ['read', 'write', 'delete'];
+        if (s.level === 'read') {
+          permissions[s.id] = ['read'];
+          if (s.id === 'campaigns') permissions['marketing'] = ['read'];
+        }
+        if (s.level === 'write') {
+          permissions[s.id] = ['read', 'write', 'delete'];
+          if (s.id === 'campaigns') permissions['marketing'] = ['read', 'write', 'delete'];
+        }
       });
 
       await api.post('/employees', {
@@ -107,16 +116,7 @@ export function TeamPage() {
       });
       toast.success('Invitation link created successfully!');
       setEmail('');
-      setServices([
-        { id: 'menu_categories', label: 'Categories', level: 'none' },
-        { id: 'menu_items', label: 'Menus', level: 'none' },
-        { id: 'orders', label: 'Orders Management', level: 'none' },
-        { id: 'discounts', label: 'Discounts & Offers', level: 'none' },
-        { id: 'contests', label: 'Contests & Rewards', level: 'none' },
-        { id: 'analytics', label: 'Analytics & Reports', level: 'none' },
-        { id: 'settlements', label: 'Settlements & Payouts', level: 'none' },
-        { id: 'settings', label: 'Shop Settings', level: 'none' },
-      ]);
+      setServices(DEFAULT_SERVICES.map(s => ({ ...s, level: 'none' })));
       setActiveTab('invitations');
       fetchEmployees();
     } catch (error: any) {
@@ -187,7 +187,15 @@ export function TeamPage() {
   const activeMembers = employees.filter(e => e.status === 'active');
   const pendingMembers = employees.filter(e => e.status === 'pending');
 
-  const getServiceLevelFromPerms = (perms: string[] | undefined): PermissionLevel => {
+  const getServiceLevelFromPerms = (empPerms: Record<string, string[]> | undefined, serviceId: string): PermissionLevel => {
+    if (!empPerms) return 'none';
+    let perms = empPerms[serviceId];
+    if ((!perms || perms.length === 0) && (serviceId === 'campaigns' || serviceId === 'marketing')) {
+      perms = empPerms['campaigns'] || empPerms['marketing'];
+    }
+    if ((!perms || perms.length === 0) && serviceId === 'chalkboard') {
+      perms = empPerms['chalkboard'] || empPerms['settings'];
+    }
     if (!perms || perms.length === 0) return 'none';
     if (perms.includes('write')) return 'write';
     if (perms.includes('read')) return 'read';
@@ -205,13 +213,16 @@ export function TeamPage() {
 
   const handleUpdatePermission = (empId: string, serviceId: string, level: PermissionLevel) => {
     setEditingPermissions(prev => {
-      const current = { ...prev[empId] } || {};
+      const current = { ...(prev[empId] || {}) };
       if (level === 'none') {
         delete current[serviceId];
+        if (serviceId === 'campaigns') delete current['marketing'];
       } else if (level === 'read') {
         current[serviceId] = ['read'];
+        if (serviceId === 'campaigns') current['marketing'] = ['read'];
       } else if (level === 'write') {
         current[serviceId] = ['read', 'write', 'delete'];
+        if (serviceId === 'campaigns') current['marketing'] = ['read', 'write', 'delete'];
       }
       return { ...prev, [empId]: current };
     });
@@ -361,8 +372,8 @@ export function TeamPage() {
                           </thead>
                           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                             {services.map(s => {
-                              const empPerms = editingPermissions[emp.id] || {};
-                              const currentLevel = getServiceLevelFromPerms(empPerms[s.id]);
+                              const empPerms = editingPermissions[emp.id] || emp.permissions || {};
+                              const currentLevel = getServiceLevelFromPerms(empPerms, s.id);
                               return (
                                 <tr key={s.id} className="hover:bg-slate-100/50 dark:hover:bg-slate-800/30 transition-colors">
                                   <td className="py-1.5 font-medium text-slate-700 dark:text-slate-300">{s.label}</td>
@@ -454,14 +465,20 @@ export function TeamPage() {
                         </p>
                         <div className="flex flex-wrap gap-2">
                           {Object.entries(emp.permissions || {}).map(([res, perms]) => {
+                             if (res === 'marketing' && (emp.permissions as any)?.['campaigns']) return null;
                              const pArr = perms as string[];
                              if (!pArr.length) return null;
                              const level = pArr.includes('write') ? 'Write' : 'Read';
+                             const displayLabel = res === 'chalkboard'
+                               ? 'Chalkboard'
+                               : res === 'campaigns' || res === 'marketing'
+                                 ? 'Campaigns'
+                                 : res.replace(/_/g, ' ');
                              return (
                                <span key={res} className="text-[10px] font-medium px-2 py-1 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800/50 rounded-md capitalize">
-                                 {res} - {level}
+                                 {displayLabel} - {level}
                                </span>
-                             )
+                             );
                           })}
                         </div>
                       </div>

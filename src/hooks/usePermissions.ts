@@ -16,7 +16,16 @@ export function usePermissions(module: string) {
     if (!module) return [];
     if (isOwner) return ['read', 'write', 'delete'];
     if (!shop?.employee_permissions) return [];
-    return shop.employee_permissions[module] || [];
+
+    let p = shop.employee_permissions[module];
+    if ((!p || p.length === 0) && (module === 'campaigns' || module === 'marketing')) {
+      p = shop.employee_permissions['campaigns'] || shop.employee_permissions['marketing'];
+    }
+    if ((!p || p.length === 0) && module === 'chalkboard') {
+      p = shop.employee_permissions['chalkboard'] || shop.employee_permissions['settings'];
+    }
+
+    return p || [];
   };
 
   const perms = getModulePermissions();
