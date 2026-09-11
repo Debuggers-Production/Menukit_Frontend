@@ -1,3 +1,4 @@
+import { LinkifiedText } from '../../components/LinkifiedText';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { ShoppingBag, Plus, Minus, Info, ChevronLeft, ChevronRight, CheckCircle, Key, MapPin, Navigation, Map, Armchair, Gift, Sparkles, Percent, Banknote, Truck, Tag } from 'lucide-react';
@@ -721,7 +722,7 @@ export function PublicCartPage() {
           </div>
           <div className="text-left">
             <div className="font-bold text-slate-800 leading-tight">{disc.title}</div>
-            <div className="text-xs font-medium text-slate-500 mt-1">{disc.description || 'Tap to apply this offer'}</div>
+            <div className="text-xs font-medium text-slate-500 mt-1"><LinkifiedText text={disc.description || 'Tap to apply this offer'} /></div>
           </div>
         </div>
         <div 
@@ -1867,7 +1868,7 @@ export function PublicCartPage() {
               </div>
               <h3 className="text-xl font-black text-slate-800">{disc.title}</h3>
               <p className="text-sm font-medium text-slate-500 mt-2">
-                {disc.description || 'Tap below to apply this exclusive dining discount to your current bill!'}
+                <LinkifiedText text={disc.description || 'Tap below to apply this exclusive dining discount to your current bill!'} showIcon />
               </p>
               
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 my-5 flex items-center justify-between shadow-inner">

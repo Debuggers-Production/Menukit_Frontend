@@ -21,6 +21,9 @@ import {
   Sparkles,
   Wallet,
   ArrowRight,
+  AlertTriangle,
+  AlertOctagon,
+  Clock,
   Lock,
   LogOut,
   Shield,
@@ -666,7 +669,7 @@ export function DashboardLayout() {
             title="Click to open subscription renewal page"
           >
             <div className="flex items-center gap-2">
-              <span className="animate-pulse text-base">ðŸš¨</span>
+              <AlertOctagon size={18} className="animate-pulse shrink-0 text-white" />
               <span>Your subscription has ended. Please renew to restore full feature access.</span>
             </div>
             <div className="flex items-center gap-1 bg-white/20 px-2.5 py-1 rounded-lg hover:bg-white/30 transition-colors uppercase tracking-wider text-[10px] font-black shrink-0">
@@ -683,7 +686,7 @@ export function DashboardLayout() {
             title="Click to open subscription renewal page"
           >
             <div className="flex items-center gap-2">
-              <span className="animate-bounce text-base">âš ï¸</span>
+              <AlertTriangle size={18} className="animate-bounce shrink-0 text-white" />
               <span>Subscription Ended: Grace Period Active ({subStatus.grace_days_left} day{subStatus.grace_days_left !== 1 ? 's' : ''} left). Please renew now.</span>
             </div>
             <div className="flex items-center gap-1 bg-black/20 px-2.5 py-1 rounded-lg hover:bg-black/30 transition-colors uppercase tracking-wider text-[10px] font-black shrink-0">
@@ -700,7 +703,7 @@ export function DashboardLayout() {
             title="Click to view subscription plans and renew"
           >
             <div className="flex items-center gap-2">
-              <span className="text-base animate-pulse">â³</span>
+              <Clock size={18} className="animate-pulse shrink-0 text-white" />
               <span>
                 <strong>{subStatus.is_trial ? 'Free Trial Ending Soon' : 'Subscription Ending Soon'}:</strong> Only {subStatus.core_days_left ?? subStatus.days_left} day{(subStatus.core_days_left ?? subStatus.days_left) !== 1 ? 's' : ''} remaining. Renew your plan to avoid losing operations & customer leads.
               </span>

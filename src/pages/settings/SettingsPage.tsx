@@ -1202,9 +1202,9 @@ export function SettingsPage() {
                       options={[
                         { id: '₹', name: 'Indian Rupee (₹)' },
                         { id: '$', name: 'US Dollar ($)' },
-                        { id: 'â‚¬', name: 'Euro (â‚¬)' },
-                        { id: 'Â£', name: 'British Pound (Â£)' },
-                        { id: 'Â¥', name: 'Japanese Yen (Â¥)' },
+                        { id: '€', name: 'Euro (€)' },
+                        { id: '£', name: 'British Pound (£)' },
+                        { id: '¥', name: 'Japanese Yen (¥)' },
                         { id: 'AED', name: 'Emirati Dirham (AED)' },
                         { id: 'SAR', name: 'Saudi Riyal (SAR)' },
                         { id: 'A$', name: 'Australian Dollar (A$)' },
@@ -1611,14 +1611,14 @@ export function SettingsPage() {
                   {shop?.settings?.bank_account_last4 && (
                     <div className="flex items-center gap-3 mt-4 pt-4 border-t border-slate-100">
                       <p className="text-xs text-green-600 font-bold">
-                        âœ“ Linked (ending in {shop.settings.bank_account_last4})
+                        ✓ Linked (ending in {shop.settings.bank_account_last4})
                       </p>
                       {(liveRazorpayStatus || shop.settings.razorpay_route_status) && (() => {
                         const status = liveRazorpayStatus || shop.settings.razorpay_route_status;
                         const isVerified = status === 'activated' || status === 'active';
                         return (
                           <div className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase ${isVerified ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                            {isVerified ? 'âœ“ Verified & Active' : 'â³ Verification Pending'}
+                            {isVerified ? '✓ Verified & Active' : '⏳ Verification Pending'}
                           </div>
                         );
                       })()}
@@ -2532,7 +2532,7 @@ export function SettingsPage() {
                                       }}
                                       className="text-[11px] font-bold text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 hover:underline cursor-pointer"
                                     >
-                                      â˜… Set as Primary Bill Printer
+                                      ★ Set as Primary Bill Printer
                                     </button>
                                   )}
                                 </div>
@@ -3303,11 +3303,11 @@ export function SettingsPage() {
 
             <ul className="text-xs text-muted-foreground space-y-1.5 pl-1">
               <li className="flex items-center gap-2">
-                <span className="text-rose-500 font-bold">âœ•</span>
+                <span className="text-rose-500 font-bold">✕</span>
                 <span>Will <strong>NOT</strong> show your shop on public discovery map & search.</span>
               </li>
               <li className="flex items-center gap-2">
-                <span className="text-rose-500 font-bold">âœ•</span>
+                <span className="text-rose-500 font-bold">✕</span>
                 <span>Will <strong>NOT</strong> show the "Discover" label on your public menu.</span>
               </li>
             </ul>
@@ -3373,15 +3373,15 @@ export function SettingsPage() {
 
             <ul className="text-xs text-amber-900/90 dark:text-amber-300 space-y-1.5 pl-1">
               <li className="flex items-center gap-2">
-                <span className="text-emerald-600 font-bold">âœ“</span>
+                <span className="text-emerald-600 font-bold">✓</span>
                 <span><strong>WILL show your shop</strong> on public discovery map & search for new customers.</span>
               </li>
               <li className="flex items-center gap-2">
-                <span className="text-emerald-600 font-bold">âœ“</span>
+                <span className="text-emerald-600 font-bold">✓</span>
                 <span><strong>Hides the "Discover" label</strong> on your public menu so customers stay on your menu.</span>
               </li>
               <li className="flex items-center gap-2">
-                <span className="text-emerald-600 font-bold">âœ“</span>
+                <span className="text-emerald-600 font-bold">✓</span>
                 <span>Next time on your subscription renewal, this ₹49/mo module is <strong>automatically included</strong>.</span>
               </li>
             </ul>

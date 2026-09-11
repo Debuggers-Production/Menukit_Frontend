@@ -1,3 +1,4 @@
+import { LinkifiedText } from '../LinkifiedText';
 import { useMemo } from 'react';
 import { ShoppingBag, X, Plus, Minus, Info } from 'lucide-react';
 import { useCartStore, useShopCart } from '@/store/cartStore';
@@ -240,7 +241,7 @@ export function CartModal({ isOpen, onClose, shop, availableDiscounts, memberSta
                         </div>
                         <div className="text-left">
                           <div className="font-semibold text-sm dark:text-slate-200">{disc.title}</div>
-                          <div className="text-xs text-slate-500">{disc.description || 'Tap to apply'}</div>
+                          <div className="text-xs text-slate-500"><LinkifiedText text={disc.description || 'Tap to apply'} /></div>
                         </div>
                       </div>
                       <div 

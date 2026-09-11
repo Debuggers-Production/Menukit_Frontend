@@ -1,3 +1,4 @@
+import { LinkifiedText } from '../../components/LinkifiedText';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router';
 import { Search, Flame, MapPin, Phone, Info, UtensilsCrossed, X, Star, LayoutGrid, List as ListIcon, Clock, Sparkles, ExternalLink, SlidersHorizontal, Check, Languages, Tag, Crown, Calendar, ShoppingBag, ArrowUpRight, ChevronDown, QrCode, Download, History, Trophy, ChefHat, User, Truck, CheckCircle2, XCircle, Lock, Copy, RefreshCw, AlertCircle, ShieldCheck } from 'lucide-react';
@@ -543,6 +544,20 @@ export function PublicMenuPage() {
     return true;
   };
 
+  // Auto-restore pending OTP popup on page load/refresh if user was waiting for OTP
+  useEffect(() => {
+    try {
+      const pending = localStorage.getItem('pending_otp_verification');
+      if (pending) {
+        const parsed = JSON.parse(pending);
+        if (parsed && (!parsed.shopId || parsed.shopId === id) && Date.now() - parsed.timestamp < 10 * 60 * 1000) {
+          setDiscountPopupInitialStep('otp');
+          setIsDiscountPopupOpen(true);
+        }
+      }
+    } catch (e) {}
+  }, [id]);
+
   // Show discount unlock popup every 10 seconds if user hasn't entered their mobile number
   useEffect(() => {
     const hasProvidedNumber = Boolean(
@@ -939,6 +954,10 @@ export function PublicMenuPage() {
     }).filter(cat => cat.items.length > 0 && (activeCategories.includes('all') || activeCategories.includes(cat.id)));
   }, [categories, items, debouncedSearchQuery, activeCategories, foodFilter, sortOrder, extraFilters, activeDiscountFilter, activeDiscounts]);
 
+  const chalkboardMessage = useMemo(() => {
+    return resolveChalkboardMessage(shop?.chalkboard?.message);
+  }, [shop?.chalkboard?.message]);
+
   const toggleExtraFilter = (filter: string) => {
     setExtraFilters(prev =>
       prev.includes(filter) ? prev.filter(f => f !== filter) : [...prev, filter]
@@ -1023,9 +1042,7 @@ export function PublicMenuPage() {
   const borderRadiusClass = (theme as any)?.border_radius === 'sharp' ? 'rounded-none' : (theme as any)?.border_radius === 'pill' ? 'rounded-[32px]' : 'rounded-2xl';
   const categoryPillClass = (theme as any)?.border_radius === 'sharp' ? 'rounded-none' : 'rounded-full';
 
-  const chalkboardMessage = useMemo(() => {
-    return resolveChalkboardMessage(shop?.chalkboard?.message);
-  }, [shop?.chalkboard?.message]);
+
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-20 animate-fade-in" style={{ fontFamily: theme?.font_family || 'Inter' }}>
@@ -1611,7 +1628,7 @@ export function PublicMenuPage() {
 
                     {disc.description && (
                       <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed mb-2 font-medium">
-                        {disc.description}
+                        <LinkifiedText text={disc.description} />
                       </p>
                     )}
 
@@ -2543,7 +2560,7 @@ export function PublicMenuPage() {
                 );
               })()}
               <h3 className="text-2xl font-bold font-heading text-slate-900">{selectedDiscountForModal.title}</h3>
-              {selectedDiscountForModal.description && <p className="text-sm text-slate-500 mt-2 max-w-[280px] leading-relaxed">{selectedDiscountForModal.description}</p>}
+              {selectedDiscountForModal.description && <p className="text-sm text-slate-500 mt-2 max-w-[280px] leading-relaxed"><LinkifiedText text={selectedDiscountForModal.description} showIcon /></p>}
             </div>
 
             {(() => {

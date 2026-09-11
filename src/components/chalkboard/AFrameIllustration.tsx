@@ -11,7 +11,7 @@ interface MiniAFrameProps {
  */
 export const MiniAFrame: React.FC<MiniAFrameProps> = ({ className = '', title }) => {
   const miniTitle = title && title.trim()
-    ? (title.trim().length > 8 ? title.trim().slice(0, 7) + '..' : title.trim().toUpperCase())
+    ? (title.trim().length > 10 ? title.trim().slice(0, 9) + '..' : title.trim().toUpperCase())
     : 'TODAY';
   return (
     <div className={`relative select-none pointer-events-none ${className}`}>

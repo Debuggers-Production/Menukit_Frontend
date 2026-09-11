@@ -1,6 +1,10 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { X, Sparkles } from 'lucide-react';
 import { ChalkWritingEngine } from './ChalkWritingEngine';
+import { extractUrlsAndCleanText, ExtractedLink } from '@/utils/urlPlatformHelper';
+import { ExternalLinkModal, PlatformIcon } from '@/components/common/ExternalLinkModal';
+import { PlatformLinkBadges } from '@/components/common/PlatformLinkBadges';
+import { ExternalLink } from 'lucide-react';
 
 interface ChalkboardModalProps {
   isOpen: boolean;
@@ -21,6 +25,11 @@ export const ChalkboardModal: React.FC<ChalkboardModalProps> = ({
 }) => {
   const [animStep, setAnimStep] = useState<number>(0);
   const [reducedMotion, setReducedMotion] = useState<boolean>(false);
+  const [selectedLinkModal, setSelectedLinkModal] = useState<ExtractedLink | null>(null);
+
+  const { cleanText, links: extractedLinks } = React.useMemo(() => {
+    return extractUrlsAndCleanText(message);
+  }, [message]);
 
   const displayTitle = title && title.trim() ? title.trim().toUpperCase() : "TODAY'S SPECIAL";
   // Dynamically calculate dashed flourish line spacing around the title so it never collides
@@ -308,13 +317,28 @@ export const ChalkboardModal: React.FC<ChalkboardModalProps> = ({
           <div className="absolute top-[15.7%] left-[14.7%] right-[14.7%] bottom-[22.3%] flex items-center justify-center p-0 pointer-events-none">
             {animStep >= 4 && (
               <ChalkWritingEngine
-                message={message}
+                message={cleanText}
                 reducedMotion={reducedMotion}
               />
             )}
           </div>
+
+          {/* Interactive Platform Link Badges at the bottom of the blackboard (Instagram likes style for multiple links) */}
+          {extractedLinks.length > 0 && animStep >= 3 && (
+            <div className="absolute bottom-[23.2%] left-[12%] right-[12%] flex items-center justify-center z-30 pointer-events-auto px-2">
+              <PlatformLinkBadges links={extractedLinks} variant="chalkboard" />
+            </div>
+          )}
         </div>
       </div>
+
+      {/* External Link Confirmation Modal */}
+      {selectedLinkModal && (
+        <ExternalLinkModal
+          link={selectedLinkModal}
+          onClose={() => setSelectedLinkModal(null)}
+        />
+      )}
     </div>
   );
 };

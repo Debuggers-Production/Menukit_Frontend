@@ -20,13 +20,46 @@ interface DiscountUnlockPopupProps {
   onClose: () => void;
   onUnlock: (customerId: string | null, isExisting?: boolean) => void;
   /** Skip the intro/offers screen and go straight to phone entry */
-  initialStep?: 'intro' | 'mobile';
+  initialStep?: 'intro' | 'mobile' | 'otp';
 }
 
 export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId, onClose, onUnlock, initialStep = 'intro' }) => {
-  const [step, setStep] = useState<'intro' | 'mobile' | 'otp' | 'name' | 'success' | 'no_offers'>(initialStep);
-  const [mobileNumber, setMobileNumber] = useState('');
-  const [countryCode, setCountryCode] = useState('+91');
+  const [step, setStep] = useState<'intro' | 'mobile' | 'otp' | 'name' | 'success' | 'no_offers'>(() => {
+    try {
+      const saved = localStorage.getItem('pending_otp_verification');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && (!parsed.shopId || parsed.shopId === shopId) && (Date.now() - parsed.timestamp < 10 * 60 * 1000)) {
+          return 'otp';
+        }
+      }
+    } catch (e) {}
+    return initialStep;
+  });
+  const [mobileNumber, setMobileNumber] = useState(() => {
+    try {
+      const saved = localStorage.getItem('pending_otp_verification');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.mobileNumber && (!parsed.shopId || parsed.shopId === shopId) && (Date.now() - parsed.timestamp < 10 * 60 * 1000)) {
+          return parsed.mobileNumber;
+        }
+      }
+    } catch (e) {}
+    return '';
+  });
+  const [countryCode, setCountryCode] = useState(() => {
+    try {
+      const saved = localStorage.getItem('pending_otp_verification');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.countryCode && (!parsed.shopId || parsed.shopId === shopId) && (Date.now() - parsed.timestamp < 10 * 60 * 1000)) {
+          return parsed.countryCode;
+        }
+      }
+    } catch (e) {}
+    return '+91';
+  });
   const [otpCode, setOtpCode] = useState('');
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
@@ -45,6 +78,7 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
   const [resendTimer, setResendTimer] = useState(30);
   const [resendCount, setResendCount] = useState(0);
   const [isResending, setIsResending] = useState(false);
+  const [tabWarningVisible, setTabWarningVisible] = useState(false);
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -55,6 +89,38 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
     }
     return () => clearInterval(interval);
   }, [step, resendTimer]);
+
+  // Navigation guards — active whenever user is in mobile number entry or OTP verification steps
+  useEffect(() => {
+    // Ensure warning is always hidden initially on step transition
+    setTabWarningVisible(false);
+
+    const isLockedStep = step === 'mobile' || step === 'otp';
+    if (!isLockedStep) {
+      return;
+    }
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = 'Please complete your verification before leaving.';
+      return e.returnValue;
+    };
+
+    // Lock browser back navigation — only shows warning when user actively presses back
+    window.history.pushState({ unlockGuard: true }, '');
+    const handlePopState = () => {
+      window.history.pushState({ unlockGuard: true }, '');
+      setTabWarningVisible(true);
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('popstate', handlePopState);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [step]);
 
   useEffect(() => {
     // Detect IP country with a 3s timeout signal so it never hangs
@@ -149,6 +215,7 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
     }
     
     setError('');
+    setTabWarningVisible(false);
     setLoading(true);
     try {
       const res = await customerService.verifyMobile(`${countryCode}${mobileNumber}`, shopId);
@@ -180,6 +247,12 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
           setStep('success');
         }
       } else {
+        localStorage.setItem('pending_otp_verification', JSON.stringify({
+          shopId,
+          mobileNumber,
+          countryCode,
+          timestamp: Date.now()
+        }));
         setStep('otp');
       }
     } catch (err: any) {
@@ -197,6 +270,12 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
     try {
       await customerService.verifyMobile(`${countryCode}${mobileNumber}`, shopId);
       
+      localStorage.setItem('pending_otp_verification', JSON.stringify({
+        shopId,
+        mobileNumber,
+        countryCode,
+        timestamp: Date.now()
+      }));
       setResendTimer(30);
       setResendCount(prev => prev + 1);
     } catch (err: any) {
@@ -223,6 +302,8 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
         localStorage.setItem('customer_is_existing', 'true');
         sessionStorage.setItem('customer_is_existing', 'true');
       }
+      localStorage.removeItem('pending_otp_verification');
+      localStorage.removeItem('pending_otp_verification');
       if (res.access_token) {
         localStorage.setItem('customer_token', res.access_token);
       }
@@ -286,15 +367,42 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
         initial={{ opacity: 0, scale: 0.9, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.9, y: 20 }}
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-md relative"
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-md relative overflow-hidden"
       >
-        <button
-          onClick={handleClose}
-          className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-all z-10"
-          aria-label="Close"
-        >
-          <X size={20} />
-        </button>
+        {/* Tab-switch / exit warning overlay during mobile entry & OTP verification */}
+        {tabWarningVisible && (step === 'mobile' || step === 'otp') && (
+          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-900/95 backdrop-blur-md rounded-2xl p-6 text-center">
+            <div className="w-14 h-14 bg-amber-500/20 text-amber-400 rounded-full flex items-center justify-center text-2xl mb-4 animate-bounce">
+              ⏳
+            </div>
+            <h3 className="text-white text-lg font-bold mb-2">
+              {step === 'otp' ? "Don't leave yet!" : "Verification in progress"}
+            </h3>
+            <p className="text-slate-300 text-xs mb-5 leading-relaxed max-w-xs">
+              {step === 'otp'
+                ? "We sent an OTP to your phone. Leaving or switching tabs now will cancel your verification."
+                : "Please complete entering your mobile number to unlock your exclusive discounts."}
+            </p>
+            <button
+              type="button"
+              onClick={() => setTabWarningVisible(false)}
+              className="w-full py-3 bg-primary hover:bg-primary/90 text-white rounded-xl font-bold text-sm shadow-lg shadow-primary/30 active:scale-[0.98] transition-all cursor-pointer"
+            >
+              {step === 'otp' ? "Enter OTP Now" : "Continue"}
+            </button>
+          </div>
+        )}
+
+        {/* Close X Button - hidden on mobile number entry & OTP steps to prevent abandoning */}
+        {step !== 'mobile' && step !== 'otp' && (
+          <button
+            onClick={handleClose}
+            className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-all z-10"
+            aria-label="Close"
+          >
+            <X size={20} />
+          </button>
+        )}
 
         <AnimatePresence mode="wait">
           {step === 'intro' && (
@@ -469,6 +577,7 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
                   <button
                     type="button"
                     onClick={() => {
+                      localStorage.removeItem('pending_otp_verification');
                       setStep('mobile');
                       setResendTimer(30);
                       setResendCount(0);

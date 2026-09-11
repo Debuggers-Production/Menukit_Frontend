@@ -42,7 +42,7 @@ export const FloatingChalkboard: React.FC<FloatingChalkboardProps> = ({
           animation: 'chalkboardBob 4s ease-in-out infinite',
         }}
       >
-        <div className="relative w-18 sm:w-21 md:w-24 transition-transform duration-300 ease-out group-hover:scale-110 group-hover:-rotate-2 group-active:scale-95">
+        <div className="relative w-24 sm:w-28 md:w-32 transition-transform duration-300 ease-out group-hover:scale-110 group-hover:-rotate-2 group-active:scale-95 filter drop-shadow-2xl">
           <MiniAFrame className="w-full h-auto" title={title} />
         </div>
       </div>

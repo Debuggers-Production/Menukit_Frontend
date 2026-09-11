@@ -1,3 +1,4 @@
+import { LinkifiedText } from '../../components/LinkifiedText';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useLocation } from 'react-router';
@@ -1343,7 +1344,7 @@ export function StoreDiscoveryPage() {
 
                       {disc.description && (
                         <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed mb-3 font-medium m-0">
-                          {disc.description}
+                          <LinkifiedText text={disc.description} />
                         </p>
                       )}
 

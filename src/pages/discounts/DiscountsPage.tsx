@@ -1,3 +1,4 @@
+import { LinkifiedText } from '../../components/LinkifiedText';
 import { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
 import {
@@ -744,7 +745,7 @@ export function DiscountsPage() {
  </div>
 
  {d.description && (
- <p className="text-xs sm:text-sm text-muted-foreground mb-2 line-clamp-1 font-medium">{d.description}</p>
+ <p className="text-xs sm:text-sm text-muted-foreground mb-2 line-clamp-1 font-medium"><LinkifiedText text={d.description} /></p>
  )}
 
  <div className="flex flex-wrap items-center gap-x-2 gap-y-2 text-[11px] sm:text-xs font-semibold text-muted-foreground">
@@ -1646,7 +1647,7 @@ export function DiscountsPage() {
                       </h4>
                       {verificationResult.discount?.description && (
                         <p className="text-xs text-muted-foreground mt-0.5">
-                          {verificationResult.discount.description}
+                          <LinkifiedText text={verificationResult.discount.description} showIcon />
                         </p>
                       )}
                     </div>

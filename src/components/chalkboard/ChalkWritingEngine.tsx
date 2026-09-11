@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { loadGoogleFont } from '@/utils/fontLoader';
+import { extractUrlsAndCleanText } from '@/utils/urlPlatformHelper';
 
 interface ChalkParticle {
   id: number;
@@ -20,9 +21,11 @@ interface ChalkWritingEngineProps {
 
 /**
  * High-performance handwritten chalk stroke engine.
- * Calculates multi-line layout, moves the chalk stick along physical paths,
- * rotates according to writing tangent, emits chalk dust particles,
- * and rests the chalk on the tray when finished.
+ * Features:
+ * - Dynamic auto-scaling typography based on line count and character length
+ * - Strict word-wrapping that breaks long unbroken strings
+ * - Physical chalk stick motion and particle dust physics
+ * - Clip boundary so text never overflows the slate easel
  */
 export const ChalkWritingEngine: React.FC<ChalkWritingEngineProps> = ({
   message,
@@ -39,7 +42,6 @@ export const ChalkWritingEngine: React.FC<ChalkWritingEngineProps> = ({
   });
   const [particles, setParticles] = useState<ChalkParticle[]>([]);
   const [isFinished, setIsFinished] = useState<boolean>(false);
-  const animRef = useRef<number | null>(null);
   const particleIdCounter = useRef<number>(0);
 
   // Load beautiful handwritten Google Fonts for authentic restaurant chalkboard aesthetic
@@ -48,15 +50,19 @@ export const ChalkWritingEngine: React.FC<ChalkWritingEngineProps> = ({
     loadGoogleFont('Caveat');
   }, []);
 
-  // Split and wrap message into lines suitable for the chalkboard
+  // Split, wrap, and chunk text so it fits comfortably on the physical board
   const lines = useMemo(() => {
-    if (!message) return ['Welcome!'];
-    
+    // Automatically strip any raw URLs from chalkboard text rendering
+    const { cleanText } = extractUrlsAndCleanText(message);
+    const textToRender = cleanText || 'Welcome!';
+
     // Normalize literal \n strings and real newlines
-    const normalized = message.replace(/\\n/g, '\n');
+    const normalized = textToRender.replace(/\\n/g, '\n');
     const rawLines = normalized.split('\n');
     const wrappedLines: string[] = [];
-    const maxCharsPerLine = 33;
+
+    // Max chars per line dynamically chosen: ~22 chars comfortably fits on the blackboard width
+    const maxCharsPerLine = 22;
 
     rawLines.forEach((raw) => {
       const words = raw.trim().split(/\s+/);
@@ -64,7 +70,21 @@ export const ChalkWritingEngine: React.FC<ChalkWritingEngineProps> = ({
 
       let currentLine = '';
       words.forEach((word) => {
-        if ((currentLine + ' ' + word).trim().length > maxCharsPerLine) {
+        // If an individual word/token is longer than maxCharsPerLine, break it up into chunks
+        if (word.length > maxCharsPerLine) {
+          if (currentLine) {
+            wrappedLines.push(currentLine.trim());
+            currentLine = '';
+          }
+          for (let i = 0; i < word.length; i += maxCharsPerLine) {
+            const chunk = word.slice(i, i + maxCharsPerLine);
+            if (i + maxCharsPerLine >= word.length) {
+              currentLine = chunk;
+            } else {
+              wrappedLines.push(chunk);
+            }
+          }
+        } else if ((currentLine + ' ' + word).trim().length > maxCharsPerLine) {
           if (currentLine) wrappedLines.push(currentLine.trim());
           currentLine = word;
         } else {
@@ -74,39 +94,42 @@ export const ChalkWritingEngine: React.FC<ChalkWritingEngineProps> = ({
       if (currentLine) wrappedLines.push(currentLine.trim());
     });
 
-    // Support up to 9 wrapped lines so the entire message is fully rendered
-    return wrappedLines.slice(0, 9);
+    // Support up to 8 lines on the board
+    return wrappedLines.slice(0, 8);
   }, [message]);
 
-  // Dynamic typography & vertical centering based on line count
+  // Dynamic typography & vertical centering based on line count AND character length
   const layout = useMemo(() => {
-    const count = lines.length;
-    let size = 29;
-    let height = 48;
-    let cWidth = 16;
+    const count = Math.max(1, lines.length);
+    const maxLineChars = Math.max(...lines.map((l) => l.length), 1);
 
-    if (count <= 2) {
-      size = 38;
-      height = 62;
-      cWidth = 20.5;
-    } else if (count <= 4) {
-      size = 33;
-      height = 54;
-      cWidth = 18;
+    // Dynamic font sizing: scales down for longer lines or more lines
+    let size = 32;
+    if (count <= 2 && maxLineChars <= 14) {
+      size = 35;
+    } else if (count <= 3 && maxLineChars <= 18) {
+      size = 30;
+    } else if (count <= 4 && maxLineChars <= 20) {
+      size = 26;
     } else if (count <= 6) {
-      size = 28.5;
-      height = 46;
-      cWidth = 15.5;
+      size = 22;
     } else {
-      // 7 to 9 lines
-      size = 25;
-      height = 40;
-      cWidth = 13.5;
+      size = 19;
     }
 
-    // Usable vertical space in SVG is ~350px. Board center is at y: 205
+    // Additional width safeguard: ensure line width doesn't exceed 260px (slate usable width)
+    const maxAllowedWidth = 250;
+    const estWidth = maxLineChars * (size * 0.52);
+    if (estWidth > maxAllowedWidth) {
+      size = Math.max(15, Math.floor(maxAllowedWidth / (maxLineChars * 0.52)));
+    }
+
+    const height = Math.round(size * 1.35);
+    const cWidth = size * 0.52;
+
+    // Usable vertical space in SVG is ~310px. Center of text area is y: 180
     const totalHeight = count * height;
-    const computedStartY = Math.max(45, Math.round(205 - totalHeight / 2 + height * 0.72));
+    const computedStartY = Math.max(45, Math.round(180 - totalHeight / 2 + height * 0.72));
 
     return {
       fontSize: size,
@@ -114,7 +137,7 @@ export const ChalkWritingEngine: React.FC<ChalkWritingEngineProps> = ({
       charWidth: cWidth,
       startY: computedStartY,
     };
-  }, [lines.length]);
+  }, [lines]);
 
   const totalChars = useMemo(() => lines.reduce((acc, l) => acc + l.length, 0), [lines]);
 
@@ -142,10 +165,10 @@ export const ChalkWritingEngine: React.FC<ChalkWritingEngineProps> = ({
     const boardCenterX = 190;
 
     // Adaptive speed: scale up writing speed for longer messages so it feels snappy
-    const baseCharDelay = totalChars > 100 ? 30 : totalChars > 50 ? 45 : 65;
-    const spaceDelay = Math.round(baseCharDelay * 1.6);
-    const punctDelay = Math.round(baseCharDelay * 2.4);
-    const lineEndPause = Math.round(baseCharDelay * 2.2);
+    const baseCharDelay = totalChars > 100 ? 25 : totalChars > 50 ? 38 : 55;
+    const spaceDelay = Math.round(baseCharDelay * 1.5);
+    const punctDelay = Math.round(baseCharDelay * 2.2);
+    const lineEndPause = Math.round(baseCharDelay * 2.0);
 
     const advanceWriting = () => {
       if (isCancelled) return;
@@ -161,17 +184,17 @@ export const ChalkWritingEngine: React.FC<ChalkWritingEngineProps> = ({
 
       const lineText = lines[currentLine];
       const totalLineWidth = lineText.length * charWidth;
-      const lineStartX = Math.max(25, boardCenterX - totalLineWidth / 2);
+      const lineStartX = Math.max(35, boardCenterX - totalLineWidth / 2);
 
       if (currentChar <= lineText.length) {
         // Calculate chalk position at current character
         const targetX = lineStartX + currentChar * charWidth;
         const targetY = startY + currentLine * lineHeight;
-        
+
         // Slight organic oscillation simulating natural hand stroke arc
-        const strokeWiggleX = Math.sin(currentChar * 1.5) * 2;
-        const strokeWiggleY = Math.cos(currentChar * 1.8) * 2.5;
-        const strokeAngle = -25 + Math.sin(currentChar * 2) * 12;
+        const strokeWiggleX = Math.sin(currentChar * 1.5) * 1.5;
+        const strokeWiggleY = Math.cos(currentChar * 1.8) * 1.8;
+        const strokeAngle = -25 + Math.sin(currentChar * 2) * 10;
 
         setChalkPos({
           x: targetX + strokeWiggleX,
@@ -189,16 +212,16 @@ export const ChalkWritingEngine: React.FC<ChalkWritingEngineProps> = ({
           for (let p = 0; p < 2; p++) {
             newParticles.push({
               id: particleIdCounter.current++,
-              x: targetX + (Math.random() - 0.5) * 6,
-              y: targetY + 6 + (Math.random() - 0.5) * 4,
-              vx: (Math.random() - 0.5) * 1.2,
-              vy: 0.4 + Math.random() * 0.8, // Drifts downward like dust
-              size: 1.2 + Math.random() * 2,
+              x: targetX + (Math.random() - 0.5) * 5,
+              y: targetY + 4 + (Math.random() - 0.5) * 3,
+              vx: (Math.random() - 0.5) * 1.0,
+              vy: 0.4 + Math.random() * 0.7,
+              size: 1.0 + Math.random() * 1.8,
               opacity: 0.8,
               color: Math.random() > 0.3 ? '#ffffff' : '#fef08a',
             });
           }
-          setParticles((prev) => [...prev.slice(-25), ...newParticles]);
+          setParticles((prev) => [...prev.slice(-20), ...newParticles]);
         }
 
         currentChar++;
@@ -221,13 +244,13 @@ export const ChalkWritingEngine: React.FC<ChalkWritingEngineProps> = ({
     // Initial slight pause before chalk touches down
     const startTimer = setTimeout(() => {
       advanceWriting();
-    }, 350);
+    }, 300);
 
     return () => {
       isCancelled = true;
       clearTimeout(startTimer);
     };
-  }, [lines, reducedMotion, onAnimationComplete]);
+  }, [lines, layout, totalChars, reducedMotion, onAnimationComplete]);
 
   // Particle physics animation (drifts and fades)
   useEffect(() => {
@@ -253,29 +276,34 @@ export const ChalkWritingEngine: React.FC<ChalkWritingEngineProps> = ({
     <div className="relative w-full h-full select-none">
       <svg
         viewBox="0 0 380 440"
-        className="w-full h-full overflow-visible"
+        className="w-full h-full overflow-hidden"
         xmlns="http://www.w3.org/2000/svg"
       >
         <defs>
           {/* Subtle Chalk Texture Filter */}
           <filter id="chalkFilter" x="-10%" y="-10%" width="120%" height="120%">
             <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" result="noise" />
-            <feDisplacementMap in="SourceGraphic" in2="noise" scale="1.4" xChannelSelector="R" yChannelSelector="G" />
+            <feDisplacementMap in="SourceGraphic" in2="noise" scale="1.2" xChannelSelector="R" yChannelSelector="G" />
           </filter>
-          
+
+          {/* Slate Boundaries ClipPath so text never bleeds outside the physical board */}
+          <clipPath id="slateClip">
+            <rect x="30" y="10" width="320" height="345" rx="6" />
+          </clipPath>
+
           {/* Chalk Shadow */}
           <filter id="chalkPieceShadow" x="-30%" y="-30%" width="160%" height="160%">
             <feDropShadow dx="2" dy="5" stdDeviation="3" floodColor="#000000" floodOpacity="0.5" />
           </filter>
         </defs>
 
-        {/* Written Chalk Text Lines */}
-        <g filter="url(#chalkFilter)">
+        {/* Written Chalk Text Lines (clipped inside blackboard) */}
+        <g filter="url(#chalkFilter)" clipPath="url(#slateClip)">
           {lines.map((line, lIdx) => {
             const lineY = layout.startY + lIdx * layout.lineHeight;
             const isCurrentLine = lIdx === activeLineIdx;
             const isPastLine = lIdx < activeLineIdx || isFinished;
-            
+
             // Text to reveal for this line
             const textToDisplay = isPastLine
               ? line
@@ -296,7 +324,7 @@ export const ChalkWritingEngine: React.FC<ChalkWritingEngineProps> = ({
                 fontSize={layout.fontSize}
                 fontWeight="500"
                 fontFamily="'Patrick Hand', 'Caveat', cursive, sans-serif"
-                letterSpacing="0.4"
+                letterSpacing="0.2"
                 className="transition-all duration-75"
               >
                 {textToDisplay}
