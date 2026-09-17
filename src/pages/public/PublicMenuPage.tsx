@@ -402,8 +402,9 @@ export function PublicMenuPage() {
 
       if (!publicQrInstance.current) {
         publicQrInstance.current = new QRCodeStyling({
-          width: 260,
-          height: 260,
+          width: 280,
+          height: 280,
+          margin: 8,
           data: qrUrl,
           dotsOptions: {
             type: dotsPattern as any,
@@ -3198,8 +3199,11 @@ export function PublicMenuPage() {
       {/* QR Code Modal */}
       <Modal isOpen={isQRModalOpen} onClose={() => setIsQRModalOpen(false)} title="Scan QR Code">
         <div className="flex flex-col items-center p-6 text-center">
-          <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 shadow-inner inline-block relative mb-4">
-            <div ref={publicQrRef} className="w-[260px] h-[260px] flex items-center justify-center bg-white rounded-xl shadow-sm overflow-hidden" />
+          <div className="bg-slate-50 p-4 sm:p-6 rounded-2xl border border-slate-100 shadow-inner inline-block relative mb-4 max-w-full">
+            <div
+              ref={publicQrRef}
+              className="w-52 h-52 sm:w-60 sm:h-60 max-w-full flex items-center justify-center bg-white rounded-xl shadow-sm p-1.5 [&_canvas]:max-w-full [&_canvas]:max-h-full [&_canvas]:w-full [&_canvas]:h-full [&_canvas]:object-contain [&_svg]:max-w-full [&_svg]:max-h-full [&_svg]:w-full [&_svg]:h-full"
+            />
           </div>
           <h3 className="font-bold text-lg mb-1 text-slate-800">{shop?.name}</h3>
           <button onClick={handleDownloadPublicQR} className="flex items-center justify-center gap-2 px-6 py-3 text-white font-extrabold text-xs tracking-wider uppercase rounded-2xl shadow-md" style={{ backgroundColor: primaryColor }}><Download size={14} /> Download QR Code</button>

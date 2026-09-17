@@ -115,8 +115,9 @@ export function QRCodePage() {
       if (!qrRef.current) return;
 
       const qrOptions = {
-        width: 240,
-        height: 240,
+        width: 280,
+        height: 280,
+        margin: 8,
         data: qrTargetUrl,
         dotsOptions: {
           type: dotType as any,
@@ -734,8 +735,11 @@ export function QRCodePage() {
             <p className="text-xs font-semibold tracking-wider text-orange-600 uppercase mb-6">Scan to View Digital Menu</p>
             
             {/* QR Code Container */}
-            <div className="bg-slate-50 p-6 rounded-2xl shadow-inner border border-slate-100 inline-block relative">
-              <div ref={qrRef} className="w-48 h-48 sm:w-56 sm:h-56 flex items-center justify-center bg-white rounded-xl shadow-sm overflow-hidden" />
+            <div className="bg-slate-50 p-4 sm:p-6 rounded-2xl shadow-inner border border-slate-100 inline-block relative max-w-full">
+              <div
+                ref={qrRef}
+                className="w-52 h-52 sm:w-56 sm:h-56 flex items-center justify-center bg-white rounded-xl shadow-sm p-1.5 [&_canvas]:max-w-full [&_canvas]:max-h-full [&_canvas]:w-full [&_canvas]:h-full [&_canvas]:object-contain [&_svg]:max-w-full [&_svg]:max-h-full [&_svg]:w-full [&_svg]:h-full"
+              />
             </div>
             
             {/* Branding */}
