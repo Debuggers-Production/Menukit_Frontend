@@ -456,68 +456,87 @@ export const EntertainmentHub: React.FC<EntertainmentHubProps> = ({ isOpen, onCl
   }, [activeTab]);
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} className="bg-white max-w-lg w-full !p-0 overflow-hidden rounded-2xl">
-      <div className="flex flex-col h-[80vh] max-h-[700px] bg-slate-50">
+    <Modal 
+      isOpen={isOpen} 
+      onClose={onClose} 
+      className="bg-white max-w-lg sm:max-w-xl w-full h-[96dvh] sm:h-[88vh] max-h-[96dvh] sm:max-h-[88vh] !p-0 overflow-hidden rounded-t-3xl sm:rounded-3xl border-0 shadow-2xl"
+    >
+      <div className="flex flex-col h-full bg-slate-50 overflow-hidden">
         
-        {/* Custom Header */}
-        <div className="px-5 sm:px-6 pt-5 sm:pt-6 pb-2 bg-white shrink-0">
-          <h2 className="text-2xl font-semibold tracking-tight font-heading">Entertainment Hub</h2>
+        {/* Compact Header */}
+        <div className="px-4 py-2.5 sm:px-5 sm:py-3 bg-white flex items-center justify-between border-b border-slate-100 shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center font-bold text-base shadow-xs">
+              🎮
+            </div>
+            <h2 className="text-base sm:text-lg font-black tracking-tight text-slate-900 font-heading">Entertainment Hub</h2>
+          </div>
+          <button 
+            onClick={onClose} 
+            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center transition-colors cursor-pointer"
+            aria-label="Close"
+          >
+            <X size={16} />
+          </button>
         </div>
         
-        {/* Main Tabs - Scrollable */}
-        <div className="flex bg-white px-3 pt-3 pb-2 shrink-0 overflow-x-auto no-scrollbar gap-2 border-b border-slate-100 shadow-sm z-10">
+        {/* Main Tabs - Scrollable without visible scrollbar */}
+        <div 
+          className="flex bg-white px-3 py-2 shrink-0 overflow-x-auto scrollbar-hide no-scrollbar gap-2 border-b border-slate-100 shadow-xs z-10 [&::-webkit-scrollbar]:hidden"
+          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+        >
           {validMenuItems.length > 0 && (
             <>
               <button
                 onClick={() => setActiveTab('swiper')}
-                className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-all shrink-0 ${
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition-all shrink-0 cursor-pointer ${
                   activeTab === 'swiper' ? 'bg-red-500 text-white shadow-md' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                 }`}
               >
-                <Heart size={16} className={activeTab === 'swiper' ? "fill-white" : ""} /> Crave or Pass
+                <Heart size={15} className={activeTab === 'swiper' ? "fill-white" : ""} /> Crave or Pass
               </button>
               <button
                 onClick={() => setActiveTab('shorts')}
-                className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-all shrink-0 ${
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition-all shrink-0 cursor-pointer ${
                   activeTab === 'shorts' ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                 }`}
               >
-                <PlaySquare size={16} className={activeTab === 'shorts' ? "fill-white text-slate-900" : ""} /> Menu Shorts
+                <PlaySquare size={15} className={activeTab === 'shorts' ? "fill-white text-slate-900" : ""} /> Menu Shorts
               </button>
             </>
           )}
           <button
             onClick={() => setActiveTab('games')}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-all shrink-0 ${
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition-all shrink-0 cursor-pointer ${
               activeTab === 'games' ? 'text-white shadow-md' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
             }`}
             style={activeTab === 'games' ? { backgroundColor: primaryColor } : {}}
           >
-            <Gamepad2 size={16} /> Games
+            <Gamepad2 size={15} /> Games
           </button>
           <button
             onClick={() => setActiveTab('fortune')}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-all shrink-0 ${
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition-all shrink-0 cursor-pointer ${
               activeTab === 'fortune' ? 'bg-amber-500 text-white shadow-md' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
             }`}
           >
-            <Cookie size={16} /> Fortune
+            <Cookie size={15} /> Fortune
           </button>
           <button
             onClick={() => setActiveTab('doodle')}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-all shrink-0 ${
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition-all shrink-0 cursor-pointer ${
               activeTab === 'doodle' ? 'bg-blue-500 text-white shadow-md' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
             }`}
           >
-            <Palette size={16} /> Doodle
+            <Palette size={15} /> Doodle
           </button>
           <button
             onClick={() => setActiveTab('facts')}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-all shrink-0 ${
-              activeTab === 'facts' ? 'bg-purple-500 text-white shadow-md' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition-all shrink-0 cursor-pointer ${
+              activeTab === 'facts' ? 'bg-purple-600 text-white shadow-md' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
             }`}
           >
-            <Lightbulb size={16} /> Learn
+            <Lightbulb size={15} /> Learn
           </button>
         </div>
 
@@ -908,112 +927,115 @@ export const EntertainmentHub: React.FC<EntertainmentHubProps> = ({ isOpen, onCl
 
           {/* ================= FACTS/TRIVIA TAB ================= */}
           {activeTab === 'facts' && (
-            <div className="flex flex-col h-full bg-white">
-              <div className="flex justify-center gap-2 p-3 bg-white border-b border-slate-100 shadow-sm z-10">
+            <div className="flex flex-col h-full bg-slate-50 overflow-hidden">
+              <div className="flex justify-center gap-2 p-2.5 bg-white border-b border-slate-100 shadow-xs z-10 shrink-0">
                 <button 
                   onClick={() => setSubTab('funfacts')}
-                  className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${subTab === 'funfacts' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}
+                  className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${subTab === 'funfacts' ? 'bg-slate-900 text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                 >
-                  Fun Facts
+                  💡 Fun Facts
                 </button>
                 <button 
                   onClick={() => setSubTab('trivia')}
-                  className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${subTab === 'trivia' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}
+                  className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${subTab === 'trivia' ? 'bg-purple-600 text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                 >
-                  Trivia Quiz
+                  🎯 Trivia Quiz
                 </button>
               </div>
 
               {subTab === 'funfacts' && (
-                <div className="flex flex-col h-full items-center justify-center text-center p-6 bg-slate-50">
-                  <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-bold mb-4 shadow-xs">
-                    <Globe size={13} className="text-blue-500" /> Live Realtime Fun Fact
+                <div className="flex-1 flex flex-col justify-between p-4 sm:p-6 bg-slate-50 overflow-y-auto">
+                  <div className="flex-1 flex flex-col items-center justify-center text-center max-w-md mx-auto w-full my-auto">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-bold mb-4 shadow-xs">
+                      <Globe size={13} className="text-blue-500" /> Live Realtime Fun Fact
+                    </div>
+
+                    <div className="w-14 h-14 bg-blue-100 rounded-2xl flex items-center justify-center mb-5 text-blue-500 shrink-0 shadow-inner border-2 border-white">
+                      <Lightbulb size={28} />
+                    </div>
+                    
+                    <div className="w-full">
+                      {isFactLoading ? (
+                        <div className="w-full space-y-3 animate-pulse p-6 bg-white rounded-2xl shadow-sm border border-slate-100">
+                          <div className="h-4 bg-slate-200 rounded w-3/4 mx-auto"></div>
+                          <div className="h-4 bg-slate-200 rounded w-full mx-auto"></div>
+                          <div className="h-4 bg-slate-200 rounded w-5/6 mx-auto"></div>
+                        </div>
+                      ) : (
+                        <div className="bg-white p-6 sm:p-7 rounded-2xl shadow-md border border-slate-100 relative w-full">
+                          <div className="absolute -top-3 left-5 text-3xl text-blue-400 font-serif opacity-30">“</div>
+                          <p className="text-base sm:text-lg font-bold text-slate-800 leading-relaxed relative z-10 animate-fade-in px-2">
+                            {fact}
+                          </p>
+                          <div className="absolute -bottom-5 right-5 text-3xl text-blue-400 font-serif opacity-30">”</div>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-6 text-blue-500 shrink-0 shadow-inner border-4 border-white">
-                    <Lightbulb size={32} />
-                  </div>
-                  
-                  <div className="flex-1 flex items-center justify-center w-full max-w-md">
-                    {isFactLoading ? (
-                      <div className="w-full space-y-4 animate-pulse p-6 bg-white rounded-3xl shadow-sm border border-slate-100">
-                        <div className="h-4 bg-slate-200 rounded w-3/4 mx-auto"></div>
-                        <div className="h-4 bg-slate-200 rounded w-full mx-auto"></div>
-                        <div className="h-4 bg-slate-200 rounded w-5/6 mx-auto"></div>
-                      </div>
-                    ) : (
-                      <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 relative w-full">
-                        <div className="absolute -top-4 left-6 text-4xl opacity-20">"</div>
-                        <p className="text-base sm:text-lg font-bold text-slate-700 leading-relaxed relative z-10 animate-fade-in px-3">
-                          {fact}
-                        </p>
-                        <div className="absolute -bottom-6 right-6 text-4xl opacity-20">"</div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="mt-6 shrink-0">
+                  {/* Fixed Bottom Action Bar for Fun Facts */}
+                  <div className="pt-4 pb-2 shrink-0 max-w-md mx-auto w-full">
                     <button 
                       onClick={generateFact}
                       disabled={isFactLoading}
-                      className="px-7 py-3 rounded-full text-white text-xs font-black shadow-lg hover:shadow-xl transition-all active:scale-95 flex items-center gap-2"
+                      className="w-full py-3.5 rounded-2xl text-white text-sm font-black shadow-lg hover:shadow-xl transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
                       style={{ backgroundColor: primaryColor }}
                     >
-                      <RefreshCcw size={14} className={isFactLoading ? "animate-spin" : ""} />
-                      Another Live Fact!
+                      <RefreshCcw size={15} className={isFactLoading ? "animate-spin" : ""} />
+                      <span>Another Live Fact! 💡</span>
                     </button>
                   </div>
                 </div>
               )}
 
               {subTab === 'trivia' && (
-                <div className="flex flex-col h-full p-4 sm:p-6 bg-slate-50 overflow-y-auto">
-                  <div className="flex items-center justify-between w-full max-w-md mx-auto mb-4">
-                    <div className="flex items-center gap-1.5">
-                      <Globe className="text-purple-500" size={18} />
-                      <h3 className="font-black text-slate-800 text-base">Live Trivia Quiz</h3>
+                <div className="flex-1 flex flex-col justify-between p-3.5 sm:p-5 bg-slate-50 overflow-hidden">
+                  <div className="flex-1 overflow-y-auto pr-1 pb-2">
+                    <div className="flex items-center justify-between w-full max-w-md mx-auto mb-2.5">
+                      <div className="flex items-center gap-1.5">
+                        <Globe className="text-purple-500" size={16} />
+                        <h3 className="font-black text-slate-800 text-sm sm:text-base">Live Trivia Quiz</h3>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold bg-purple-100 text-purple-700 px-2.5 py-0.5 rounded-full border border-purple-200">
+                          Score: {triviaScore}
+                        </span>
+                        <span className="text-xs font-bold bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full">
+                          {triviaList.length > 0 ? `${triviaIndex + 1}/${triviaList.length}` : '0/0'}
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold bg-purple-100 text-purple-700 px-2.5 py-1 rounded-full border border-purple-200">
-                        Score: {triviaScore}
-                      </span>
-                      <span className="text-xs font-bold bg-slate-200 text-slate-700 px-2 py-1 rounded-full">
-                        {triviaList.length > 0 ? `${triviaIndex + 1}/${triviaList.length}` : '0/0'}
-                      </span>
-                    </div>
-                  </div>
 
-                  {isTriviaLoading ? (
-                    <div className="flex-1 flex flex-col items-center justify-center py-12 gap-3 text-slate-500">
-                      <Loader2 size={32} className="animate-spin text-purple-600" />
-                      <p className="text-sm font-bold">Fetching real-time questions...</p>
-                    </div>
-                  ) : triviaList.length > 0 ? (
-                    (() => {
-                      const currentTrivia = triviaList[triviaIndex] || triviaList[0];
-                      return (
-                        <>
-                          <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 mb-5 w-full max-w-md mx-auto">
+                    {isTriviaLoading ? (
+                      <div className="flex-1 flex flex-col items-center justify-center py-12 gap-3 text-slate-500">
+                        <Loader2 size={32} className="animate-spin text-purple-600" />
+                        <p className="text-sm font-bold">Fetching real-time questions...</p>
+                      </div>
+                    ) : triviaList.length > 0 ? (
+                      (() => {
+                        const currentTrivia = triviaList[triviaIndex] || triviaList[0];
+                        return (
+                          <div className="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-100 mb-2 w-full max-w-md mx-auto">
                             {currentTrivia.category && (
-                              <div className="text-center mb-3">
+                              <div className="text-center mb-2">
                                 <span className="inline-block text-[10px] font-black uppercase tracking-wider text-purple-600 bg-purple-50 border border-purple-100 px-2.5 py-0.5 rounded-full">
                                   {currentTrivia.category}
                                 </span>
                               </div>
                             )}
-                            <p className="font-black text-slate-800 mb-5 text-base sm:text-lg text-center leading-snug">
+                            <p className="font-black text-slate-800 mb-3.5 text-sm sm:text-base text-center leading-snug">
                               {currentTrivia.q}
                             </p>
                             
-                            <div className="space-y-2.5">
+                            <div className="space-y-2">
                               {currentTrivia.options.map(option => {
                                 const isSelected = selectedAnswer === option;
                                 const isCorrect = option === currentTrivia.a;
-                                let btnClass = "w-full text-left px-4 py-3 rounded-xl font-bold text-sm border-2 transition-all ";
+                                let btnClass = "w-full text-left px-3.5 py-2.5 rounded-xl font-bold text-xs sm:text-sm border-2 transition-all ";
                                 
                                 if (selectedAnswer) {
-                                  if (isCorrect) btnClass += "bg-green-100 border-green-500 text-green-800 shadow-sm";
-                                  else if (isSelected) btnClass += "bg-red-100 border-red-500 text-red-800 shadow-sm";
+                                  if (isCorrect) btnClass += "bg-green-100 border-green-500 text-green-800 shadow-xs";
+                                  else if (isSelected) btnClass += "bg-red-100 border-red-500 text-red-800 shadow-xs";
                                   else btnClass += "bg-slate-50 border-slate-100 text-slate-400 opacity-50";
                                 } else {
                                   btnClass += "bg-white border-slate-200 hover:border-purple-400 hover:bg-purple-50 shadow-xs hover:shadow-sm cursor-pointer";
@@ -1038,31 +1060,47 @@ export const EntertainmentHub: React.FC<EntertainmentHubProps> = ({ isOpen, onCl
                               })}
                             </div>
                           </div>
+                        );
+                      })()
+                    ) : (
+                      <div className="text-center py-12">
+                        <button onClick={fetchRealtimeTrivia} className="px-5 py-2.5 rounded-xl bg-purple-600 text-white text-xs font-bold shadow cursor-pointer">
+                          Load Trivia Questions
+                        </button>
+                      </div>
+                    )}
+                  </div>
 
-                          {selectedAnswer && (
-                            <div className="mt-auto animate-in fade-in slide-in-from-bottom-4 flex flex-col items-center w-full max-w-md mx-auto">
-                              <div className={`w-full p-3.5 rounded-2xl font-bold mb-3 text-center border-2 text-sm ${selectedAnswer === currentTrivia.a ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-600 border-red-200'}`}>
-                                {selectedAnswer === currentTrivia.a ? '🎉 Correct! Nicely done!' : `Oops! The correct answer is: ${currentTrivia.a}`}
-                              </div>
-                              <button 
-                                onClick={nextTrivia}
-                                className="w-full py-3.5 rounded-2xl text-white font-black text-sm shadow-md hover:shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2"
-                                style={{ backgroundColor: primaryColor }}
-                              >
-                                {triviaIndex + 1 < triviaList.length ? 'Next Question →' : 'Load More Live Questions 🔄'}
-                              </button>
+                  {/* Fixed Bottom Action Bar for Trivia */}
+                  <div className="pt-2 pb-1 shrink-0 max-w-md mx-auto w-full bg-slate-50 border-t border-slate-200/60">
+                    {selectedAnswer ? (
+                      <div className="animate-in fade-in slide-in-from-bottom-2 space-y-2">
+                        {(() => {
+                          const currentTrivia = triviaList[triviaIndex] || triviaList[0];
+                          const isCorrect = selectedAnswer === currentTrivia?.a;
+                          return (
+                            <div className={`w-full p-2.5 rounded-xl font-bold text-center border text-xs ${isCorrect ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-600 border-red-200'}`}>
+                              {isCorrect ? '🎉 Correct! Nicely done!' : `Oops! Correct answer: ${currentTrivia?.a}`}
                             </div>
-                          )}
-                        </>
-                      );
-                    })()
-                  ) : (
-                    <div className="text-center py-12">
-                      <button onClick={fetchRealtimeTrivia} className="px-5 py-2.5 rounded-xl bg-purple-600 text-white text-xs font-bold shadow">
-                        Load Trivia Questions
+                          );
+                        })()}
+                        <button 
+                          onClick={nextTrivia}
+                          className="w-full py-3.5 rounded-2xl text-white font-black text-sm shadow-md hover:shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                          style={{ backgroundColor: primaryColor }}
+                        >
+                          <span>{triviaIndex + 1 < triviaList.length ? 'Next Question →' : 'Load More Live Questions 🔄'}</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <button 
+                        onClick={nextTrivia}
+                        className="w-full py-3 rounded-2xl text-slate-500 font-bold text-xs bg-slate-200/80 hover:bg-slate-300 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <span>Skip Question →</span>
                       </button>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               )}
             </div>

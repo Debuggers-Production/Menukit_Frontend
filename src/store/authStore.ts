@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { User } from '@/types';
 import { api } from '@/services/api';
+import { useShopStore } from './shopStore';
 
 interface AuthState {
   user: User | null;
@@ -44,6 +45,8 @@ export const useAuthStore = create<AuthState>()(
         } finally {
           localStorage.removeItem('access_token');
           localStorage.removeItem('refresh_token');
+          localStorage.removeItem('current_shop_id');
+          useShopStore.getState().setShop(null);
           set({ user: null, isAuthenticated: false });
           window.location.href = '/login';
         }

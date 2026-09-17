@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 import { Store, Plus, LogOut, Shield } from 'lucide-react';
 import { api } from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
+import { useShopStore } from '@/store/shopStore';
 import { Button } from '@/components/ui/Button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 
@@ -11,6 +12,7 @@ export function ShopSelectionPage() {
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
   const { logout, user } = useAuthStore();
+  const { setShop } = useShopStore();
 
   useEffect(() => {
     fetchShops();
@@ -27,8 +29,9 @@ export function ShopSelectionPage() {
     }
   };
 
-  const handleSelectShop = (shopId: string) => {
-    localStorage.setItem('current_shop_id', shopId);
+  const handleSelectShop = (selectedShop: any) => {
+    localStorage.setItem('current_shop_id', selectedShop.id);
+    setShop(selectedShop);
     navigate('/dashboard', { replace: true });
   };
 
@@ -68,7 +71,7 @@ export function ShopSelectionPage() {
 
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {shops.owned.map((shop) => (
-            <Card key={shop.id} className="hover:border-primary/50 transition-colors cursor-pointer" onClick={() => handleSelectShop(shop.id)}>
+            <Card key={shop.id} className="hover:border-primary/50 transition-colors cursor-pointer" onClick={() => handleSelectShop(shop)}>
               <CardContent className="p-6 flex flex-col items-center text-center space-y-4">
                 <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center text-primary">
                   {shop.logo_url ? <img src={shop.logo_url} alt="Logo" className="w-16 h-16 rounded-full" /> : <Store size={32} />}
@@ -84,7 +87,7 @@ export function ShopSelectionPage() {
           ))}
 
           {shops.employed.map((emp) => (
-            <Card key={emp.id} className="hover:border-blue-500/50 transition-colors cursor-pointer" onClick={() => handleSelectShop(emp.id)}>
+            <Card key={emp.id} className="hover:border-blue-500/50 transition-colors cursor-pointer" onClick={() => handleSelectShop(emp)}>
               <CardContent className="p-6 flex flex-col items-center text-center space-y-4">
                 <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400">
                   {emp.logo_url ? <img src={emp.logo_url} alt="Logo" className="w-16 h-16 rounded-full" /> : <Store size={32} />}

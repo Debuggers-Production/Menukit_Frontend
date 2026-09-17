@@ -30,7 +30,7 @@ api.interceptors.request.use(
       }
       
       const shopId = localStorage.getItem('current_shop_id');
-      if (shopId) {
+      if (shopId && shopId !== 'undefined' && shopId !== 'null' && shopId.trim() !== '') {
         config.headers.set('X-Shop-Id', shopId);
       }
     }

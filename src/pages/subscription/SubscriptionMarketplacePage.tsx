@@ -458,7 +458,15 @@ export function SubscriptionMarketplacePage() {
               <div className="space-y-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="font-extrabold text-base sm:text-lg text-slate-900 dark:text-white tracking-tight">
-                    {activeSubscription.is_trial ? 'Free Trial Active' : activeSubscription.is_all_access ? 'All-Access Pack Active' : 'Custom Modular Plan'}
+                    {activeSubscription.is_expired
+                      ? (activeSubscription.is_trial ? 'Free Trial Ended' : 'Subscription Ended')
+                      : activeSubscription.is_grace_period
+                      ? (activeSubscription.is_trial ? 'Free Trial Ended (Grace Period)' : 'Subscription Ended (Grace Period)')
+                      : activeSubscription.is_trial
+                      ? 'Free Trial Active'
+                      : activeSubscription.is_all_access
+                      ? 'All-Access Pack Active'
+                      : 'Custom Modular Plan'}
                   </h3>
                   <span className={cn(
                     "text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider shadow-xs",
@@ -469,9 +477,9 @@ export function SubscriptionMarketplacePage() {
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
                   {activeSubscription.is_expired
-                    ? 'Subscription has ended. Select modules below to renew.'
+                    ? (activeSubscription.is_trial ? 'Free trial has ended. Select modules below to renew.' : 'Subscription has ended. Select modules below to renew.')
                     : activeSubscription.is_grace_period
-                    ? `Grace Period Active: ${activeSubscription.grace_days_left} day${activeSubscription.grace_days_left !== 1 ? 's' : ''} left`
+                    ? `Grace Period Active: ${activeSubscription.grace_days_left} day${activeSubscription.grace_days_left !== 1 ? 's' : ''} left. Renew now before features lock.`
                     : activeSubscription.is_trial
                     ? `Free Trial Active: ${activeSubscription.core_days_left ?? activeSubscription.days_left ?? 30} Day${(activeSubscription.core_days_left ?? activeSubscription.days_left ?? 30) !== 1 ? 's' : ''} Remaining (${activeSubscription.current_period_end ? `Expires ${new Date(activeSubscription.current_period_end).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''})`
                     : (activeSubscription.core_days_left !== undefined && activeSubscription.core_days_left <= 5)
@@ -487,15 +495,19 @@ export function SubscriptionMarketplacePage() {
                 {!activeSubscription.is_expired && (
                   <div className={cn(
                     "flex items-center gap-1.5 px-3 py-1.5 rounded-xl border shadow-xs font-black text-xs",
-                    activeSubscription.is_trial 
+                    activeSubscription.is_grace_period
+                      ? "bg-amber-500 text-white border-amber-600"
+                      : activeSubscription.is_trial 
                       ? "bg-indigo-600 text-white border-indigo-500" 
                       : (activeSubscription.days_left <= 5 || (activeSubscription.core_days_left !== undefined && activeSubscription.core_days_left <= 5))
                       ? "bg-amber-500 text-white border-amber-600"
                       : "bg-white/80 dark:bg-slate-900/80 border-slate-200/80 dark:border-slate-800 text-slate-800 dark:text-slate-200"
                   )}>
-                    <Clock size={14} className={activeSubscription.is_trial ? "text-indigo-200" : "text-primary"} />
+                    <Clock size={14} className={activeSubscription.is_trial && !activeSubscription.is_grace_period ? "text-indigo-200" : "text-white"} />
                     <span>
-                      {(activeSubscription.core_days_left !== undefined ? activeSubscription.core_days_left : activeSubscription.days_left)} Days Left
+                      {activeSubscription.is_grace_period
+                        ? `${activeSubscription.grace_days_left}d Grace Left`
+                        : `${(activeSubscription.core_days_left !== undefined ? activeSubscription.core_days_left : activeSubscription.days_left)} Days Left`}
                     </span>
                   </div>
                 )}
@@ -513,22 +525,41 @@ export function SubscriptionMarketplacePage() {
             </div>
           </div>
 
-          {/* Prominent Intimation Banner for Ending Subscription */}
-          {!activeSubscription.is_expired && !activeSubscription.is_grace_period && (activeSubscription.days_left <= 5 || (activeSubscription.core_days_left !== undefined && activeSubscription.core_days_left <= 5)) && (
-            <div className="mt-4 p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-orange-500/15 to-amber-600/15 border-2 border-amber-500/40 text-amber-950 dark:text-amber-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+          {/* Prominent Intimation Banner for Ending Subscription / Grace Period */}
+          {!activeSubscription.is_expired && (activeSubscription.is_grace_period || (activeSubscription.days_left > 0 && activeSubscription.days_left <= 5) || (activeSubscription.core_days_left !== undefined && activeSubscription.core_days_left > 0 && activeSubscription.core_days_left <= 5)) && (
+            <div className={cn(
+              "mt-4 p-4 rounded-2xl border-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs",
+              activeSubscription.is_grace_period
+                ? "bg-gradient-to-r from-red-500/15 via-orange-500/15 to-red-500/15 border-orange-500/50 text-orange-950 dark:text-orange-100"
+                : "bg-gradient-to-r from-amber-500/15 via-orange-500/15 to-amber-600/15 border-amber-500/40 text-amber-950 dark:text-amber-100"
+            )}>
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 font-bold text-lg shadow-sm">
-                  ⏳
+                <div className={cn(
+                  "w-10 h-10 rounded-xl text-white flex items-center justify-center shrink-0 font-bold text-lg shadow-sm",
+                  activeSubscription.is_grace_period ? "bg-orange-600" : "bg-amber-500"
+                )}>
+                  {activeSubscription.is_grace_period ? "⚠️" : "⏳"}
                 </div>
                 <div>
-                  <h5 className="font-extrabold text-sm text-amber-950 dark:text-white flex items-center gap-2">
-                    <span>{activeSubscription.is_trial ? 'Free Trial Ending Soon' : 'Subscription Ending Soon'}</span>
-                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-500 text-white uppercase tracking-wider">
-                      {activeSubscription.core_days_left ?? activeSubscription.days_left} Days Left
+                  <h5 className="font-extrabold text-sm text-slate-900 dark:text-white flex items-center gap-2">
+                    <span>
+                      {activeSubscription.is_grace_period
+                        ? (activeSubscription.is_trial ? 'Free Trial Ended (Grace Period Active)' : 'Subscription Ended (Grace Period Active)')
+                        : (activeSubscription.is_trial ? 'Free Trial Ending Soon' : 'Subscription Ending Soon')}
+                    </span>
+                    <span className={cn(
+                      "text-[10px] font-black px-2 py-0.5 rounded-full text-white uppercase tracking-wider",
+                      activeSubscription.is_grace_period ? "bg-orange-600" : "bg-amber-500"
+                    )}>
+                      {activeSubscription.is_grace_period
+                        ? `${activeSubscription.grace_days_left} Days Grace`
+                        : `${activeSubscription.core_days_left ?? activeSubscription.days_left} Days Left`}
                     </span>
                   </h5>
-                  <p className="text-xs text-amber-900/90 dark:text-amber-200/90 mt-0.5">
-                    Your core operations (Online Ordering, Customer Memberships, Analytics) expire in <strong>{activeSubscription.core_days_left ?? activeSubscription.days_left} days</strong>. Renew your plan below so your customer orders and leads are not interrupted!
+                  <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
+                    {activeSubscription.is_grace_period
+                      ? `Your plan has ended. You have ${activeSubscription.grace_days_left} day${activeSubscription.grace_days_left !== 1 ? 's' : ''} left in grace period before features are locked. Renew now!`
+                      : `Your core operations (Online Ordering, Customer Memberships, Analytics) expire in ${activeSubscription.core_days_left ?? activeSubscription.days_left} days. Renew your plan below so your customer orders and leads are not interrupted!`}
                   </p>
                 </div>
               </div>
@@ -538,7 +569,10 @@ export function SubscriptionMarketplacePage() {
                   const el = document.getElementById('marketplace-heading');
                   el?.scrollIntoView({ behavior: 'smooth' });
                 }}
-                className="bg-amber-600 hover:bg-amber-700 text-white font-black text-xs shrink-0 shadow-sm cursor-pointer"
+                className={cn(
+                  "font-black text-xs shrink-0 shadow-sm cursor-pointer text-white",
+                  activeSubscription.is_grace_period ? "bg-orange-600 hover:bg-orange-700" : "bg-amber-600 hover:bg-amber-700"
+                )}
               >
                 Renew Plan Below ↓
               </Button>

@@ -42,36 +42,56 @@ export function DashboardPage() {
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
-        let currentShopId = shop?.id;
-        let fetchShopPromise = null;
+        let activeShop = shop;
         
-        // Fetch shop if not loaded
-        if (!shop) {
-          fetchShopPromise = api.get('/shops/me').then(shopRes => {
+        // If shop is not loaded or missing ID, fetch it first
+        if (!activeShop?.id) {
+          try {
+            const shopRes = await api.get('/shops/me');
             if (shopRes.data?.id) {
+              activeShop = shopRes.data;
               setShop(shopRes.data);
-              currentShopId = shopRes.data.id;
+              localStorage.setItem('current_shop_id', shopRes.data.id);
+            } else {
+              // Fallback to my-shops
+              const myShopsRes = await api.get('/shops/my-shops');
+              const allShops = [...(myShopsRes.data?.owned || []), ...(myShopsRes.data?.employed || [])];
+              if (allShops.length > 0) {
+                const firstShop = allShops[0];
+                const targetId = firstShop.id || firstShop.shop?.id;
+                if (targetId) {
+                  localStorage.setItem('current_shop_id', targetId);
+                  const freshShopRes = await api.get('/shops/me', { headers: { 'X-Shop-Id': targetId } });
+                  if (freshShopRes.data?.id) {
+                    activeShop = freshShopRes.data;
+                    setShop(freshShopRes.data);
+                  }
+                }
+              }
             }
-            return shopRes;
-          }).catch(err => {
-            console.error(err);
-            return null;
-          });
+          } catch (shopErr) {
+            console.error('Failed to resolve shop in DashboardPage:', shopErr);
+          }
         }
 
-        const [shopData, analyticsRes] = await Promise.all([
-          fetchShopPromise || Promise.resolve(null),
-          api.get('/analytics/dashboard')
-        ]);
+        if (activeShop?.id) {
+          const [analyticsRes, mStats] = await Promise.all([
+            api.get('/analytics/dashboard').catch(err => {
+              console.error('Failed to load dashboard analytics:', err);
+              return null;
+            }),
+            membershipService.getAnalytics(activeShop.id).catch(() => ({ total_members: 0 }))
+          ]);
 
-        setStats(analyticsRes.data.overview);
-        setActivities(analyticsRes.data.recent_activities);
-        setTopSearches(analyticsRes.data.top_searches);
-        setTopReviews(analyticsRes.data.top_reviews || []);
-
-        if (currentShopId) {
-          const mStats = await membershipService.getAnalytics(currentShopId).catch(() => ({ total_members: 0 }));
-          setMemberStats(mStats);
+          if (analyticsRes?.data) {
+            setStats(analyticsRes.data.overview);
+            setActivities(analyticsRes.data.recent_activities || []);
+            setTopSearches(analyticsRes.data.top_searches || []);
+            setTopReviews(analyticsRes.data.top_reviews || []);
+          }
+          if (mStats) {
+            setMemberStats(mStats);
+          }
         }
       } catch (error) {
         console.error('Failed to load dashboard data', error);
@@ -81,7 +101,7 @@ export function DashboardPage() {
     };
 
     fetchDashboardData();
-  }, [shop]);
+  }, [shop?.id]);
 
   useEffect(() => {
     if (shop) {

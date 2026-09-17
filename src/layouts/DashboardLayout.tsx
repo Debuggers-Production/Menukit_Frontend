@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router';
 import Lenis from 'lenis';
 import { DashboardRouteLoading } from '@/components/DashboardRouteLoading';
@@ -114,7 +114,25 @@ export function DashboardLayout() {
     const fetchCurrentShop = async () => {
       try {
         const res = await api.get('/shops/me');
-        setShop(res.data);
+        if (res.data?.id) {
+          setShop(res.data);
+          localStorage.setItem('current_shop_id', res.data.id);
+        } else {
+          // Fallback if /shops/me had no matching shop
+          const myShopsRes = await api.get('/shops/my-shops');
+          const allShops = [...(myShopsRes.data?.owned || []), ...(myShopsRes.data?.employed || [])];
+          if (allShops.length > 0) {
+            const firstShop = allShops[0];
+            const targetId = firstShop.id || firstShop.shop?.id;
+            if (targetId) {
+              localStorage.setItem('current_shop_id', targetId);
+              const freshShopRes = await api.get('/shops/me', { headers: { 'X-Shop-Id': targetId } });
+              if (freshShopRes.data?.id) {
+                setShop(freshShopRes.data);
+              }
+            }
+          }
+        }
       } catch (e) {
         console.error('Failed to fetch current shop in DashboardLayout', e);
       }
@@ -670,7 +688,7 @@ export function DashboardLayout() {
           >
             <div className="flex items-center gap-2">
               <AlertOctagon size={18} className="animate-pulse shrink-0 text-white" />
-              <span>Your subscription has ended. Please renew to restore full feature access.</span>
+              <span>{subStatus.is_trial ? 'Your free trial has ended.' : 'Your subscription has ended.'} Please renew to restore full feature access.</span>
             </div>
             <div className="flex items-center gap-1 bg-white/20 px-2.5 py-1 rounded-lg hover:bg-white/30 transition-colors uppercase tracking-wider text-[10px] font-black shrink-0">
               <span>Renew Subscription</span>
@@ -687,7 +705,9 @@ export function DashboardLayout() {
           >
             <div className="flex items-center gap-2">
               <AlertTriangle size={18} className="animate-bounce shrink-0 text-white" />
-              <span>Subscription Ended: Grace Period Active ({subStatus.grace_days_left} day{subStatus.grace_days_left !== 1 ? 's' : ''} left). Please renew now.</span>
+              <span>
+                <strong>{subStatus.is_trial ? 'Free Trial Ended' : 'Subscription Ended'}:</strong> Grace Period Active ({subStatus.grace_days_left} day{subStatus.grace_days_left !== 1 ? 's' : ''} left). Please renew now to prevent service interruption.
+              </span>
             </div>
             <div className="flex items-center gap-1 bg-black/20 px-2.5 py-1 rounded-lg hover:bg-black/30 transition-colors uppercase tracking-wider text-[10px] font-black shrink-0">
               <span>Renew Now</span>
@@ -696,7 +716,7 @@ export function DashboardLayout() {
           </div>
         )}
 
-        {subStatus && !subStatus.is_expired && !subStatus.is_grace_period && (subStatus.days_left <= 5 || (subStatus.core_days_left !== undefined && subStatus.core_days_left <= 5)) && (
+        {subStatus && !subStatus.is_expired && !subStatus.is_grace_period && (subStatus.days_left > 0 && subStatus.days_left <= 5) && (
           <div
             onClick={() => navigate('/subscription')}
             className="bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white px-4 py-2 text-xs font-bold flex items-center justify-between cursor-pointer shadow-md hover:brightness-110 transition-all z-30 shrink-0"

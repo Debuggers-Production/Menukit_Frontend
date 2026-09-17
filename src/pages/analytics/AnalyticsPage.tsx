@@ -329,6 +329,40 @@ export function AnalyticsPage() {
         </div>
       </HeaderActions>
 
+      {/* Mobile Tab Switcher */}
+      <div className="lg:hidden bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl flex items-center gap-1 border border-slate-200/80 dark:border-slate-700/80 shrink-0 shadow-2xs">
+        <button
+          onClick={() => setActiveTab('revenue')}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+            activeTab === 'revenue' 
+              ? 'bg-white dark:bg-slate-900 text-primary shadow-xs' 
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+          }`}
+        >
+          <TrendingUp size={14} /> Revenue
+        </button>
+        <button
+          onClick={() => setActiveTab('scans')}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+            activeTab === 'scans' 
+              ? 'bg-white dark:bg-slate-900 text-primary shadow-xs' 
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+          }`}
+        >
+          <QrCode size={14} /> Traffic
+        </button>
+        <button
+          onClick={() => setActiveTab('gst')}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+            activeTab === 'gst' 
+              ? 'bg-white dark:bg-slate-900 text-primary shadow-xs' 
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+          }`}
+        >
+          <Receipt size={14} /> GST Reports
+        </button>
+      </div>
+
       {isLocked && (
         <div className="bg-gradient-to-r from-red-50 to-orange-50 dark:from-red-950/40 dark:to-orange-950/40 border-2 border-red-500/50 p-6 sm:p-8 rounded-3xl text-center space-y-4 shadow-xl">
           <div className="w-16 h-16 rounded-2xl bg-red-500/10 text-red-500 flex items-center justify-center mx-auto shadow-inner">

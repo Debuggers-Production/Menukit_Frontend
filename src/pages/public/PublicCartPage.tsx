@@ -53,7 +53,8 @@ export function PublicCartPage() {
   const [availableDiscounts, setAvailableDiscounts] = useState<Discount[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [memberStatus] = useState<'unlocked' | 'verified-member' | null>(() => {
-    return sessionStorage.getItem('member_status') as any;
+    if (!id) return null;
+    return (sessionStorage.getItem(`member_status_${id}`) || sessionStorage.getItem('member_status')) as any;
   });
 
   // Ordering & Checkout state
@@ -63,16 +64,17 @@ export function PublicCartPage() {
   const [customerPhone, setCustomerPhone] = useState('');
   const [tableNumber, setTableNumber] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'online' | 'upi'>('cash');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'online' | 'upi'>('online');
 
-  // Keep paymentMethod synchronized when orderType changes
+  // Keep paymentMethod synchronized when shop online payments setting or orderType changes
   useEffect(() => {
-    if (orderType === 'delivery' || orderType === 'takeaway') {
+    const isOnline = (shop?.settings as any)?.online_payments_enabled !== false;
+    if (isOnline) {
       setPaymentMethod('online');
     } else {
       setPaymentMethod('cash');
     }
-  }, [orderType]);
+  }, [shop?.settings?.online_payments_enabled, orderType]);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [showVerifyPopup, setShowVerifyPopup] = useState(false);
   const [pendingCheckoutAfterVerify, setPendingCheckoutAfterVerify] = useState(false);
@@ -207,6 +209,17 @@ export function PublicCartPage() {
     }
   };
 
+  // Auto-fetch location if delivery mode and coordinates not yet saved
+  useEffect(() => {
+    if (orderType === 'delivery') {
+      const savedLat = localStorage.getItem('customer_lat');
+      const savedLng = localStorage.getItem('customer_lng');
+      if (!savedLat || !savedLng) {
+        handleAutoFetchLocation();
+      }
+    }
+  }, [orderType]);
+
   // Pre-fill verified phone, name, and address on mount/token change
   useEffect(() => {
     try {
@@ -334,12 +347,25 @@ export function PublicCartPage() {
       toast.error("Please enter your name and mobile number");
       return;
     }
-    if (orderType === 'delivery' && !deliveryAddress) {
-      toast.error("Please enter your delivery address");
-      return;
-    }
 
-    if (orderType === 'delivery' && deliveryAddress) {
+    if (orderType === 'delivery') {
+      if (shop?.settings && !shop.settings.delivery_enabled) {
+        toast.error("Home delivery is disabled for this restaurant. Please choose Takeaway or Dine-in.");
+        return;
+      }
+
+      const savedLat = localStorage.getItem('customer_lat');
+      const savedLng = localStorage.getItem('customer_lng');
+      if (!savedLat || !savedLng) {
+        toast.error("GPS Location is mandatory for delivery. Please detect your location.");
+        handleAutoFetchLocation();
+        return;
+      }
+
+      if (!deliveryAddress) {
+        toast.error("Please enter your delivery address");
+        return;
+      }
       localStorage.setItem('customer_address', deliveryAddress);
     }
 
@@ -353,9 +379,7 @@ export function PublicCartPage() {
     } catch (e){}
 
     const isOnlineDisabled = (shop?.settings as any)?.online_payments_enabled === false;
-    const apiPaymentMethod = (orderType === 'delivery' || orderType === 'takeaway') && isOnlineDisabled 
-      ? 'cash' 
-      : paymentMethod;
+    const apiPaymentMethod = isOnlineDisabled ? 'cash' : 'online';
 
     setIsPlacingOrder(true);
     try {
@@ -1479,9 +1503,22 @@ export function PublicCartPage() {
                   toast.error("Please enter your name and mobile number");
                   return;
                 }
-                if (orderType === 'delivery' && !deliveryAddress) {
-                  toast.error("Please enter your delivery address");
-                  return;
+                if (orderType === 'delivery') {
+                  if (shop?.settings && !shop.settings.delivery_enabled) {
+                    toast.error("Delivery is not enabled for this restaurant.");
+                    return;
+                  }
+                  const savedLat = localStorage.getItem('customer_lat');
+                  const savedLng = localStorage.getItem('customer_lng');
+                  if (!savedLat || !savedLng) {
+                    toast.error("GPS Location is required for Delivery. Tap 'Detect Location'.");
+                    handleAutoFetchLocation();
+                    return;
+                  }
+                  if (!deliveryAddress) {
+                    toast.error("Please enter your delivery address");
+                    return;
+                  }
                 }
                 setCheckoutStep(2);
               }}
@@ -1608,8 +1645,41 @@ export function PublicCartPage() {
               )}
 
               {orderType === 'delivery' && (
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Delivery Address</label>
+                <div className="space-y-2.5">
+                  <div className="flex justify-between items-center">
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Delivery Address & GPS</label>
+                    {deliveryDistanceKm > 0 && (
+                      <span className="text-[10px] font-bold text-blue-600 bg-blue-50 dark:bg-blue-950/40 px-2 py-0.5 rounded-md flex items-center gap-1">
+                        <MapPin size={10} /> ~{deliveryDistanceKm < 1 ? `${Math.round(deliveryDistanceKm * 1000)}m` : `${deliveryDistanceKm.toFixed(1)} km`} away
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Delivery coverage & Pricing info banner */}
+                  {shop?.settings && !shop.settings.delivery_enabled ? (
+                    <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center gap-2">
+                      <span className="text-sm">🚫</span>
+                      <span>Delivery is currently unavailable for this restaurant.</span>
+                    </div>
+                  ) : (
+                    <div className="p-2.5 rounded-xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/40 text-blue-900 dark:text-blue-300 text-xs space-y-1">
+                      <div className="flex items-center justify-between font-bold">
+                        <span className="flex items-center gap-1.5">
+                          <Truck size={13} className="text-blue-600" />
+                          Delivery Fee: {currencySymbol}{deliveryFee.toFixed(2)}
+                        </span>
+                        <span className="text-[10px] text-blue-600 font-semibold">
+                          {deliveryDistanceKm > 0 ? `${deliveryDistanceKm.toFixed(1)} km` : 'GPS required'}
+                        </span>
+                      </div>
+                      {shop?.settings && (
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                          Base {currencySymbol}{shop.settings.base_delivery_charge ?? 0} up to {shop.settings.base_delivery_distance ?? 0} km, then +{currencySymbol}{shop.settings.extra_delivery_charge_per_step ?? 0} per {shop.settings.extra_delivery_distance_step ?? 1} km
+                        </p>
+                      )}
+                    </div>
+                  )}
+
                   <textarea
                     placeholder="Street, Building, Flat Number, Landmarks..."
                     value={deliveryAddress}
@@ -1626,7 +1696,7 @@ export function PublicCartPage() {
                       className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 transition-colors"
                     >
                       <Navigation size={14} className={isLocating ? "animate-spin text-primary" : "text-slate-500"} style={{ color: isLocating ? primaryColor : undefined }} />
-                      <span>{isLocating ? "Locating..." : "Detect Location"}</span>
+                      <span>{isLocating ? "Locating GPS..." : "Detect My Location"}</span>
                     </button>
 
                     <button
@@ -1635,7 +1705,7 @@ export function PublicCartPage() {
                       className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 transition-colors"
                     >
                       <Map size={14} className="text-slate-500" />
-                      <span>{showMap ? "Hide Map" : "Select from Map"}</span>
+                      <span>{showMap ? "Hide Map" : "Pin on Map"}</span>
                     </button>
                   </div>
 
@@ -1654,7 +1724,7 @@ export function PublicCartPage() {
                         <MapEventsHandler onClick={handleMapMarkerChange} center={mapCenter} />
                       </MapContainer>
                       <div className="absolute bottom-2 left-2 z-[1000] bg-white/90 backdrop-blur px-2 py-1 rounded shadow text-[9px] font-bold text-slate-650 pointer-events-none">
-                        Tap map to move marker & fetch address
+                        Tap map to move pin & set delivery location
                       </div>
                     </div>
                   )}
@@ -1752,62 +1822,48 @@ export function PublicCartPage() {
               <div>
                 <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Payment Option</label>
                 <div className="space-y-2">
-                  {/* Cash — strictly for Dine-in orders */}
-                  {orderType === 'dine_in' && (
-                    <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/50 cursor-pointer hover:bg-slate-50 transition-colors">
+                  {(shop?.settings as any)?.online_payments_enabled !== false ? (
+                    <label
+                      className="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all"
+                      style={{ borderColor: primaryColor, backgroundColor: `${primaryColor}08` }}
+                    >
+                      <input
+                        type="radio"
+                        name="payment"
+                        checked={true}
+                        readOnly
+                        className="w-4 h-4"
+                        style={{ accentColor: primaryColor }}
+                      />
+                      <div className="flex flex-col flex-1">
+                        <span className="text-sm font-semibold text-slate-850">Pay Online</span>
+                        <span className="text-[10px] text-slate-400">UPI, Cards, Netbanking. Fast & secure.</span>
+                      </div>
+                    </label>
+                  ) : (
+                    <label className="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all border-emerald-200 bg-emerald-50/40">
                       <input
                         type="radio"
                         name="payment"
                         checked={paymentMethod === 'cash'}
                         onChange={() => setPaymentMethod('cash')}
-                        className="w-4 h-4 accent-primary"
-                        style={{ accentColor: primaryColor }}
+                        className="w-4 h-4 accent-emerald-600"
                       />
-                      <div className="flex flex-col">
-                        <span className="text-sm font-semibold text-slate-850">Pay at Counter / Cash</span>
-                        <span className="text-[10px] text-slate-400">Pay physically at the shop.</span>
+                      <div className="flex flex-col flex-1">
+                        <span className="text-sm font-semibold text-slate-850">
+                          {orderType === 'dine_in'
+                            ? 'Pay at Counter / Cash'
+                            : orderType === 'delivery'
+                            ? 'Pay on Delivery (Cash / UPI on Spot)'
+                            : 'Pay on Pickup (Cash / UPI at Shop)'}
+                        </span>
+                        <span className="text-[10px] text-slate-500">
+                          {orderType === 'dine_in'
+                            ? 'Pay physically at the restaurant counter.'
+                            : 'Pay directly when your food arrives or when you pick up.'}
+                        </span>
                       </div>
                     </label>
-                  )}
-
-
-
-                  {/* Delivery & Takeaway payment options based on merchant setting */}
-                  {(orderType === 'delivery' || orderType === 'takeaway') && (
-                    (shop?.settings as any)?.online_payments_enabled !== false ? (
-                      <label className="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all"
-                        style={{ borderColor: primaryColor, backgroundColor: `${primaryColor}08` }}
-                      >
-                        <input
-                          type="radio"
-                          name="payment"
-                          checked={true}
-                          readOnly
-                          className="w-4 h-4"
-                          style={{ accentColor: primaryColor }}
-                        />
-                        <div className="flex flex-col flex-1">
-                          <span className="text-sm font-semibold text-slate-850">Pay Online</span>
-                          <span className="text-[10px] text-slate-400">UPI, Cards, Netbanking. Fast & secure.</span>
-                        </div>
-                      </label>
-                    ) : (
-                      <label className="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all border-emerald-200 bg-emerald-50/40">
-                        <input
-                          type="radio"
-                          name="payment"
-                          checked={paymentMethod === 'cash'}
-                          onChange={() => setPaymentMethod('cash')}
-                          className="w-4 h-4 accent-emerald-600"
-                        />
-                        <div className="flex flex-col flex-1">
-                          <span className="text-sm font-semibold text-slate-850">
-                            {orderType === 'delivery' ? 'Pay on Delivery (Cash / UPI on Spot)' : 'Pay on Pickup (Cash / UPI at Shop)'}
-                          </span>
-                          <span className="text-[10px] text-slate-500">Pay directly when your food arrives or when you pick up.</span>
-                        </div>
-                      </label>
-                    )
                   )}
                 </div>
                 

@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useLocation } from 'react-router';
 import {
   QrCode, MapPin, Star, ArrowRight,
-  Navigation, Tag, X, Search, Store, Gift, Phone, Clock, ExternalLink, Flame, Crown, Sparkles
+  Navigation, Tag, X, Search, Store, Gift, Phone, Clock, ExternalLink, Flame, Crown, Sparkles, Truck
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import {
@@ -202,11 +202,21 @@ function ShopMarker({
           {shop.best_discount_label && (
             <div style={{
               background: '#fff7ed', border: '1px solid #fed7aa',
-              borderRadius: 6, padding: '4px 8px', marginBottom: 8,
+              borderRadius: 6, padding: '4px 8px', marginBottom: 6,
               fontSize: 12, color: '#ea580c', fontWeight: 700,
               display: 'flex', alignItems: 'center', gap: 4
             }}>
               <Gift size={12} /> {shop.best_discount_label}
+            </div>
+          )}
+          {shop.delivery_enabled && (
+            <div style={{
+              background: '#eff6ff', border: '1px solid #bfdbfe',
+              borderRadius: 6, padding: '3px 8px', marginBottom: 8,
+              fontSize: 11, color: '#1d4ed8', fontWeight: 700,
+              display: 'flex', alignItems: 'center', gap: 4
+            }}>
+              <Truck size={11} /> Home Delivery Available
             </div>
           )}
           <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
@@ -1142,10 +1152,10 @@ export function StoreDiscoveryPage() {
                         </div>
                       )}
 
-                      {/* Rating + distance */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      {/* Rating + distance + delivery badge */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         {shop.average_rating ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
                             <StarRating rating={shop.average_rating} />
                             <span style={{ fontSize: '.7rem', fontWeight: 600, color: '#475569' }}>
                               {shop.average_rating} ({shop.total_reviews})
@@ -1158,6 +1168,33 @@ export function StoreDiscoveryPage() {
                           <span style={{ fontSize: '.7rem', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 3 }}>
                             <Navigation size={9} />
                             {distKm < 1 ? `${Math.round(distKm * 1000)}m` : `${distKm.toFixed(1)}km`}
+                          </span>
+                        )}
+                        {shop.delivery_enabled ? (() => {
+                          const baseDist = shop.base_delivery_distance || 0;
+                          const baseCharge = shop.base_delivery_charge || 0;
+                          const step = shop.extra_delivery_distance_step || 1;
+                          const rate = shop.extra_delivery_charge_per_step || 0;
+                          let fee = baseCharge;
+                          if (distKm !== null && distKm > baseDist && baseDist > 0) {
+                            fee = baseCharge + Math.ceil((distKm - baseDist) / step) * rate;
+                          }
+                          return (
+                            <span style={{
+                              fontSize: '.65rem', fontWeight: 700, padding: '1px 6px',
+                              borderRadius: 6, background: '#eff6ff', color: '#2563eb',
+                              border: '1px solid #dbeafe', display: 'flex', alignItems: 'center', gap: 3
+                            }}>
+                              <Truck size={9} /> Delivery {distKm !== null ? `₹${fee}` : 'Available'}
+                            </span>
+                          );
+                        })() : (
+                          <span style={{
+                            fontSize: '.65rem', fontWeight: 600, padding: '1px 6px',
+                            borderRadius: 6, background: '#f8fafc', color: '#64748b',
+                            border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: 3
+                          }}>
+                            Dine-In/Takeaway
                           </span>
                         )}
                       </div>
@@ -1253,6 +1290,14 @@ export function StoreDiscoveryPage() {
                   {infoShopData.address && <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: '.875rem', color: '#334155' }}><MapPin size={16} color="#64748b" style={{ flexShrink: 0, marginTop: 2 }} /> <span>{infoShopData.address}</span></div>}
                   {(infoShopData.opening_time || infoShopData.closing_time) && <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '.875rem', color: '#334155' }}><Clock size={16} color="#64748b" /> {infoShopData.opening_time} - {infoShopData.closing_time}</div>}
                   {infoShopData.phone && <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '.875rem', color: '#334155' }}><Phone size={16} color="#64748b" /> {infoShopData.phone}</div>}
+                  {infoShopData.settings?.delivery_enabled && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '.825rem', color: '#1d4ed8', background: '#eff6ff', padding: '6px 10px', borderRadius: 8 }}>
+                      <Truck size={15} color="#2563eb" style={{ flexShrink: 0 }} />
+                      <span>
+                        Home Delivery Available (Base ₹{infoShopData.settings.base_delivery_charge ?? 0} up to {infoShopData.settings.base_delivery_distance ?? 0} km, then +₹{infoShopData.settings.extra_delivery_charge_per_step ?? 0}/{infoShopData.settings.extra_delivery_distance_step ?? 1} km)
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <div style={{ display: 'flex', gap: 12, marginTop: 4 }}>

@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router';
 import { ArrowLeft, RefreshCw } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { useAuthStore } from '@/store/authStore';
+import { useShopStore } from '@/store/shopStore';
 import { api } from '@/services/api';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -18,26 +19,31 @@ export function OTPVerifyPage() {
   const location = useLocation();
   const { login } = useAuthStore();
   
-  const rawEmail = location.state?.email || '';
-  const email = rawEmail.trim().toLowerCase();
+  const email = location.state?.email;
 
   useEffect(() => {
     if (!email) {
-      navigate('/login', { replace: true });
+      navigate('/login');
+      return;
     }
+    
+    // Auto-focus first input
     inputRefs.current[0]?.focus();
+
+    // Countdown timer for resend
+    const timer = setInterval(() => {
+      setCountdown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+
+    return () => clearInterval(timer);
   }, [email, navigate]);
 
-  useEffect(() => {
-    if (countdown > 0) {
-      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [countdown]);
-
   const handleChange = (index: number, value: string) => {
-    // Only allow numbers
-    if (value && !/^\d+$/.test(value)) return;
+    // Handle single digit or pasted code
+    if (value.length > 1) {
+      handlePaste(value);
+      return;
+    }
 
     const newOtp = [...otp];
     newOtp[index] = value;
@@ -51,16 +57,12 @@ export function OTPVerifyPage() {
 
   const handleKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Backspace' && !otp[index] && index > 0) {
-      // Auto-focus previous input on backspace
       inputRefs.current[index - 1]?.focus();
     }
   };
 
-  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
-    e.preventDefault();
-    const pastedData = e.clipboardData.getData('text').slice(0, 6).split('');
-    if (pastedData.some(char => !/^\d+$/.test(char))) return;
-    
+  const handlePaste = (pastedText: string) => {
+    const pastedData = pastedText.replace(/\D/g, '').slice(0, 6).split('');
     const newOtp = [...otp];
     pastedData.forEach((char, index) => {
       if (index < 6) newOtp[index] = char;
@@ -94,8 +96,9 @@ export function OTPVerifyPage() {
       if (totalShops > 1 || totalShops === 0) {
          navigate('/select-shop', { replace: true });
       } else {
-         const shopId = owned.length > 0 ? owned[0].id : employed[0].id;
-         localStorage.setItem('current_shop_id', shopId);
+         const targetShop = owned.length > 0 ? owned[0] : employed[0];
+         localStorage.setItem('current_shop_id', targetShop.id);
+         useShopStore.getState().setShop(targetShop);
          navigate('/dashboard', { replace: true });
       }
     } catch (error: any) {

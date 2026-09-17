@@ -144,6 +144,12 @@ function generateGoogleMapsUrl(address: string) {
 function generateOrderBillText(order: any) {
   const { date, time } = formatDateTime(order.created_at);
   const orderId = order.id.slice(0, 8).toUpperCase();
+  const items = (order.items || []).filter((it: any) => !it.is_cancelled);
+  const itemsSubtotal = items.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+  const isDelivery = order.order_type === 'delivery';
+  const deliveryFee = (isDelivery && Number(order.total_amount) > itemsSubtotal) ? (Number(order.total_amount) - itemsSubtotal) : 0;
+  const hotelTotal = itemsSubtotal + deliveryFee;
+
   const itemsText = (order.items || []).map((it: any) => {
     let details = `${it.name} x${it.quantity} - ₹${(it.price * it.quantity).toFixed(2)}`;
     if (it.variant_info) {
@@ -178,7 +184,7 @@ function generateOrderBillText(order: any) {
   bill += `🛒 *Items Summary:*\n${itemsText}\n`;
   bill += `------------------------------\n`;
   bill += `💳 Payment: ${order.payment_method?.toUpperCase()} (${order.payment_status?.toUpperCase()})\n`;
-  bill += `💰 *Grand Total: ₹${Number(order.total_amount).toFixed(2)}*\n`;
+  bill += `💰 *Grand Total: ₹${hotelTotal.toFixed(2)}*\n`;
   bill += `------------------------------\n`;
   bill += `Thank you for ordering with us!`;
 
@@ -300,12 +306,32 @@ function PayDropdown({ orderId, paymentStatus, paymentMethod, orderStatus, onSel
   );
 }
 
-/* ── Order Status Portal Dropdown ───────────────────────────────────────── */
-function getOrderStatusOptions(orderType?: string) {
-  const isDineIn = orderType === 'dine_in';
+function getOrderStatusOptions(orderType?: string, paymentMethod?: string, paymentStatus?: string, orderStatus?: string) {
+  const isCash = paymentMethod === 'cash' || paymentMethod === 'cash_on_delivery' || paymentMethod === 'counter';
+  const isPaid = (paymentStatus || '').toLowerCase() === 'paid' || (orderStatus || '').toUpperCase() === 'PAID';
+
+  if (isPaid) {
+    // Once paid, merchant cannot and should not "Accept & Request Payment"
+    return [
+      { value: 'PREPARING', label: 'Preparing', cls: 'text-blue-700 bg-blue-50 border-blue-200', dot: 'bg-blue-500' },
+      { value: 'READY', label: 'Ready', cls: 'text-cyan-700 bg-cyan-50 border-cyan-200', dot: 'bg-cyan-500' },
+      { value: 'COMPLETED', label: 'Complete', cls: 'text-emerald-700 bg-emerald-50 border-emerald-200', dot: 'bg-emerald-500' },
+      { value: 'CANCELLED', label: 'Cancel', cls: 'text-rose-700 bg-rose-50 border-rose-200', dot: 'bg-rose-500' },
+    ];
+  }
+
+  if (isCash) {
+    return [
+      { value: 'PREPARING', label: 'Accept Order', cls: 'text-orange-700 bg-orange-50 border-orange-200', dot: 'bg-orange-500' },
+      { value: 'READY', label: 'Ready', cls: 'text-cyan-700 bg-cyan-50 border-cyan-200', dot: 'bg-cyan-500' },
+      { value: 'COMPLETED', label: 'Complete', cls: 'text-emerald-700 bg-emerald-50 border-emerald-200', dot: 'bg-emerald-500' },
+      { value: 'CANCELLED', label: 'Cancel', cls: 'text-rose-700 bg-rose-50 border-rose-200', dot: 'bg-rose-500' },
+    ];
+  }
+
+  // Online unpaid order
   return [
-    { value: isDineIn ? 'PREPARING' : 'PAYMENT_PENDING', label: 'Accept', cls: 'text-orange-700 bg-orange-50 border-orange-200', dot: 'bg-orange-500' },
-    { value: 'COMPLETED', label: 'Complete', cls: 'text-emerald-700 bg-emerald-50 border-emerald-200', dot: 'bg-emerald-500' },
+    { value: 'PAYMENT_PENDING', label: 'Accept & Request Payment', cls: 'text-orange-700 bg-orange-50 border-orange-200', dot: 'bg-orange-500' },
     { value: 'CANCELLED', label: 'Cancel', cls: 'text-rose-700 bg-rose-50 border-rose-200', dot: 'bg-rose-500' },
   ];
 }
@@ -313,16 +339,15 @@ function getOrderStatusOptions(orderType?: string) {
 
 function orderStatusStyle(status: string, orderType?: string) {
   const norm = (status || '').toUpperCase();
-  const isDineIn = orderType === 'dine_in';
 
   if (norm === 'PENDING' || norm === 'PENDING_VENDOR') {
     return { value: 'PENDING_VENDOR', label: 'Pending', cls: 'text-amber-700 bg-amber-50 border-amber-200', dot: 'bg-amber-400' };
   }
-  if (norm === 'ACCEPTED' || (norm === 'PAYMENT_PENDING' && isDineIn)) {
-    return { value: 'ACCEPTED', label: 'Accepted', cls: 'text-cyan-700 bg-cyan-50 border-cyan-200', dot: 'bg-cyan-500' };
-  }
   if (norm === 'PAYMENT_PENDING') {
     return { value: 'PAYMENT_PENDING', label: 'Awaiting Payment', cls: 'text-orange-700 bg-orange-50 border-orange-200', dot: 'bg-orange-500' };
+  }
+  if (norm === 'ACCEPTED') {
+    return { value: 'ACCEPTED', label: 'Accepted', cls: 'text-cyan-700 bg-cyan-50 border-cyan-200', dot: 'bg-cyan-500' };
   }
   if (norm === 'PAID') {
     return { value: 'PAID', label: 'Paid', cls: 'text-indigo-700 bg-indigo-50 border-indigo-200', dot: 'bg-indigo-500' };
@@ -350,18 +375,19 @@ interface OrderStatusDropdownProps {
   orderId: string;
   orderStatus: string;
   paymentStatus: string;
+  paymentMethod?: string;
   orderType?: string;
   onSelect: (orderId: string, val: string) => void;
 }
 
-function OrderStatusDropdown({ orderId, orderStatus, paymentStatus, orderType, onSelect }: OrderStatusDropdownProps) {
+function OrderStatusDropdown({ orderId, orderStatus, paymentStatus, paymentMethod, orderType, onSelect }: OrderStatusDropdownProps) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ top: 0, right: 0 });
   const btnRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
   const current = orderStatusStyle(orderStatus, orderType);
-  const options = getOrderStatusOptions(orderType);
+  const options = getOrderStatusOptions(orderType, paymentMethod, paymentStatus, orderStatus);
 
   const openDropdown = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -621,6 +647,17 @@ export function OrdersPage() {
       } else {
         setOrders((prev) => [...prev, ...newItems]);
       }
+
+      // Automatically print KOT for incoming auto-accepted orders that haven't been printed yet
+      if (autoPrintRef.current && newItems.length > 0) {
+        for (const ord of newItems) {
+          const isPaidOrCash = ord.payment_status === 'paid' || ord.payment_method === 'cash' || ord.payment_method === 'cash_on_delivery' || ord.payment_method === 'counter';
+          const isAutoAccepted = (ord.order_status === 'ACCEPTED' || ord.order_status === 'PREPARING' || ord.order_status === 'PAID') && isPaidOrCash;
+          if (isAutoAccepted && !isOrderKotPrintedRef.current(ord.id)) {
+            handleDirectPrintKotRef.current(ord, 'full', true);
+          }
+        }
+      }
     } catch (err: any) {
       if (err.response?.status === 403) {
         setIsLocked(true);
@@ -641,16 +678,28 @@ export function OrdersPage() {
 
   // Realtime updates listener (mounted once, using stable refs)
   useEffect(() => {
-    const handleRealtimeUpdate = (e: any) => {
+    const handleRealtimeUpdate = async (e: any) => {
       const notif = e.detail;
       if (!notif) return;
       if (notif.type === 'NEW_ORDER' || notif.type === 'ORDER_STATUS') {
         fetchOrdersData(0, true);
-        if (autoPrintRef.current && notif.order) {
-          const ord = notif.order;
-          const isAwaiting = ord.order_status === 'ACCEPTED' || ord.order_status === 'PREPARING' || (ord.order_type === 'dine_in' && ord.order_status === 'PAYMENT_PENDING');
-          if (isAwaiting && !isOrderKotPrintedRef.current(ord.id)) {
-            handleDirectPrintKotRef.current(ord, 'full', true);
+        const orderId = notif.order?.id || notif.metadata?.order_id || notif.metadata?.orderId;
+        if (autoPrintRef.current && orderId && !isOrderKotPrintedRef.current(orderId)) {
+          try {
+            let ord = notif.order;
+            if (!ord || !ord.items || ord.items.length === 0) {
+              const res = await api.get(`/orders/${orderId}`);
+              ord = res.data;
+            }
+            if (ord) {
+              const isPaidOrCash = ord.payment_status === 'paid' || ord.payment_method === 'cash' || ord.payment_method === 'cash_on_delivery' || ord.payment_method === 'counter';
+              const isAutoAccepted = (ord.order_status === 'ACCEPTED' || ord.order_status === 'PREPARING' || ord.order_status === 'PAID') && isPaidOrCash;
+              if (isAutoAccepted && !isOrderKotPrintedRef.current(ord.id)) {
+                await handleDirectPrintKotRef.current(ord, 'full', true);
+              }
+            }
+          } catch (err) {
+            console.error('Auto-print KOT on realtime notification failed:', err);
           }
         }
       }
@@ -1077,9 +1126,9 @@ export function OrdersPage() {
               
               // Status booleans
               const isPendingVendor = !allItemsCancelled && (normStatus === 'PENDING_VENDOR' || normStatus === 'PENDING');
-              const isPaymentPending = !allItemsCancelled && (normStatus === 'PAYMENT_PENDING' && !isDineIn);
+              const isPaymentPending = !allItemsCancelled && normStatus === 'PAYMENT_PENDING';
               const isPaid = !allItemsCancelled && normStatus === 'PAID';
-              const isPreparing = !allItemsCancelled && (normStatus === 'PREPARING' || normStatus === 'ACCEPTED' || (normStatus === 'PAYMENT_PENDING' && isDineIn));
+              const isPreparing = !allItemsCancelled && (normStatus === 'PREPARING' || normStatus === 'ACCEPTED');
               const isReady = !allItemsCancelled && normStatus === 'READY';
               const isCompleted = !allItemsCancelled && (normStatus === 'COMPLETED' || normStatus === 'DELIVERED');
               const isCancelled = allItemsCancelled || normStatus === 'CANCELLED' || normStatus === 'REJECTED';
@@ -1155,6 +1204,7 @@ export function OrdersPage() {
                           orderId={order.id}
                           orderStatus={status}
                           paymentStatus={order.payment_status}
+                          paymentMethod={order.payment_method}
                           orderType={order.order_type}
                           onSelect={handleUpdateStatus}
                         />
@@ -1307,23 +1357,20 @@ export function OrdersPage() {
 
                         const items = (order.items || []).filter((it: any) => !it.is_cancelled);
                         const itemsSubtotal = items.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
-                        const orderTotal = Number(order.total_amount ?? itemsSubtotal);
+                        const isDelivery = order.order_type === 'delivery';
+                        const deliveryFee = (isDelivery && Number(order.total_amount) > itemsSubtotal) ? (Number(order.total_amount) - itemsSubtotal) : 0;
 
-                        let finalTotal = orderTotal;
+                        let finalTotal = itemsSubtotal + deliveryFee;
                         let taxAmount = 0;
 
                         if (isGstEnabled && totalTaxRate > 0) {
                           if (isExclusiveTax) {
                             taxAmount = Math.round((itemsSubtotal * (totalTaxRate / 100)) * 100) / 100;
-                            if (orderTotal <= itemsSubtotal + 0.05) {
-                              finalTotal = Math.round((itemsSubtotal + taxAmount) * 100) / 100;
-                            } else {
-                              finalTotal = orderTotal;
-                            }
+                            finalTotal = Math.round((itemsSubtotal + deliveryFee + taxAmount) * 100) / 100;
                           } else {
                             const taxable = itemsSubtotal / (1 + totalTaxRate / 100);
                             taxAmount = Math.round((itemsSubtotal - taxable) * 100) / 100;
-                            finalTotal = orderTotal;
+                            finalTotal = itemsSubtotal + deliveryFee;
                           }
                         }
 
@@ -1434,17 +1481,28 @@ export function OrdersPage() {
                             size="sm"
                             className="flex-1 sm:flex-none text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white h-9 shadow-xs px-4 justify-center"
                             onClick={() => {
-                              const nextStatus = order.order_type === 'dine_in' ? 'PREPARING' : 'PAYMENT_PENDING';
+                              const isCash = order.payment_method === 'cash' || order.payment_method === 'cash_on_delivery' || order.payment_method === 'counter';
+                              const nextStatus = isCash ? 'PREPARING' : 'PAYMENT_PENDING';
                               handleUpdateStatus(order.id, nextStatus);
                             }}
                             isLoading={updatingOrderId === order.id}
                           >
-                            Accept Order
+                            {order.payment_method === 'cash' || order.payment_method === 'cash_on_delivery' || order.payment_method === 'counter'
+                              ? 'Accept Order'
+                              : 'Accept & Request Payment'}
                           </Button>
                         )}
 
-                        {/* Primary Order Progress Action: Complete Order */}
-                        {!isPendingVendor && status !== 'COMPLETED' && status !== 'CANCELLED' && status !== 'REJECTED' && (
+                        {/* Awaiting Customer Payment notice in merchant action area */}
+                        {isPaymentPending && (
+                          <div className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-orange-50 border border-orange-200 text-orange-800 text-xs font-bold h-9">
+                            <Clock size={13} className="animate-spin text-orange-600" />
+                            <span>Awaiting Payment...</span>
+                          </div>
+                        )}
+
+                        {/* Complete Order */}
+                        {(isPaid || isPreparing || isReady) && (
                           <Button
                             size="sm"
                             className="flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold h-9 shadow-xs px-4 justify-center"

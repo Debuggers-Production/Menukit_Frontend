@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { ChevronLeft, Star, Loader2, Send, Gift, ShoppingCart, Plus, Minus, Trash2, AlertCircle } from 'lucide-react';
+import { ChevronLeft, Star, Loader2, Send, Gift, ShoppingCart, Plus, Minus, Trash2, AlertCircle, Crown } from 'lucide-react';
 import { triggerHaptic, HAPTIC_PATTERNS } from '@/utils/haptic';
 import { publicCache } from '@/utils/publicCache';
 import { api } from '@/services/api';
@@ -59,7 +59,43 @@ export function PublicItemPage() {
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
 
   const [isDiscountPopupOpen, setIsDiscountPopupOpen] = useState(false);
-  const [memberStatus, setMemberStatus] = useState<'unlocked' | 'verified-member' | null>(() => sessionStorage.getItem('member_status') as any);
+  const [memberStatus, setMemberStatus] = useState<'unlocked' | 'verified-member' | null>(() => {
+    if (!id) return null;
+    const s = sessionStorage.getItem(`member_status_${id}`) || sessionStorage.getItem('member_status');
+    if (s) return s as 'unlocked' | 'verified-member';
+    return null;
+  });
+
+  // Verify membership status against backend using customer token
+  useEffect(() => {
+    const checkInitialMembership = async () => {
+      const token = localStorage.getItem('customer_token');
+      if (!id) return;
+      if (!token) {
+        if (!sessionStorage.getItem(`member_status_${id}`)) {
+          setMemberStatus(null);
+        }
+        return;
+      }
+
+      try {
+        const res = await api.get(`/public/shop/${id}/check-membership`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.data?.is_strict_member) {
+          setMemberStatus('verified-member');
+          sessionStorage.setItem(`member_status_${id}`, 'verified-member');
+        } else if (res.data?.is_member) {
+          setMemberStatus('unlocked');
+          sessionStorage.setItem(`member_status_${id}`, 'unlocked');
+        } else {
+          sessionStorage.removeItem(`member_status_${id}`);
+          setMemberStatus(null);
+        }
+      } catch (err) {}
+    };
+    checkInitialMembership();
+  }, [id]);
 
   interface FlyingItem {
     id: number;
@@ -89,28 +125,24 @@ export function PublicItemPage() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Show discount unlock popup every 10 seconds if user hasn't entered their mobile number
+  // Show discount unlock popup every 10 seconds if user hasn't unlocked/registered for this shop
   useEffect(() => {
-    const hasProvidedNumber = Boolean(
-      localStorage.getItem('customer_mobile') ||
-      localStorage.getItem('customer_phone') ||
-      localStorage.getItem('customer_token') ||
+    const isShopUnlocked = Boolean(
       memberStatus === 'verified-member' ||
-      memberStatus === 'unlocked'
+      memberStatus === 'unlocked' ||
+      (id && sessionStorage.getItem(`member_status_${id}`))
     );
 
-    if (!id || hasProvidedNumber || isDiscountPopupOpen) return;
+    if (!id || isShopUnlocked || isDiscountPopupOpen) return;
 
     const timer = setTimeout(() => {
-      const stillNoNumber = !Boolean(
-        localStorage.getItem('customer_mobile') ||
-        localStorage.getItem('customer_phone') ||
-        localStorage.getItem('customer_token') ||
+      const stillNotUnlocked = !Boolean(
         memberStatus === 'verified-member' ||
-        memberStatus === 'unlocked'
+        memberStatus === 'unlocked' ||
+        (id && sessionStorage.getItem(`member_status_${id}`))
       );
 
-      if (stillNoNumber) {
+      if (stillNotUnlocked) {
         setIsDiscountPopupOpen(true);
       }
     }, 10000);
@@ -768,34 +800,34 @@ export function PublicItemPage() {
           initialStep="intro"
           onClose={() => setIsDiscountPopupOpen(false)}
           onUnlock={(customerId) => {
-            if (customerId) {
-              setMemberStatus(customerId as any);
-              sessionStorage.setItem('member_status', customerId);
-            }
+            const status = customerId || 'unlocked';
+            setMemberStatus(status as any);
+            sessionStorage.setItem(`member_status_${shop.id}`, status);
+            sessionStorage.setItem('member_status', status);
             setIsDiscountPopupOpen(false);
           }}
         />
       )}
 
-      {/* Member Verify FAB */}
-      {memberStatus !== 'verified-member' && discounts.some(d => {
-        const isUserExisting = Boolean(localStorage.getItem('customer_token') || localStorage.getItem('customer_is_existing') === 'true');
-        return d.visibility_type === 'members_only_hidden' || d.visibility_type === 'members_only_visible' || (d.visibility_type === 'unlock_required' && !isUserExisting && memberStatus === null);
-      }) && (
-        <button
-          onClick={() => setIsDiscountPopupOpen(true)}
-          className={`fixed bottom-24 right-4 sm:right-6 h-14 px-5 rounded-full bg-slate-900 text-white shadow-xl flex items-center justify-center gap-2 hover:scale-105 transition-all duration-300 z-[45] border-4 border-slate-700/50 backdrop-blur-md animate-bounce hover:animate-none ${isScrollingDown ? 'translate-y-32 opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}
-          title="Unlock Member Offers"
-        >
-          <Gift size={24} className="animate-pulse text-yellow-400" />
-          <span className="font-bold text-sm">Offers!</span>
-
-          <span className="absolute -top-1 -right-1 flex h-4 w-4">
+      {/* Offers Crown Floating Button */}
+      <button
+        onClick={() => setIsDiscountPopupOpen(true)}
+        className={`fixed bottom-24 right-4 sm:right-6 w-14 h-14 rounded-full text-white shadow-xl flex items-center justify-center hover:scale-105 transition-all duration-300 z-[45] border-4 border-white/50 backdrop-blur-md cursor-pointer ${
+          memberStatus === 'verified-member' 
+            ? 'bg-gradient-to-tr from-amber-500 to-amber-400' 
+            : 'animate-bounce hover:animate-none'
+        } ${isScrollingDown ? 'translate-y-32 opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}
+        style={memberStatus !== 'verified-member' ? { backgroundColor: shop?.theme?.primary_color || '#f97316' } : undefined}
+        title={memberStatus === 'verified-member' ? "Hotel Member Active" : "Exclusive Member Offers"}
+      >
+        <Crown size={24} className="text-white" />
+        {memberStatus !== 'verified-member' && (
+          <span className="absolute top-0 right-0 flex h-4 w-4">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-4 w-4 bg-red-500 border-2 border-slate-900"></span>
+            <span className="relative inline-flex rounded-full h-4 w-4 bg-red-500 border-2 border-white"></span>
           </span>
-        </button>
-      )}
+        )}
+      </button>
 
       {/* Bottom Actions Bar */}
       {item && (

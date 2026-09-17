@@ -234,32 +234,28 @@ export function OrderStatusPage() {
         const cgstRate = Number(shop.settings.cgst_rate || 0);
         const sgstRate = Number(shop.settings.sgst_rate || 0);
         const totalTaxRate = cgstRate + sgstRate;
-        const gross = Number(order.total_amount || 0);
         const items = (order.items || []).filter((it: any) => !it.is_cancelled);
         const itemsSubtotal = items.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+        const baseFoodAmount = itemsSubtotal > 0 ? itemsSubtotal : Number(order.total_amount || 0);
 
         if (totalTaxRate > 0) {
-          let taxable = gross;
+          let taxable = baseFoodAmount;
           let totalTax = 0;
           let cgst = 0;
           let sgst = 0;
           if (shop.settings.inclusive_tax) {
-            taxable = Math.round((gross / (1 + totalTaxRate / 100)) * 100) / 100;
-            totalTax = Math.round((gross - taxable) * 100) / 100;
+            taxable = Math.round((baseFoodAmount / (1 + totalTaxRate / 100)) * 100) / 100;
+            totalTax = Math.round((baseFoodAmount - taxable) * 100) / 100;
             cgst = Math.round((totalTax * (cgstRate / totalTaxRate)) * 100) / 100;
             sgst = Math.round((totalTax - cgst) * 100) / 100;
-            grandTotalToPrint = gross;
+            grandTotalToPrint = baseFoodAmount;
           } else {
             // Exclusive: Tax is added on top of food items
-            taxable = itemsSubtotal > 0 ? itemsSubtotal : Math.round((gross / (1 + totalTaxRate / 100)) * 100) / 100;
+            taxable = baseFoodAmount;
             cgst = Math.round((taxable * (cgstRate / 100)) * 100) / 100;
             sgst = Math.round((taxable * (sgstRate / 100)) * 100) / 100;
             totalTax = Math.round((cgst + sgst) * 100) / 100;
-            if (gross >= taxable + totalTax - 0.05) {
-              grandTotalToPrint = gross;
-            } else {
-              grandTotalToPrint = Math.round((taxable + totalTax) * 100) / 100;
-            }
+            grandTotalToPrint = Math.round((taxable + totalTax) * 100) / 100;
           }
           doc.text(`Taxable: ${shop?.settings?.currency || 'Rs'}.${taxable.toFixed(2)}`, 12, nextY);
           doc.text(`CGST (${cgstRate}%): ${shop?.settings?.currency || 'Rs'}.${cgst.toFixed(2)}`, 80, nextY);
@@ -731,35 +727,50 @@ export function OrderStatusPage() {
             <div className="flex justify-between text-slate-700 dark:text-slate-350">
               <span>Item total</span>
               <span className="font-black text-slate-900 dark:text-white">
-                {shop?.settings?.currency || '₹'}{(order.items.reduce((acc: number, it: any) => acc + (it.price * it.quantity), 0)).toFixed(2)}
+                {shop?.settings?.currency || '₹'}{((order.items || []).filter((it: any) => !it.is_cancelled).reduce((acc: number, it: any) => acc + (Number(it.price) * Number(it.quantity)), 0)).toFixed(2)}
               </span>
             </div>
             
-            {Number(order.total_amount) > order.items.reduce((acc: number, it: any) => acc + (it.price * it.quantity), 0) && (
-              <div className="flex justify-between text-slate-700 dark:text-slate-350">
-                <span>Delivery partner fee</span>
-                <span className="font-black text-slate-900 dark:text-white">
-                  {shop?.settings?.currency || '₹'}{(Number(order.total_amount) - order.items.reduce((acc: number, it: any) => acc + (it.price * it.quantity), 0)).toFixed(2)}
-                </span>
-              </div>
-            )}
+            {order.order_type === 'delivery' && (() => {
+              const itemsSubtotal = (order.items || []).filter((it: any) => !it.is_cancelled).reduce((acc: number, it: any) => acc + (Number(it.price) * Number(it.quantity)), 0);
+              const diff = Number(order.total_amount) - itemsSubtotal;
+              if (diff > 0.01) {
+                return (
+                  <div className="flex justify-between text-slate-700 dark:text-slate-350">
+                    <span>Delivery partner fee</span>
+                    <span className="font-black text-slate-900 dark:text-white">
+                      {shop?.settings?.currency || '₹'}{diff.toFixed(2)}
+                    </span>
+                  </div>
+                );
+              }
+              return null;
+            })()}
             
-            {order.payment_method === 'online' && (
-              <>
-                <div className="flex justify-between text-slate-700 dark:text-slate-350">
-                  <span>Platform fee</span>
-                  <span className="font-black text-slate-900 dark:text-white">
-                    {shop?.settings?.currency || '₹'}{(Number(order.total_amount) * 0.02).toFixed(2)}
-                  </span>
-                </div>
-                <div className="flex justify-between text-slate-700 dark:text-slate-350">
-                  <span>Payment gateway fee</span>
-                  <span className="font-black text-slate-900 dark:text-white">
-                    {shop?.settings?.currency || '₹'}{(Number(order.total_amount) * 0.03 + (Number(order.total_amount) * 0.03) * 0.18).toFixed(2)}
-                  </span>
-                </div>
-              </>
-            )}
+            {order.payment_method === 'online' && (() => {
+              const itemsSub = (order.items || []).filter((it: any) => !it.is_cancelled).reduce((acc: number, it: any) => acc + (Number(it.price) * Number(it.quantity)), 0);
+              const baseAmt = itemsSub > 0 ? itemsSub : Number(order.total_amount || 0);
+              const pFee = Number((baseAmt * 0.02).toFixed(2));
+              const pgFee = Number((baseAmt * 0.03).toFixed(2));
+              const gstFee = Number((pgFee * 0.18).toFixed(2));
+              const totalPgFee = Number((pgFee + gstFee).toFixed(2));
+              return (
+                <>
+                  <div className="flex justify-between text-slate-700 dark:text-slate-350">
+                    <span>Platform fee</span>
+                    <span className="font-black text-slate-900 dark:text-white">
+                      {shop?.settings?.currency || '₹'}{pFee.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-slate-700 dark:text-slate-350">
+                    <span>Payment gateway fee</span>
+                    <span className="font-black text-slate-900 dark:text-white">
+                      {shop?.settings?.currency || '₹'}{totalPgFee.toFixed(2)}
+                    </span>
+                  </div>
+                </>
+              );
+            })()}
 
             {Number(order.total_amount) < order.items.reduce((acc: number, it: any) => acc + (it.price * it.quantity), 0) && (
               <div className="flex justify-between font-bold text-emerald-600 dark:text-emerald-400">
@@ -773,23 +784,23 @@ export function OrderStatusPage() {
               const cgstRate = Number(shop.settings.cgst_rate || 0);
               const sgstRate = Number(shop.settings.sgst_rate || 0);
               const totalTaxRate = cgstRate + sgstRate;
-              const gross = Number(order.total_amount || 0);
               if (totalTaxRate <= 0) return null;
 
               const items = (order.items || []).filter((it: any) => !it.is_cancelled);
               const itemsSubtotal = items.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+              const baseFoodAmount = itemsSubtotal > 0 ? itemsSubtotal : Number(order.total_amount || 0);
 
-              let taxable = gross;
+              let taxable = baseFoodAmount;
               let cgst = 0;
               let sgst = 0;
               if (shop.settings.inclusive_tax) {
-                taxable = Math.round((gross / (1 + totalTaxRate / 100)) * 100) / 100;
-                const totalTax = Math.round((gross - taxable) * 100) / 100;
+                taxable = Math.round((baseFoodAmount / (1 + totalTaxRate / 100)) * 100) / 100;
+                const totalTax = Math.round((baseFoodAmount - taxable) * 100) / 100;
                 cgst = Math.round((totalTax * (cgstRate / totalTaxRate)) * 100) / 100;
                 sgst = Math.round((totalTax - cgst) * 100) / 100;
               } else {
                 // Exclusive mode: items subtotal is taxable turnover
-                taxable = itemsSubtotal > 0 ? itemsSubtotal : Math.round((gross / (1 + totalTaxRate / 100)) * 100) / 100;
+                taxable = baseFoodAmount;
                 cgst = Math.round((taxable * (cgstRate / 100)) * 100) / 100;
                 sgst = Math.round((taxable * (sgstRate / 100)) * 100) / 100;
               }
@@ -799,11 +810,11 @@ export function OrderStatusPage() {
                     <span>Taxable Turnover</span>
                     <span className="font-bold">{shop?.settings?.currency || '₹'}{taxable.toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between text-slate-700 dark:text-slate-300">
+                  <div className="flex justify-between text-slate-700 dark:text-slate-350">
                     <span>CGST ({cgstRate}%)</span>
                     <span className="font-bold">{shop?.settings?.currency || '₹'}{cgst.toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between text-slate-700 dark:text-slate-300">
+                  <div className="flex justify-between text-slate-700 dark:text-slate-350">
                     <span>SGST ({sgstRate}%)</span>
                     <span className="font-bold">{shop?.settings?.currency || '₹'}{sgst.toFixed(2)}</span>
                   </div>
@@ -844,16 +855,24 @@ export function OrderStatusPage() {
 
                 const items = (order.items || []).filter((it: any) => !it.is_cancelled);
                 const itemsSubtotal = items.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
-                let baseOrderAmount = Number(order.total_amount || 0);
+                let baseOrderAmount = itemsSubtotal > 0 ? itemsSubtotal : Number(order.total_amount || 0);
 
-                if (isExclusive && totalTaxRate > 0 && baseOrderAmount <= itemsSubtotal + 0.05) {
+                if (isExclusive && totalTaxRate > 0) {
                   const tax = Math.round((itemsSubtotal * (totalTaxRate / 100)) * 100) / 100;
                   baseOrderAmount = Math.round((itemsSubtotal + tax) * 100) / 100;
                 }
 
-                const finalPayable = order.payment_method === 'online'
-                  ? (baseOrderAmount + baseOrderAmount * 0.02 + baseOrderAmount * 0.03 + (baseOrderAmount * 0.03) * 0.18)
-                  : baseOrderAmount;
+                if (order.order_type === 'delivery' && Number(order.total_amount) > itemsSubtotal) {
+                  baseOrderAmount += (Number(order.total_amount) - itemsSubtotal);
+                }
+
+                let finalPayable = baseOrderAmount;
+                if (order.payment_method === 'online') {
+                  const pFee = Number((baseOrderAmount * 0.02).toFixed(2));
+                  const pgFee = Number((baseAmt => baseAmt * 0.03)(baseOrderAmount).toFixed(2));
+                  const gstFee = Number((pgFee * 0.18).toFixed(2));
+                  finalPayable = Number((baseOrderAmount + pFee + pgFee + gstFee).toFixed(2));
+                }
 
                 return `${shop?.settings?.currency || '₹'}${finalPayable.toFixed(2)}`;
               })()}

@@ -181,7 +181,7 @@ export function SettlementsPage() {
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-snug max-w-2xl">
-                  Online payments received for Takeaway & Delivery orders are settled within <strong>7 working days</strong> to your registered payout account.
+                  Online payments received for Takeaway, Dine In & Delivery orders are settled within <strong>7 working days</strong> to your registered payout account.
                 </p>
                 {summary?.bank_account_last4 ? (
                   <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 mt-2">

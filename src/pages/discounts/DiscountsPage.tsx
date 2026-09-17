@@ -1,3 +1,4 @@
+import { cn } from '@/utils/cn';
 import { LinkifiedText } from '../../components/LinkifiedText';
 import { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
@@ -157,27 +158,30 @@ export function DiscountsPage() {
  const [categories, setCategories] = useState<Category[]>([]);
  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
  const [isLoading, setIsLoading] = useState(() => cachedDiscounts.length === 0);
- 
- // Pagination
- const [skip, setSkip] = useState(0);
- const [hasMore, setHasMore] = useState(true);
- const [isLoadingMore, setIsLoadingMore] = useState(false);
- const limit = 100;
 
- const [isModalOpen, setIsModalOpen] = useState(false);
- const [isChooseTypeModalOpen, setIsChooseTypeModalOpen] = useState(false);
- const [currentStep, setCurrentStep] = useState(1);
- const [editingDiscount, setEditingDiscount] = useState<Discount | null>(null);
- const [isSubmitting, setIsSubmitting] = useState(false);
- const [formData, setFormData] = useState(defaultForm);
- const [discountToDelete, setDiscountToDelete] = useState<string | null>(null);
- const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
- const [isDeletingAll, setIsDeletingAll] = useState(false);
- const [isDeleting, setIsDeleting] = useState(false);
- const [isFabOpen, setIsFabOpen] = useState(false);
- const [modalCategory, setModalCategory] = useState<'discount' | 'combo' | 'free_item'>('discount');
- const [itemSearchQuery, setItemSearchQuery] = useState('');
- const [isSearchingItems, setIsSearchingItems] = useState(false);
+  // Pagination
+  const [skip, setSkip] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const limit = 100;
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isChooseTypeModalOpen, setIsChooseTypeModalOpen] = useState(false);
+  const [currentStep, setCurrentStep] = useState(1);
+  const [editingDiscount, setEditingDiscount] = useState<Discount | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formData, setFormData] = useState(defaultForm);
+  const [discountToDelete, setDiscountToDelete] = useState<string | null>(null);
+  const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isFabOpen, setIsFabOpen] = useState(false);
+  const [modalCategory, setModalCategory] = useState<'discount' | 'combo' | 'free_item'>('discount');
+  const [itemSearchQuery, setItemSearchQuery] = useState('');
+  const [isSearchingItems, setIsSearchingItems] = useState(false);
+  const [rewardItemSearchQuery, setRewardItemSearchQuery] = useState('');
+  const [isSearchingRewardItems, setIsSearchingRewardItems] = useState(false);
+  const [rewardAppliesTo, setRewardAppliesTo] = useState<'same' | 'category' | 'items'>('same');
 
   // Verification & Redemption Modal State
   const [isVerifyModalOpen, setIsVerifyModalOpen] = useState(false);
@@ -288,7 +292,7 @@ export function DiscountsPage() {
         const fetchedItems: MenuItem[] = res.data || [];
 
         setMenuItems(prev => {
-          const selected = prev.filter(item => formData.target_ids.includes(item.id));
+          const selected = prev.filter(item => formData.target_ids.includes(item.id) || (formData.reward_target_ids && formData.reward_target_ids.includes(item.id)));
           const result = [...fetchedItems];
           for (const item of selected) {
             if (!result.some(r => r.id === item.id)) {
@@ -306,6 +310,38 @@ export function DiscountsPage() {
 
     return () => clearTimeout(timer);
   }, [itemSearchQuery, isModalOpen, formData.applies_to]);
+
+  // Backend search for Reward Items
+  useEffect(() => {
+    if (!isModalOpen || (formData.discount_type !== 'bogo' && formData.discount_type !== 'free_item')) return;
+    if (!rewardItemSearchQuery.trim()) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        setIsSearchingRewardItems(true);
+        const params: Record<string, any> = { limit: 100, search: rewardItemSearchQuery.trim() };
+        const res = await api.get('/menu-items', { params });
+        const fetchedItems: MenuItem[] = res.data || [];
+
+        setMenuItems(prev => {
+          const selected = prev.filter(item => formData.target_ids.includes(item.id) || (formData.reward_target_ids && formData.reward_target_ids.includes(item.id)));
+          const result = [...fetchedItems];
+          for (const item of selected) {
+            if (!result.some(r => r.id === item.id)) {
+              result.unshift(item);
+            }
+          }
+          return result;
+        });
+      } catch (err) {
+        console.error('Failed to search reward menu items from backend', err);
+      } finally {
+        setIsSearchingRewardItems(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [rewardItemSearchQuery, isModalOpen, formData.discount_type]);
 
 
 
@@ -352,6 +388,13 @@ export function DiscountsPage() {
         is_active: targetDiscount.is_active ?? true,
         visibility_type: targetDiscount.visibility_type || 'everyone',
       });
+      const hasRewardTargets = targetDiscount.reward_target_ids && targetDiscount.reward_target_ids.length > 0;
+      if (hasRewardTargets && targetDiscount.discount_type === 'bogo') {
+        const isCat = categories.some(c => targetDiscount.reward_target_ids!.includes(c.id));
+        setRewardAppliesTo(isCat ? 'category' : 'items');
+      } else {
+        setRewardAppliesTo('same');
+      }
     } else {
       const type = typeof defaultType === 'string' ? defaultType : 'percentage';
       setModalCategory(
@@ -362,6 +405,7 @@ export function DiscountsPage() {
           : 'combo'
       );
       setEditingDiscount(null);
+      setRewardAppliesTo('same');
       setFormData({
         ...defaultForm,
         code: '',
@@ -371,6 +415,7 @@ export function DiscountsPage() {
       });
     }
     setItemSearchQuery('');
+    setRewardItemSearchQuery('');
     setCurrentStep(1);
     setIsModalOpen(true);
   };
@@ -756,9 +801,9 @@ export function DiscountsPage() {
  {d.discount_type === 'combo'&& <><Layers size={12} className="text-muted-foreground" /> {currencySymbol}{d.discount_value} Combo</>}
  {d.discount_type === 'free_item'&& <><Gift size={12} className="text-rose-500" /> Free Item {d.discount_value ? `(Min. ${currencySymbol}${d.discount_value})` : ''}</>}
  </span>
- {d.discount_type === 'free_item' && d.reward_target_ids && d.reward_target_ids.length > 0 && (
- <span className="flex items-center gap-1 sm:gap-1.5 bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 px-2 py-1 rounded-md border border-rose-200 dark:border-rose-800/40">
- <Gift size={12} /> {d.reward_target_ids.length} gift item{d.reward_target_ids.length > 1 ? 's' : ''}
+ {d.discount_type === 'bogo' && d.reward_target_ids && d.reward_target_ids.length > 0 && (
+ <span className="flex items-center gap-1 sm:gap-1.5 bg-indigo-50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300 px-2 py-1 rounded-md border border-indigo-200 dark:border-indigo-800/40">
+ <Gift size={12} /> {d.reward_target_ids.length} reward {categories.some(c => d.reward_target_ids!.includes(c.id)) ? `categor${d.reward_target_ids.length > 1 ? 'ies' : 'y'}` : `item${d.reward_target_ids.length > 1 ? 's' : ''}`}
  </span>
  )}
  <span className="flex items-center gap-1 sm:gap-1.5 bg-muted/50 px-2 py-1 rounded-md border border-border">
@@ -1262,6 +1307,210 @@ export function DiscountsPage() {
   )}
  </div>
 
+                {/* Reward Items Selection for BOGO */}
+                {formData.discount_type === 'bogo' && (
+                  <div className="space-y-3 pt-3 border-t border-border mt-4">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
+                        <Gift size={15} className="text-indigo-500" />
+                        <span>Get these items (Reward / Free Item) *</span>
+                      </label>
+                      <span className="text-[11px] text-muted-foreground font-medium">
+                        {rewardAppliesTo === 'same'
+                          ? 'Same item free'
+                          : rewardAppliesTo === 'category'
+                          ? `${formData.reward_target_ids.length} categor${formData.reward_target_ids.length === 1 ? 'y' : 'ies'} selected`
+                          : `${formData.reward_target_ids.length} item${formData.reward_target_ids.length === 1 ? '' : 's'} selected`}
+                      </span>
+                    </div>
+
+                    {/* Mode Toggle: Same Item vs Category vs Choose Free Item(s) */}
+                    <div className="grid grid-cols-3 bg-muted/60 p-1 rounded-xl gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRewardAppliesTo('same');
+                          setFormData({ ...formData, reward_target_ids: [] });
+                        }}
+                        className={cn(
+                          "py-2 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer",
+                          rewardAppliesTo === 'same'
+                            ? "bg-background shadow-sm text-foreground ring-1 ring-border dark:bg-slate-700"
+                            : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        <Sparkles size={13} className="text-indigo-500" />
+                        <span>Same Item</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRewardAppliesTo('category');
+                          const catIds = categories.map(c => c.id);
+                          const validCats = formData.reward_target_ids.filter(id => catIds.includes(id));
+                          setFormData({ ...formData, reward_target_ids: validCats });
+                        }}
+                        className={cn(
+                          "py-2 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer",
+                          rewardAppliesTo === 'category'
+                            ? "bg-background shadow-sm text-foreground ring-1 ring-border dark:bg-slate-700"
+                            : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        <Layers size={13} className="text-indigo-500" />
+                        <span>Categories</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRewardAppliesTo('items');
+                          const itemIds = menuItems.map(i => i.id);
+                          const validItems = formData.reward_target_ids.filter(id => itemIds.includes(id));
+                          setFormData({ ...formData, reward_target_ids: validItems });
+                        }}
+                        className={cn(
+                          "py-2 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer",
+                          rewardAppliesTo === 'items'
+                            ? "bg-background shadow-sm text-foreground ring-1 ring-border dark:bg-slate-700"
+                            : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        <Gift size={13} className="text-amber-500" />
+                        <span>Items</span>
+                      </button>
+                    </div>
+
+                    {rewardAppliesTo === 'same' && (
+                      <div className="p-3 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-800/30 flex items-center gap-2.5 text-xs text-indigo-900 dark:text-indigo-300 font-medium">
+                        <CheckCircle2 size={16} className="text-indigo-600 dark:text-indigo-400 shrink-0" />
+                        <span>
+                          Customer gets the <strong>same dish</strong> they purchased for free (e.g. Buy 2 Burgers, Get 1 Burger Free).
+                        </span>
+                      </div>
+                    )}
+
+                    {rewardAppliesTo === 'category' && (
+                      <div className="flex flex-col gap-2 p-3 bg-muted/50 rounded-xl border border-border">
+                        <div className="flex items-center justify-between text-xs text-muted-foreground px-0.5 mb-1">
+                          <span className="font-semibold text-foreground">Select Reward Category (Free dish from this category):</span>
+                          {formData.reward_target_ids.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setFormData({ ...formData, reward_target_ids: [] })}
+                              className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline font-semibold"
+                            >
+                              Clear Selection
+                            </button>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto">
+                          {categories.length === 0 ? (
+                            <p className="text-xs text-muted-foreground">No categories found</p>
+                          ) : (
+                            categories.map(cat => {
+                              const isSelected = formData.reward_target_ids.includes(cat.id);
+                              return (
+                                <button
+                                  key={`reward-cat-${cat.id}`}
+                                  type="button"
+                                  onClick={() => {
+                                    const newTargets = isSelected
+                                      ? formData.reward_target_ids.filter(id => id !== cat.id)
+                                      : [...formData.reward_target_ids, cat.id];
+                                    setFormData({ ...formData, reward_target_ids: newTargets });
+                                  }}
+                                  className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                                    isSelected
+                                      ? 'bg-indigo-600 text-white shadow-sm'
+                                      : 'bg-background text-muted-foreground border border-border hover:border-indigo-400'
+                                  }`}
+                                >
+                                  {isSelected && <X size={10} />}
+                                  {cat.name}
+                                </button>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {rewardAppliesTo === 'items' && (
+                      <div className="flex flex-col gap-2 p-3 bg-muted/50 rounded-xl border border-border">
+                        <div className="flex items-center justify-between text-xs text-muted-foreground px-0.5">
+                          <span className="font-semibold text-foreground">Select Free/Reward Item(s):</span>
+                          {formData.reward_target_ids.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setFormData({ ...formData, reward_target_ids: [] })}
+                              className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline font-semibold"
+                            >
+                              Clear Selection
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="relative">
+                          {isSearchingRewardItems ? (
+                            <Loader2 size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-primary animate-spin" />
+                          ) : (
+                            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                          )}
+                          <input
+                            type="text"
+                            placeholder="Search reward items..."
+                            value={rewardItemSearchQuery}
+                            onChange={e => setRewardItemSearchQuery(e.target.value)}
+                            className="w-full pl-8 pr-8 py-1.5 text-sm rounded-lg border border-border bg-background shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                          />
+                          {rewardItemSearchQuery && (
+                            <button
+                              type="button"
+                              onClick={() => setRewardItemSearchQuery('')}
+                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                            >
+                              <X size={12} />
+                            </button>
+                          )}
+                        </div>
+
+                        <div className={`flex flex-col gap-1 max-h-48 overflow-y-auto pr-1 transition-opacity ${isSearchingRewardItems ? 'opacity-60' : ''}`}>
+                          {menuItems.length === 0 ? (
+                            <p className="text-xs text-muted-foreground py-2 text-center">
+                              {isSearchingRewardItems ? 'Searching items...' : 'No items found'}
+                            </p>
+                          ) : (
+                            menuItems
+                              .filter(i => formData.reward_target_ids.includes(i.id) || !rewardItemSearchQuery.trim() || i.name.toLowerCase().includes(rewardItemSearchQuery.toLowerCase()))
+                              .map(item => (
+                                <label
+                                  key={`reward-${item.id}`}
+                                  className={cn(
+                                    "flex items-center gap-2.5 p-2 rounded-lg cursor-pointer hover:bg-muted dark:hover:bg-slate-700 transition-colors",
+                                    formData.reward_target_ids.includes(item.id) ? "bg-indigo-50 dark:bg-indigo-950/40 font-semibold" : ""
+                                  )}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={formData.reward_target_ids.includes(item.id)}
+                                    onChange={() => {
+                                      const newTargets = formData.reward_target_ids.includes(item.id)
+                                        ? formData.reward_target_ids.filter(id => id !== item.id)
+                                        : [...formData.reward_target_ids, item.id];
+                                      setFormData({ ...formData, reward_target_ids: newTargets });
+                                    }}
+                                    className="w-4 h-4 rounded accent-indigo-600"
+                                  />
+                                  <span className="text-sm text-foreground line-clamp-1">{item.name}</span>
+                                  <span className="ml-auto text-xs text-muted-foreground font-mono">{currencySymbol}{item.price}</span>
+                                </label>
+                              ))
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
  <div className="p-4 rounded-xl border border-border bg-muted/50 mt-4 transition-all">
  <div className="flex items-center gap-1.5 mb-4">

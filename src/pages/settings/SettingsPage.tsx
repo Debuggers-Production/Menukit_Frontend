@@ -655,12 +655,16 @@ export function SettingsPage() {
     setIsSavingSettings(true);
     try {
       const status = liveRazorpayStatus || shop?.settings?.razorpay_route_status;
-      const isVerified = status === 'activated' || status === 'active';
+      const isVerified = Boolean(shop?.settings?.bank_account_last4) && (status === 'activated' || status === 'active');
       
       const payload = {
         ...settingsData,
         // Forcefully disable if not verified to prevent backend 400 errors if it was previously enabled
-        online_payments_enabled: isVerified ? settingsData.online_payments_enabled : false
+        online_payments_enabled: isVerified ? settingsData.online_payments_enabled : false,
+        dinein_enabled: isVerified ? settingsData.dinein_enabled : false,
+        takeaway_enabled: isVerified ? settingsData.takeaway_enabled : false,
+        delivery_enabled: isVerified ? settingsData.delivery_enabled : false,
+        auto_accept_orders: isVerified ? settingsData.auto_accept_orders : false,
       };
       
       const res = await api.put('/shops/me/settings', payload);
@@ -1248,49 +1252,125 @@ export function SettingsPage() {
           {/* =========================================
               ORDERING CHANNELS TAB
           ========================================= */}
-          {activeTab === 'ordering' && (
-            <div className="space-y-6 animate-in fade-in duration-300">
-              <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs">
-                <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-slate-50/50 dark:bg-slate-900/50">
-                  <CardTitle className="text-base font-bold">Fulfillment Modes</CardTitle>
-                  <CardDescription className="text-xs">Toggle available channels and auto-acceptance rules.</CardDescription>
-                </CardHeader>
-                <CardContent className="p-4 sm:p-6 divide-y divide-slate-100 dark:divide-slate-800">
-                  <SettingRow
-                    icon={QrCode}
-                    title="Enable Dine-In Channel"
-                    description="Allow customers to order directly from table QR codes."
-                    checked={settingsData.dinein_enabled}
-                    onChange={(c) => setSettingsData(prev => ({ ...prev, dinein_enabled: c }))}
-                  />
+          {activeTab === 'ordering' && (() => {
+            const status = liveRazorpayStatus || shop?.settings?.razorpay_route_status;
+            const isBankVerified = Boolean(shop?.settings?.bank_account_last4) && (status === 'activated' || status === 'active');
 
-                  <SettingRow
-                    icon={ShoppingBag}
-                    title="Enable Takeaway Channel"
-                    description="Allow customers to pre-order food and pick up in store."
-                    checked={settingsData.takeaway_enabled}
-                    onChange={(c) => setSettingsData(prev => ({ ...prev, takeaway_enabled: c }))}
-                  />
+            return (
+              <div className="space-y-6 animate-in fade-in duration-300">
+                {!isBankVerified && (
+                  <div className="p-4 bg-amber-50/90 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xs">
+                    <div className="flex items-start gap-3.5">
+                      <div className="p-2.5 rounded-xl bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 shrink-0 mt-0.5">
+                        <AlertCircle size={20} />
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-bold text-amber-900 dark:text-amber-200">
+                            Bank Account & Verification Required
+                          </h4>
+                          <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-amber-200/70 dark:bg-amber-900/70 text-amber-800 dark:text-amber-300">
+                            Action Needed
+                          </span>
+                        </div>
+                        <p className="text-xs text-amber-700 dark:text-amber-300/90 font-medium leading-relaxed max-w-2xl">
+                          {!shop?.settings?.bank_account_last4
+                            ? "To enable ordering channels (Dine-In, Takeaway, Delivery) and receive customer payouts, you must add and link your settlement bank account."
+                            : "Your settlement bank account details have been submitted and are currently under verification. Ordering channels will unlock automatically once active."}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => setActiveTab('payments')}
+                      className="shrink-0 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-xs px-4 h-9 self-stretch sm:self-auto flex items-center justify-center gap-1.5"
+                    >
+                      <CreditCard size={15} />
+                      <span>{!shop?.settings?.bank_account_last4 ? "Add Bank Account" : "View Bank Verification"}</span>
+                    </Button>
+                  </div>
+                )}
 
-                  <SettingRow
-                    icon={Truck}
-                    title="Enable Delivery Channel"
-                    description="Allow customers to place orders for doorstep home delivery."
-                    checked={settingsData.delivery_enabled}
-                    onChange={(c) => setSettingsData(prev => ({ ...prev, delivery_enabled: c }))}
-                  />
+                <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs">
+                  <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-slate-50/50 dark:bg-slate-900/50">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <CardTitle className="text-base font-bold">Fulfillment Modes</CardTitle>
+                        <CardDescription className="text-xs">Toggle available channels and auto-acceptance rules.</CardDescription>
+                      </div>
+                      {!isBankVerified && (
+                        <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/60 px-2.5 py-1 rounded-lg flex items-center gap-1">
+                          <Lock size={12} />
+                          Locked
+                        </span>
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent className="p-4 sm:p-6 divide-y divide-slate-100 dark:divide-slate-800">
+                    <SettingRow
+                      icon={QrCode}
+                      title="Enable Dine-In Channel"
+                      description="Allow customers to order directly from table QR codes."
+                      checked={isBankVerified && settingsData.dinein_enabled}
+                      onChange={(c) => {
+                        if (isBankVerified) {
+                          setSettingsData(prev => ({ ...prev, dinein_enabled: c }));
+                        } else {
+                          toast.error("Please add and verify your settlement bank account to enable Dine-In ordering.");
+                        }
+                      }}
+                      disabled={!isBankVerified}
+                    />
 
-                  <SettingRow
-                    icon={Zap}
-                    title="Auto Accept Incoming Orders"
-                    description="Automatically confirm incoming orders without manual approval."
-                    checked={settingsData.auto_accept_orders}
-                    onChange={(c) => setSettingsData(prev => ({ ...prev, auto_accept_orders: c }))}
-                  />
-                </CardContent>
-              </Card>
+                    <SettingRow
+                      icon={ShoppingBag}
+                      title="Enable Takeaway Channel"
+                      description="Allow customers to pre-order food and pick up in store."
+                      checked={isBankVerified && settingsData.takeaway_enabled}
+                      onChange={(c) => {
+                        if (isBankVerified) {
+                          setSettingsData(prev => ({ ...prev, takeaway_enabled: c }));
+                        } else {
+                          toast.error("Please add and verify your settlement bank account to enable Takeaway ordering.");
+                        }
+                      }}
+                      disabled={!isBankVerified}
+                    />
 
-              {settingsData.delivery_enabled && (
+                    <SettingRow
+                      icon={Truck}
+                      title="Enable Delivery Channel"
+                      description="Allow customers to place orders for doorstep home delivery."
+                      checked={isBankVerified && settingsData.delivery_enabled}
+                      onChange={(c) => {
+                        if (isBankVerified) {
+                          setSettingsData(prev => ({ ...prev, delivery_enabled: c }));
+                        } else {
+                          toast.error("Please add and verify your settlement bank account to enable Delivery ordering.");
+                        }
+                      }}
+                      disabled={!isBankVerified}
+                    />
+
+                    <SettingRow
+                      icon={Zap}
+                      title="Auto Accept Incoming Orders"
+                      description="Automatically confirm incoming orders without manual approval."
+                      checked={isBankVerified && settingsData.auto_accept_orders}
+                      onChange={(c) => {
+                        if (isBankVerified) {
+                          setSettingsData(prev => ({ ...prev, auto_accept_orders: c }));
+                        } else {
+                          toast.error("Please add and verify your settlement bank account first.");
+                        }
+                      }}
+                      disabled={!isBankVerified}
+                    />
+                  </CardContent>
+                </Card>
+
+                {isBankVerified && settingsData.delivery_enabled && (
                 <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs border-amber-200/60 dark:border-amber-900/40">
                   <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-amber-50/30 dark:bg-amber-900/10">
                     <div className="flex items-center gap-2">
@@ -1372,9 +1452,10 @@ export function SettingsPage() {
                     </div>
                   </CardContent>
                 </Card>
-              )}
-            </div>
-          )}
+                )}
+              </div>
+            );
+          })()}
 
           {/* =========================================
               DISCOVERY TAB
@@ -1545,7 +1626,7 @@ export function SettingsPage() {
                           <SettingRow
                             icon={Zap}
                             title="Accept Online Payments via Gateway"
-                            description="Enable online checkout (UPI, Cards, Netbanking) for Takeaway & Delivery."
+                            description="Enable online checkout (UPI, Cards, Netbanking) for Takeaway, Dine In & Delivery."
                             checked={settingsData.online_payments_enabled && isVerified}
                             onChange={(c) => {
                               if (isVerified) {

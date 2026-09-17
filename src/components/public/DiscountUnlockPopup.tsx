@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Gift, Phone, ShieldCheck, User, ChevronDown, X } from 'lucide-react';
+import { Gift, Phone, ShieldCheck, User, ChevronDown, X, Crown, Sparkles } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { triggerHaptic, HAPTIC_PATTERNS } from '@/utils/haptic';
 import { customerService } from '../../services/customers';
@@ -19,12 +19,12 @@ interface DiscountUnlockPopupProps {
   shopId: string;
   onClose: () => void;
   onUnlock: (customerId: string | null, isExisting?: boolean) => void;
-  /** Skip the intro/offers screen and go straight to phone entry */
-  initialStep?: 'intro' | 'mobile' | 'otp';
+  /** Skip the intro/offers screen and go straight to phone entry or already unlocked */
+  initialStep?: 'intro' | 'mobile' | 'otp' | 'already_unlocked';
 }
 
 export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId, onClose, onUnlock, initialStep = 'intro' }) => {
-  const [step, setStep] = useState<'intro' | 'mobile' | 'otp' | 'name' | 'success' | 'no_offers'>(() => {
+  const [step, setStep] = useState<'intro' | 'mobile' | 'otp' | 'name' | 'success' | 'no_offers' | 'already_unlocked'>(() => {
     try {
       const saved = localStorage.getItem('pending_otp_verification');
       if (saved) {
@@ -34,6 +34,16 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
         }
       }
     } catch (e) {}
+    if (initialStep === 'intro') {
+      const isShopUnlocked = Boolean(
+        sessionStorage.getItem(`member_status_${shopId}`) ||
+        sessionStorage.getItem('member_status') ||
+        localStorage.getItem('customer_token')
+      );
+      if (isShopUnlocked) {
+        return 'already_unlocked';
+      }
+    }
     return initialStep;
   });
   const [mobileNumber, setMobileNumber] = useState(() => {
@@ -46,6 +56,11 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
         }
       }
     } catch (e) {}
+    const savedMobile = localStorage.getItem('customer_mobile') || localStorage.getItem('customer_phone') || '';
+    if (savedMobile) {
+      const digits = savedMobile.replace(/\D/g, '');
+      return digits.length >= 10 ? digits.slice(-10) : digits;
+    }
     return '';
   });
   const [countryCode, setCountryCode] = useState(() => {
@@ -61,7 +76,9 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
     return '+91';
   });
   const [otpCode, setOtpCode] = useState('');
-  const [name, setName] = useState('');
+  const [name, setName] = useState(() => {
+    return localStorage.getItem('customer_name') || '';
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [isStrictMember, setIsStrictMember] = useState(false);
@@ -171,11 +188,7 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
     } else if (step === 'no_offers') {
       onUnlock(null, isExistingCustomer);
     } else {
-      if (isExistingCustomer) {
-        onUnlock(null, true);
-      } else {
-        onClose();
-      }
+      onClose();
     }
   };
 
@@ -360,6 +373,12 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
     }
   };
 
+  const handleChangeMobileNumber = () => {
+    setMobileNumber('');
+    setOtpCode('');
+    setError('');
+    setStep('mobile');
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -397,7 +416,7 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
         {step !== 'mobile' && step !== 'otp' && (
           <button
             onClick={handleClose}
-            className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-all z-10"
+            className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-all z-10 cursor-pointer"
             aria-label="Close"
           >
             <X size={20} />
@@ -405,6 +424,66 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
         )}
 
         <AnimatePresence mode="wait">
+          {step === 'already_unlocked' && (
+            <motion.div 
+              key="already_unlocked"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="p-6 sm:p-7 text-center"
+            >
+              <div className="w-16 h-16 bg-gradient-to-tr from-amber-400 to-amber-500 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg shadow-amber-500/20 text-white">
+                <Crown className="w-8 h-8 text-white" />
+              </div>
+
+              <h2 className="text-xl font-black text-gray-900 mb-2">
+                🎉 Discounts Unlocked!
+              </h2>
+              
+              <p className="text-sm text-gray-600 mb-5 leading-relaxed">
+                You have unlocked the discounts! You can find and use all your exclusive offers in the <strong className="text-gray-900 font-bold">Discounts & Offers</strong> section.
+              </p>
+
+              <div className="bg-amber-50/80 border border-amber-200/80 rounded-2xl p-3.5 mb-5 space-y-1.5 text-center">
+                {(name || localStorage.getItem('customer_name')) && (
+                  <div className="flex items-center justify-center gap-1.5 font-black text-sm text-slate-900">
+                    <User size={15} className="text-amber-600 shrink-0" />
+                    <span>{name || localStorage.getItem('customer_name')}</span>
+                  </div>
+                )}
+                {(mobileNumber || localStorage.getItem('customer_mobile')) && (
+                  <div className="flex items-center justify-center gap-1.5 font-semibold text-amber-900 text-xs">
+                    <ShieldCheck size={14} className="text-amber-600 shrink-0" />
+                    <span>Linked Number: <span className="font-mono font-bold">{countryCode} {mobileNumber || localStorage.getItem('customer_mobile')?.slice(-10)}</span></span>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2.5">
+                <button 
+                  type="button"
+                  onClick={() => {
+                    handleClose();
+                    window.scrollTo({ top: 350, behavior: 'smooth' });
+                  }}
+                  className="w-full py-3.5 bg-primary text-white rounded-xl font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/25 active:scale-[0.98] text-sm flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Gift size={16} />
+                  <span>View Discounts & Offers</span>
+                </button>
+
+                <button 
+                  type="button"
+                  onClick={handleChangeMobileNumber}
+                  className="w-full py-2.5 text-xs font-bold text-gray-500 hover:text-gray-900 hover:bg-gray-100/80 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <Phone size={13} />
+                  <span>Change Mobile Number</span>
+                </button>
+              </div>
+            </motion.div>
+          )}
+
           {step === 'intro' && (
             <motion.div 
               key="intro"
@@ -508,10 +587,27 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
                 <button 
                   type="submit"
                   disabled={loading || mobileNumber.length < 10}
-                  className="w-full py-3 bg-gray-900 text-white rounded-xl font-semibold hover:bg-black transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                  className="w-full py-3 bg-gray-900 text-white rounded-xl font-semibold hover:bg-black transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm cursor-pointer"
                 >
                   {loading ? 'Sending OTP...' : 'Send OTP'}
                 </button>
+
+                {Boolean(sessionStorage.getItem(`member_status_${shopId}`) || localStorage.getItem('customer_token')) && (
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      const savedMobile = localStorage.getItem('customer_mobile') || '';
+                      if (savedMobile) {
+                        const digits = savedMobile.replace(/\D/g, '');
+                        setMobileNumber(digits.length >= 10 ? digits.slice(-10) : digits);
+                      }
+                      setStep('already_unlocked');
+                    }}
+                    className="w-full py-2 text-xs font-semibold text-gray-500 hover:text-gray-900 transition-colors block text-center cursor-pointer"
+                  >
+                    Cancel & Keep Current Number
+                  </button>
+                )}
                 
                 <p className="text-xs text-center text-gray-500 mt-4">
                   By continuing, you accept our{' '}

@@ -104,6 +104,13 @@ export interface PublicShopListing {
   average_rating?: number | null;
   total_reviews: number;
   show_menus_in_discovery: boolean;
+  delivery_enabled?: boolean;
+  base_delivery_charge?: number;
+  base_delivery_distance?: number;
+  extra_delivery_distance_step?: number;
+  extra_delivery_charge_per_step?: number;
+  dinein_enabled?: boolean;
+  takeaway_enabled?: boolean;
 }
 
 

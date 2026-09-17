@@ -1,5 +1,5 @@
 import { LinkifiedText } from '../../components/LinkifiedText';
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router';
 import { Search, Flame, MapPin, Phone, Info, UtensilsCrossed, X, Star, LayoutGrid, List as ListIcon, Clock, Sparkles, ExternalLink, SlidersHorizontal, Check, Languages, Tag, Crown, Calendar, ShoppingBag, ArrowUpRight, ChevronDown, QrCode, Download, History, Trophy, ChefHat, User, Truck, CheckCircle2, XCircle, Lock, Copy, RefreshCw, AlertCircle, ShieldCheck } from 'lucide-react';
 import { toast } from 'react-hot-toast';
@@ -171,6 +171,85 @@ export function PublicMenuPage() {
       setOrderType('dine_in', true);
     }
   }, [searchParams, isOrderTypeSet, orderType, setOrderType]);
+
+  const [customerCoords, setCustomerCoords] = useState<{ lat: number; lng: number } | null>(() => {
+    const savedLat = localStorage.getItem('customer_lat');
+    const savedLng = localStorage.getItem('customer_lng');
+    if (savedLat && savedLng) {
+      const lat = parseFloat(savedLat);
+      const lng = parseFloat(savedLng);
+      if (!isNaN(lat) && !isNaN(lng)) return { lat, lng };
+    }
+    return null;
+  });
+
+  const [isFetchingLocation, setIsFetchingLocation] = useState(false);
+
+  // Sync coords from localStorage on render / orderType change
+  useEffect(() => {
+    const savedLat = localStorage.getItem('customer_lat');
+    const savedLng = localStorage.getItem('customer_lng');
+    if (savedLat && savedLng) {
+      const lat = parseFloat(savedLat);
+      const lng = parseFloat(savedLng);
+      if (!isNaN(lat) && !isNaN(lng)) {
+        setCustomerCoords({ lat, lng });
+      }
+    }
+  }, [orderType]);
+
+  const fetchCustomerLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      toast.error('Geolocation is not supported by your browser');
+      return;
+    }
+    setIsFetchingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        localStorage.setItem('customer_lat', latitude.toString());
+        localStorage.setItem('customer_lng', longitude.toString());
+        setCustomerCoords({ lat: latitude, lng: longitude });
+        setIsFetchingLocation(false);
+        toast.success('Location detected!');
+      },
+      (err) => {
+        setIsFetchingLocation(false);
+        toast.error('Location permission is required for home delivery orders.');
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  }, []);
+
+  const menuDistanceKm = useMemo(() => {
+    if (orderType !== 'delivery' || !customerCoords || !shop?.latitude || !shop?.longitude) return null;
+    const R = 6371;
+    const dLat = ((customerCoords.lat - shop.latitude) * Math.PI) / 180;
+    const dLon = ((customerCoords.lng - shop.longitude) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((shop.latitude * Math.PI) / 180) *
+        Math.cos((customerCoords.lat * Math.PI) / 180) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }, [orderType, customerCoords, shop?.latitude, shop?.longitude]);
+
+  const menuDeliveryFee = useMemo(() => {
+    if (orderType !== 'delivery' || !shop?.settings?.delivery_enabled) return null;
+    const baseCharge = Number(shop.settings.base_delivery_charge ?? 0);
+    const baseDist = Number(shop.settings.base_delivery_distance ?? 0);
+    const stepKm = Number(shop.settings.extra_delivery_distance_step || 1);
+    const extraRate = Number(shop.settings.extra_delivery_charge_per_step ?? 0);
+
+    if (!menuDistanceKm || menuDistanceKm <= baseDist || baseDist <= 0) {
+      return baseCharge;
+    }
+    const extraDist = menuDistanceKm - baseDist;
+    const steps = Math.ceil(extraDist / stepKm);
+    return baseCharge + steps * extraRate;
+  }, [orderType, shop?.settings, menuDistanceKm]);
 
   const handleProfileClick = () => {
     const token = localStorage.getItem('customer_token');
@@ -399,7 +478,7 @@ export function PublicMenuPage() {
   const [categorySearchQuery, setCategorySearchQuery] = useState('');
   const [isEntertainmentHubOpen, setIsEntertainmentHubOpen] = useState(false);
   const [isDiscountPopupOpen, setIsDiscountPopupOpen] = useState(false);
-  const [discountPopupInitialStep, setDiscountPopupInitialStep] = useState<'intro' | 'mobile'>('intro');
+  const [discountPopupInitialStep, setDiscountPopupInitialStep] = useState<'intro' | 'mobile' | 'already_unlocked'>('intro');
   const [isCustomerLoggedIn, setIsCustomerLoggedIn] = useState<boolean>(() => {
     return Boolean(localStorage.getItem('customer_token'));
   });
@@ -410,7 +489,8 @@ export function PublicMenuPage() {
     );
   });
   const [memberStatus, setMemberStatus] = useState<'unlocked' | 'verified-member' | null>(() => {
-    const s = sessionStorage.getItem('member_status');
+    if (!id) return null;
+    const s = sessionStorage.getItem(`member_status_${id}`) || sessionStorage.getItem('member_status');
     if (s) return s as 'unlocked' | 'verified-member';
     return null;
   });
@@ -426,20 +506,36 @@ export function PublicMenuPage() {
   useEffect(() => {
     const checkInitialMembership = async () => {
       const token = localStorage.getItem('customer_token');
-      if (!id || !token) return;
+      if (!id) return;
+      if (!token) {
+        if (!sessionStorage.getItem(`member_status_${id}`)) {
+          setMemberStatus(null);
+        }
+        return;
+      }
 
       try {
         const res = await api.get(`/public/shop/${id}/check-membership`, {
           headers: { Authorization: `Bearer ${token}` }
         });
+        if (res.data?.name) {
+          localStorage.setItem('customer_name', res.data.name);
+        }
         if (res.data?.is_strict_member) {
           setMemberStatus('verified-member');
-          sessionStorage.setItem('member_status', 'verified-member');
+          sessionStorage.setItem(`member_status_${id}`, 'verified-member');
           if (res.data?.mobile_number) {
             localStorage.setItem('customer_mobile', res.data.mobile_number);
           }
-        } else if (sessionStorage.getItem('member_status') === 'verified-member') {
-          sessionStorage.removeItem('member_status');
+        } else if (res.data?.is_member) {
+          setMemberStatus('unlocked');
+          sessionStorage.setItem(`member_status_${id}`, 'unlocked');
+          if (res.data?.mobile_number) {
+            localStorage.setItem('customer_mobile', res.data.mobile_number);
+          }
+        } else {
+          // User has customer token, but is not registered for THIS shop yet!
+          sessionStorage.removeItem(`member_status_${id}`);
           setMemberStatus(null);
         }
       } catch (err) {
@@ -558,37 +654,31 @@ export function PublicMenuPage() {
     } catch (e) {}
   }, [id]);
 
-  // Show discount unlock popup every 10 seconds if user hasn't entered their mobile number
+  // Show discount unlock popup every 10 seconds if user hasn't unlocked/registered for this shop
   useEffect(() => {
-    const hasProvidedNumber = Boolean(
-      localStorage.getItem('customer_mobile') ||
-      localStorage.getItem('customer_phone') ||
-      localStorage.getItem('customer_token') ||
+    const isShopUnlocked = Boolean(
       memberStatus === 'verified-member' ||
       memberStatus === 'unlocked' ||
-      isCustomerLoggedIn
+      (id && sessionStorage.getItem(`member_status_${id}`))
     );
 
-    if (!id || hasProvidedNumber || isDiscountPopupOpen) return;
+    if (!id || isShopUnlocked || isDiscountPopupOpen) return;
 
     const timer = setTimeout(() => {
-      const stillNoNumber = !Boolean(
-        localStorage.getItem('customer_mobile') ||
-        localStorage.getItem('customer_phone') ||
-        localStorage.getItem('customer_token') ||
+      const stillNotUnlocked = !Boolean(
         memberStatus === 'verified-member' ||
         memberStatus === 'unlocked' ||
-        isCustomerLoggedIn
+        (id && sessionStorage.getItem(`member_status_${id}`))
       );
 
-      if (stillNoNumber) {
+      if (stillNotUnlocked) {
         setDiscountPopupInitialStep('intro');
         setIsDiscountPopupOpen(true);
       }
     }, 10000);
 
     return () => clearTimeout(timer);
-  }, [id, memberStatus, isCustomerLoggedIn, isDiscountPopupOpen]);
+  }, [id, memberStatus, isDiscountPopupOpen]);
 
 
   useEffect(() => {
@@ -612,6 +702,13 @@ export function PublicMenuPage() {
       }
       
       const shopData = shopRes.data as Shop;
+      const anyOrdering = Boolean(
+        shopData.settings?.dinein_enabled ||
+        shopData.settings?.takeaway_enabled ||
+        shopData.settings?.delivery_enabled
+      );
+      const alreadyPrompted = Boolean(sessionStorage.getItem(`order_type_prompted_${id}`));
+
       const hasWelcome = Boolean(shopData.welcome_message && !sessionStorage.getItem(`welcome_${id}`));
       if (hasWelcome) {
         sessionStorage.setItem(`welcome_${id}`, 'true');
@@ -626,7 +723,8 @@ export function PublicMenuPage() {
       } else {
         const typeParam = searchParams.get('type')?.toLowerCase();
         const isQR = typeParam === 'qr' || typeParam === 'qrcode' || typeParam === 'offline' || Boolean(typeParam && typeParam.includes('qr')) || Boolean(searchParams.get('table')) || searchParams.get('qr') === 'true';
-        if (!isQR && (typeParam === 'online' || !isOrderTypeSet)) {
+        if (anyOrdering && !isQR && !isOrderTypeSet && !alreadyPrompted) {
+          sessionStorage.setItem(`order_type_prompted_${id}`, 'true');
           setIsOrderTypeModalOpen(true);
         }
       }
@@ -1139,16 +1237,15 @@ export function PublicMenuPage() {
                       setShowWelcome(false);
                       const typeParam = searchParams.get('type')?.toLowerCase();
                       const tableParam = searchParams.get('table');
-                      const qrParam = searchParams.get('qr');
-                      const isQR = 
-                        typeParam === 'qr' || 
-                        typeParam === 'qrcode' || 
-                        typeParam === 'offline' || 
-                        Boolean(typeParam && typeParam.includes('qr')) || 
-                        Boolean(tableParam) || 
-                        qrParam === 'true';
+                      const anyOrdering = Boolean(
+                        shop?.settings?.dinein_enabled ||
+                        shop?.settings?.takeaway_enabled ||
+                        shop?.settings?.delivery_enabled
+                      );
+                      const alreadyPrompted = Boolean(sessionStorage.getItem(`order_type_prompted_${id}`));
 
-                      if (!isQR) {
+                      if (anyOrdering && !isQR && !isOrderTypeSet && !alreadyPrompted) {
+                        sessionStorage.setItem(`order_type_prompted_${id}`, 'true');
                         setIsOrderTypeModalOpen(true);
                       }
                     }, 500);
@@ -1426,6 +1523,57 @@ export function PublicMenuPage() {
             )}
             <ChevronDown size={12} className="opacity-70" />
           </button>
+
+          {/* Delivery Coverage & Distance Status Banner */}
+          {orderType === 'delivery' && (
+            <div className="w-full max-w-md mt-1 animate-in fade-in duration-200">
+              {shop?.settings && !shop.settings.delivery_enabled ? (
+                <div className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300 text-xs flex items-center justify-between gap-2 shadow-xs">
+                  <div className="flex items-center gap-2 text-left">
+                    <AlertCircle size={16} className="shrink-0 text-rose-600 dark:text-rose-400" />
+                    <span className="font-semibold">Delivery is disabled for this restaurant.</span>
+                  </div>
+                  <button
+                    onClick={() => setIsOrderTypeModalOpen(true)}
+                    className="underline font-bold shrink-0 text-rose-900 dark:text-rose-200 hover:opacity-80"
+                  >
+                    Change Mode
+                  </button>
+                </div>
+              ) : !customerCoords ? (
+                <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs flex items-center justify-between gap-2 shadow-xs">
+                  <div className="flex items-center gap-2 text-left">
+                    <MapPin size={16} className="shrink-0 text-amber-600 dark:text-amber-400" />
+                    <span className="font-medium">GPS location required to verify delivery & fees.</span>
+                  </div>
+                  <button
+                    onClick={fetchCustomerLocation}
+                    disabled={isFetchingLocation}
+                    className="px-3 py-1.5 rounded-xl bg-amber-600 text-white font-bold text-[11px] shrink-0 hover:bg-amber-700 active:scale-95 transition-all shadow-xs flex items-center gap-1"
+                  >
+                    {isFetchingLocation ? 'Locating...' : 'Enable GPS'}
+                  </button>
+                </div>
+              ) : (
+                <div className="p-2.5 px-3.5 rounded-2xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 text-blue-900 dark:text-blue-200 text-xs flex items-center justify-between gap-2 shadow-xs">
+                  <div className="flex items-center gap-2 text-left">
+                    <Truck size={15} className="shrink-0 text-blue-600 dark:text-blue-400" />
+                    <span className="font-semibold">
+                      {menuDistanceKm !== null ? `~${menuDistanceKm < 1 ? `${Math.round(menuDistanceKm * 1000)}m` : `${menuDistanceKm.toFixed(1)} km`} away` : 'Delivering to your location'}
+                      {menuDeliveryFee !== null && ` • ₹${menuDeliveryFee} delivery fee`}
+                    </span>
+                  </div>
+                  <button
+                    onClick={fetchCustomerLocation}
+                    disabled={isFetchingLocation}
+                    className="text-[11px] text-blue-700 dark:text-blue-300 font-bold underline shrink-0 hover:text-blue-900"
+                  >
+                    {isFetchingLocation ? 'Locating...' : 'Update GPS'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* ❌ REMOVED: `<ContestHub/>` component was successfully pulled from top layout context */}
@@ -1585,8 +1733,11 @@ export function PublicMenuPage() {
 
         {/* Active Offers Banner */}
         {activeDiscounts.filter(isDiscountVisible).length > 0 && (
-          <div className="mb-6 w-full -mx-4 px-4 sm:mx-0 sm:px-0">
-            <div className="flex gap-4 overflow-x-auto pb-4 pt-1 snap-x snap-mandatory scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+          <div className="mb-6 w-full">
+            <div className="mb-2">
+              <h2 className="text-lg font-extrabold text-slate-800 tracking-tight">Discounts & Offers</h2>
+            </div>
+            <div className="flex gap-4 overflow-x-auto pb-4 pt-1 snap-x snap-mandatory scrollbar-hide -mx-4 px-4 sm:mx-0 sm:px-0" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
               {activeDiscounts.filter(isDiscountVisible).map(disc => (
                 <div
                   key={disc.id}
@@ -2170,33 +2321,37 @@ export function PublicMenuPage() {
       )}
 
       {/* Offers Crown Floating Button */}
-      {activeDiscounts.length > 0 && (
-        <button
-          onClick={() => {
-            if (memberStatus === 'verified-member') {
-              setIsBecomeMemberModalOpen(true);
-            } else {
-              setDiscountPopupInitialStep('intro');
-              setIsDiscountPopupOpen(true);
-            }
-          }}
-          className={`fixed bottom-48 right-4 sm:right-6 w-14 h-14 rounded-full text-white shadow-xl flex items-center justify-center hover:scale-105 transition-all duration-300 z-40 border-4 border-white/50 backdrop-blur-md cursor-pointer ${
-            memberStatus === 'verified-member' 
-              ? 'bg-gradient-to-tr from-amber-500 to-amber-400' 
-              : 'animate-bounce hover:animate-none'
-          } ${isScrollingDown ? 'translate-x-full opacity-0 pointer-events-none' : 'translate-x-0 opacity-100'}`}
-          style={memberStatus !== 'verified-member' ? { backgroundColor: primaryColor } : undefined}
-          title={memberStatus === 'verified-member' ? "Hotel Member Active" : "Exclusive Member Offers"}
-        >
-          <Crown size={24} className="text-white" />
-          {memberStatus !== 'verified-member' && (
-            <span className="absolute top-0 right-0 flex h-4 w-4">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-4 w-4 bg-red-500 border-2 border-white"></span>
-            </span>
-          )}
-        </button>
-      )}
+      <button
+        onClick={() => {
+          const isAlreadyUnlocked = Boolean(
+            memberStatus === 'verified-member' ||
+            memberStatus === 'unlocked' ||
+            (id && sessionStorage.getItem(`member_status_${id}`)) ||
+            localStorage.getItem('customer_token')
+          );
+          if (isAlreadyUnlocked) {
+            setDiscountPopupInitialStep('already_unlocked');
+          } else {
+            setDiscountPopupInitialStep('intro');
+          }
+          setIsDiscountPopupOpen(true);
+        }}
+        className={`fixed bottom-48 right-4 sm:right-6 w-14 h-14 rounded-full text-white shadow-xl flex items-center justify-center hover:scale-105 transition-all duration-300 z-40 border-4 border-white/50 backdrop-blur-md cursor-pointer ${
+          memberStatus === 'verified-member' 
+            ? 'bg-gradient-to-tr from-amber-500 to-amber-400' 
+            : 'animate-bounce hover:animate-none'
+        } ${isScrollingDown ? 'translate-x-full opacity-0 pointer-events-none' : 'translate-x-0 opacity-100'}`}
+        style={memberStatus !== 'verified-member' ? { backgroundColor: primaryColor } : undefined}
+        title={memberStatus === 'verified-member' ? "Hotel Member Active" : "Exclusive Member Offers"}
+      >
+        <Crown size={24} className="text-white" />
+        {memberStatus !== 'verified-member' && (
+          <span className="absolute top-0 right-0 flex h-4 w-4">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-4 w-4 bg-red-500 border-2 border-white"></span>
+          </span>
+        )}
+      </button>
 
       {/* Filter Options FAB Toggle */}
       <button
@@ -2386,10 +2541,10 @@ export function PublicMenuPage() {
           initialStep={discountPopupInitialStep}
           onClose={() => setIsDiscountPopupOpen(false)}
           onUnlock={(customerId, isExisting) => {
-            if (customerId) {
-              setMemberStatus(customerId as any);
-              sessionStorage.setItem('member_status', customerId);
-            }
+            const status = customerId || 'unlocked';
+            setMemberStatus(status as any);
+            sessionStorage.setItem(`member_status_${shop.id}`, status);
+            sessionStorage.setItem('member_status', status);
             if (isExisting || localStorage.getItem('customer_is_existing') === 'true' || localStorage.getItem('customer_token')) {
               setIsExistingCustomer(true);
               setIsCustomerLoggedIn(Boolean(localStorage.getItem('customer_token')));
@@ -3068,17 +3223,22 @@ export function PublicMenuPage() {
       {/* Order Type Selection Modal */}
       <OrderTypeModal
         isOpen={isOrderTypeModalOpen}
-        onClose={() => setIsOrderTypeModalOpen(false)}
+        onClose={() => {
+          if (id) sessionStorage.setItem(`order_type_prompted_${id}`, 'true');
+          setIsOrderTypeModalOpen(false);
+        }}
         selectedType={orderType}
         onSelectType={(type) => {
+          if (id) sessionStorage.setItem(`order_type_prompted_${id}`, 'true');
           setOrderType(type, true);
           setIsOrderTypeModalOpen(false);
         }}
         availableTypes={{
-          dine_in: shop?.settings?.dinein_enabled ?? true,
-          takeaway: shop?.settings?.takeaway_enabled ?? true,
-          delivery: shop?.settings?.delivery_enabled ?? true
+          dine_in: Boolean(shop?.settings?.dinein_enabled),
+          takeaway: Boolean(shop?.settings?.takeaway_enabled),
+          delivery: Boolean(shop?.settings?.delivery_enabled)
         }}
+        shop={shop}
       />
     </div>
   );
