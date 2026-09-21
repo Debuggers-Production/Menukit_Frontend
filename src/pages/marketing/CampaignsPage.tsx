@@ -47,6 +47,7 @@ import {
 
 
 import confetti from 'canvas-confetti';
+import { useNavigate } from 'react-router';
 import { useShopStore } from '@/store/shopStore';
 import { useHeaderStore } from '@/store/useHeaderStore';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -93,6 +94,8 @@ const COUNTRY_CODES = [
 
 export const CampaignsPage: React.FC = () => {
   const { currentShop } = useShopStore();
+  const navigate = useNavigate();
+  const [isLocked, setIsLocked] = useState(false);
 
   // Campaign Form State
   const [message, setMessage] = useState('We are currently providing a special 20% discount on all orders today! Visit our digital store now to claim your offer.');
@@ -233,6 +236,16 @@ export const CampaignsPage: React.FC = () => {
 
   useEffect(() => {
     loadCredits();
+    api.get('/subscription/current')
+      .then(res => {
+        const mods = res.data?.active_modules || [];
+        if (!mods.includes('member-details') && !mods.includes('member-count')) {
+          setIsLocked(true);
+        } else {
+          setIsLocked(false);
+        }
+      })
+      .catch(() => setIsLocked(true));
   }, [currentShop?.id]);
 
   // Top-Up Payment Handler (Razorpay & Mock)
@@ -341,6 +354,10 @@ export const CampaignsPage: React.FC = () => {
 
   // Load audience count when segment options change
   useEffect(() => {
+    if (isLocked) {
+      setAudienceCount(null);
+      return;
+    }
     let isMounted = true;
     const fetchCount = async () => {
       setIsLoadingCount(true);
@@ -350,7 +367,7 @@ export const CampaignsPage: React.FC = () => {
           setAudienceCount(res.count);
         }
       } catch (err) {
-        console.error('Failed to load audience count', err);
+        if (isMounted) setAudienceCount(null);
       } finally {
         if (isMounted) setIsLoadingCount(false);
       }
@@ -359,10 +376,16 @@ export const CampaignsPage: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [targetAudience, minVisits, currentShop?.id]);
+  }, [targetAudience, minVisits, currentShop?.id, isLocked]);
 
   // Load campaigns history with search, date filter, and pagination
   const loadCampaigns = async (pageToFetch: number = 1, isAppending: boolean = false) => {
+    if (isLocked) {
+      setCampaigns([]);
+      setTotalHistory(0);
+      setHasMoreHistory(false);
+      return;
+    }
     if (isAppending) {
       setIsLoadingMore(true);
     } else {
@@ -387,6 +410,9 @@ export const CampaignsPage: React.FC = () => {
       setHasMoreHistory(res.has_more);
     } catch (err) {
       console.error('Failed to load campaigns list', err);
+      setCampaigns([]);
+      setTotalHistory(0);
+      setHasMoreHistory(false);
     } finally {
       setIsLoadingCampaigns(false);
       setIsLoadingMore(false);
@@ -395,11 +421,16 @@ export const CampaignsPage: React.FC = () => {
 
   // Debounced search & date filter trigger
   useEffect(() => {
+    if (isLocked) {
+      setCampaigns([]);
+      setTotalHistory(0);
+      return;
+    }
     const handler = setTimeout(() => {
       loadCampaigns(1, false);
     }, 300);
     return () => clearTimeout(handler);
-  }, [historySearch, historyDate, currentShop?.id]);
+  }, [historySearch, historyDate, currentShop?.id, isLocked]);
 
   // Infinite scroll IntersectionObserver
   useEffect(() => {
@@ -499,6 +530,11 @@ export const CampaignsPage: React.FC = () => {
 
   // Test Message Sender (Costs 1 credit = ₹1)
   const handleSendTest = async () => {
+    if (isLocked) {
+      toast.error('Subscription required: CRM & Members module is required to send messages. Please upgrade in Subscription Marketplace.');
+      return;
+    }
+
     const cleanNumber = testPhoneNumber.replace(/\D/g, '');
     if (!cleanNumber || cleanNumber.length < 7) {
       toast.error('Please enter a valid WhatsApp phone number for testing');
@@ -533,6 +569,11 @@ export const CampaignsPage: React.FC = () => {
   // Campaign Dispatch / Schedule
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isLocked) {
+      toast.error('Subscription required: CRM & Members module is required to dispatch WhatsApp campaigns. Please upgrade in Subscription Marketplace.');
+      navigate('/subscription');
+      return;
+    }
     if (!message.trim()) {
       toast.error('Please enter campaign message text');
       return;
@@ -732,7 +773,7 @@ export const CampaignsPage: React.FC = () => {
         >
           <Clock size={13} className="text-blue-500" />
           <span>Broadcast History</span>
-          {campaigns.length > 0 && (
+          {!isLocked && campaigns.length > 0 && (
             <span className="ml-1 px-1.5 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-[10px]">
               {campaigns.length}
             </span>
@@ -743,7 +784,7 @@ export const CampaignsPage: React.FC = () => {
   );
 
   return (
-    <div className="px-1.5 sm:px-5 py-3 sm:py-5 lg:p-6 max-w-7xl mx-auto space-y-4">
+    <div className="px-4 sm:px-6 lg:px-8 max-w-[1400px] mx-auto pb-24">
       {/* Teleport Tab Switcher to Top Navigation Bar on Desktop */}
       {portalNode && createPortal(renderTabSwitcher(), portalNode)}
 
@@ -793,7 +834,7 @@ export const CampaignsPage: React.FC = () => {
           >
             <Clock size={13} className="text-blue-500" />
             <span>Broadcast History</span>
-            {campaigns.length > 0 && (
+            {!isLocked && campaigns.length > 0 && (
               <span className="ml-1 px-1.5 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-[10px]">
                 {campaigns.length}
               </span>
@@ -809,6 +850,30 @@ export const CampaignsPage: React.FC = () => {
           
           {/* ================= LEFT COLUMN: STUDIO BUILDER ================= */}
           <div className="lg:col-span-7 space-y-4">
+            {isLocked && (
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-red-500/10 border-2 border-orange-500/30 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xs">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-orange-500/10 text-orange-500 flex items-center justify-center shrink-0">
+                    <Lock size={20} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-1.5">
+                      Campaign Dispatch Locked by Subscription
+                    </h4>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Your subscription does not include the CRM & Members module. You can check your available credits and view broadcast history, but campaign dispatch is locked by the backend.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigate('/subscription')}
+                  className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl text-xs font-bold uppercase tracking-wider shrink-0 shadow-md cursor-pointer transition-all active:scale-95"
+                >
+                  Unlock in Marketplace &rarr;
+                </button>
+              </div>
+            )}
             <form onSubmit={handleSubmit} className="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl p-3.5 sm:p-7 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4 sm:space-y-5">
 
 
@@ -1087,12 +1152,19 @@ export const CampaignsPage: React.FC = () => {
                   <label className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
                     Target Audience
                   </label>
-                  <div className="flex items-center gap-1 px-2.5 py-0.5 bg-amber-500/10 border border-amber-500/20 rounded-full">
-                    <Flame size={11} className="text-amber-500" />
-                    <span className="text-[10px] font-black text-amber-600 dark:text-amber-400">
-                      {isLoadingCount ? 'Calculating...' : `${audienceCount ?? 0} Eligible`}
-                    </span>
-                  </div>
+                  {isLocked ? (
+                    <div className="flex items-center gap-1 px-2.5 py-0.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full">
+                      <Lock size={10} className="text-slate-400" />
+                      <span className="text-[10px] font-bold text-slate-400">Locked by backend</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1 px-2.5 py-0.5 bg-amber-500/10 border border-amber-500/20 rounded-full">
+                      <Flame size={11} className="text-amber-500" />
+                      <span className="text-[10px] font-black text-amber-600 dark:text-amber-400">
+                        {isLoadingCount ? 'Calculating...' : `${audienceCount ?? 0} Eligible`}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
@@ -1330,46 +1402,75 @@ export const CampaignsPage: React.FC = () => {
               </div>
 
               {/* 6. Messaging Cost Breakdown & Balance Card */}
-              <div className="p-3.5 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2.5">
-                <div className="flex items-center justify-between text-xs font-bold">
-                  <span className="text-slate-500">Recipients Cost ({audienceCount ?? 0} msgs × ₹1.00):</span>
-                  <span className="font-black text-slate-900 dark:text-white">₹{audienceCount ?? 0}.00</span>
-                </div>
-                <div className="flex items-center justify-between text-xs font-bold pt-2 border-t border-slate-200/60 dark:border-slate-800">
-                  <span className="text-slate-500 flex items-center gap-1.5">
-                    <Coins size={14} className="text-amber-500" />
-                    <span>Available Messaging Balance:</span>
-                  </span>
-                  <span className={availableCredits >= (audienceCount ?? 0) ? 'text-emerald-600 dark:text-emerald-400 font-black' : 'text-rose-600 dark:text-rose-400 font-black'}>
-                    {availableCredits} Credits (₹{availableCredits})
-                  </span>
-                </div>
-
-                {/* Shortfall Alert & Direct Recharge Action */}
-                {availableCredits < (audienceCount ?? 0) && (
-                  <div className="p-2.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                    <div className="flex items-center gap-1.5 text-rose-700 dark:text-rose-300 font-bold min-w-0">
-                      <AlertCircle size={15} className="text-rose-500 shrink-0" />
-                      <span>
-                        Shortfall: <strong>{(audienceCount ?? 0) - availableCredits} credits (₹{(audienceCount ?? 0) - availableCredits})</strong> needed
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTopupCredits((audienceCount ?? 0) - availableCredits);
-                        setIsTopupModalOpen(true);
-                      }}
-                      className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 active:scale-[0.98] text-white rounded-lg text-xs font-black transition-all cursor-pointer shadow-xs flex items-center justify-center gap-1 self-end sm:self-auto"
-                    >
-                      <Plus size={12} strokeWidth={3} /> Recharge ₹{(audienceCount ?? 0) - availableCredits}
-                    </button>
+              {isLocked ? (
+                <div className="p-3.5 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-bold">
+                    <span className="text-slate-500">Target Audience Count:</span>
+                    <span className="font-bold text-slate-400 flex items-center gap-1">
+                      <Lock size={11} /> Locked by Backend
+                    </span>
                   </div>
-                )}
-              </div>
+                  <div className="flex items-center justify-between text-xs font-bold pt-2 border-t border-slate-200/60 dark:border-slate-800">
+                    <span className="text-slate-500 flex items-center gap-1.5">
+                      <Coins size={14} className="text-amber-500" />
+                      <span>Available Messaging Balance:</span>
+                    </span>
+                    <span className="text-emerald-600 dark:text-emerald-400 font-black">
+                      {availableCredits} Credits (₹{availableCredits})
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3.5 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2.5">
+                  <div className="flex items-center justify-between text-xs font-bold">
+                    <span className="text-slate-500">Recipients Cost ({audienceCount ?? 0} msgs × ₹1.00):</span>
+                    <span className="font-black text-slate-900 dark:text-white">₹{audienceCount ?? 0}.00</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs font-bold pt-2 border-t border-slate-200/60 dark:border-slate-800">
+                    <span className="text-slate-500 flex items-center gap-1.5">
+                      <Coins size={14} className="text-amber-500" />
+                      <span>Available Messaging Balance:</span>
+                    </span>
+                    <span className={availableCredits >= (audienceCount ?? 0) ? 'text-emerald-600 dark:text-emerald-400 font-black' : 'text-rose-600 dark:text-rose-400 font-black'}>
+                      {availableCredits} Credits (₹{availableCredits})
+                    </span>
+                  </div>
+
+                  {/* Shortfall Alert & Direct Recharge Action */}
+                  {availableCredits < (audienceCount ?? 0) && (
+                    <div className="p-2.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-1.5 text-rose-700 dark:text-rose-300 font-bold min-w-0">
+                        <AlertCircle size={15} className="text-rose-500 shrink-0" />
+                        <span>
+                          Shortfall: <strong>{(audienceCount ?? 0) - availableCredits} credits (₹{(audienceCount ?? 0) - availableCredits})</strong> needed
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTopupCredits((audienceCount ?? 0) - availableCredits);
+                          setIsTopupModalOpen(true);
+                        }}
+                        className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 active:scale-[0.98] text-white rounded-lg text-xs font-black transition-all cursor-pointer shadow-xs flex items-center justify-center gap-1 self-end sm:self-auto"
+                      >
+                        <Plus size={12} strokeWidth={3} /> Recharge ₹{(audienceCount ?? 0) - availableCredits}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* 7. Refined Proportionate Submit Launch Button */}
-              {!canWrite ? (
+              {isLocked ? (
+                <button
+                  type="button"
+                  onClick={() => navigate('/subscription')}
+                  className="w-full py-2.5 px-5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 active:scale-[0.99] text-white rounded-xl text-xs font-bold uppercase tracking-wider shadow-md shadow-orange-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Lock size={15} />
+                  <span>Upgrade Subscription to Launch Broadcast &rarr;</span>
+                </button>
+              ) : !canWrite ? (
                 <div className="w-full py-3 px-4 bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center justify-center gap-2 text-slate-500 dark:text-slate-400 text-xs font-bold">
                   <Lock size={14} className="text-amber-500" />
                   <span>Read-only Staff Access (Broadcasting Restricted)</span>
@@ -1431,6 +1532,27 @@ export const CampaignsPage: React.FC = () => {
             </div>
           </div>
 
+        </div>
+      ) : isLocked ? (
+        <div className="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl p-8 sm:p-12 border border-slate-200 dark:border-slate-800 shadow-sm text-center space-y-4">
+          <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto shadow-inner">
+            <Lock size={32} />
+          </div>
+          <div className="space-y-1.5">
+            <h3 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
+              Broadcast History Locked
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+              Broadcast history and recipient delivery analytics are locked at the backend level because your subscription does not include the CRM & Members module.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate('/subscription')}
+            className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl text-xs font-bold uppercase tracking-wider shadow-md cursor-pointer transition-all active:scale-95"
+          >
+            Unlock in Marketplace &rarr;
+          </button>
         </div>
       ) : (
         /* ================= CAMPAIGN HISTORY TAB ================= */

@@ -175,7 +175,7 @@ export function OrderStatusPage() {
       doc.setFont("courier", "normal");
       doc.setFontSize(9);
       doc.setTextColor(30, 41, 59);
-      doc.text(`Bill ID: #${order.id.slice(0, 8).toUpperCase()}`, 12, 30);
+      doc.text(`Bill ID: #${String(order.daily_order_number || (order.daily_order_number || order.id.slice(0, 8))).toUpperCase()}`, 12, 30);
       doc.text(`Channel: ${order.order_type.replace('_', ' ').toUpperCase()}`, 80, 30);
       doc.text(`Date   : ${new Date(order.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}`, 12, 35);
 
@@ -208,10 +208,12 @@ export function OrderStatusPage() {
 
       // Items List
       doc.setFont("courier", "normal");
-      order.items.forEach((it: any) => {
-        doc.text(it.name.slice(0, 30), 12, nextY);
+      (order.items || []).forEach((it: any) => {
+        const itemText = it.is_cancelled ? `${it.name.slice(0, 20)} [CANCELLED]` : it.name.slice(0, 30);
+        const itemAmt = it.is_cancelled ? '0.00' : (it.price * it.quantity).toFixed(2);
+        doc.text(itemText, 12, nextY);
         doc.text(`x${it.quantity}`, 85, nextY);
-        doc.text(`${shop?.settings?.currency || 'Rs'}.${(it.price * it.quantity).toFixed(2)}`, 115, nextY);
+        doc.text(`${shop?.settings?.currency || 'Rs'}.${itemAmt}`, 115, nextY);
         nextY += 6;
       });
 
@@ -305,7 +307,7 @@ export function OrderStatusPage() {
       }
 
       // Save the generated document
-      doc.save(`bill_receipt_${order.id.slice(0, 8).toUpperCase()}.pdf`);
+      doc.save(`bill_receipt_${String(order.daily_order_number || (order.daily_order_number || order.id.slice(0, 8))).toUpperCase()}.pdf`);
 
       toast.dismiss(toastId);
       toast.success("PDF downloaded successfully!");
@@ -332,7 +334,7 @@ export function OrderStatusPage() {
       statusRef.current = newOrder.order_status;
       setOrder(newOrder);
     } catch (err) {
-      console.error(err);
+      console.error("Failed to load order status", err);
     } finally {
       setIsLoading(false);
     }
@@ -666,7 +668,7 @@ export function OrderStatusPage() {
           <div className="grid grid-cols-2 gap-4 text-xs font-mono border-b border-dashed border-slate-350 pb-4">
             <div>
               <span className="text-[9px] text-slate-450 block uppercase tracking-wider">Bill ID</span>
-              <span className="font-extrabold text-slate-800 dark:text-slate-250">#{order.id.slice(0, 8).toUpperCase()}</span>
+              <span className="font-extrabold text-slate-800 dark:text-slate-250">#{String(order.daily_order_number || (order.daily_order_number || order.id.slice(0, 8))).toUpperCase()}</span>
             </div>
             <div className="text-right">
               <span className="text-[9px] text-slate-450 block uppercase tracking-wider">Channel</span>
@@ -708,12 +710,17 @@ export function OrderStatusPage() {
           {/* Items Summary */}
           <div className="pt-1 space-y-3 border-b border-dashed border-slate-350 pb-4">
             <p className="text-[9px] font-mono font-bold text-slate-450 uppercase tracking-widest">Ordered Items</p>
-            {order.items.map((it: any) => (
+            {(order.items || []).map((it: any) => (
               <div key={it.id} className="flex justify-between text-xs font-mono">
-                <span className="text-slate-700 dark:text-slate-350 flex-1 pr-4">
+                <span className={`flex-1 pr-4 ${it.is_cancelled ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-350'}`}>
                   {it.name} <strong className="text-slate-900 dark:text-white px-1 bg-slate-200/50 dark:bg-slate-800 rounded">x{it.quantity}</strong>
+                  {it.is_cancelled && (
+                    <span className="ml-1.5 text-[9px] font-bold text-rose-500 uppercase not-italic no-underline inline-block">
+                      (Cancelled)
+                    </span>
+                  )}
                 </span>
-                <span className="font-black text-slate-900 dark:text-white">
+                <span className={`font-black ${it.is_cancelled ? 'text-slate-400 line-through' : 'text-slate-900 dark:text-white'}`}>
                   {shop?.settings?.currency || '₹'}{(it.price * it.quantity).toFixed(2)}
                 </span>
               </div>
@@ -1136,7 +1143,7 @@ export function OrderStatusPage() {
       >
         <div className="p-4 space-y-3">
           <p className="text-[11px] text-slate-450 dark:text-slate-400 font-medium leading-tight">
-            Please select an action below for order #{order.id.slice(0, 8).toUpperCase()}.
+            Please select an action below for order #{String(order.daily_order_number || (order.daily_order_number || order.id.slice(0, 8))).toUpperCase()}.
           </p>
           <div className="grid grid-cols-2 gap-3 pb-1">
             <button

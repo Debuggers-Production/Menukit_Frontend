@@ -43,6 +43,7 @@ interface CartState {
   setManualDiscount: (shopId: string, discountId: string | null) => void;
   setOrderType: (shopId: string, type: 'dine_in' | 'takeaway' | 'delivery', isSet?: boolean) => void;
   getShopCart: (shopId?: string | null) => ShopCart;
+  syncWithLatestMenu: (shopId: string, latestItems: MenuItem[]) => void;
 }
 
 export const useCartStore = create<CartState>()(
@@ -215,6 +216,43 @@ export const useCartStore = create<CartState>()(
           },
         };
       }),
+
+      syncWithLatestMenu: (shopId, latestItems) => set((state) => {
+        if (!shopId || !state.carts[shopId]) return state;
+        const currentCart = state.carts[shopId];
+        let hasChanges = false;
+        
+        const newItems = currentCart.items.map((item) => {
+          const freshItem = latestItems.find((li) => li.id === item.menuItem.id);
+          if (freshItem) {
+            if (
+              freshItem.price !== item.menuItem.price || 
+              freshItem.offer_price !== item.menuItem.offer_price || 
+              freshItem.online_price !== item.menuItem.online_price || 
+              freshItem.online_offer_price !== item.menuItem.online_offer_price || 
+              freshItem.name !== item.menuItem.name
+            ) {
+              hasChanges = true;
+              return { ...item, menuItem: freshItem };
+            }
+          }
+          return item;
+        });
+
+        if (!hasChanges) return state;
+
+        const updatedCart = {
+          ...currentCart,
+          items: newItems,
+        };
+
+        return {
+          carts: {
+            ...state.carts,
+            [shopId]: updatedCart,
+          },
+        };
+      }),
     }),
     {
       name: 'menukit-cart',
@@ -256,6 +294,7 @@ export function useShopCart(shopId?: string | null) {
   const clearCartAction = useCartStore((state) => state.clearCart);
   const setManualDiscountAction = useCartStore((state) => state.setManualDiscount);
   const setOrderTypeAction = useCartStore((state) => state.setOrderType);
+  const syncWithLatestMenuAction = useCartStore((state) => state.syncWithLatestMenu);
 
   const cartItemCount = useMemo(() => {
     return (cart.items || []).reduce((acc, item) => acc + item.quantity, 0);
@@ -307,6 +346,10 @@ export function useShopCart(shopId?: string | null) {
     }
   }, [sId, setOrderTypeAction]);
 
+  const syncWithLatestMenu = useCallback((items: MenuItem[]) => {
+    syncWithLatestMenuAction(sId, items);
+  }, [sId, syncWithLatestMenuAction]);
+
   return {
     items: cart.items || [],
     manualDiscountId: cart.manualDiscountId ?? null,
@@ -319,5 +362,6 @@ export function useShopCart(shopId?: string | null) {
     clearCart,
     setManualDiscount,
     setOrderType,
+    syncWithLatestMenu,
   };
 }

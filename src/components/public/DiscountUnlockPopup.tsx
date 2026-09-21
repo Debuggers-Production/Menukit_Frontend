@@ -34,15 +34,14 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
         }
       }
     } catch (e) {}
-    if (initialStep === 'intro') {
+    if (initialStep === 'intro' || initialStep === 'already_unlocked') {
       const isShopUnlocked = Boolean(
-        sessionStorage.getItem(`member_status_${shopId}`) ||
-        sessionStorage.getItem('member_status') ||
-        localStorage.getItem('customer_token')
+        sessionStorage.getItem(`member_status_${shopId}`)
       );
       if (isShopUnlocked) {
         return 'already_unlocked';
       }
+      return 'intro';
     }
     return initialStep;
   });
@@ -251,6 +250,7 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
           localStorage.setItem('customer_address', res.delivery_address);
         }
         localStorage.setItem('customer_mobile', `${countryCode}${mobileNumber}`);
+        sessionStorage.setItem(`member_status_${shopId}`, res.is_strict_member ? 'verified-member' : 'unlocked');
         if (!res.is_global_customer) {
           setStep('name');
         } else {
@@ -327,6 +327,7 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
       if (res.delivery_address) {
         localStorage.setItem('customer_address', res.delivery_address);
       }
+      sessionStorage.setItem(`member_status_${shopId}`, res.is_strict_member ? 'verified-member' : 'unlocked');
       if (!res.is_global_customer) {
         setStep('name');
       } else {
@@ -362,6 +363,7 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
       if (res.access_token) {
         localStorage.setItem('customer_token', res.access_token);
       }
+      sessionStorage.setItem(`member_status_${shopId}`, 'unlocked');
       setIsStrictMember(false); // newly registered users are not strict members
       triggerConfetti();
       setIsVerified(true);
@@ -592,7 +594,7 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
                   {loading ? 'Sending OTP...' : 'Send OTP'}
                 </button>
 
-                {Boolean(sessionStorage.getItem(`member_status_${shopId}`) || localStorage.getItem('customer_token')) && (
+                {Boolean(sessionStorage.getItem(`member_status_${shopId}`)) && (
                   <button 
                     type="button"
                     onClick={() => {

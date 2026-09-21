@@ -68,6 +68,11 @@ export function useWebSocket() {
             setNotifications(message.data);
           } else if (message.type === 'NEW_NOTIFICATION') {
             const notif = message.data;
+            if (notif && !notif.metadata && notif.metadata_json) {
+              try {
+                notif.metadata = typeof notif.metadata_json === 'string' ? JSON.parse(notif.metadata_json) : notif.metadata_json;
+              } catch {}
+            }
             addNotification(notif);
             
             // Broadcast real-time update event so pages refresh instantly without HTTP polling
@@ -85,6 +90,16 @@ export function useWebSocket() {
                 color: '#fff',
               },
             });
+          } else if (message.type === 'NEW_ORDER' || message.event === 'NEW_ORDER') {
+            const orderData = message.data;
+            window.dispatchEvent(new CustomEvent('menukit-realtime-update', { 
+              detail: { 
+                type: 'NEW_ORDER', 
+                order: orderData, 
+                metadata: { order_id: orderData?.id } 
+              } 
+            }));
+            playChimeNotificationSound();
           }
         } catch (e) {
           console.error("Failed to parse websocket message", e);

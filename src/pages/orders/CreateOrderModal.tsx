@@ -74,7 +74,7 @@ export function CreateOrderModal({
   const [tableNumber, setTableNumber] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'online'>('cash');
-  const [paymentStatus, setPaymentStatus] = useState<'paid' | 'pending'>('paid');
+  const [paymentStatus, setPaymentStatus] = useState<'paid' | 'pending'>('pending');
 
   // Category Picker Modal
   const [isCategoryPickerOpen, setIsCategoryPickerOpen] = useState(false);
@@ -149,7 +149,7 @@ export function CreateOrderModal({
       setTableNumber('');
       setDeliveryAddress('');
       setPaymentMethod('cash');
-      setPaymentStatus('paid');
+      setPaymentStatus('pending');
       setSearchQuery('');
       setDebouncedSearch('');
       setActiveCategory('all');
@@ -366,7 +366,7 @@ export function CreateOrderModal({
       }));
 
       const res = await api.post(`/orders/${targetOrder.id}/items`, { items: itemsPayload });
-      toast.success(`Added ${totalCartCount} item(s) to Order #${targetOrder.id.slice(0, 8).toUpperCase()}`);
+      toast.success(`Added ${totalCartCount} item(s) to Order #${String(targetOrder.daily_order_number || (targetOrder.daily_order_number || targetOrder.id.slice(0, 8))).toUpperCase()}`);
       
       const updatedOrder = res.data;
       const prevIds = new Set((targetOrder.items || []).map((it: any) => it.id));
@@ -453,9 +453,9 @@ export function CreateOrderModal({
           )}
           <h2 className="text-sm sm:text-base font-bold text-foreground truncate">
             {replacingItem
-              ? `Replace "${replacingItem.item.name}" in Order #${replacingItem.order.id.slice(0, 6).toUpperCase()}`
+              ? `Replace "${replacingItem.item.name}" in Order #${replacingItem.order.daily_order_number || replacingItem.order.id.slice(0, 8).toUpperCase()}`
               : targetOrder 
-              ? `Add Items to #${targetOrder.id.slice(0, 6).toUpperCase()}`
+              ? `Add Items to #${targetOrder.daily_order_number || targetOrder.id.slice(0, 8).toUpperCase()}`
               : (step === 1 ? 'Select Menu Items' : 'Customer & Order Info')}
           </h2>
           <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary shrink-0">
@@ -909,8 +909,8 @@ export function CreateOrderModal({
                   <label className="text-xs font-medium text-foreground block mb-1">Payment Status</label>
                   <SearchableSelect
                     options={[
-                      { id: 'paid', name: 'Paid' },
                       { id: 'pending', name: 'Not Paid (Pending)' },
+                      { id: 'paid', name: 'Paid' },
                     ]}
                     value={paymentStatus}
                     onChange={(val) => setPaymentStatus(val as any)}

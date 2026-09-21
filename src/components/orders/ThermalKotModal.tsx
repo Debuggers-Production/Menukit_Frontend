@@ -39,7 +39,7 @@ export function ThermalKotModal({
 
   if (!order) return null;
 
-  const rawId = order.id ? order.id.slice(0, 8).toUpperCase() : '00000000';
+  const rawId = order.id ? String(order.daily_order_number || (order.daily_order_number || order.id.slice(0, 8))).toUpperCase() : '00000000';
   const kotNo = `KOT-${new Date(order.created_at || Date.now()).getFullYear()}-${rawId}`;
   const { full: formattedDateTime } = formatReceiptDateTime(order.created_at);
 

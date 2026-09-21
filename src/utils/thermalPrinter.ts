@@ -257,7 +257,7 @@ export function generateThermalReceiptHtml(
   const currencySymbol = (!shop?.settings?.currency || shop?.settings?.currency === '$') ? 'Rs' : shop.settings.currency;
 
   const { full: formattedDateTime } = formatReceiptDateTime(order?.created_at);
-  const billNo = `INV-${new Date(order?.created_at || Date.now()).getFullYear()}-${order?.id ? order.id.slice(0, 8).toUpperCase() : '00000000'}`;
+  const billNo = `INV-${new Date(order?.created_at || Date.now()).getFullYear()}-${order?.id ? String(order.daily_order_number || (order.daily_order_number || order.id.slice(0, 8))).toUpperCase() : '00000000'}`;
   
   const isNewOnly = Boolean(options.isNewOnly || (options.customItems && options.customItems.length > 0));
   const items = (options.customItems && options.customItems.length > 0)
@@ -872,7 +872,7 @@ export function generateThermalKotHtml(
   const titleFontSize = is58mm ? '16px' : '20px';
 
   const { full: formattedDateTime } = formatReceiptDateTime(order?.created_at);
-  const rawId = order?.id ? order.id.slice(0, 8).toUpperCase() : '00000000';
+  const rawId = order?.id ? String(order.daily_order_number || (order.daily_order_number || order.id.slice(0, 8))).toUpperCase() : '00000000';
   const kotNo = options.kotNumber || `KOT-${new Date(order?.created_at || Date.now()).getFullYear()}-${rawId}`;
 
   const items = options.customItems || getKotInvocationItems(order, mode);
@@ -1073,7 +1073,7 @@ export function generateKotText(
 ): string {
   const mode = options.invocationMode || 'full';
   const { full: formattedDateTime } = formatReceiptDateTime(order?.created_at);
-  const rawId = order?.id ? order.id.slice(0, 8).toUpperCase() : '00000000';
+  const rawId = order?.id ? String(order.daily_order_number || (order.daily_order_number || order.id.slice(0, 8))).toUpperCase() : '00000000';
   const kotNo = options.kotNumber || `KOT-${new Date(order?.created_at || Date.now()).getFullYear()}-${rawId}`;
   const items = options.customItems || getKotInvocationItems(order, mode);
   const totalUnits = items.reduce((sum: number, it: any) => sum + (it.quantity || 1), 0);

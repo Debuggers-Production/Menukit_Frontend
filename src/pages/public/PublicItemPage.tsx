@@ -61,7 +61,7 @@ export function PublicItemPage() {
   const [isDiscountPopupOpen, setIsDiscountPopupOpen] = useState(false);
   const [memberStatus, setMemberStatus] = useState<'unlocked' | 'verified-member' | null>(() => {
     if (!id) return null;
-    const s = sessionStorage.getItem(`member_status_${id}`) || sessionStorage.getItem('member_status');
+    const s = sessionStorage.getItem(`member_status_${id}`);
     if (s) return s as 'unlocked' | 'verified-member';
     return null;
   });
@@ -803,7 +803,6 @@ export function PublicItemPage() {
             const status = customerId || 'unlocked';
             setMemberStatus(status as any);
             sessionStorage.setItem(`member_status_${shop.id}`, status);
-            sessionStorage.setItem('member_status', status);
             setIsDiscountPopupOpen(false);
           }}
         />

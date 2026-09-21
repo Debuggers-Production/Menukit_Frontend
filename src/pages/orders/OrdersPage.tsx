@@ -120,7 +120,8 @@ function OrderCardSkeleton() {
 
 function formatDateTime(dateStr: string) {
   if (!dateStr) return { date: '—', time: '—' };
-  const d = new Date(dateStr);
+  const safeStr = dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T');
+  const d = new Date(safeStr + (safeStr.endsWith('Z') || safeStr.includes('+') ? '' : 'Z'));
   const date = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
   const time = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
   return { date, time };
@@ -143,7 +144,7 @@ function generateGoogleMapsUrl(address: string) {
 
 function generateOrderBillText(order: any) {
   const { date, time } = formatDateTime(order.created_at);
-  const orderId = order.id.slice(0, 8).toUpperCase();
+  const orderId = order.daily_order_number || order.id.slice(0, 8).toUpperCase();
   const items = (order.items || []).filter((it: any) => !it.is_cancelled);
   const itemsSubtotal = items.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
   const isDelivery = order.order_type === 'delivery';
@@ -551,8 +552,8 @@ export function OrdersPage() {
       if (ok) {
         markOrderKotPrinted(targetOrder.id);
         if (toastId) toast.success('KOT printed successfully!', { id: toastId });
-        else if (mode === 'cancelled') toast.success(`Void KOT sent to station for Order #${targetOrder.id.slice(0, 8).toUpperCase()}`);
-        else toast.success(`Auto-printed KOT for Order #${targetOrder.id.slice(0, 8).toUpperCase()}`);
+        else if (mode === 'cancelled') toast.success(`Void KOT sent to station for Order #${targetOrder.daily_order_number || targetOrder.id.slice(0, 8).toUpperCase()}`);
+        else toast.success(`Auto-printed KOT for Order #${targetOrder.daily_order_number || targetOrder.id.slice(0, 8).toUpperCase()}`);
       } else {
         if (toastId) toast.error('Printer unavailable or print failed', { id: toastId });
       }
@@ -651,8 +652,11 @@ export function OrdersPage() {
       // Automatically print KOT for incoming auto-accepted orders that haven't been printed yet
       if (autoPrintRef.current && newItems.length > 0) {
         for (const ord of newItems) {
-          const isPaidOrCash = ord.payment_status === 'paid' || ord.payment_method === 'cash' || ord.payment_method === 'cash_on_delivery' || ord.payment_method === 'counter';
-          const isAutoAccepted = (ord.order_status === 'ACCEPTED' || ord.order_status === 'PREPARING' || ord.order_status === 'PAID') && isPaidOrCash;
+          const isPaid = (ord.payment_status || '').toLowerCase() === 'paid';
+          const isCash = ['cash', 'cash_on_delivery', 'counter'].includes((ord.payment_method || '').toLowerCase());
+          const isPaidOrCash = isPaid || isCash;
+          const normStatus = (ord.order_status || '').toUpperCase();
+          const isAutoAccepted = (normStatus === 'ACCEPTED' || normStatus === 'PREPARING' || normStatus === 'PAID') && isPaidOrCash;
           if (isAutoAccepted && !isOrderKotPrintedRef.current(ord.id)) {
             handleDirectPrintKotRef.current(ord, 'full', true);
           }
@@ -681,9 +685,17 @@ export function OrdersPage() {
     const handleRealtimeUpdate = async (e: any) => {
       const notif = e.detail;
       if (!notif) return;
-      if (notif.type === 'NEW_ORDER' || notif.type === 'ORDER_STATUS') {
+      if (notif.type === 'NEW_ORDER' || notif.type === 'ORDER_STATUS' || notif.type === 'ORDER_PAID') {
+        fetchStatusCounts();
         fetchOrdersData(0, true);
-        const orderId = notif.order?.id || notif.metadata?.order_id || notif.metadata?.orderId;
+
+        let meta: any = notif.metadata;
+        if (!meta && notif.metadata_json) {
+          try {
+            meta = typeof notif.metadata_json === 'string' ? JSON.parse(notif.metadata_json) : notif.metadata_json;
+          } catch { }
+        }
+        const orderId = notif.order?.id || meta?.order_id || meta?.orderId || notif.metadata?.order_id;
         if (autoPrintRef.current && orderId && !isOrderKotPrintedRef.current(orderId)) {
           try {
             let ord = notif.order;
@@ -692,8 +704,11 @@ export function OrdersPage() {
               ord = res.data;
             }
             if (ord) {
-              const isPaidOrCash = ord.payment_status === 'paid' || ord.payment_method === 'cash' || ord.payment_method === 'cash_on_delivery' || ord.payment_method === 'counter';
-              const isAutoAccepted = (ord.order_status === 'ACCEPTED' || ord.order_status === 'PREPARING' || ord.order_status === 'PAID') && isPaidOrCash;
+              const isPaid = (ord.payment_status || '').toLowerCase() === 'paid';
+              const isCash = ['cash', 'cash_on_delivery', 'counter'].includes((ord.payment_method || '').toLowerCase());
+              const isPaidOrCash = isPaid || isCash;
+              const normStatus = (ord.order_status || '').toUpperCase();
+              const isAutoAccepted = (normStatus === 'ACCEPTED' || normStatus === 'PREPARING' || normStatus === 'PAID') && isPaidOrCash;
               if (isAutoAccepted && !isOrderKotPrintedRef.current(ord.id)) {
                 await handleDirectPrintKotRef.current(ord, 'full', true);
               }
@@ -707,8 +722,41 @@ export function OrdersPage() {
 
     window.addEventListener('menukit-realtime-update', handleRealtimeUpdate);
     return () => window.removeEventListener('menukit-realtime-update', handleRealtimeUpdate);
-  }, [fetchOrdersData]);
+  }, [fetchOrdersData, fetchStatusCounts]);
 
+  // Periodic background check: auto-print any paid/preparing orders that haven't been printed yet,
+  // regardless of which tab the merchant is currently viewing!
+  useEffect(() => {
+    const syncUnprintedPaidOrders = async () => {
+      if (!autoPrintRef.current) return;
+      try {
+        const res = await api.get('/orders', { 
+          params: { status_filter: 'preparing', limit: 20 } 
+        });
+        const preparingOrders = res.data || [];
+        for (const ord of preparingOrders) {
+          const isPaid = (ord.payment_status || '').toLowerCase() === 'paid';
+          const isCash = ['cash', 'cash_on_delivery', 'counter'].includes((ord.payment_method || '').toLowerCase());
+          const isPaidOrCash = isPaid || isCash;
+          const normStatus = (ord.order_status || '').toUpperCase();
+          const isAutoAccepted = (normStatus === 'ACCEPTED' || normStatus === 'PREPARING' || normStatus === 'PAID') && isPaidOrCash;
+          if (isAutoAccepted && !isOrderKotPrintedRef.current(ord.id)) {
+            await handleDirectPrintKotRef.current(ord, 'full', true);
+          }
+        }
+      } catch {
+        // silent background sync
+      }
+    };
+
+    const intervalId = setInterval(syncUnprintedPaidOrders, 10000);
+    const timeoutId = setTimeout(syncUnprintedPaidOrders, 1500);
+
+    return () => {
+      clearInterval(intervalId);
+      clearTimeout(timeoutId);
+    };
+  }, []);
 
   const handleLoadMore = () => {
     if (hasMore && !isLoadingMore && !isLoading) {
@@ -732,8 +780,8 @@ export function OrdersPage() {
       fetchStatusCounts();
       setOrders(prev => prev.map(o => o.id === orderId ? { ...o, order_status: res.data.order_status, cancellation_reason: res.data.cancellation_reason } : o));
 
-      // Auto-Print KOT to registered printer stations on order acceptance / preparing
-      const isAccepting = newStatus === 'ACCEPTED' || newStatus === 'PREPARING';
+      // Auto-Print KOT to registered printer stations on order acceptance / preparing / paid
+      const isAccepting = newStatus === 'ACCEPTED' || newStatus === 'PREPARING' || newStatus === 'PAID';
       if (isAccepting && autoPrintOnAccept && !isOrderKotPrinted(orderId)) {
         const targetOrder = orders.find(o => o.id === orderId) || res.data;
         if (targetOrder) {
@@ -885,11 +933,19 @@ export function OrdersPage() {
       const res = await api.put(`/orders/${orderId}/payment`, { payment_status: newPayStatus });
       toast.success(`Payment marked as ${newPayStatus}`);
       fetchStatusCounts();
-      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, payment_status: res.data.payment_status ?? newPayStatus } : o));
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, payment_status: res.data.payment_status ?? newPayStatus, order_status: res.data.order_status ?? o.order_status } : o));
+
+      // If marked as paid, automatically print KOT if not yet printed
+      if (newPayStatus.toLowerCase() === 'paid' && autoPrintOnAccept && !isOrderKotPrinted(orderId)) {
+        const fullOrder = orders.find(o => o.id === orderId) || res.data;
+        if (fullOrder) {
+          handleDirectPrintKot(fullOrder, 'full', true);
+        }
+      }
     } catch (err: any) {
       toast.error(err.response?.data?.detail || 'Failed to update payment status');
     }
-  }, [fetchStatusCounts]);
+  }, [fetchStatusCounts, autoPrintOnAccept, isOrderKotPrinted, orders, handleDirectPrintKot]);
 
   return (
     <div className="max-w-5xl mx-auto animate-fade-in pb-24 lg:pb-12 space-y-4">
@@ -1169,7 +1225,7 @@ export function OrdersPage() {
                         <div className="flex items-center gap-2 flex-wrap">
                           <div className="flex items-center gap-1.5">
                             <span className="font-mono text-base font-extrabold text-foreground tracking-tight">
-                              #{order.id.slice(0, 8).toUpperCase()}
+                              #{order.daily_order_number || order.id.slice(0, 8).toUpperCase()}
                             </span>
                             <button
                               type="button"
@@ -1608,7 +1664,7 @@ export function OrdersPage() {
                 onClick={() => {
                   const billText = generateOrderBillText(customerModalOrder);
                   if (navigator.share) {
-                    navigator.share({ title: `Order Bill #${customerModalOrder.id.slice(0, 8)}`, text: billText }).catch(() => { });
+                    navigator.share({ title: `Order Bill #${customerModalOrder.daily_order_number || customerModalOrder.id.slice(0, 8)}`, text: billText }).catch(() => { });
                   } else {
                     navigator.clipboard.writeText(billText);
                     toast.success('Bill copied to clipboard!');
@@ -1714,7 +1770,7 @@ export function OrdersPage() {
                 onClick={() => {
                   const billText = generateOrderBillText(customerModalOrder);
                   if (navigator.share) {
-                    navigator.share({ title: `Order Bill #${customerModalOrder.id.slice(0, 8)}`, text: billText }).catch(() => { });
+                    navigator.share({ title: `Order Bill #${customerModalOrder.daily_order_number || customerModalOrder.id.slice(0, 8)}`, text: billText }).catch(() => { });
                   } else {
                     navigator.clipboard.writeText(billText);
                     toast.success('Bill copied to clipboard!');
@@ -1747,7 +1803,7 @@ export function OrdersPage() {
       <Modal
         isOpen={!!itemsModalOrder && !isMobile}
         onClose={() => setItemsModalOrder(null)}
-        title={`Order #${itemsModalOrder?.id?.slice(0, 8)?.toUpperCase()} — Items (${itemsModalOrder?.items?.length ?? 0})`}
+        title={`Order #${itemsModalOrder?.daily_order_number || itemsModalOrder?.id?.slice(0, 8)?.toUpperCase()} — Items (${itemsModalOrder?.items?.length ?? 0})`}
         className="max-w-2xl sm:max-w-3xl"
         footer={
           itemsModalOrder ? (
@@ -2042,7 +2098,7 @@ export function OrdersPage() {
       <BottomSheet
         isOpen={!!itemsModalOrder && isMobile}
         onClose={() => setItemsModalOrder(null)}
-        title={`Order #${itemsModalOrder?.id?.slice(0, 8)?.toUpperCase()} — Items (${itemsModalOrder?.items?.length ?? 0})`}
+        title={`Order #${itemsModalOrder?.daily_order_number || itemsModalOrder?.id?.slice(0, 8)?.toUpperCase()} — Items (${itemsModalOrder?.items?.length ?? 0})`}
         footer={
           itemsModalOrder ? (
             <div className="space-y-3 w-full">

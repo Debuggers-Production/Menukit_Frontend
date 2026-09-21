@@ -491,7 +491,7 @@ export function PublicMenuPage() {
   });
   const [memberStatus, setMemberStatus] = useState<'unlocked' | 'verified-member' | null>(() => {
     if (!id) return null;
-    const s = sessionStorage.getItem(`member_status_${id}`) || sessionStorage.getItem('member_status');
+    const s = sessionStorage.getItem(`member_status_${id}`);
     if (s) return s as 'unlocked' | 'verified-member';
     return null;
   });
@@ -579,7 +579,9 @@ export function PublicMenuPage() {
 
       if (data?.is_strict_member) {
         setMemberStatus('verified-member');
-        sessionStorage.setItem('member_status', 'verified-member');
+        if (id) {
+          sessionStorage.setItem(`member_status_${id}`, 'verified-member');
+        }
         if (data.mobile_number) {
           localStorage.setItem('customer_mobile', data.mobile_number);
         }
@@ -2545,7 +2547,6 @@ export function PublicMenuPage() {
             const status = customerId || 'unlocked';
             setMemberStatus(status as any);
             sessionStorage.setItem(`member_status_${shop.id}`, status);
-            sessionStorage.setItem('member_status', status);
             if (isExisting || localStorage.getItem('customer_is_existing') === 'true' || localStorage.getItem('customer_token')) {
               setIsExistingCustomer(true);
               setIsCustomerLoggedIn(Boolean(localStorage.getItem('customer_token')));

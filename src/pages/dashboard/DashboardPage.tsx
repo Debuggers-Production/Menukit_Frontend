@@ -20,6 +20,7 @@ import { useShopStore } from '@/store/shopStore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { PageContainer } from '@/components/ui/PageContainer';
 import { useHeaderStore } from '@/store/useHeaderStore';
@@ -30,6 +31,8 @@ export function DashboardPage() {
   const [stats, setStats] = useState<any>(null);
   const [memberStats, setMemberStats] = useState<any>(null);
   const [activities, setActivities] = useState<any[]>([]);
+  const [activitySearch, setActivitySearch] = useState('');
+  const [isSearchingActivity, setIsSearchingActivity] = useState(false);
   const [topSearches, setTopSearches] = useState<any[]>([]);
   const [topReviews, setTopReviews] = useState<any[]>([]);
   const { shop, setShop } = useShopStore();
@@ -38,6 +41,27 @@ export function DashboardPage() {
   const [isCreateOrderModalOpen, setIsCreateOrderModalOpen] = useState(false);
   const navigate = useNavigate();
   const { setTitle } = useHeaderStore();
+
+
+  useEffect(() => {
+    if (!shop) return;
+    const timer = setTimeout(async () => {
+      if (activitySearch !== undefined) {
+        setIsSearchingActivity(true);
+        try {
+          const res = await api.get('/analytics/activities', { params: { search: activitySearch || undefined } });
+          if (res.data?.recent_activities) {
+            setActivities(res.data.recent_activities);
+          }
+        } catch (e) {
+          console.error("Failed to search activities", e);
+        } finally {
+          setIsSearchingActivity(false);
+        }
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [activitySearch, shop]);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -150,7 +174,7 @@ export function DashboardPage() {
 
   const statCards = [
     { title: 'Total Menu Items', value: stats?.total_menu_items || 0, icon: Coffee, color: 'text-blue-500', bg: 'bg-blue-100 dark:bg-blue-900/30' },
-    { title: 'Verified Members', value: memberStats?.verified_members || 0, icon: Users, color: 'text-emerald-500', bg: 'bg-emerald-100 dark:bg-emerald-900/30' },
+    { title: 'Verified Members', value: memberStats?.manually_added || 0, icon: Users, color: 'text-emerald-500', bg: 'bg-emerald-100 dark:bg-emerald-900/30' },
     { title: 'QR Scans', value: stats?.total_qr_scans || 0, icon: QrCode, color: 'text-purple-500', bg: 'bg-purple-100 dark:bg-purple-900/30' },
     { title: 'Menu Views', value: stats?.total_menu_views || 0, icon: Eye, color: 'text-orange-500', bg: 'bg-orange-100 dark:bg-orange-900/30' },
   ];
@@ -211,11 +235,25 @@ export function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         {/* Recent Activity */}
         <Card className="flex flex-col h-[350px] sm:h-[450px]">
-          <CardHeader className="shrink-0 pb-3 sm:pb-4">
-            <CardTitle>Recent Activity</CardTitle>
-            <CardDescription>
-              Your latest actions on the platform
-            </CardDescription>
+                    <CardHeader className="shrink-0 pb-3 sm:pb-4 space-y-3">
+            <div>
+              <CardTitle>Recent Activity</CardTitle>
+              <CardDescription>
+                Your latest actions on the platform
+              </CardDescription>
+            </div>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+              <Input 
+                placeholder="Search activity..."
+                className="pl-9 bg-slate-50 dark:bg-slate-900 h-9 text-sm"
+                value={activitySearch}
+                onChange={(e) => setActivitySearch(e.target.value)}
+              />
+              {isSearchingActivity && (
+                <div className="absolute right-3 top-2.5 h-4 w-4 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+              )}
+            </div>
           </CardHeader>
 
           <CardContent className="flex-1 overflow-y-auto pr-4 custom-scrollbar">

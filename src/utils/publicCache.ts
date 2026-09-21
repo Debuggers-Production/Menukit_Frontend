@@ -14,20 +14,6 @@ export const publicCache = {
       return mem.data as T;
     }
 
-    // 2. Fallback to sessionStorage
-    try {
-      const storedStr = sessionStorage.getItem(`public_cache_${key}`);
-      if (storedStr) {
-        const parsed = JSON.parse(storedStr);
-        if (parsed && Date.now() - parsed.timestamp < CACHE_TTL_MS) {
-          memoryCache[key] = parsed; // sync back to memory
-          return parsed.data as T;
-        }
-      }
-    } catch {
-      // Ignore sessionStorage errors
-    }
-
     return null;
   },
 
@@ -35,19 +21,11 @@ export const publicCache = {
     if (!key || !data) return;
     const entry = { data, timestamp: Date.now() };
     memoryCache[key] = entry;
-    try {
-      sessionStorage.setItem(`public_cache_${key}`, JSON.stringify(entry));
-    } catch {
-      // Ignore quota errors
-    }
   },
 
   clear: (key?: string): void => {
     if (key) {
       delete memoryCache[key];
-      try {
-        sessionStorage.removeItem(`public_cache_${key}`);
-      } catch {}
     } else {
       Object.keys(memoryCache).forEach((k) => delete memoryCache[k]);
     }

@@ -46,7 +46,7 @@ function MapEventsHandler({ onClick, center }: { onClick: (lat: number, lng: num
 export function PublicCartPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { items, updateQuantity, removeFromCart, clearCart, manualDiscountId, setManualDiscount, orderType, setOrderType, isOrderTypeSet } = useShopCart(id);
+  const { items, updateQuantity, removeFromCart, clearCart, manualDiscountId, setManualDiscount, orderType, setOrderType, isOrderTypeSet, syncWithLatestMenu } = useShopCart(id);
   
   const [shop, setShop] = useState<Shop | null>(null);
   const currencySymbol = shop?.settings?.currency || '₹';
@@ -54,7 +54,7 @@ export function PublicCartPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [memberStatus] = useState<'unlocked' | 'verified-member' | null>(() => {
     if (!id) return null;
-    return (sessionStorage.getItem(`member_status_${id}`) || sessionStorage.getItem('member_status')) as any;
+    return (sessionStorage.getItem(`member_status_${id}`)) as any;
   });
 
   // Ordering & Checkout state
@@ -91,6 +91,25 @@ export function PublicCartPage() {
   const [isVerifyingCode, setIsVerifyingCode] = useState(false);
   const [discountCodeError, setDiscountCodeError] = useState('');
 
+  const isDiscountApplicable = (disc: Discount) => {
+    if (disc.applies_to === 'all') return true;
+    if (items.length === 0) return false;
+    return items.some(item => {
+      if (disc.applies_to === 'category' && disc.target_ids?.includes(item.menuItem.category_id)) return true;
+      if (disc.applies_to === 'items' && disc.target_ids?.includes(item.menuItem.id)) return true;
+      return false;
+    });
+  };
+
+  useEffect(() => {
+    if (manualDiscountId) {
+      const activeDisc = availableDiscounts.find(d => d.id === manualDiscountId);
+      if (activeDisc && !isDiscountApplicable(activeDisc)) {
+        setManualDiscount(null);
+      }
+    }
+  }, [items, manualDiscountId, availableDiscounts, setManualDiscount]);
+
   const handleVerifyDiscountCode = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!shop?.id || !discountCodeInput.trim()) return;
@@ -104,6 +123,13 @@ export function PublicCartPage() {
       });
       const verifiedDisc: Discount = res.data;
       
+      if (!isDiscountApplicable(verifiedDisc)) {
+        setDiscountCodeError('This discount code is not applicable to any items in your cart');
+        triggerHaptic(HAPTIC_PATTERNS.error);
+        setIsVerifyingCode(false);
+        return;
+      }
+
       setAvailableDiscounts(prev => {
         if (prev.some(d => d.id === verifiedDisc.id)) return prev;
         return [...prev, verifiedDisc];
@@ -264,12 +290,18 @@ export function PublicCartPage() {
         }
 
         // Always fetch fresh shop and discounts in parallel to speed up loading
-        const [shopRes, discountRes] = await Promise.all([
+        const [shopRes, discountRes, itemsRes] = await Promise.all([
           api.get(`/public/shop/${id}`),
-          api.get(`/public/shop/${id}/discounts`)
+          api.get(`/public/shop/${id}/discounts`),
+          api.get(`/public/shop/${id}/items?limit=200`)
         ]);
 
         setShop(shopRes.data);
+        
+        // Sync cart with latest items
+        if (itemsRes.data && Array.isArray(itemsRes.data)) {
+          syncWithLatestMenu(itemsRes.data);
+        }
 
         const now = new Date();
         const currentDay = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][now.getDay()];
@@ -568,12 +600,48 @@ export function PublicCartPage() {
     if (manualDiscountId) {
       const manualDisc = availableDiscounts.find(d => d.id === manualDiscountId);
       if (manualDisc) {
-        const afterAuto = subtotal;
-        const v = Number(manualDisc.discount_value);
-        if (manualDisc.discount_type === 'percentage') {
-          manualDiscountAmount = afterAuto * (v / 100);
-        } else if (manualDisc.discount_type === 'flat') {
-          manualDiscountAmount = v;
+        let applicableSubtotal = 0;
+        
+        if (manualDisc.applies_to === 'all') {
+          applicableSubtotal = subtotal;
+        } else {
+          items.forEach(item => {
+            const { menuItem, selectedVariantIdx, selectedAddons, quantity } = item;
+            
+            let isApplicable = false;
+            if (manualDisc.applies_to === 'category' && manualDisc.target_ids?.includes(menuItem.category_id)) {
+              isApplicable = true;
+            } else if (manualDisc.applies_to === 'items' && manualDisc.target_ids?.includes(menuItem.id)) {
+              isApplicable = true;
+            }
+            
+            if (isApplicable) {
+              let basePrice = 0;
+              if (menuItem.variants && menuItem.variants.length > 0) {
+                const v = menuItem.variants[selectedVariantIdx];
+                basePrice = (isDelivery && v.online_price) ? Number(v.online_price) : Number(v.price);
+              } else {
+                basePrice = (isDelivery && menuItem.online_price) ? Number(menuItem.online_price) : Number(menuItem.price);
+              }
+              
+              let addonsPrice = 0;
+              if (menuItem.addons) {
+                selectedAddons.forEach(idx => {
+                  addonsPrice += Number(menuItem.addons![idx].price);
+                });
+              }
+              applicableSubtotal += (basePrice + addonsPrice) * quantity;
+            }
+          });
+        }
+        
+        if (applicableSubtotal > 0) {
+          const v = Number(manualDisc.discount_value);
+          if (manualDisc.discount_type === 'percentage') {
+            manualDiscountAmount = applicableSubtotal * (v / 100);
+          } else if (manualDisc.discount_type === 'flat') {
+            manualDiscountAmount = Math.min(v, applicableSubtotal);
+          }
         }
       }
     }
@@ -732,7 +800,14 @@ export function PublicCartPage() {
     return (
       <button
         key={disc.id}
-        onClick={() => setManualDiscount(manualDiscountId === disc.id ? null : disc.id)}
+        onClick={() => {
+          if (manualDiscountId !== disc.id && !isDiscountApplicable(disc)) {
+            toast.error('This discount is not applicable to any items in your cart');
+            triggerHaptic(HAPTIC_PATTERNS.error);
+            return;
+          }
+          setManualDiscount(manualDiscountId === disc.id ? null : disc.id);
+        }}
         className={`w-full p-4 ${borderRadiusClass} border-2 flex items-center justify-between transition-all ${
           manualDiscountId === disc.id 
             ? 'border-transparent' 
@@ -1936,6 +2011,11 @@ export function PublicCartPage() {
 
               <button
                 onClick={() => {
+                  if (!isApplied && !isDiscountApplicable(disc)) {
+                    toast.error('This discount is not applicable to any items in your cart');
+                    triggerHaptic(HAPTIC_PATTERNS.error);
+                    return;
+                  }
                   setManualDiscount(isApplied ? null : disc.id);
                   setSelectedBalloonDiscount(null);
                   if (!isApplied) {

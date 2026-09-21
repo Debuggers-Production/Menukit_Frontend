@@ -14,6 +14,7 @@ export interface ActiveOrderInfo {
   order_status: 'pending' | 'accepted' | 'completed' | 'rejected' | 'cancelled';
   order_type: string;
   total_amount: number;
+  daily_order_number?: number;
   items: OrderItemInfo[];
   created_at: string;
 }

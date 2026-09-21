@@ -438,7 +438,7 @@ export function CustomerProfilePage() {
                       >
                         <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
                           <div>
-                            <span className="text-[10px] font-bold text-slate-400 font-mono">#{o.id.slice(0, 8).toUpperCase()}</span>
+                            <span className="text-[10px] font-bold text-slate-400 font-mono">#{String(o.daily_order_number || (o.daily_order_number || o.id.slice(0, 8))).toUpperCase()}</span>
                             <h5 className="font-extrabold text-xs text-slate-700 dark:text-slate-300">{shopNameGroup}</h5>
                           </div>
                           <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold ${

@@ -59,7 +59,7 @@ export function ThermalBillModal({ isOpen, onClose, order, shop, initialMode }: 
   const items = isNewOnlyMode ? newlyAddedItems : allActiveItems;
 
   const { full: formattedDateTime } = formatReceiptDateTime(order.created_at);
-  const billNo = `INV-${new Date(order.created_at || Date.now()).getFullYear()}-${order.id ? order.id.slice(0, 8).toUpperCase() : '00000000'}`;
+  const billNo = `INV-${new Date(order.created_at || Date.now()).getFullYear()}-${order.id ? String(order.daily_order_number || (order.daily_order_number || order.id.slice(0, 8))).toUpperCase() : '00000000'}`;
   const currencySymbol = (!shop?.settings?.currency || shop?.settings?.currency === '$') ? 'Rs' : shop.settings.currency;
   
   const totalUnits = items.reduce((sum: number, it: any) => sum + (it.quantity || 1), 0);

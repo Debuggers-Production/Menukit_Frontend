@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useHeaderStore } from '@/store/useHeaderStore';
 import { 
@@ -1084,73 +1085,90 @@ export function SubscriptionMarketplacePage() {
 
       </div>
 
-      {/* 3. MODAL: INVOICE & BILLING HISTORY */}
-      {showHistoryModal && (
+            {/* 3. MODAL: INVOICE & BILLING HISTORY */}
+      {showHistoryModal && createPortal(
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-2xl w-full shadow-2xl space-y-4 max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-              <h3 className="font-black text-lg text-slate-900 dark:text-white flex items-center gap-2">
-                <FileText className="text-primary" /> Invoice & Billing History
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[2rem] p-6 max-w-xl w-full shadow-2xl flex flex-col" style={{ maxHeight: 'calc(100vh - 32px)' }}>
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800/60 mb-2 shrink-0">
+              <h3 className="font-black text-lg text-slate-900 dark:text-white flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+                  <Receipt size={16} />
+                </div>
+                Billing History
               </h3>
               <button
-                onClick={() => setShowHistoryModal(false)}
+                onClick={() => setShowHistoryModal(false
+      , document.body)}
                 className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors"
               >
                 ✕
               </button>
             </div>
 
-            <div className="overflow-y-auto flex-1 space-y-3 pr-1">
+            <div className="overflow-y-auto flex-1 no-scrollbar space-y-1 -mx-2 px-2 pb-2">
               {historyList.length === 0 ? (
-                <div className="py-12 text-center text-slate-400">
-                  <FileText className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                <div className="py-16 text-center text-slate-400">
+                  <FileText className="w-12 h-12 mx-auto mb-3 opacity-20" />
                   <p className="font-bold text-sm">No billing invoices found yet.</p>
                 </div>
               ) : (
                 historyList.map((item) => {
                   const currSym = item.currency === 'USD' ? '$' : item.currency === 'GBP' ? '£' : item.currency === 'AUD' ? 'A$' : item.currency === 'CAD' ? 'C$' : item.currency === 'EUR' ? '€' : '₹';
                   return (
-                    <div key={item.id} className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-4">
-                      <div>
-                        <span className="text-[10px] font-bold text-slate-400 block uppercase">
-                          Invoice #{item.invoice_number}
-                        </span>
-                        <h4 className="font-black text-sm text-slate-900 dark:text-white">
-                          {currSym}{item.amount} <span className="text-[10px] font-semibold text-slate-400 font-mono">({item.currency || 'INR'})</span>
-                        </h4>
-                        <p className="text-xs text-slate-500">
-                          {new Date(item.created_at || item.paid_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} • {item.status || 'Paid'}
-                        </p>
+                    <div key={item.id} className="p-3.5 rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors flex items-center justify-between gap-4 group cursor-default">
+                      <div className="flex items-center gap-3.5">
+                        <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800/80 border border-slate-200/50 dark:border-slate-700/50 flex items-center justify-center shrink-0 shadow-sm">
+                          <FileText size={16} className="text-slate-400" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <h4 className="font-black text-[15px] text-slate-900 dark:text-white leading-none">
+                              {currSym}{item.amount}
+                            </h4>
+                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 font-bold uppercase tracking-wider">
+                              {item.status || 'Paid'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+                            <span>{new Date(item.created_at || item.paid_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                            <span className="text-slate-300 dark:text-slate-700 font-normal">•</span>
+                            <span className="font-mono text-[10px] text-slate-400">#{item.invoice_number || item.id.slice(0, 8)}</span>
+                          </div>
+                        </div>
                       </div>
 
-                      <a
-                        href={`/api/v1/subscription/invoice/${item.id}/print`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-bold text-primary flex items-center gap-1.5 hover:bg-primary/10 transition-colors shadow-xs"
+                      <button
+                        onClick={async () => {
+                          const toastId = toast.loading('Loading invoice...');
+                          try {
+                            const res = await api.get(`/subscription/invoices/${item.id}`);
+                            const printWindow = window.open('', '_blank');
+                            if (printWindow) {
+                              printWindow.document.write(res.data);
+                              printWindow.document.close();
+                            }
+                            toast.dismiss(toastId);
+                          } catch (err) {
+                            console.error("Failed to load invoice", err);
+                            toast.error('Failed to load invoice', { id: toastId });
+                          }
+                        }}
+                        className="w-9 h-9 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 flex items-center justify-center hover:text-primary hover:border-primary/30 hover:bg-primary/10 transition-all shadow-sm opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 shrink-0 outline-none"
+                        title="Print Invoice"
                       >
-                        <Printer size={14} /> Print Invoice
-                      </a>
+                        <Printer size={16} />
+                      </button>
                     </div>
                   );
                 })
               )}
             </div>
-
-            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 text-right">
-              <button
-                onClick={() => setShowHistoryModal(false)}
-                className="px-5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-200 transition-colors"
-              >
-                Close
-              </button>
-            </div>
           </div>
         </div>
-      )}
+      , document.body)}
 
       {/* 4. MODAL: MOCK GATEWAY PAYMENT SIMULATOR */}
-      {mockGatewayOrder && (
+      {mockGatewayOrder && createPortal(
         <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl text-center space-y-5 animate-scale-up">
             <div className="w-16 h-16 rounded-full bg-orange-100 dark:bg-orange-950/60 text-primary flex items-center justify-center mx-auto shadow-md">
@@ -1189,7 +1207,7 @@ export function SubscriptionMarketplacePage() {
             </div>
           </div>
         </div>
-      )}
+      , document.body)}
 
     </div>
   );

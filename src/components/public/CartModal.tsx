@@ -82,12 +82,48 @@ export function CartModal({ isOpen, onClose, shop, availableDiscounts, memberSta
     if (manualDiscountId) {
       const manualDisc = availableDiscounts.find(d => d.id === manualDiscountId);
       if (manualDisc) {
-        const afterAuto = subtotal; // Since auto is 0 when manual is active, we just use subtotal
-        const v = Number(manualDisc.discount_value);
-        if (manualDisc.discount_type === 'percentage') {
-          manualDiscountAmount = afterAuto * (v / 100);
-        } else if (manualDisc.discount_type === 'flat') {
-          manualDiscountAmount = v;
+        let applicableSubtotal = 0;
+        
+        if (manualDisc.applies_to === 'all') {
+          applicableSubtotal = subtotal;
+        } else {
+          items.forEach(item => {
+            const { menuItem, selectedVariantIdx, selectedAddons, quantity } = item;
+            
+            let isApplicable = false;
+            if (manualDisc.applies_to === 'category' && manualDisc.target_ids?.includes(menuItem.category_id)) {
+              isApplicable = true;
+            } else if (manualDisc.applies_to === 'items' && manualDisc.target_ids?.includes(menuItem.id)) {
+              isApplicable = true;
+            }
+            
+            if (isApplicable) {
+              let basePrice = 0;
+              if (menuItem.variants && menuItem.variants.length > 0) {
+                const v = menuItem.variants[selectedVariantIdx];
+                basePrice = (isDelivery && v.online_price) ? Number(v.online_price) : Number(v.price);
+              } else {
+                basePrice = (isDelivery && menuItem.online_price) ? Number(menuItem.online_price) : Number(menuItem.price);
+              }
+              
+              let addonsPrice = 0;
+              if (menuItem.addons) {
+                selectedAddons.forEach(idx => {
+                  addonsPrice += Number(menuItem.addons![idx].price);
+                });
+              }
+              applicableSubtotal += (basePrice + addonsPrice) * quantity;
+            }
+          });
+        }
+        
+        if (applicableSubtotal > 0) {
+          const v = Number(manualDisc.discount_value);
+          if (manualDisc.discount_type === 'percentage') {
+            manualDiscountAmount = applicableSubtotal * (v / 100);
+          } else if (manualDisc.discount_type === 'flat') {
+            manualDiscountAmount = Math.min(v, applicableSubtotal);
+          }
         }
       }
     }

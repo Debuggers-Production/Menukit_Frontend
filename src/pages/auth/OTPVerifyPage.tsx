@@ -152,7 +152,10 @@ export function OTPVerifyPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="mt-6 flex flex-col items-center">
-            <div className="flex gap-2 sm:gap-3 mb-8" onPaste={handlePaste}>
+            <div className="flex gap-2 sm:gap-3 mb-8" onPaste={(e) => {
+              e.preventDefault();
+              handlePaste(e.clipboardData.getData('text'));
+            }}>
               {otp.map((digit, index) => (
                 <input
                   key={index}

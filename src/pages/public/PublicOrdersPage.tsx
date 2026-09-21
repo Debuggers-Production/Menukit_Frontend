@@ -567,7 +567,7 @@ export function PublicOrdersPage() {
                       <div className="flex justify-between items-start mb-3.5">
                         <div>
                           <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">ORDER REFERENCE</p>
-                          <p className="font-extrabold text-sm text-slate-855 dark:text-slate-200 mt-1.5 font-mono">#{order.id.slice(0, 8).toUpperCase()}</p>
+                          <p className="font-extrabold text-sm text-slate-855 dark:text-slate-200 mt-1.5 font-mono">#{String(order.daily_order_number || (order.daily_order_number || order.id.slice(0, 8))).toUpperCase()}</p>
                         </div>
 
                         <div className="flex flex-col items-end gap-1.5">

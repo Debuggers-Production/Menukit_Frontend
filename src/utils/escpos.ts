@@ -155,7 +155,7 @@ export function buildKotEscPos(order: any, shop: any, options: EscPosOptions = {
 
   // 3. Metadata Row
   builder.alignLeft();
-  const rawId = order.id ? order.id.slice(0, 8).toUpperCase() : '00000000';
+  const rawId = order.id ? String(order.daily_order_number || (order.daily_order_number || order.id.slice(0, 8))).toUpperCase() : '00000000';
   const kotNo = options.kotNumber || `KOT-${rawId}`;
 
   const orderType = order.order_type === 'dine_in'
@@ -303,7 +303,7 @@ export function buildReceiptEscPos(
 
   // 2. Metadata
   builder.alignLeft();
-  const billNo = `INV-${new Date(order?.created_at || Date.now()).getFullYear()}-${order?.id ? order.id.slice(0, 8).toUpperCase() : '00000000'}`;
+  const billNo = `INV-${new Date(order?.created_at || Date.now()).getFullYear()}-${order?.id ? String(order.daily_order_number || (order.daily_order_number || order.id.slice(0, 8))).toUpperCase() : '00000000'}`;
   const now = new Date(order?.created_at || Date.now());
   const dateStr = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getFullYear()).slice(-2)} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
