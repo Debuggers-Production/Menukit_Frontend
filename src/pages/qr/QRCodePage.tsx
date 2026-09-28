@@ -33,7 +33,7 @@ export function QRCodePage() {
   const { setTitle: setHeaderTitle } = useHeaderStore();
 
   useEffect(() => {
-    setHeaderTitle('QR Code Generator', 'Download and print your unique menu QR code.');
+    setHeaderTitle('QR Code Generator', 'Download and print shop QR code.');
   }, [setHeaderTitle]);
 
   useEffect(() => {
@@ -48,37 +48,43 @@ export function QRCodePage() {
       img.crossOrigin = "anonymous";
       img.onload = () => {
         const canvas = document.createElement("canvas");
-        const canvasSize = 512;
+        const canvasSize = 1024;
         canvas.width = canvasSize;
         canvas.height = canvasSize;
         const ctx = canvas.getContext("2d");
         if (ctx) {
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = "high";
+
+          ctx.clearRect(0, 0, canvasSize, canvasSize);
+
           // 1. Draw solid opaque white circular badge
           ctx.beginPath();
-          ctx.arc(canvasSize / 2, canvasSize / 2, (canvasSize / 2) - 4, 0, Math.PI * 2);
+          ctx.arc(canvasSize / 2, canvasSize / 2, (canvasSize / 2) - 8, 0, Math.PI * 2);
           ctx.fillStyle = "#FFFFFF";
           ctx.fill();
 
-          // 2. Draw clean subtle border ring for perfect circular definition
-          ctx.strokeStyle = "#E2E8F0";
-          ctx.lineWidth = 12;
-          ctx.stroke();
+          // 2. Draw logo nicely centered and clipped into the circle
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(canvasSize / 2, canvasSize / 2, (canvasSize / 2) - 20, 0, Math.PI * 2);
+          ctx.clip();
 
-          // 3. Draw logo centered inside the circle with proportional padding
-          const padding = 70;
-          const maxDim = canvasSize - (padding * 2);
+          const maxDim = canvasSize - 56;
           const scale = Math.min(maxDim / img.width, maxDim / img.height);
           const w = img.width * scale;
           const h = img.height * scale;
           const x = (canvasSize - w) / 2;
           const y = (canvasSize - h) / 2;
-
-          ctx.save();
-          ctx.beginPath();
-          ctx.arc(canvasSize / 2, canvasSize / 2, (canvasSize / 2) - 10, 0, Math.PI * 2);
-          ctx.clip();
           ctx.drawImage(img, x, y, w, h);
           ctx.restore();
+
+          // 3. Crisp circular border ring for clear round shape definition
+          ctx.beginPath();
+          ctx.arc(canvasSize / 2, canvasSize / 2, (canvasSize / 2) - 12, 0, Math.PI * 2);
+          ctx.strokeStyle = "#CBD5E1";
+          ctx.lineWidth = 18;
+          ctx.stroke();
 
           setRoundedLogoUrl(canvas.toDataURL("image/png"));
         } else {
@@ -115,10 +121,14 @@ export function QRCodePage() {
       if (!qrRef.current) return;
 
       const qrOptions = {
-        width: 280,
-        height: 280,
+        type: 'svg' as const,
+        width: 320,
+        height: 320,
         margin: 8,
         data: qrTargetUrl,
+        qrOptions: {
+          errorCorrectionLevel: 'H' as const,
+        },
         dotsOptions: {
           type: dotType as any,
           color: qrColor,
@@ -137,8 +147,8 @@ export function QRCodePage() {
         image: includeLogo && roundedLogoUrl ? roundedLogoUrl : undefined,
         imageOptions: {
           crossOrigin: "anonymous",
-          margin: 4,
-          imageSize: 0.32,
+          margin: 0,
+          imageSize: 0.20,
           hideBackgroundDots: true,
         }
       };
@@ -242,122 +252,135 @@ export function QRCodePage() {
   };
 
   const handleDownloadPNG = async () => {
-    if (!qrCode?.qr_url) return;
+    const qrTargetUrl = getQrUrlWithType(qrCode?.qr_url);
+    if (!qrTargetUrl) return;
     
-    const toastId = toast.loading('Generating high-quality image...');
+    const toastId = toast.loading('Generating ultra-high-definition poster (2400×3000)...');
     
     try {
       const canvas = document.createElement('canvas');
-      // High-res dimensions
-      canvas.width = 1200;
-      canvas.height = 1500;
+      // 2400x3000 Ultra High-Res Dimensions for crystal clear 300+ DPI print/zoom
+      canvas.width = 2400;
+      canvas.height = 3000;
       const ctx = canvas.getContext('2d');
       if (!ctx) throw new Error('Could not get canvas context');
+
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
 
       // Helper to load images
       const loadImage = (url: string): Promise<HTMLImageElement> => {
         return new Promise((resolve, reject) => {
           const img = new Image();
-          img.crossOrigin = 'anonymous'; // Important for CORS
+          img.crossOrigin = 'anonymous';
           img.onload = () => resolve(img);
           img.onerror = () => reject(new Error('Failed to load image'));
           img.src = url;
         });
       };
 
-      // 1. Draw Background & border
+      // 1. Draw Background & Outer Card Border with rounded corners
       ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.beginPath();
+      ctx.roundRect(0, 0, canvas.width, canvas.height, 60);
+      ctx.fill();
+
       ctx.strokeStyle = '#f1f5f9';
-      ctx.lineWidth = 10;
-      ctx.strokeRect(0, 0, canvas.width, canvas.height);
+      ctx.lineWidth = 16;
+      ctx.beginPath();
+      ctx.roundRect(8, 8, canvas.width - 16, canvas.height - 16, 54);
+      ctx.stroke();
 
       // 2. Draw Top Accent Bar
       const gradient = ctx.createLinearGradient(0, 0, canvas.width, 0);
       gradient.addColorStop(0, '#ea580c');
       gradient.addColorStop(1, '#f59e0b');
       ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, canvas.width, 24);
+      ctx.beginPath();
+      ctx.roundRect(0, 0, canvas.width, 40, [60, 60, 0, 0]);
+      ctx.fill();
 
-      let currentY = 180;
+      let currentY = 280;
 
       // 3. Draw Logo
       if (shop?.logo_url) {
         try {
           const logo = await loadImage(shop.logo_url);
+          const logoRadius = 180;
           ctx.save();
           ctx.beginPath();
-          ctx.arc(canvas.width / 2, currentY, 120, 0, Math.PI * 2);
+          ctx.arc(canvas.width / 2, currentY, logoRadius, 0, Math.PI * 2);
           ctx.closePath();
           ctx.clip();
-          // Calculate logo dimensions to cover the circle
-          const scale = Math.max(240 / logo.width, 240 / logo.height);
+          
+          const scale = Math.max((logoRadius * 2) / logo.width, (logoRadius * 2) / logo.height);
           const x = (canvas.width / 2) - (logo.width / 2) * scale;
           const y = currentY - (logo.height / 2) * scale;
           ctx.drawImage(logo, x, y, logo.width * scale, logo.height * scale);
           ctx.restore();
           
-          // Draw logo border
+          // Logo Border Ring
           ctx.beginPath();
-          ctx.arc(canvas.width / 2, currentY, 120, 0, Math.PI * 2);
-          ctx.lineWidth = 4;
+          ctx.arc(canvas.width / 2, currentY, logoRadius, 0, Math.PI * 2);
+          ctx.lineWidth = 8;
           ctx.strokeStyle = '#e2e8f0';
           ctx.stroke();
         } catch (e) {
           console.warn('Could not load logo for canvas');
-          // Draw placeholder
+          const logoRadius = 180;
           ctx.beginPath();
-          ctx.arc(canvas.width / 2, currentY, 120, 0, Math.PI * 2);
+          ctx.arc(canvas.width / 2, currentY, logoRadius, 0, Math.PI * 2);
           ctx.fillStyle = '#f8fafc';
           ctx.fill();
-          ctx.lineWidth = 4;
+          ctx.lineWidth = 8;
           ctx.strokeStyle = '#e2e8f0';
           ctx.stroke();
           ctx.fillStyle = '#94a3b8';
-          ctx.font = 'bold 80px sans-serif';
+          ctx.font = 'bold 120px sans-serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillText('🍽️', canvas.width / 2, currentY);
         }
-        currentY += 180;
+        currentY += 270;
       } else {
-        currentY = 250;
+        currentY = 360;
       }
 
       // 4. Draw Shop Name
       ctx.fillStyle = '#1e293b';
-      ctx.font = 'bold 84px system-ui, -apple-system, sans-serif';
+      ctx.font = 'bold 110px system-ui, -apple-system, sans-serif';
       ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
+      ctx.textBaseline = 'middle';
       ctx.fillText(shop?.name || 'Restaurant Menu', canvas.width / 2, currentY);
-      currentY += 120;
+      currentY += 130;
 
       // 5. Draw Tagline
       ctx.fillStyle = '#ea580c';
-      ctx.font = 'bold 32px system-ui, -apple-system, sans-serif';
-      ctx.letterSpacing = '4px'; // Experimental, might not work in all browsers, so we simulate
-      ctx.fillText('SCAN TO VIEW OUR DIGITAL MENU', canvas.width / 2, currentY);
-      currentY += 120;
+      ctx.font = 'bold 44px system-ui, -apple-system, sans-serif';
+      ctx.fillText('SCAN TO VIEW DIGITAL MENU', canvas.width / 2, currentY);
+      currentY += 110;
 
-      // 6. Draw QR Code Box
-      const qrBoxSize = 600;
+      // 6. Draw QR Code Box Container
+      const qrBoxSize = 1320;
       const qrBoxX = (canvas.width - qrBoxSize) / 2;
       const qrBoxY = currentY;
       
-      // Draw rounded rect for QR background
       ctx.fillStyle = '#f8fafc';
       ctx.beginPath();
-      ctx.roundRect(qrBoxX, qrBoxY, qrBoxSize, qrBoxSize, 40);
+      ctx.roundRect(qrBoxX, qrBoxY, qrBoxSize, qrBoxSize, 50);
       ctx.fill();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = '#f1f5f9';
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = '#e2e8f0';
       ctx.stroke();
 
-      // 7. Load and Draw QR Code
+      // 7. Load and Draw Ultra-High-Resolution QR Code (2000×2000 with Level H Error Correction)
       const exportQr = new QRCodeStyling({
-        width: 600,
-        height: 600,
-        data: qrCode.qr_url,
+        width: 2000,
+        height: 2000,
+        data: qrTargetUrl,
+        qrOptions: {
+          errorCorrectionLevel: 'H',
+        },
         dotsOptions: {
           type: dotType as any,
           color: qrColor,
@@ -376,8 +399,8 @@ export function QRCodePage() {
         image: includeLogo && roundedLogoUrl ? roundedLogoUrl : undefined,
         imageOptions: {
           crossOrigin: "anonymous",
-          margin: 4,
-          imageSize: 0.32,
+          margin: 0,
+          imageSize: 0.20,
           hideBackgroundDots: true,
         }
       });
@@ -386,7 +409,7 @@ export function QRCodePage() {
       if (!blob) throw new Error("Failed to generate raw QR code blob");
       const blobUrl = URL.createObjectURL(blob);
       const qrImage = await loadImage(blobUrl);
-      const padding = 60;
+      const padding = 80;
       ctx.drawImage(
         qrImage, 
         qrBoxX + padding, 
@@ -396,33 +419,33 @@ export function QRCodePage() {
       );
       URL.revokeObjectURL(blobUrl);
 
-      currentY += qrBoxSize + 100;
+      currentY += qrBoxSize + 110;
 
       // 8. Draw Branding (Powered By)
       ctx.fillStyle = '#94a3b8';
-      ctx.font = 'bold 24px system-ui, -apple-system, sans-serif';
+      ctx.font = 'bold 36px system-ui, -apple-system, sans-serif';
       ctx.fillText('POWERED BY', canvas.width / 2, currentY);
-      currentY += 40;
+      currentY += 60;
 
       // Draw Gradient Brand Name
       const textGradient = ctx.createLinearGradient(
-        canvas.width / 2 - 150, 0, 
-        canvas.width / 2 + 150, 0
+        canvas.width / 2 - 200, 0, 
+        canvas.width / 2 + 200, 0
       );
       textGradient.addColorStop(0, '#ea580c');
       textGradient.addColorStop(1, '#f59e0b');
       ctx.fillStyle = textGradient;
-      ctx.font = 'bold 44px system-ui, -apple-system, sans-serif';
+      ctx.font = 'bold 74px system-ui, -apple-system, sans-serif';
       ctx.fillText('MenuKit', canvas.width / 2, currentY);
-      currentY += 60;
+      currentY += 75;
       
       // Draw Site Link
       ctx.fillStyle = '#94a3b8';
-      ctx.font = 'bold 24px system-ui, -apple-system, sans-serif';
+      ctx.font = 'bold 34px system-ui, -apple-system, sans-serif';
       ctx.fillText('debuggerstechnologies.com/menukit/', canvas.width / 2, currentY);
 
       // 9. Export and Download
-      const dataUrl = canvas.toDataURL('image/png');
+      const dataUrl = canvas.toDataURL('image/png', 1.0);
       const a = document.createElement('a');
       a.href = dataUrl;
       a.download = `${shop?.slug || 'menu'}-qr-poster.png`;
@@ -430,7 +453,7 @@ export function QRCodePage() {
       a.click();
       document.body.removeChild(a);
 
-      toast.success('Downloaded successfully!', { id: toastId });
+      toast.success('Ultra HD Poster downloaded successfully!', { id: toastId });
     } catch (error) {
       console.error('Failed to generate image:', error);
       toast.error('Failed to generate image.', { id: toastId });
@@ -438,15 +461,19 @@ export function QRCodePage() {
   };
 
   const handleDownloadQROnly = async () => {
-    if (!qrCode?.qr_url) return;
+    const qrTargetUrl = getQrUrlWithType(qrCode?.qr_url);
+    if (!qrTargetUrl) return;
     
-    const toastId = toast.loading('Downloading QR code...');
+    const toastId = toast.loading('Downloading ultra HD QR code (2400×2400)...');
     
     try {
       const exportQr = new QRCodeStyling({
-        width: 1000,
-        height: 1000,
-        data: qrCode.qr_url,
+        width: 2400,
+        height: 2400,
+        data: qrTargetUrl,
+        qrOptions: {
+          errorCorrectionLevel: 'H',
+        },
         dotsOptions: {
           type: dotType as any,
           color: qrColor,
@@ -465,31 +492,36 @@ export function QRCodePage() {
         image: includeLogo && roundedLogoUrl ? roundedLogoUrl : undefined,
         imageOptions: {
           crossOrigin: "anonymous",
-          margin: 4,
-          imageSize: 0.32,
+          margin: 0,
+          imageSize: 0.20,
           hideBackgroundDots: true,
         }
       });
       await exportQr.download({
-        name: `${shop?.slug || 'menu'}-qr-only`,
+        name: `${shop?.slug || 'menu'}-qr-2400px`,
         extension: 'png'
       });
-      toast.success('Downloaded successfully!', { id: toastId });
+      toast.success('Ultra HD QR Code downloaded!', { id: toastId });
     } catch (error) {
       console.error('Failed to download QR code:', error);
       toast.error('Failed to download QR code.', { id: toastId });
     }
   };
 
-  const handlePrint = async () => {
-    if (!qrCode?.qr_url) return;
-    
-    const toastId = toast.loading('Preparing print...');
+  const handleDownloadSVG = async () => {
+    const qrTargetUrl = getQrUrlWithType(qrCode?.qr_url);
+    if (!qrTargetUrl) return;
+
+    const toastId = toast.loading('Downloading SVG vector QR code...');
     try {
       const exportQr = new QRCodeStyling({
-        width: 500,
-        height: 500,
-        data: qrCode.qr_url,
+        type: 'svg',
+        width: 1200,
+        height: 1200,
+        data: qrTargetUrl,
+        qrOptions: {
+          errorCorrectionLevel: 'H',
+        },
         dotsOptions: {
           type: dotType as any,
           color: qrColor,
@@ -508,8 +540,55 @@ export function QRCodePage() {
         image: includeLogo && roundedLogoUrl ? roundedLogoUrl : undefined,
         imageOptions: {
           crossOrigin: "anonymous",
-          margin: 4,
-          imageSize: 0.32,
+          margin: 0,
+          imageSize: 0.20,
+          hideBackgroundDots: true,
+        }
+      });
+      await exportQr.download({
+        name: `${shop?.slug || 'menu'}-qr-vector`,
+        extension: 'svg'
+      });
+      toast.success('SVG Vector downloaded (Infinite zoom clarity)!', { id: toastId });
+    } catch (error) {
+      console.error('Failed to download SVG QR code:', error);
+      toast.error('Failed to download SVG QR code.', { id: toastId });
+    }
+  };
+
+  const handlePrint = async () => {
+    const qrTargetUrl = getQrUrlWithType(qrCode?.qr_url);
+    if (!qrTargetUrl) return;
+    
+    const toastId = toast.loading('Preparing print with ultra-clarity...');
+    try {
+      const exportQr = new QRCodeStyling({
+        width: 1200,
+        height: 1200,
+        data: qrTargetUrl,
+        qrOptions: {
+          errorCorrectionLevel: 'H',
+        },
+        dotsOptions: {
+          type: dotType as any,
+          color: qrColor,
+        },
+        cornersSquareOptions: {
+          type: cornersSquareType as any,
+          color: qrColor,
+        },
+        cornersDotOptions: {
+          type: cornersDotType as any,
+          color: qrColor,
+        },
+        backgroundOptions: {
+          color: "#FFFFFF",
+        },
+        image: includeLogo && roundedLogoUrl ? roundedLogoUrl : undefined,
+        imageOptions: {
+          crossOrigin: "anonymous",
+          margin: 0,
+          imageSize: 0.20,
           hideBackgroundDots: true,
         }
       });
@@ -681,7 +760,7 @@ export function QRCodePage() {
         </html>
       `);
       printWindow.document.close();
-      toast.success('Print ready!', { id: toastId });
+      toast.success('Print ready with high resolution!', { id: toastId });
     } catch (e) {
       console.error(e);
       toast.error('Failed to prepare print.', { id: toastId });
@@ -929,18 +1008,31 @@ export function QRCodePage() {
             <Card>
               <CardHeader>
                 <CardTitle>Download & Print</CardTitle>
-                <CardDescription>Export your QR code for physical display</CardDescription>
+                <CardDescription>Export your QR code in crystal-clear HD or infinite vector clarity</CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col space-y-3">
-                <Button className="w-full justify-start h-12" variant="secondary" onClick={handleDownloadPNG} title="Download QR with Template">
-                  <Download size={20} className="mr-2" />
-                  <span>Download QR with Template</span>
+                <Button className="w-full justify-start h-12" variant="secondary" onClick={handleDownloadPNG} title="Download Ultra HD Poster (2400×3000)">
+                  <Download size={20} className="mr-2 text-orange-600" />
+                  <div className="text-left">
+                    <span className="font-semibold block text-xs">Download Ultra HD Poster</span>
+                    <span className="text-[10px] text-slate-400 block">2400×3000 with restaurant template</span>
+                  </div>
                 </Button>
-                <Button className="w-full justify-start h-12" variant="secondary" onClick={handleDownloadQROnly} title="Download QR Code Only">
-                  <Download size={20} className="mr-2" />
-                  <span>Download QR Code Only</span>
+                <Button className="w-full justify-start h-12" variant="secondary" onClick={handleDownloadQROnly} title="Download HD QR Code Only (2400×2400)">
+                  <Download size={20} className="mr-2 text-orange-600" />
+                  <div className="text-left">
+                    <span className="font-semibold block text-xs">Download HD QR Code (PNG)</span>
+                    <span className="text-[10px] text-slate-400 block">2400×2400 high resolution</span>
+                  </div>
                 </Button>
-                <Button className="w-full justify-start h-12" variant="secondary" onClick={handlePrint} title="Print">
+                <Button className="w-full justify-start h-12" variant="secondary" onClick={handleDownloadSVG} title="Download SVG Vector (Infinite Clarity)">
+                  <Download size={20} className="mr-2 text-orange-600" />
+                  <div className="text-left">
+                    <span className="font-semibold block text-xs">Download Vector QR Code (SVG)</span>
+                    <span className="text-[10px] text-slate-400 block">Infinite clarity for large billboards & print</span>
+                  </div>
+                </Button>
+                <Button className="w-full justify-start h-12" variant="secondary" onClick={handlePrint} title="Print directly from browser">
                   <Printer size={20} className="mr-2" />
                   <span>Print directly from browser</span>
                 </Button>

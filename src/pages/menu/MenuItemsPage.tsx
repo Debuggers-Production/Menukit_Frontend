@@ -39,6 +39,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 
 import { usePermissions } from '@/hooks/usePermissions';
+import { getBusinessCategory } from '@/config/businessCategories';
 
 const SortableMenuItem = ({ children, item }: { children: React.ReactNode, item: MenuItem }) => {
  const {
@@ -68,6 +69,7 @@ const SortableMenuItem = ({ children, item }: { children: React.ReactNode, item:
 };
 export function MenuItemsPage() {
  const { menuItems, setMenuItems, categories, setCategories, shop } = useShopStore();
+  const businessCategory = getBusinessCategory(shop?.category);
  const safeMenuItems = Array.isArray(menuItems) ? menuItems : [];
  const { canWrite } = usePermissions('menu_items');
  const [isLoading, setIsLoading] = useState(() => safeMenuItems.length === 0);
@@ -118,7 +120,7 @@ export function MenuItemsPage() {
  offer_price: '',
  online_price: '',
  online_offer_price: '',
- food_types: ['veg'],
+ food_types: businessCategory.dietaryEnabled ? ['veg'] : ['none'],
  is_bestseller: false,
  is_highlighted: false,
  is_available: true,
@@ -150,7 +152,7 @@ export function MenuItemsPage() {
  const { setTitle } = useHeaderStore();
 
  useEffect(() => {
- setTitle('Menu Items', 'Add and manage your menus.');
+ setTitle(businessCategory.itemLabel, businessCategory.isFood ? 'Manage menu catalog.' : 'Manage product catalog.');
  }, [setTitle]);
 
  // Infinite scroll: observe sentinel element
@@ -419,9 +421,42 @@ export function MenuItemsPage() {
  toast.error('Please fill required fields');
  return;
  }
- if (currentStep === 2 && !basePrice) {
+ if (currentStep === 2) {
+ if (!basePrice) {
  toast.error('Please provide a regular price or add variants');
  return;
+ }
+ // Validate in-store prices
+ if (formData.offer_price && formData.price && parseFloat(formData.offer_price) >= parseFloat(formData.price)) {
+ toast.error(`Offer price (₹${formData.offer_price}) must always be less than regular price (₹${formData.price})`);
+ return;
+ }
+ // Validate online delivery prices
+ const effOnline = formData.online_price ? parseFloat(formData.online_price) : (formData.price ? parseFloat(formData.price) : 0);
+ if (formData.online_offer_price && effOnline > 0 && parseFloat(formData.online_offer_price) >= effOnline) {
+ toast.error(`Online offer price (₹${formData.online_offer_price}) must always be less than online price (₹${effOnline})`);
+ return;
+ }
+ // Validate variants
+ if (formData.variants && formData.variants.length > 0) {
+ for (let i = 0; i < formData.variants.length; i++) {
+ const v = formData.variants[i];
+ const vName = v.name?.trim() || `Variant #${i + 1}`;
+ if (!v.price || parseFloat(v.price) <= 0) {
+ toast.error(`Please provide a valid regular price for ${vName}`);
+ return;
+ }
+ if (v.offer_price && parseFloat(v.offer_price) >= parseFloat(v.price)) {
+ toast.error(`${vName}: Offer price (₹${v.offer_price}) must always be less than regular price (₹${v.price})`);
+ return;
+ }
+ const effVOnline = v.online_price ? parseFloat(v.online_price) : parseFloat(v.price);
+ if (v.online_offer_price && parseFloat(v.online_offer_price) >= effVOnline) {
+ toast.error(`${vName}: Online offer price (₹${v.online_offer_price}) must always be less than online price (₹${effVOnline})`);
+ return;
+ }
+ }
+ }
  }
  setCurrentStep(prev => prev + 1);
  return;
@@ -430,6 +465,32 @@ export function MenuItemsPage() {
  if (!formData.name.trim() || !basePrice || !formData.category_id) {
  toast.error('Please fill required fields');
  return;
+ }
+
+ // Final submit validation for prices
+ if (formData.offer_price && formData.price && parseFloat(formData.offer_price) >= parseFloat(formData.price)) {
+ toast.error(`Offer price (₹${formData.offer_price}) must always be less than regular price (₹${formData.price})`);
+ return;
+ }
+ const effOnlineFinal = formData.online_price ? parseFloat(formData.online_price) : (formData.price ? parseFloat(formData.price) : 0);
+ if (formData.online_offer_price && effOnlineFinal > 0 && parseFloat(formData.online_offer_price) >= effOnlineFinal) {
+ toast.error(`Online offer price (₹${formData.online_offer_price}) must always be less than online price (₹${effOnlineFinal})`);
+ return;
+ }
+ if (formData.variants && formData.variants.length > 0) {
+ for (let i = 0; i < formData.variants.length; i++) {
+ const v = formData.variants[i];
+ const vName = v.name?.trim() || `Variant #${i + 1}`;
+ if (v.offer_price && parseFloat(v.offer_price) >= parseFloat(v.price)) {
+ toast.error(`${vName}: Offer price (₹${v.offer_price}) must always be less than regular price (₹${v.price})`);
+ return;
+ }
+ const effVOnline = v.online_price ? parseFloat(v.online_price) : parseFloat(v.price);
+ if (v.online_offer_price && parseFloat(v.online_offer_price) >= effVOnline) {
+ toast.error(`${vName}: Online offer price (₹${v.online_offer_price}) must always be less than online price (₹${effVOnline})`);
+ return;
+ }
+ }
  }
  
  setIsSubmitting(true);
@@ -575,7 +636,7 @@ export function MenuItemsPage() {
   {canWrite && (
   <HeaderActions>
   <Button size="sm" onClick={() => openModal()} leftIcon={<Plus size={16} />}>
-  New Menu Item
+  {`New ${businessCategory.itemSingular}`}
   </Button>
   </HeaderActions>
   )}
@@ -621,7 +682,7 @@ export function MenuItemsPage() {
  />
  </div>
  
- <div className="flex items-center gap-2 shrink-0">
+ <div className="flex items-center justify-between sm:justify-end gap-2.5 w-full sm:w-auto shrink-0">
  <div className="w-44 sm:w-48">
  <SearchableSelect
  options={[
@@ -629,7 +690,7 @@ export function MenuItemsPage() {
  { id: 'available', name: 'Available', icon: <CheckCircle2 size={15} className="text-emerald-500" /> },
  { id: 'not_available', name: 'Not Available', icon: <XCircle size={15} className="text-rose-500" /> },
  { id: 'bestseller', name: 'Bestsellers', icon: <Flame size={15} className="text-amber-500" /> },
- { id: 'chef_special', name: 'Chef Special', icon: <Star size={15} className="text-primary" /> },
+ { id: 'chef_special', name: businessCategory.featuredBadgeLabel, icon: <Star size={15} className="text-primary" /> },
  ]}
  value={specialFilter}
  onChange={(val) => setSpecialFilter(val as any)}
@@ -682,7 +743,7 @@ export function MenuItemsPage() {
  {searchQuery ? `No menus match"${searchQuery}"` :"You haven't added any menus to this category yet."}
  </p>
  {categories.length > 0 && canWrite ? (
- <Button onClick={() => openModal()} variant="secondary">Add First Menu</Button>
+ <Button onClick={() => openModal()} variant="secondary">{`Add First ${businessCategory.itemSingular}`}</Button>
  ) : categories.length === 0 ? (
  <p className="text-sm text-primary font-medium">Please create a category first to add menus.</p>
  ) : null}
@@ -797,7 +858,7 @@ export function MenuItemsPage() {
  <div className="absolute top-2 left-2 flex flex-col gap-1 z-20">
  {item.is_highlighted && (
  <div className="bg-primary text-white text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm flex items-center animate-pulse">
- <Flame size={10} className="mr-0.5" /> Chef's Special
+ <Flame size={10} className="mr-0.5" /> {businessCategory.featuredBadgeLabel}
  </div>
  )}
  {item.is_bestseller && (
@@ -808,6 +869,7 @@ export function MenuItemsPage() {
  </div>
  
  {/* Veg/Non-veg mark */}
+ {businessCategory.dietaryEnabled && (
  <div className="absolute top-2 right-2 flex flex-col gap-1 z-20">
  {item.food_types?.map((type) => (
  <div key={type} className="bg-background/90 backdrop-blur-sm p-0.5 rounded shadow-sm">
@@ -835,6 +897,7 @@ export function MenuItemsPage() {
  </div>
  ))}
  </div>
+ )}
  </div>
  
  <CardContent className={`flex-1 flex flex-col ${viewMode === 'grid'? 'p-3 sm:p-4': 'p-3 sm:p-4'}`}>
@@ -940,7 +1003,7 @@ export function MenuItemsPage() {
  <Modal 
  isOpen={isModalOpen} 
  onClose={() => setIsModalOpen(false)}
- title={editingItem ?"Edit Menu" :"Add New Menu"}
+ title={editingItem ? `Edit ${businessCategory.itemSingular}` : `Add New ${businessCategory.itemSingular}`}
  className="max-w-xl"
  footer={
  <div className="flex justify-between items-center w-full">
@@ -1014,10 +1077,10 @@ export function MenuItemsPage() {
  {currentStep === 1 && (
  <div className="space-y-4 animate-fade-in">
  <Input
- label="Menu Name *"
+ label={`${businessCategory.itemSingular} Name *`}
  value={formData.name}
  onChange={(e) => setFormData({...formData, name: e.target.value})}
- placeholder="e.g. Chicken Biryani"
+ placeholder={businessCategory.itemPlaceholder}
  required
  />
  
@@ -1027,7 +1090,7 @@ export function MenuItemsPage() {
  options={categories.map(c => ({ id: c.id, name: c.name }))}
  value={formData.category_id}
  onChange={(val) => setFormData({...formData, category_id: val})}
- placeholder="Select a category"
+ placeholder={businessCategory.categorySelectPlaceholder}
  />
  </div>
 
@@ -1036,7 +1099,7 @@ export function MenuItemsPage() {
  <textarea
  value={formData.description}
  onChange={(e) => setFormData({...formData, description: e.target.value})}
- placeholder="Short description of ingredients..."
+ placeholder={businessCategory.descriptionPlaceholder}
  className="flex w-full rounded-xl border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring min-h-[100px] resize-y"
  />
  </div>
@@ -1069,6 +1132,7 @@ export function MenuItemsPage() {
  placeholder="0.00"
  required
  />
+ <div className="space-y-1">
  <Input
  label="Offer Price (Opt)"
  type="number"
@@ -1085,6 +1149,12 @@ export function MenuItemsPage() {
  }}
  placeholder="0.00"
  />
+ {formData.offer_price && formData.price && parseFloat(formData.offer_price) >= parseFloat(formData.price) && (
+   <p className="text-[11px] font-semibold text-rose-500 mt-1 flex items-center gap-1">
+     ⚠️ Offer price must be less than regular price (₹{formData.price})
+   </p>
+ )}
+ </div>
  </div>
  </div>
 
@@ -1102,6 +1172,7 @@ export function MenuItemsPage() {
  onChange={(e) => setFormData({...formData, online_price: e.target.value})}
  placeholder={formData.price ||"0.00"}
  />
+ <div className="space-y-1">
  <Input
  label="Online Offer Price"
  type="number"
@@ -1110,6 +1181,12 @@ export function MenuItemsPage() {
  onChange={(e) => setFormData({...formData, online_offer_price: e.target.value})}
  placeholder={formData.offer_price ||"0.00"}
  />
+ {formData.online_offer_price && (formData.online_price || formData.price) && parseFloat(formData.online_offer_price) >= parseFloat(formData.online_price || formData.price) && (
+   <p className="text-[11px] font-semibold text-rose-500 mt-1 flex items-center gap-1">
+     ⚠️ Must be less than online price (₹{formData.online_price || formData.price})
+   </p>
+ )}
+ </div>
  </div>
  </div>
  </div>
@@ -1159,6 +1236,7 @@ export function MenuItemsPage() {
  }} 
  required 
  />
+ <div>
  <Input 
  label="Offer Price" 
  type="number" 
@@ -1176,6 +1254,12 @@ export function MenuItemsPage() {
  setFormData({...formData, variants: newV});
  }} 
  />
+ {v.offer_price && v.price && parseFloat(v.offer_price) >= parseFloat(v.price) && (
+   <p className="text-[10px] font-semibold text-rose-500 mt-0.5 leading-tight">
+     ⚠️ Must be &lt; ₹{v.price}
+   </p>
+ )}
+ </div>
  <Input 
  label="Online Price" 
  type="number" 
@@ -1188,6 +1272,7 @@ export function MenuItemsPage() {
  setFormData({...formData, variants: newV});
  }} 
  />
+ <div>
  <Input 
  label="Online Offer" 
  type="number" 
@@ -1200,6 +1285,12 @@ export function MenuItemsPage() {
  setFormData({...formData, variants: newV});
  }} 
  />
+ {v.online_offer_price && (v.online_price || v.price) && parseFloat(v.online_offer_price) >= parseFloat(v.online_price || v.price) && (
+   <p className="text-[10px] font-semibold text-rose-500 mt-0.5 leading-tight">
+     ⚠️ Must be &lt; ₹{v.online_price || v.price}
+   </p>
+ )}
+ </div>
  </div>
  </div>
  <button 
@@ -1284,6 +1375,7 @@ export function MenuItemsPage() {
  ))}
  </div>
 
+ {businessCategory.dietaryEnabled && (
  <div className="space-y-1.5 text-left pt-2">
  <label className="text-sm font-medium text-foreground">Dietary Type</label>
  <div className="flex bg-muted p-1 rounded-xl h-auto flex-wrap gap-1">
@@ -1338,11 +1430,12 @@ export function MenuItemsPage() {
  onChange={(c) => setFormData({...formData, allow_ice_preference: c})}
  label="Allow Ice Preference"
  description="Ask customer for With/Without Ice"
- className="p-3 border border-border rounded-xl hover:bg-muted/50 /50"
+ className="p-3 border border-border rounded-xl hover:bg-muted/50"
  />
  </div>
  )}
  </div>
+ )}
  </div>
  )}
 

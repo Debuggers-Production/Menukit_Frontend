@@ -20,10 +20,11 @@ import { AuthLayout } from '@/layouts/AuthLayout';
 import { DashboardLayout } from '@/layouts/DashboardLayout';
 import { ProtectedRoute } from '@/routes/ProtectedRoute';
 import { PermissionGuard } from '@/components/PermissionGuard';
+import { VersionUpdateNotifier } from '@/components/VersionUpdateNotifier';
 
-// Auth Pages
 const LoginPage = lazy(() => import('@/pages/auth/LoginPage').then(m => ({ default: m.LoginPage })));
 const OTPVerifyPage = lazy(() => import('@/pages/auth/OTPVerifyPage').then(m => ({ default: m.OTPVerifyPage })));
+const PhoneVerificationPage = lazy(() => import('@/pages/auth/PhoneVerificationPage').then(m => ({ default: m.PhoneVerificationPage })));
 const MCPAuthPage = lazy(() => import('@/pages/auth/MCPAuthPage').then(m => ({ default: m.MCPAuthPage })));
 const OAuthConsentPage = lazy(() => import('@/pages/auth/OAuthConsentPage').then(m => ({ default: m.OAuthConsentPage })));
 const VerifyEmployeePage = lazy(() => import('@/pages/auth/VerifyEmployeePage').then(m => ({ default: m.VerifyEmployeePage })));
@@ -128,6 +129,7 @@ function App() {
       
       {/* Protected Standalone Routes */}
       <Route element={<ProtectedRoute />}>
+        <Route path="/verify-phone" element={<PhoneVerificationPage />} />
         <Route path="/select-shop" element={<ShopSelectionPage />} />
       </Route>
       
@@ -165,6 +167,7 @@ function App() {
       <Route path="/brand/:userId" element={<BrandLandingPage />} />
       <Route path="/discover/scan" element={<StoreDiscoveryPage />} />
       <Route path="/shop/:id" element={<PublicMenuPage />} />
+      <Route path="/shop/:id/menu" element={<PublicMenuPage />} />
       <Route path="/shop/:id/item/:itemId" element={<PublicItemPage />} />
       <Route path="/shop/:id/cart" element={<PublicCartPage />} />
       <Route path="/shop/:id/contest" element={<PublicContestPage />} />
@@ -181,7 +184,8 @@ function App() {
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
-      </Suspense>
+    <VersionUpdateNotifier />
+    </Suspense>
   )
 }
 

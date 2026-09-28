@@ -7,6 +7,8 @@ export interface Option {
   id: string;
   name: string;
   icon?: React.ReactNode;
+  disabled?: boolean;
+  subtext?: string;
 }
 
 interface SearchableSelectProps {
@@ -169,17 +171,25 @@ export function SearchableSelect({
               filteredOptions.map((opt) => (
                 <div
                   key={opt.id}
-                  className={`px-3 py-2.5 text-sm cursor-pointer flex items-center gap-2 hover:bg-accent hover:text-accent-foreground transition-colors ${
-                    value?.toString() === opt.id.toString() ? 'bg-primary/10 text-primary font-semibold' : 'text-foreground'
+                  className={`px-3 py-2.5 text-sm flex items-center justify-between gap-2 transition-colors ${
+                    opt.disabled
+                      ? 'opacity-50 cursor-not-allowed bg-muted/40 text-muted-foreground'
+                      : 'cursor-pointer hover:bg-accent hover:text-accent-foreground ' + (value?.toString() === opt.id.toString() ? 'bg-primary/10 text-primary font-semibold' : 'text-foreground')
                   }`}
                   onClick={() => {
+                    if (opt.disabled) return;
                     onChange(opt.id);
                     setIsOpen(false);
                     setSearch('');
                   }}
                 >
-                  {opt.icon}
-                  <span>{opt.name}</span>
+                  <div className="flex items-center gap-2 truncate">
+                    {opt.icon}
+                    <span className="truncate">{opt.name}</span>
+                  </div>
+                  {opt.subtext && (
+                    <span className="text-[10px] font-bold shrink-0 opacity-80">{opt.subtext}</span>
+                  )}
                 </div>
               ))
             )}

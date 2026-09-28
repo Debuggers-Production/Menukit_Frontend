@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
-import { useLocation } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 import { toast } from 'react-hot-toast';
-import { Store, MapPin, Phone, UploadCloud, Save, ChevronRight, Check, Edit2, Clock, Star, Navigation } from 'lucide-react';
+import { Store, MapPin, Phone, UploadCloud, Save, ChevronRight, Check, Edit2, Clock, Star, Navigation, UtensilsCrossed, Sparkles } from 'lucide-react';
 import { compressImage } from '../../utils/imageCompression';
 import { api } from '@/services/api';
 import { useShopStore } from '@/store/shopStore';
 import { usePermissions } from '@/hooks/usePermissions';
 import { AccessDenied } from '@/components/ui/AccessDenied';
+import { BUSINESS_CATEGORIES, getBusinessCategory } from '@/config/businessCategories';
 
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -16,6 +17,7 @@ import { SearchableSelect } from '@/components/ui/SearchableSelect';
 import { useAuthStore } from '@/store/authStore';
 import { useHeaderStore } from '@/store/useHeaderStore';
 import { HeaderActions } from '@/components/HeaderActions';
+import { publicCache } from '@/utils/publicCache';
 
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -140,7 +142,27 @@ function MapLocationSelector({
  );
 }
 
+interface ShopFormData {
+  name: string;
+  category: string;
+  description: string;
+  welcome_message: string;
+  phone: string;
+  whatsapp: string;
+  address: string;
+  logo_url: string;
+  banner_url: string;
+  opening_time: string;
+  closing_time: string;
+  latitude: string;
+  longitude: string;
+  google_review_link: string;
+  clone_from_shop_id: string;
+}
+
 export function ShopSetupPage() {
+  const navigate = useNavigate();
+  const { user } = useAuthStore();
   const { shop, setShop } = useShopStore();
   const { setTitle: setHeaderTitle } = useHeaderStore();
   const [isLoading, setIsLoading] = useState(false);
@@ -162,8 +184,9 @@ export function ShopSetupPage() {
     return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
   };
   
-  const [formData, setFormData] = useState<FormData>({
+  const [formData, setFormData] = useState<ShopFormData>({
     name: '',
+    category: 'restaurants_cafes_hotels',
     description: '',
     welcome_message: '',
     phone: '',
@@ -207,9 +230,9 @@ export function ShopSetupPage() {
 
   useEffect(() => {
     if (isCreateNew) {
-      setHeaderTitle(ownedShops.length > 0 ? 'Create New Branch' : 'Create New Shop', 'Set up your restaurant\'s digital presence');
+      setHeaderTitle(ownedShops.length > 0 ? 'Create New Branch' : 'Create New Shop', 'Set up business profile');
     } else {
-      setHeaderTitle('Shop Setup', 'Configure your restaurant\'s digital presence');
+      setHeaderTitle('Shop Setup', 'Manage shop profile');
     }
   }, [setHeaderTitle, isCreateNew, ownedShops.length]);
 
@@ -217,6 +240,7 @@ export function ShopSetupPage() {
     if (isCreateNew) {
       setFormData({
         name: '',
+        category: 'restaurants_cafes_hotels',
         description: '',
         welcome_message: '',
         phone: '',
@@ -244,6 +268,7 @@ export function ShopSetupPage() {
           const loadedShop = res.data;
           setFormData({
             name: loadedShop.name || '',
+            category: loadedShop.category || 'restaurants_cafes_hotels',
             description: loadedShop.description || '',
             welcome_message: loadedShop.welcome_message || '',
             phone: loadedShop.phone || '',
@@ -339,11 +364,14 @@ export function ShopSetupPage() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (currentStep < 3) {
-      handleNext();
+  const handleSaveShop = async (e?: React.FormEvent) => {
+    if (e) {
+      e.preventDefault();
+    }
+
+    if (isCreateNew && !user?.phone_verified) {
+      toast.error('Mobile number verification required before creating a shop');
+      navigate('/verify-phone', { state: { from: location } });
       return;
     }
 
@@ -364,14 +392,19 @@ export function ShopSetupPage() {
       let res;
       if (shop?.id && !isCreateNew) {
         res = await api.put('/shops/me', payload);
+        publicCache.clear();
         toast.success('Shop profile updated successfully!');
         setShop(res.data);
+        // Refresh auth user so all stores stay consistent
+        useAuthStore.getState().fetchUser();
         setViewMode('summary');
       } else {
         res = await api.post('/shops', payload);
+        publicCache.clear();
         localStorage.setItem('current_shop_id', res.data.id);
         toast.success('Shop created successfully!');
         setShop(res.data);
+        useAuthStore.getState().fetchUser();
         window.location.href = '/dashboard';
         return;
       }
@@ -384,6 +417,17 @@ export function ShopSetupPage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (isCreateNew && currentStep < 3) {
+      handleNext();
+      return;
+    }
+
+    await handleSaveShop(e);
   };
 
   const steps = [
@@ -462,7 +506,12 @@ export function ShopSetupPage() {
  
  <div className="pt-16 pb-6 px-6 sm:px-8">
  <div className="flex items-center justify-between gap-3 mb-2">
-    <h3 className="text-xl sm:text-2xl font-bold text-foreground truncate">{shop?.name}</h3>
+    <div className="flex items-center gap-2.5 flex-wrap min-w-0">
+      <h3 className="text-xl sm:text-2xl font-bold text-foreground truncate">{shop?.name}</h3>
+      <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${getBusinessCategory(shop?.category).badgeColor}`}>
+        {getBusinessCategory(shop?.category).label}
+      </span>
+    </div>
     <Button 
       onClick={() => setViewMode('edit')} 
       size="sm" 
@@ -546,12 +595,43 @@ export function ShopSetupPage() {
  {isCreateNew ?"Set up your new shop's primary details." :"Update your shop's primary details."}
  </p>
  </div>
- {!isCreateNew && (
- <Button onClick={() => setViewMode('summary')} variant="outline" className="gap-2">
- <ChevronRight size={18} />
- View Summary
- </Button>
- )}
+   {!isCreateNew && (
+  <div className="flex items-center gap-2">
+    <Button 
+      type="button" 
+      onClick={handleSaveShop} 
+      disabled={isLoading} 
+      size="sm" 
+      className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 font-bold rounded-xl"
+    >
+      <Save size={15} /> Save Changes
+    </Button>
+    <Button onClick={() => setViewMode('summary')} variant="outline" size="sm" className="gap-1.5 rounded-xl">
+      <ChevronRight size={16} />
+      View Summary
+    </Button>
+  </div>
+  )}
+ </div>
+
+ {/* Business Category Selection Dropdown */}
+ <div className="space-y-1.5">
+   <label className="block text-sm font-bold text-foreground">
+     Business / Shop Category <span className="text-rose-500">*</span>
+   </label>
+   <SearchableSelect
+     options={BUSINESS_CATEGORIES.map((cat) => ({
+       id: cat.id,
+       name: `${cat.label} (${cat.shortLabel})`
+     }))}
+     value={formData.category || 'restaurants_cafes_hotels'}
+     onChange={(val) => setFormData(prev => ({ ...prev, category: val }))}
+     placeholder="Select business / shop category"
+     showSearch={false}
+   />
+   <p className="text-xs text-muted-foreground mt-1">
+     Choose your category to automatically adapt food/product terminology, dietary options, public filters, and printer tickets.
+   </p>
  </div>
  
  {isCreateNew && ownedShops.length > 0 && (
@@ -578,7 +658,7 @@ export function ShopSetupPage() {
  name="name"
  value={formData.name}
  onChange={handleChange}
- placeholder="e.g. Siva Hotel"
+ placeholder={formData.category === 'fireworks_crackers' ? "e.g. Standard Fireworks Store" : "e.g. Siva Hotel & Cafe"}
  required
  />
  
@@ -771,28 +851,40 @@ export function ShopSetupPage() {
  <div></div>
  )}
 
- {currentStep < 3 ? (
- <Button 
- type="button" 
- onClick={handleNext}
- size="sm"
- className="rounded-xl font-bold"
- >
- Next Step <ChevronRight size={16} className="ml-1" />
- </Button>
- ) : (
- <Button 
- type="submit" 
- disabled={isLoading}
- size="sm"
- className="rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white"
- >
- {isLoading ? (isCreateNew ? 'Creating Shop...' : 'Saving Shop...') : (isCreateNew ? 'Create Shop' : 'Save Shop Profile')} <Save size={16} className="ml-1.5" />
- </Button>
- )}
- </div>
-
- </form>
+   <div className="flex items-center gap-2">
+    {!isCreateNew && (
+      <Button 
+        type="button" 
+        onClick={handleSaveShop} 
+        disabled={isLoading} 
+        size="sm" 
+        className="rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
+      >
+        <Save size={15} /> Save Changes
+      </Button>
+    )}
+    {currentStep < 3 ? (
+      <Button 
+        type="button" 
+        onClick={handleNext}
+        size="sm"
+        className="rounded-xl font-bold"
+      >
+        Next Step <ChevronRight size={16} className="ml-1" />
+      </Button>
+    ) : (
+            <Button 
+              type="submit" 
+              disabled={isLoading} 
+              size="sm" 
+              className="rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              {isLoading ? (isCreateNew ? 'Creating Shop...' : 'Saving Shop...') : (isCreateNew ? 'Create Shop' : 'Save Shop Profile')} <Save size={16} className="ml-1.5" />
+            </Button>
+          )}
+        </div>
+      </div>
+    </form>
  </>
  )}
  </div>

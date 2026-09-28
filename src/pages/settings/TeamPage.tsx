@@ -62,7 +62,7 @@ export function TeamPage() {
   const { setTitle } = useHeaderStore();
 
   useEffect(() => {
-    setTitle('Staff Management', 'Invite new staff members, assign access roles, and manage permissions.');
+    setTitle('Staff Management', 'Manage team members & access.');
   }, [setTitle]);
 
   useEffect(() => {
@@ -284,7 +284,7 @@ export function TeamPage() {
       {/* Main Layout Grid */}
       <div className="flex flex-col lg:flex-row gap-6 items-start mt-4">
         
-        {/* Left Column */}
+        {/* Left Column — Fixed / Pinned Active Staff View */}
         <div className="flex-1 w-full min-w-0 space-y-6">
           {isLoading ? (
             <div className="flex justify-center p-12">
@@ -512,11 +512,11 @@ export function TeamPage() {
           )}
         </div>
 
-        {/* Right Column — Sticky Fixed Invite Collaborator Panel */}
-        <div className="w-full lg:w-80 shrink-0 lg:sticky lg:top-4">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden">
+        {/* Right Column — Scrollable Invite Collaborator Panel */}
+        <div data-lenis-prevent className="w-full lg:w-[400px] shrink-0 lg:sticky lg:top-2 lg:max-h-[calc(100vh-130px)] lg:overflow-y-auto lg:pr-1 custom-scrollbar">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden flex flex-col">
             {/* Panel Header */}
-            <div className="bg-primary p-4 text-white">
+            <div className="bg-primary p-4 text-white shrink-0 sticky top-0 z-10 shadow-xs">
               <div className="flex items-center gap-2 mb-0.5">
                 <UserPlus size={18} className="text-white/80" />
                 <h3 className="font-bold text-base">Invite Staff</h3>
@@ -527,7 +527,7 @@ export function TeamPage() {
             </div>
 
             {/* Panel Body */}
-            <div className="p-4">
+            <div className="p-4 flex-1">
               <form onSubmit={handleInvite}>
                 {/* Email field */}
                 <div className="mb-4">
@@ -553,9 +553,9 @@ export function TeamPage() {
                     <Shield size={13} /> Service Access
                   </div>
                   
-                  <div className="overflow-hidden rounded-lg border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
+                  <div className="rounded-lg border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 overflow-hidden">
                     <table className="w-full text-xs text-left">
-                      <thead className="bg-slate-100/80 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700">
+                      <thead className="bg-slate-100/80 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 sticky top-0 z-5">
                         <tr>
                           <th className="py-2 px-2.5 font-semibold text-slate-600 dark:text-slate-300">Service</th>
                           <th className="py-2 text-center font-semibold text-slate-500 w-11">None</th>

@@ -1,19 +1,31 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router';
+import { useState, useEffect, useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router';
 import { 
-  Mail, Store, Shield, Smartphone, ChevronRight, Sliders, Globe, 
+  Mail, Store, Shield, Smartphone, Phone, ChevronRight, ChevronDown, ArrowRight, Sliders, Globe, 
   Coins, Truck, ShoppingBag, QrCode, Tag, MapPin, Zap, CheckCircle2, Lock, Info, AlertCircle,
   CreditCard, Printer, Plus, Trash2, Edit2, UtensilsCrossed, FileText, Check, RotateCcw,
-  Wifi, Usb, Volume2, Terminal, Copy, Receipt, Search, X, Tags, Layers, Sparkles, Eye, EyeOff, Loader2, Save,
-  Laptop, Download
+  Wifi, Usb, Bluetooth, Volume2, Terminal, Copy, Receipt, Search, X, Tags, Layers, Sparkles, Eye, EyeOff, Loader2, Save,
+  Laptop, Download, ArrowLeft, LayoutGrid, PackageCheck
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { toast } from 'react-hot-toast';
 import { useAuthStore } from '@/store/authStore';
 import { useShopStore } from '@/store/shopStore';
+import { getBusinessCategory } from '@/config/businessCategories';
 import { usePrinterStore, PrinterStation, BillingPrinterConfig, BillingPrinter } from '@/store/usePrinterStore';
-import { printThermalKot, printBillToPrinter, testNetworkPrinterConnection, checkLocalPrintBridgeStatus } from '@/utils/thermalPrinter';
+import { 
+  printThermalKot, 
+  printBillToPrinter, 
+  testNetworkPrinterConnection, 
+  testBluetoothPrinterConnection,
+  checkLocalPrintBridgeStatus 
+} from '@/utils/thermalPrinter';
 import { requestWebUsbPrinter, sendEscPosToDevice } from '@/utils/webUsbPrinter';
+import { 
+  requestWebBluetoothPrinter, 
+  isBluetoothPrintingSupported, 
+  getActiveBluetoothPrinter 
+} from '@/utils/webBluetoothPrinter';
 import { buildKotEscPos } from '@/utils/escpos';
 import { api } from '@/services/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
@@ -27,7 +39,24 @@ import { SearchableSelect } from '@/components/ui/SearchableSelect';
 import { usePWAInstall } from '@/hooks/usePWAInstall';
 import { APP_VERSION } from '@/config/version';
 import { WhatsNewModal } from '@/components/WhatsNewModal';
+import { CountryCodeSelect } from '@/components/ui/CountryCodeSelect';
 import menukitLogo from '@/assets/menukit-logo.svg';
+
+const COUNTRY_CODES = [
+  { code: '+91', flag: '🇮🇳', label: 'India (+91)' },
+  { code: '+1', flag: '🇺🇸', label: 'USA / Canada (+1)' },
+  { code: '+44', flag: '🇬🇧', label: 'UK (+44)' },
+  { code: '+971', flag: '🇦🇪', label: 'UAE (+971)' },
+  { code: '+65', flag: '🇸🇬', label: 'Singapore (+65)' },
+  { code: '+61', flag: '🇦🇺', label: 'Australia (+61)' },
+  { code: '+966', flag: '🇸🇦', label: 'Saudi Arabia (+966)' },
+  { code: '+974', flag: '🇶🇦', label: 'Qatar (+974)' },
+  { code: '+968', flag: '🇴🇲', label: 'Oman (+968)' },
+  { code: '+965', flag: '🇰🇼', label: 'Kuwait (+965)' },
+  { code: '+973', flag: '🇧🇭', label: 'Bahrain (+973)' },
+  { code: '+94', flag: '🇱🇰', label: 'Sri Lanka (+94)' },
+];
+
 const loadRazorpayScript = (): Promise<boolean> => {
   return new Promise((resolve) => {
     if ((window as any).Razorpay) {
@@ -83,14 +112,57 @@ function SettingRow({
 
 export function SettingsPage() {
   const [isWhatsNewOpen, setIsWhatsNewOpen] = useState(false);
-  const { user, changeEmail } = useAuthStore();
+  const { setHeaderTitle } = useHeaderStore();
+  const { user, fetchUser, changeEmail } = useAuthStore();
   const { shop, setShop, categories, setCategories } = useShopStore();
+  const businessCategory = getBusinessCategory(shop?.category || user?.shops?.find(s => s.id === user?.current_shop_id)?.category || user?.shops?.[0]?.category);
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabFromUrl = searchParams.get('tab');
   const { isInstalled, promptInstall } = usePWAInstall();
 
-  // Tab State
-  const [activeTab, setActiveTab] = useState<'general' | 'ordering' | 'discovery' | 'payments' | 'gst' | 'printers' | 'account'>('general');
+  // Tab & Module State
+  const [activeTab, setActiveTab] = useState<'overview' | 'general' | 'ordering' | 'discovery' | 'payments' | 'gst' | 'printers' | 'account'>(
+    (tabFromUrl as any) || 'overview'
+  );
+  const [moduleSearchQuery, setModuleSearchQuery] = useState('');
   const [printerSection, setPrinterSection] = useState<'all' | 'kot' | 'billing'>('all');
+
+  useEffect(() => {
+    if (tabFromUrl && tabFromUrl !== activeTab) {
+      setActiveTab(tabFromUrl as any);
+    }
+  }, [tabFromUrl]);
+
+  useEffect(() => {
+    if (activeTab === 'overview') {
+      setHeaderTitle('Account and Shop Settings', 'Select a module to configure ordering channels, payment accounts, taxes, printers, and preferences.');
+    } else {
+      const moduleTitles: Record<string, { title: string; desc: string }> = {
+        general: { title: 'General Settings', desc: 'Manage currency, display languages, and app installation' },
+        ordering: { title: 'Ordering Channels', desc: 'Set up table dine-in, takeaway counters, and deliveries' },
+        discovery: { title: 'Public Discovery & SEO', desc: 'Boost public search visibility and customer store discovery' },
+        payments: { title: 'Payments & Bank Accounts', desc: 'Manage bank settlement account, online UPI and card gateways' },
+        gst: { title: 'GST & Tax Compliances', desc: 'Manage business legal entity, GSTIN, and FSSAI licenses' },
+        printers: { title: businessCategory.settingsPrintersTabLabel || 'Dispatch & Thermal Printers', desc: 'Configure KOT station routing and USB / LAN receipt printers' },
+        account: { title: 'Security & Account', desc: 'Account credentials, session devices, and deletion rules' },
+      };
+      const info = moduleTitles[activeTab] || { title: 'Shop Settings', desc: 'Shop preferences & rules' };
+      setHeaderTitle(info.title, info.desc);
+    }
+  }, [activeTab, setHeaderTitle, businessCategory]);
+
+  const handleSelectModule = (tabId: string) => {
+    setActiveTab(tabId as any);
+    if (tabId === 'overview') {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete('tab');
+      setSearchParams(nextParams);
+    } else {
+      setSearchParams({ tab: tabId });
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   // Printer & KOT Store
   const {
@@ -128,8 +200,13 @@ export function SettingsPage() {
   const [isStationModalOpen, setIsStationModalOpen] = useState(false);
   const [editingStationId, setEditingStationId] = useState<string | null>(null);
   const [isTestingLan, setIsTestingLan] = useState(false);
+  const [isTestingBt, setIsTestingBt] = useState(false);
   const [pairedUsbName, setPairedUsbName] = useState<string | null>(null);
+  const [pairedBtName, setPairedBtName] = useState<string>(() => {
+    try { return localStorage.getItem('menukit_paired_bt_printer_name') || ''; } catch { return ''; }
+  });
   const [bridgeStatus, setBridgeStatus] = useState<{ online: boolean; ip?: string } | null>(null);
+  const [btPermissionBlocked, setBtPermissionBlocked] = useState(false);
 
   // Quick Multi-Category Assign Modal State
   const [quickAssignStation, setQuickAssignStation] = useState<PrinterStation | null>(null);
@@ -142,7 +219,7 @@ export function SettingsPage() {
     categoryIds: string[];
     autoPrintOnAccept: boolean;
     enabled: boolean;
-    connectionType: 'browser' | 'network' | 'usb';
+    connectionType: 'browser' | 'network' | 'usb' | 'bluetooth';
     ipAddress: string;
     port: number;
     soundBuzzer: boolean;
@@ -202,6 +279,37 @@ export function SettingsPage() {
       }
     } catch (err: any) {
       toast.error(err.message || 'Failed to pair USB printer');
+    }
+  };
+
+  const handlePairBluetoothStation = async () => {
+    setBtPermissionBlocked(false);
+    try {
+      const dev = await requestWebBluetoothPrinter();
+      if (dev) {
+        setPairedBtName(dev.name);
+        setStationForm(prev => ({ ...prev, connectionType: 'bluetooth' }));
+        toast.success(`Paired: ${dev.name}`);
+      }
+    } catch (err: any) {
+      console.error('[BT Pair]', err?.name, err?.message);
+      // Any error except user-cancelled = show the permission help panel
+      if (err?.name !== 'NotFoundError' && !err?.message?.toLowerCase().includes('user cancel')) {
+        setBtPermissionBlocked(true);
+      }
+    }
+  };
+
+  const handleTestBluetoothSlip = async (name: string = 'Bluetooth Thermal Printer', width: '80mm' | '58mm' = '80mm') => {
+    setIsTestingBt(true);
+    const toastId = toast.loading(`Streaming test slip to ${name} over Bluetooth...`);
+    try {
+      const res = await testBluetoothPrinterConnection(name, width);
+      toast.success(res.message, { id: toastId });
+    } catch (err: any) {
+      toast.error(err.message || 'Bluetooth test print failed. Check power and pairing.', { id: toastId, duration: 5000 });
+    } finally {
+      setIsTestingBt(false);
     }
   };
 
@@ -285,6 +393,12 @@ export function SettingsPage() {
       return;
     }
 
+    // If Direct Bluetooth
+    if (station?.connectionType === 'bluetooth') {
+      await handleTestBluetoothSlip(targetName, targetWidth);
+      return;
+    }
+
     // If Direct USB
     if (station?.connectionType === 'usb') {
       const toastId = toast.loading('Sending ESC/POS bytes to USB printer...');
@@ -330,7 +444,7 @@ export function SettingsPage() {
   const [billingPrinterForm, setBillingPrinterForm] = useState<{
     name: string;
     paperWidth: '80mm' | '58mm';
-    connectionType: 'browser' | 'network' | 'usb';
+    connectionType: 'browser' | 'network' | 'usb' | 'bluetooth';
     ipAddress: string;
     port: number;
     enabled: boolean;
@@ -389,6 +503,23 @@ export function SettingsPage() {
       }
     } catch (err: any) {
       toast.error(err.message || 'Failed to pair USB printer');
+    }
+  };
+
+  const handlePairBillingPrinterBt = async () => {
+    setBtPermissionBlocked(false);
+    try {
+      const dev = await requestWebBluetoothPrinter();
+      if (dev) {
+        setPairedBtName(dev.name);
+        setBillingPrinterForm(prev => ({ ...prev, connectionType: 'bluetooth' }));
+        toast.success(`Paired: ${dev.name}`);
+      }
+    } catch (err: any) {
+      console.error('[BT Pair Billing]', err?.name, err?.message);
+      if (err?.name !== 'NotFoundError' && !err?.message?.toLowerCase().includes('user cancel')) {
+        setBtPermissionBlocked(true);
+      }
     }
   };
 
@@ -508,6 +639,25 @@ export function SettingsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [liveRazorpayStatus, setLiveRazorpayStatus] = useState<string | null>(null);
 
+  // Change Phone State
+  const [isPhoneModalOpen, setIsPhoneModalOpen] = useState(false);
+  const [phoneStep, setPhoneStep] = useState<1 | 2>(1);
+  const [phoneCountryCode, setPhoneCountryCode] = useState('+91');
+  const [newPhone, setNewPhone] = useState('');
+  const [phoneOtp, setPhoneOtp] = useState(['', '', '', '', '', '']);
+  const [isCountryDropdownOpen, setIsCountryDropdownOpen] = useState(false);
+  const [isPhoneSubmitting, setIsPhoneSubmitting] = useState(false);
+  const [phoneCountdown, setPhoneCountdown] = useState(60);
+  const [phoneResendCount, setPhoneResendCount] = useState(0);
+
+  useEffect(() => {
+    let timer: any;
+    if (phoneStep === 2 && phoneCountdown > 0) {
+      timer = setInterval(() => setPhoneCountdown((c) => c - 1), 1000);
+    }
+    return () => clearInterval(timer);
+  }, [phoneStep, phoneCountdown]);
+
   // Delivery Preview Test State
   const [testDistance, setTestDistance] = useState<number>(2);
 
@@ -545,8 +695,12 @@ export function SettingsPage() {
     extra_delivery_charge_per_step: shop?.settings?.extra_delivery_charge_per_step ?? 0,
     takeaway_enabled: shop?.settings?.takeaway_enabled || false,
     dinein_enabled: shop?.settings?.dinein_enabled || false,
+    dinein_tables_count: (shop?.settings as any)?.dinein_tables_count ?? 10,
     auto_accept_orders: shop?.settings?.auto_accept_orders || false,
     online_payments_enabled: shop?.settings?.online_payments_enabled !== false,
+    online_payments_dinein_enabled: shop?.settings?.online_payments_dinein_enabled !== false,
+    online_payments_takeaway_enabled: shop?.settings?.online_payments_takeaway_enabled !== false,
+    online_payments_delivery_enabled: shop?.settings?.online_payments_delivery_enabled !== false,
     bank_account_number: '',
     ifsc_code: shop?.settings?.ifsc_code || '',
     beneficiary_name: shop?.settings?.beneficiary_name || '',
@@ -609,8 +763,12 @@ export function SettingsPage() {
         extra_delivery_charge_per_step: shop.settings.extra_delivery_charge_per_step ?? 0,
         takeaway_enabled: shop.settings.takeaway_enabled || false,
         dinein_enabled: shop.settings.dinein_enabled || false,
+        dinein_tables_count: (shop.settings as any).dinein_tables_count ?? 10,
         auto_accept_orders: shop.settings.auto_accept_orders || false,
         online_payments_enabled: shop.settings.online_payments_enabled !== false,
+        online_payments_dinein_enabled: shop.settings.online_payments_dinein_enabled !== false,
+        online_payments_takeaway_enabled: shop.settings.online_payments_takeaway_enabled !== false,
+        online_payments_delivery_enabled: shop.settings.online_payments_delivery_enabled !== false,
         bank_account_number: '',
         ifsc_code: shop.settings.ifsc_code || '',
         beneficiary_name: shop.settings.beneficiary_name || '',
@@ -648,7 +806,7 @@ export function SettingsPage() {
   const { setTitle } = useHeaderStore();
 
   useEffect(() => {
-    setTitle('Settings', 'Manage your account, preferences, and shop ordering rules.');
+    setTitle('Settings', 'Manage preferences & shop rules.');
   }, [setTitle]);
 
   const handleSaveShopSettings = async () => {
@@ -886,6 +1044,82 @@ export function SettingsPage() {
     resetEmailFlow();
   };
 
+  // Change Phone Handlers
+  const handleSendNewPhoneOTP = async () => {
+    const cleanDigits = newPhone.replace(/\D/g, '');
+    if (cleanDigits.length < 10) {
+      toast.error('Please enter a valid 10-digit mobile number');
+      return;
+    }
+    if (phoneStep === 2 && phoneResendCount >= 3) {
+      toast.error('Maximum 3 resend attempts reached. Please wait 15 minutes before trying again.');
+      return;
+    }
+    const fullPhone = `${phoneCountryCode}${cleanDigits.slice(-10)}`;
+    setIsPhoneSubmitting(true);
+    try {
+      await api.post('/auth/phone/send-otp', {
+        phone: fullPhone,
+        country_code: phoneCountryCode,
+      });
+      if (phoneStep === 2) {
+        const next = phoneResendCount + 1;
+        setPhoneResendCount(next);
+        toast.success(`New verification code sent! (${3 - next} resends left)`);
+      } else {
+        toast.success('Verification code sent to your mobile number!');
+        setPhoneStep(2);
+        setPhoneResendCount(0);
+      }
+      setPhoneCountdown(60);
+      setPhoneOtp(['', '', '', '', '', '']);
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || 'Failed to send OTP. Please try again.');
+    } finally {
+      setIsPhoneSubmitting(false);
+    }
+  };
+
+  const handleVerifyNewPhoneOTP = async () => {
+    const code = phoneOtp.join('');
+    if (code.length !== 6) {
+      toast.error('Please enter the 6-digit verification code');
+      return;
+    }
+    const cleanDigits = newPhone.replace(/\D/g, '');
+    const fullPhone = `${phoneCountryCode}${cleanDigits.slice(-10)}`;
+    setIsPhoneSubmitting(true);
+    try {
+      const res = await api.post('/auth/phone/verify-otp', {
+        phone: fullPhone,
+        code: code,
+      });
+      useAuthStore.setState({ user: res.data });
+      await fetchUser();
+      toast.success('Mobile number updated successfully!');
+      setIsPhoneModalOpen(false);
+      resetPhoneFlow();
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || 'Invalid or expired OTP code');
+    } finally {
+      setIsPhoneSubmitting(false);
+    }
+  };
+
+  const resetPhoneFlow = () => {
+    setPhoneStep(1);
+    setNewPhone('');
+    setPhoneOtp(['', '', '', '', '', '']);
+    setPhoneCountryCode('+91');
+    setPhoneResendCount(0);
+    setIsCountryDropdownOpen(false);
+  };
+
+  const closePhoneModal = () => {
+    setIsPhoneModalOpen(false);
+    resetPhoneFlow();
+  };
+
   // Category Picker Component with Search, Multi-Select, & Quick Actions
   const renderCategoryPicker = (
     currentCategoryIds: string[],
@@ -1075,77 +1309,258 @@ export function SettingsPage() {
     );
   };
 
-  // Helper to render Tab Button
-  const TabButton = ({ id, label, icon: Icon }: { id: any, label: string, icon: any }) => (
-    <button
-      onClick={() => setActiveTab(id)}
-      className={`flex items-center gap-3 px-4 py-3 rounded-xl whitespace-nowrap font-bold text-xs transition-colors shrink-0 ${
-        activeTab === id 
-          ? 'bg-primary text-white shadow-md' 
-          : 'text-slate-600 bg-white hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
-      }`}
-    >
-      <Icon size={18} className={activeTab === id ? 'text-white' : 'text-slate-400'} />
-      {label}
-    </button>
-  );
+  const SETTING_MODULES = useMemo(() => [
+    {
+      id: 'general',
+      title: 'General & Regional',
+      description: 'Configure desktop app, currency, and language preferences',
+      icon: Sliders,
+      badgeColor: 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200/70 dark:border-blue-800/60',
+      items: [
+        'Desktop Web App',
+        'Currency Symbol & Format',
+        'Menu Display Language',
+        'App Version & Release Notes'
+      ]
+    },
+    {
+      id: 'ordering',
+      title: 'Ordering Channels',
+      description: 'Set up table dine-in, takeaway counters, and deliveries',
+      icon: ShoppingBag,
+      badgeColor: 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200/70 dark:border-emerald-800/60',
+      items: [
+        businessCategory.dineInChannelLabel,
+        businessCategory.takeawayChannelLabel,
+        businessCategory.deliveryChannelLabel,
+        'Minimum Order Values & Auto-Accept',
+        'Custom Delivery Fees'
+      ]
+    },
+    {
+      id: 'discovery',
+      title: 'Public Discovery & SEO',
+      description: 'Boost public search visibility and customer store discovery',
+      icon: MapPin,
+      badgeColor: 'bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 border border-purple-200/70 dark:border-purple-800/60',
+      items: [
+        'Store Discovery & Nearby Listing',
+        'Public Operating Hours & Days',
+        'Physical Address & Map Geolocation',
+        'Social Media & Public Profile'
+      ]
+    },
+    {
+      id: 'payments',
+      title: 'Payments & Bank Accounts',
+      description: 'Manage bank settlement account, online UPI and card gateways',
+      icon: CreditCard,
+      badgeColor: 'bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 border border-sky-200/70 dark:border-sky-800/60',
+      items: [
+        'Settlement Bank Account',
+        'Online Payment Gateway (UPI / Cards)',
+        'Cash Payment at Counter',
+        'Instant Razorpay Route Verification',
+        'Live Settlement Status'
+      ]
+    },
+    {
+      id: 'gst',
+      title: 'GST & Tax Compliances',
+      description: 'Manage business legal entity, GSTIN, and FSSAI licenses',
+      icon: Receipt,
+      badgeColor: 'bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border border-amber-200/70 dark:border-amber-800/60',
+      items: [
+        'GSTIN Number & Tax Identification',
+        'Legal Business Entity Name',
+        'FSSAI Food Safety License',
+        'Menu Inclusive / Exclusive Tax Mode',
+        'CGST & SGST Rate Calculations'
+      ]
+    },
+    {
+      id: 'printers',
+      title: businessCategory.settingsPrintersTabLabel || 'Dispatch & Thermal Printers',
+      description: 'Configure KOT station routing and USB / LAN receipt printers',
+      icon: Printer,
+      badgeColor: 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200/70 dark:border-indigo-800/60',
+      items: [
+        'Production Station Printers',
+        'Billing & Receipt Thermal Printers',
+        'Auto-Print on Order Acceptance',
+        'Network LAN & WebUSB Hardware Setup',
+        'Sample Test Print'
+      ]
+    },
+    {
+      id: 'account',
+      title: 'Security & Account',
+      description: 'Account credentials, session devices, and deletion rules',
+      icon: Shield,
+      badgeColor: 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-200/70 dark:border-rose-800/60',
+      items: [
+        'Merchant Profile & Email',
+        'Active Browser Sessions & Devices',
+        'Employee Roles & Permissions',
+        'Danger Zone & Catalog Purge'
+      ]
+    }
+  ], [businessCategory]);
+
+  const filteredModules = useMemo(() => {
+    if (!moduleSearchQuery.trim()) return SETTING_MODULES;
+    const q = moduleSearchQuery.toLowerCase();
+    return SETTING_MODULES.filter(m => 
+      m.title.toLowerCase().includes(q) ||
+      m.description.toLowerCase().includes(q) ||
+      m.items.some(item => item.toLowerCase().includes(q))
+    );
+  }, [SETTING_MODULES, moduleSearchQuery]);
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto animate-fade-in pb-24 lg:pb-12">
       
       {/* Desktop Header Actions (Portals to Desktop Top Bar) */}
       <HeaderActions>
-        <Button
-          onClick={handleSaveShopSettings}
-          disabled={isSavingSettings}
-          className="font-bold bg-primary text-white rounded-xl shadow-sm hover:shadow-md transition-all"
-        >
-          {isSavingSettings ? 'Saving...' : 'Save Settings'}
-        </Button>
+        {activeTab !== 'overview' && (
+          <Button
+            onClick={handleSaveShopSettings}
+            disabled={isSavingSettings}
+            className="font-bold bg-primary text-white rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer"
+          >
+            {isSavingSettings ? 'Saving...' : 'Save Settings'}
+          </Button>
+        )}
       </HeaderActions>
 
-      {/* Mobile-Only Top Action Bar */}
-      <div className="flex lg:hidden items-center justify-between gap-3 p-3.5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
-        <div>
-          <h2 className="text-sm font-bold text-slate-900 dark:text-white leading-tight">Shop Settings</h2>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 capitalize">{activeTab} tab</p>
-        </div>
-        <Button
-          onClick={handleSaveShopSettings}
-          disabled={isSavingSettings}
-          size="sm"
-          className="font-bold bg-primary hover:bg-primary-600 text-white rounded-xl shadow-xs transition-all px-4 py-2 gap-1.5 shrink-0"
-        >
-          {isSavingSettings ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-          {isSavingSettings ? 'Saving...' : 'Save Settings'}
-        </Button>
-      </div>
+      {/* =========================================
+          MODULES OVERVIEW HUB (Grid Layout like Stripe / Razorpay)
+      ========================================= */}
+      {activeTab === 'overview' ? (
+        <div className="space-y-4 animate-in fade-in duration-300">
+          {/* Sticky Left-Aligned Search Bar */}
+          <div className="sticky top-[-16px] sm:top-[-24px] lg:top-[-32px] z-20 bg-background/95 backdrop-blur-md py-2.5 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 border-b border-border/80 mb-4 flex items-center justify-start">
+            <div className="relative w-full sm:w-80">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={moduleSearchQuery}
+                onChange={(e) => setModuleSearchQuery(e.target.value)}
+                placeholder="Search settings & features..."
+                className="w-full pl-8 pr-8 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-medium focus:outline-none focus:border-primary transition-colors shadow-xs"
+              />
+              {moduleSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setModuleSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+          </div>
 
-      <div className="flex flex-col md:flex-row gap-6 md:items-start pt-2">
-        
-        {/* Sidebar Navigation */}
-        <div className="w-full md:w-64 shrink-0 flex md:flex-col gap-2 overflow-x-auto custom-scrollbar pb-2 md:pb-0 md:sticky md:top-4 md:h-fit z-10">
-          <TabButton id="general" label="General" icon={Sliders} />
-          <TabButton id="ordering" label="Ordering Channels" icon={ShoppingBag} />
-          <TabButton id="discovery" label="Public Discovery" icon={MapPin} />
-          <TabButton id="payments" label="Payments & Bank" icon={CreditCard} />
-          <TabButton id="gst" label="GST & Compliances" icon={Receipt} />
-          <TabButton id="printers" label="Kitchen & Printers" icon={Printer} />
-          <TabButton id="account" label="Security & Account" icon={Shield} />
-        </div>
+          {/* Grid of Settings Modules */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+            {filteredModules.map((module) => {
+              const IconComponent = module.icon;
+              return (
+                <div
+                  key={module.id}
+                  onClick={() => handleSelectModule(module.id)}
+                  className="group bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-primary/50 dark:hover:border-primary/50 rounded-2xl p-5 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-xs ${module.badgeColor}`}>
+                          <IconComponent size={20} />
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-sm text-slate-900 dark:text-white group-hover:text-primary transition-colors">
+                            {module.title}
+                          </h3>
+                        </div>
+                      </div>
+                      <ChevronRight size={16} className="text-slate-400 group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0" />
+                    </div>
 
-        {/* Main Content Area */}
-        <div className="flex-1 space-y-6 min-w-0">
-          
-          {/* =========================================
-              GENERAL SETTINGS TAB
-          ========================================= */}
-          {activeTab === 'general' && (
-            <>
-            {/* Desktop Web App Installation Card */}
-            <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs animate-in fade-in duration-300">
-              <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-slate-50/50 dark:bg-slate-900/50">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <ul className="mt-3.5 space-y-2">
+                      {module.items.map((item, idx) => (
+                        <li
+                          key={idx}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSelectModule(module.id);
+                          }}
+                          className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1.5 transition-colors"
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500/60 shrink-0" />
+                          <span className="truncate">{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <div className="pt-4 mt-4 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between text-[11px] text-slate-400">
+                    <span>Open full configuration</span>
+                    <span className="font-bold text-primary flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform">
+                      Configure →
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-4 animate-in fade-in duration-300">
+          {/* Sticky Back to Modules Header Bar */}
+          <div className="sticky top-[-16px] sm:top-[-24px] lg:top-[-32px] z-20 bg-background/95 backdrop-blur-md py-2.5 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 border-b border-border/80 mb-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 sm:p-3.5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => handleSelectModule('overview')}
+                  className="w-9 h-9 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center transition-all active:scale-95 cursor-pointer shrink-0"
+                  title="Back to All Modules"
+                >
+                  <ArrowLeft size={18} />
+                </button>
+                <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-0.5 hidden sm:block" />
+                <div>
+                  <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white leading-tight">
+                    {SETTING_MODULES.find(m => m.id === activeTab)?.title || 'Shop Settings'}
+                  </h2>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:block">
+                    {SETTING_MODULES.find(m => m.id === activeTab)?.description}
+                  </p>
+                </div>
+              </div>
+
+              <Button
+                onClick={handleSaveShopSettings}
+                disabled={isSavingSettings}
+                size="sm"
+                className="font-bold bg-primary hover:bg-primary-600 text-white rounded-xl shadow-xs transition-all px-4 py-2 gap-1.5 shrink-0 cursor-pointer self-end sm:self-auto"
+              >
+                {isSavingSettings ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                {isSavingSettings ? 'Saving...' : 'Save Settings'}
+              </Button>
+            </div>
+          </div>
+
+          <div className="space-y-6 pt-1">
+            {/* =========================================
+                GENERAL SETTINGS TAB
+            ========================================= */}
+            {activeTab === 'general' && (
+              <>
+              {/* Desktop Web App Installation Card */}
+              <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs animate-in fade-in duration-300">
+                <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-slate-50/50 dark:bg-slate-900/50">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
                       <Laptop size={20} />
@@ -1181,7 +1596,7 @@ export function SettingsPage() {
                   </div>
                   <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
                     <p className="font-bold text-slate-800 dark:text-slate-200 mb-1">🖨️ POS & Receipt Printers</p>
-                    <p className="text-slate-500 dark:text-slate-400 text-[11px]">Direct integration with local USB and Wi-Fi kitchen thermal receipt printers.</p>
+                    <p className="text-slate-500 dark:text-slate-400 text-[11px]">Direct integration with local USB and Wi-Fi thermal receipt printers.</p>
                   </div>
                   <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
                     <p className="font-bold text-slate-800 dark:text-slate-200 mb-1">🔔 Live Order Ringing</p>
@@ -1246,6 +1661,29 @@ export function SettingsPage() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* App Version & Mode Card */}
+            <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs animate-in fade-in duration-300">
+              <CardContent className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <p className="font-bold text-sm text-slate-800 dark:text-slate-200">App Version & Mode</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">v{APP_VERSION} ({import.meta.env.MODE || 'production'})</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsWhatsNewOpen(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-950/60 text-amber-700 dark:text-amber-400 border border-amber-200/80 dark:border-amber-800/60 rounded-full font-bold text-xs transition-colors cursor-pointer shadow-2xs"
+                  >
+                    <Sparkles size={13} className="text-amber-500" />
+                    <span>What's New</span>
+                  </button>
+                  <div className="bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 font-bold px-3 py-1.5 rounded-full uppercase text-[11px] border border-emerald-200 dark:border-emerald-800">
+                    Stable
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
             </>
           )}
 
@@ -1275,7 +1713,7 @@ export function SettingsPage() {
                         </div>
                         <p className="text-xs text-amber-700 dark:text-amber-300/90 font-medium leading-relaxed max-w-2xl">
                           {!shop?.settings?.bank_account_last4
-                            ? "To enable ordering channels (Dine-In, Takeaway, Delivery) and receive customer payouts, you must add and link your settlement bank account."
+                            ? `To enable ordering channels (${businessCategory.orderTypeDineInTitle}, ${businessCategory.orderTypeTakeawayTitle}, ${businessCategory.orderTypeDeliveryTitle}) and receive customer payouts, you must add and link your settlement bank account.`
                             : "Your settlement bank account details have been submitted and are currently under verification. Ordering channels will unlock automatically once active."}
                         </p>
                       </div>
@@ -1310,29 +1748,57 @@ export function SettingsPage() {
                   <CardContent className="p-4 sm:p-6 divide-y divide-slate-100 dark:divide-slate-800">
                     <SettingRow
                       icon={QrCode}
-                      title="Enable Dine-In Channel"
-                      description="Allow customers to order directly from table QR codes."
+                      title={businessCategory.dineInChannelLabel}
+                      description={businessCategory.dineInChannelDesc}
                       checked={isBankVerified && settingsData.dinein_enabled}
                       onChange={(c) => {
                         if (isBankVerified) {
                           setSettingsData(prev => ({ ...prev, dinein_enabled: c }));
                         } else {
-                          toast.error("Please add and verify your settlement bank account to enable Dine-In ordering.");
+                          toast.error(`Please add and verify your settlement bank account to enable ${businessCategory.orderTypeDineInTitle} ordering.`);
                         }
                       }}
                       disabled={!isBankVerified}
                     />
 
+                    {isBankVerified && settingsData.dinein_enabled && (
+                      <div className="py-3 px-4 sm:px-5 bg-amber-50/60 dark:bg-amber-950/20 rounded-2xl border border-amber-200/80 dark:border-amber-900/40 my-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all">
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-black text-slate-800 dark:text-slate-100">Total Dine-In Tables</span>
+                            <span className="text-[10px] font-black uppercase px-2 py-0.5 bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 rounded-md">Table-1 to Table-N</span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                            Configure total restaurant tables. Customers and staff will choose from a structured dropdown (Table-1, Table-2, etc.).
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                          <input
+                            type="number"
+                            min={1}
+                            max={500}
+                            value={settingsData.dinein_tables_count || 10}
+                            onChange={(e) => {
+                              const val = Math.max(1, Math.min(500, parseInt(e.target.value) || 1));
+                              setSettingsData(prev => ({ ...prev, dinein_tables_count: val }));
+                            }}
+                            className="w-24 px-3 py-1.5 text-xs font-black bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700/60 rounded-xl text-center focus:ring-2 focus:ring-primary focus:outline-none shadow-2xs font-mono"
+                          />
+                          <span className="text-xs font-bold text-slate-600 dark:text-slate-300">Tables</span>
+                        </div>
+                      </div>
+                    )}
+
                     <SettingRow
                       icon={ShoppingBag}
-                      title="Enable Takeaway Channel"
-                      description="Allow customers to pre-order food and pick up in store."
+                      title={businessCategory.takeawayChannelLabel}
+                      description={businessCategory.takeawayChannelDesc}
                       checked={isBankVerified && settingsData.takeaway_enabled}
                       onChange={(c) => {
                         if (isBankVerified) {
                           setSettingsData(prev => ({ ...prev, takeaway_enabled: c }));
                         } else {
-                          toast.error("Please add and verify your settlement bank account to enable Takeaway ordering.");
+                          toast.error(`Please add and verify your settlement bank account to enable ${businessCategory.orderTypeTakeawayTitle} ordering.`);
                         }
                       }}
                       disabled={!isBankVerified}
@@ -1340,14 +1806,14 @@ export function SettingsPage() {
 
                     <SettingRow
                       icon={Truck}
-                      title="Enable Delivery Channel"
-                      description="Allow customers to place orders for doorstep home delivery."
+                      title={businessCategory.deliveryChannelLabel}
+                      description={businessCategory.deliveryChannelDesc}
                       checked={isBankVerified && settingsData.delivery_enabled}
                       onChange={(c) => {
                         if (isBankVerified) {
                           setSettingsData(prev => ({ ...prev, delivery_enabled: c }));
                         } else {
-                          toast.error("Please add and verify your settlement bank account to enable Delivery ordering.");
+                          toast.error(`Please add and verify your settlement bank account to enable ${businessCategory.orderTypeDeliveryTitle} ordering.`);
                         }
                       }}
                       disabled={!isBankVerified}
@@ -1379,76 +1845,104 @@ export function SettingsPage() {
                     </div>
                   </CardHeader>
                   <CardContent className="p-4 sm:p-6 space-y-6">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
                       <div>
-                        <label className="text-[11px] font-bold text-slate-500 block mb-1">Base Cost ({settingsData.currency})</label>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1.5 truncate">
+                          Base Cost ({settingsData.currency})
+                        </label>
                         <input
                           type="number" min="0" step="1"
                           value={settingsData.base_delivery_charge}
                           onChange={(e) => setSettingsData(prev => ({ ...prev, base_delivery_charge: parseFloat(e.target.value) || 0 }))}
-                          className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 rounded-xl focus:outline-none focus:border-amber-500 font-semibold"
+                          className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-amber-500 font-semibold text-slate-900 dark:text-white"
                         />
                       </div>
                       <div>
-                        <label className="text-[11px] font-bold text-slate-500 block mb-1">Included Distance (km)</label>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1.5 truncate">
+                          Included Distance (km)
+                        </label>
                         <input
                           type="number" min="0" step="0.5"
                           value={settingsData.base_delivery_distance}
                           onChange={(e) => setSettingsData(prev => ({ ...prev, base_delivery_distance: parseFloat(e.target.value) || 0 }))}
-                          className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 rounded-xl focus:outline-none focus:border-amber-500 font-semibold"
+                          className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-amber-500 font-semibold text-slate-900 dark:text-white"
                         />
                       </div>
                       <div>
-                        <label className="text-[11px] font-bold text-slate-500 block mb-1">Extra Step (km)</label>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1.5 truncate">
+                          Extra Step (km)
+                        </label>
                         <input
                           type="number" min="0.1" step="0.5"
                           value={settingsData.extra_delivery_distance_step}
                           onChange={(e) => setSettingsData(prev => ({ ...prev, extra_delivery_distance_step: Math.max(0.1, parseFloat(e.target.value) || 1) }))}
-                          className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 rounded-xl focus:outline-none focus:border-amber-500 font-semibold"
+                          className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-amber-500 font-semibold text-slate-900 dark:text-white"
                         />
                       </div>
                       <div>
-                        <label className="text-[11px] font-bold text-slate-500 block mb-1">Extra Rate ({settingsData.currency})</label>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1.5 truncate">
+                          Extra Rate ({settingsData.currency})
+                        </label>
                         <input
                           type="number" min="0" step="1"
                           value={settingsData.extra_delivery_charge_per_step}
                           onChange={(e) => setSettingsData(prev => ({ ...prev, extra_delivery_charge_per_step: parseFloat(e.target.value) || 0 }))}
-                          className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 rounded-xl focus:outline-none focus:border-amber-500 font-semibold"
+                          className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-amber-500 font-semibold text-slate-900 dark:text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1.5 flex items-center justify-between gap-1">
+                          <span className="truncate">Coverable Radius</span>
+                          <span className="text-[10px] text-amber-600 dark:text-amber-400 font-normal shrink-0">(0 = ∞)</span>
+                        </label>
+                        <input
+                          type="number" min="0" step="0.5"
+                          placeholder="0"
+                          value={(settingsData as any).max_delivery_distance ?? 0}
+                          onChange={(e) => setSettingsData(prev => ({ ...prev, max_delivery_distance: Math.max(0, parseFloat(e.target.value) || 0) }))}
+                          className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-amber-500 font-semibold text-slate-900 dark:text-white"
                         />
                       </div>
                     </div>
 
-                    <div className="p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 text-xs text-slate-600">
-                      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3 mb-3">
+                    <div className="p-4 bg-slate-50 dark:bg-slate-900/60 rounded-2xl border border-slate-200/80 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 space-y-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 dark:border-slate-800 pb-2.5">
                         <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Preview
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Calculation Preview
                         </span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[11px] font-semibold text-slate-500">Test Distance:</span>
+                        <div className="flex items-center gap-2 bg-white dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 shadow-2xs">
+                          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Test Distance:</span>
                           <input
                             type="number" min="0" step="0.5"
                             value={testDistance}
                             onChange={(e) => setTestDistance(Math.max(0, parseFloat(e.target.value) || 0))}
-                            className="w-16 px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg text-center font-bold text-primary focus:outline-none"
+                            className="w-14 px-1.5 py-0.5 text-xs bg-transparent border-0 text-center font-bold text-primary focus:outline-none"
                           />
-                          <span className="text-[11px] font-bold text-slate-500">km</span>
+                          <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">km</span>
                         </div>
                       </div>
-                      {(() => {
-                        const dist = testDistance;
-                        const baseDist = settingsData.base_delivery_distance || 0;
-                        const baseCharge = settingsData.base_delivery_charge || 0;
-                        const step = settingsData.extra_delivery_distance_step || 1;
-                        const rate = settingsData.extra_delivery_charge_per_step || 0;
+                      <div className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                        {(() => {
+                          const dist = testDistance;
+                          const baseDist = settingsData.base_delivery_distance || 0;
+                          const baseCharge = settingsData.base_delivery_charge || 0;
+                          const step = settingsData.extra_delivery_distance_step || 1;
+                          const rate = settingsData.extra_delivery_charge_per_step || 0;
+                          const maxDist = (settingsData as any).max_delivery_distance || 0;
 
-                        if (dist <= baseDist) {
-                          return `Total Fee: ${settingsData.currency}${baseCharge} (Within base distance).`;
-                        }
-                        const extraKm = dist - baseDist;
-                        const steps = Math.ceil(extraKm / step);
-                        const extraFee = steps * rate;
-                        return `Base: ${settingsData.currency}${baseCharge}. Extra: ${settingsData.currency}${extraFee} (${steps} steps). Total: ${settingsData.currency}${baseCharge + extraFee}.`;
-                      })()}
+                          if (maxDist > 0 && dist > maxDist) {
+                            return <span className="text-rose-500 font-bold">⚠️ Outside Delivery Range: Test distance ({dist} km) exceeds maximum coverable distance ({maxDist} km). Orders will be blocked.</span>;
+                          }
+
+                          if (dist <= baseDist) {
+                            return <span>Total Fee: <strong className="text-emerald-600 dark:text-emerald-400">{settingsData.currency}{baseCharge}</strong> (Within base distance).</span>;
+                          }
+                          const extraKm = dist - baseDist;
+                          const steps = Math.ceil(extraKm / step);
+                          const extraFee = steps * rate;
+                          return <span>Base: <strong className="text-slate-900 dark:text-white">{settingsData.currency}{baseCharge}</strong> + Extra: <strong className="text-amber-600 dark:text-amber-400">{settingsData.currency}{extraFee}</strong> ({steps} steps) = Total: <strong className="text-emerald-600 dark:text-emerald-400 text-sm">{settingsData.currency}{baseCharge + extraFee}</strong></span>;
+                        })()}
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -1624,9 +2118,9 @@ export function SettingsPage() {
                       return (
                         <>
                           <SettingRow
-                            icon={Zap}
+                            icon={CreditCard}
                             title="Accept Online Payments via Gateway"
-                            description="Enable online checkout (UPI, Cards, Netbanking) for Takeaway, Dine In & Delivery."
+                            description="Master switch to accept online payments (UPI, Cards, Netbanking) across your ordering channels."
                             checked={settingsData.online_payments_enabled && isVerified}
                             onChange={(c) => {
                               if (isVerified) {
@@ -1635,6 +2129,40 @@ export function SettingsPage() {
                             }}
                             disabled={!isVerified}
                           />
+
+                          {/* Separate channel toggles when master is enabled & verified */}
+                          {isVerified && settingsData.online_payments_enabled && (
+                            <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 space-y-4 pl-2 sm:pl-4 bg-slate-50/50 dark:bg-slate-900/40 p-4 rounded-2xl border border-slate-200/60 dark:border-slate-800/80 animate-fade-in">
+                              <div className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                                Ordering Channels Payment Options
+                              </div>
+
+                              <SettingRow
+                                icon={businessCategory.isFood ? UtensilsCrossed : Store}
+                                title={businessCategory.dineInOnlinePaymentTitle}
+                                description={businessCategory.dineInOnlinePaymentDesc}
+                                checked={settingsData.online_payments_dinein_enabled !== false}
+                                onChange={(c) => setSettingsData(prev => ({ ...prev, online_payments_dinein_enabled: c }))}
+                              />
+
+                              <SettingRow
+                                icon={businessCategory.isFood ? ShoppingBag : PackageCheck}
+                                title={businessCategory.takeawayOnlinePaymentTitle}
+                                description={businessCategory.takeawayOnlinePaymentDesc}
+                                checked={settingsData.online_payments_takeaway_enabled !== false}
+                                onChange={(c) => setSettingsData(prev => ({ ...prev, online_payments_takeaway_enabled: c }))}
+                              />
+
+                              <SettingRow
+                                icon={Truck}
+                                title={businessCategory.deliveryOnlinePaymentTitle}
+                                description={businessCategory.deliveryOnlinePaymentDesc}
+                                checked={settingsData.online_payments_delivery_enabled !== false}
+                                onChange={(c) => setSettingsData(prev => ({ ...prev, online_payments_delivery_enabled: c }))}
+                              />
+                            </div>
+                          )}
+
                           {!isVerified && (
                             <div className="mt-2 p-3.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 rounded-xl space-y-1 text-xs">
                               <div className="flex items-center gap-1.5 font-bold text-amber-900 dark:text-amber-200">
@@ -2043,8 +2571,8 @@ export function SettingsPage() {
                         : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                     }`}
                   >
-                    <UtensilsCrossed size={13} />
-                    <span>Kitchen KOT ({stations.length})</span>
+                    {businessCategory.isFood ? <UtensilsCrossed size={13} /> : <ShoppingBag size={13} />}
+                    <span>{businessCategory.kotTabLabel} ({stations.length})</span>
                   </button>
                   <button
                     type="button"
@@ -2056,30 +2584,30 @@ export function SettingsPage() {
                     }`}
                   >
                     <Receipt size={13} />
-                    <span>Cashier Billing ({billingPrinters.length})</span>
+                    <span>{businessCategory.billingTabLabel} ({billingPrinters.length})</span>
                   </button>
                 </div>
               </div>
 
               {/* =========================================================
-                  SECTION 1: KITCHEN ORDER TICKETS (KOT)
+                  SECTION 1: KITCHEN / PACKING ORDER TICKETS (KOT / POT)
               ========================================================= */}
               {(printerSection === 'all' || printerSection === 'kot') && (
                 <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs overflow-hidden">
                   <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-linear-to-r from-amber-50/70 via-orange-50/30 to-transparent dark:from-amber-950/20 dark:via-orange-950/10 dark:to-transparent flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div className="flex items-start gap-3">
                       <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
-                        <UtensilsCrossed size={20} />
+                        {businessCategory.isFood ? <UtensilsCrossed size={20} /> : <ShoppingBag size={20} />}
                       </div>
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
-                          <CardTitle className="text-base font-bold">Kitchen Order Tickets (KOT)</CardTitle>
+                          <CardTitle className="text-base font-bold">{businessCategory.productionStationLabel}</CardTitle>
                           <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
-                            Kitchen Prep
+                            {businessCategory.kotShort} Station
                           </span>
                         </div>
                         <CardDescription className="text-xs mt-0.5">
-                          Configure thermal tickets for cooks, station routing (Kitchen, Bar, Grill), and automated printing upon acceptance.
+                          {businessCategory.productionPrinterDesc}
                         </CardDescription>
                       </div>
                     </div>
@@ -2091,7 +2619,7 @@ export function SettingsPage() {
                         leftIcon={<FileText size={13} className="text-amber-500" />}
                         className="text-xs font-bold"
                       >
-                        Test Sample KOT
+                        {businessCategory.testKotButtonLabel}
                       </Button>
                       <Button
                         size="sm"
@@ -2099,79 +2627,34 @@ export function SettingsPage() {
                         leftIcon={<Plus size={14} />}
                         className="bg-primary text-white font-bold text-xs shadow-xs"
                       >
-                        Add Station
+                        {businessCategory.addKotStationButtonLabel}
                       </Button>
                     </div>
                   </CardHeader>
 
                   <CardContent className="p-4 sm:p-5 space-y-5">
-                    {/* Compact Quick Settings Bar: Auto-Print Toggle + Default Paper Width */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {/* Auto-Print KOT Switch */}
-                      <div className="p-3.5 rounded-xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div className="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0">
-                            <Zap size={16} />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
-                              Auto-Print KOT on Acceptance
-                            </p>
-                            <p className="text-[10px] text-slate-500 truncate">
-                              Print tickets when orders are accepted
-                            </p>
-                          </div>
+                    {/* Auto-Print KOT Switch */}
+                    <div className="p-3.5 rounded-xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0">
+                          <Zap size={16} />
                         </div>
-                        <Switch
-                          checked={autoPrintOnAccept}
-                          onChange={(val) => {
-                            setAutoPrintOnAccept(val);
-                            toast.success(val ? 'Auto-print KOT enabled' : 'Auto-print KOT disabled');
-                          }}
-                        />
-                      </div>
-
-                      {/* Default KOT Roll Width Segmented Selector */}
-                      <div className="p-3.5 rounded-xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="text-xs font-bold text-slate-900 dark:text-slate-100">
-                            Default KOT Roll Width
+                          <p className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                            {businessCategory.autoPrintKotLabel}
                           </p>
-                          <p className="text-[10px] text-slate-500">
-                            Format for new station tickets
+                          <p className="text-[10px] text-slate-500 truncate">
+                            {businessCategory.autoPrintKotDesc}
                           </p>
-                        </div>
-                        <div className="flex items-center bg-slate-200/80 dark:bg-slate-700/60 p-1 rounded-xl shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPaperWidth('80mm');
-                              toast.success('KOT width set to 80mm');
-                            }}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                              paperWidth === '80mm'
-                                ? 'bg-amber-500 text-white shadow-xs'
-                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                            }`}
-                          >
-                            80mm
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPaperWidth('58mm');
-                              toast.success('KOT width set to 58mm');
-                            }}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                              paperWidth === '58mm'
-                                ? 'bg-amber-500 text-white shadow-xs'
-                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                            }`}
-                          >
-                            58mm
-                          </button>
                         </div>
                       </div>
+                      <Switch
+                        checked={autoPrintOnAccept}
+                        onChange={(val) => {
+                          setAutoPrintOnAccept(val);
+                          toast.success(val ? `Auto-print ${businessCategory.kotShort} enabled` : `Auto-print ${businessCategory.kotShort} disabled`);
+                        }}
+                      />
                     </div>
 
                     {/* Kitchen Printer Stations Subsection */}
@@ -2179,10 +2662,10 @@ export function SettingsPage() {
                       <div className="flex items-center justify-between">
                         <div>
                           <label className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider block">
-                            Kitchen Printer Stations &amp; Category Routing
+                            {businessCategory.productionStationLabel}
                           </label>
                           <p className="text-[11px] text-slate-500">
-                            Route food items to specific printers (e.g., Main Kitchen, Bar, Grill) or print universally.
+                            {businessCategory.productionPrinterDesc}
                           </p>
                         </div>
                         <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
@@ -2194,9 +2677,11 @@ export function SettingsPage() {
                         <div className="text-center py-8 bg-slate-50 dark:bg-slate-850/50 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 p-5 space-y-2.5">
                           <Printer size={32} className="mx-auto text-slate-400" />
                           <div>
-                            <p className="font-bold text-sm text-slate-700 dark:text-slate-300">No Printer Stations Configured</p>
+                            <p className="font-bold text-sm text-slate-700 dark:text-slate-300">{businessCategory.noKotStationsTitle}</p>
                             <p className="text-xs text-slate-500 mt-0.5 max-w-md mx-auto">
-                              Add your first station (e.g., Main Kitchen, Bar, Tandoor) to automatically route specific food categories.
+                              {businessCategory.isFood
+                                ? 'Add your first station (e.g., Main Kitchen, Bar, Tandoor) to automatically route specific food categories.'
+                                : 'Add your first station (e.g., Main Godown, Counter 1, Dispatch Desk) to automatically route items.'}
                             </p>
                           </div>
                           <Button
@@ -2205,7 +2690,7 @@ export function SettingsPage() {
                             leftIcon={<Plus size={14} />}
                             className="font-bold"
                           >
-                            Register Printer Machine
+                            {businessCategory.addKotStationButtonLabel}
                           </Button>
                         </div>
                       ) : (
@@ -2244,6 +2729,11 @@ export function SettingsPage() {
                                         {station.connectionType === 'usb' && (
                                           <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300 border border-teal-200 dark:border-teal-800 flex items-center gap-1">
                                             <Usb size={10} /> Direct USB
+                                          </span>
+                                        )}
+                                        {station.connectionType === 'bluetooth' && (
+                                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1">
+                                            <Bluetooth size={10} /> Direct Bluetooth
                                           </span>
                                         )}
                                         {(!station.connectionType || station.connectionType === 'browser') && (
@@ -2320,7 +2810,7 @@ export function SettingsPage() {
                                     {isUniversal ? (
                                       <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[11px] font-bold bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/60">
                                         <Zap size={12} className="text-purple-600" />
-                                        <span>All Categories (Universal - Prints All Food)</span>
+                                        <span>{businessCategory.routingDesc}</span>
                                       </div>
                                     ) : (
                                       <div className="flex flex-wrap gap-1">
@@ -2378,13 +2868,13 @@ export function SettingsPage() {
                       </div>
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
-                          <CardTitle className="text-base font-bold">Customer Bill &amp; Tax Receipt Printers</CardTitle>
+                          <CardTitle className="text-base font-bold">{businessCategory.billingHeaderTitle}</CardTitle>
                           <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
-                            Cashier Counter
+                            {businessCategory.billingStationBadge}
                           </span>
                         </div>
                         <CardDescription className="text-xs mt-0.5">
-                          Configure thermal printers for customer tax bills, invoices, and multiple billing counters.
+                          {businessCategory.billingHeaderDesc}
                         </CardDescription>
                       </div>
                     </div>
@@ -2396,7 +2886,7 @@ export function SettingsPage() {
                         leftIcon={<Printer size={13} className="text-emerald-600" />}
                         className="text-xs font-bold border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/50"
                       >
-                        Test Print Bill
+                        {businessCategory.testBillButtonLabel}
                       </Button>
                       <Button
                         size="sm"
@@ -2404,78 +2894,33 @@ export function SettingsPage() {
                         leftIcon={<Plus size={14} />}
                         className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs"
                       >
-                        Add Cashier Printer
+                        {businessCategory.addBillingPrinterButtonLabel}
                       </Button>
                     </div>
                   </CardHeader>
                   <CardContent className="p-4 sm:p-5 space-y-5">
-                    {/* Compact Quick Settings Bar: Auto-Print Toggle + Receipt Paper Width */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {/* Auto-Print Bill Switch */}
-                      <div className="p-3.5 rounded-xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 flex items-center justify-center shrink-0">
-                            <Zap size={16} />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
-                              Auto-Print on Completion
-                            </p>
-                            <p className="text-[10px] text-slate-500 truncate">
-                              Print bill when order is paid or completed
-                            </p>
-                          </div>
+                    {/* Auto-Print Bill Switch */}
+                    <div className="p-3.5 rounded-xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 flex items-center justify-center shrink-0">
+                          <Zap size={16} />
                         </div>
-                        <Switch
-                          checked={autoPrintOnPayment || false}
-                          onChange={(val) => {
-                            setAutoPrintOnPayment(val);
-                            toast.success(val ? 'Auto-print bill enabled' : 'Auto-print bill disabled');
-                          }}
-                        />
-                      </div>
-
-                      {/* Receipt Paper Width Segmented Selector */}
-                      <div className="p-3.5 rounded-xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="text-xs font-bold text-slate-900 dark:text-slate-100">
-                            Default Receipt Paper Width
+                          <p className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                            {businessCategory.autoPrintBillLabel}
                           </p>
-                          <p className="text-[10px] text-slate-500">
-                            Format for customer tax bills
+                          <p className="text-[10px] text-slate-500 truncate">
+                            {businessCategory.autoPrintBillDesc}
                           </p>
-                        </div>
-                        <div className="flex items-center bg-slate-200/80 dark:bg-slate-700/60 p-1 rounded-xl shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setBillingPaperWidth('80mm');
-                              toast.success('Bill paper width set to 80mm');
-                            }}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                              billingPaperWidth !== '58mm'
-                                ? 'bg-emerald-600 text-white shadow-xs'
-                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                            }`}
-                          >
-                            80mm
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setBillingPaperWidth('58mm');
-                              toast.success('Bill paper width set to 58mm');
-                            }}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                              billingPaperWidth === '58mm'
-                                ? 'bg-emerald-600 text-white shadow-xs'
-                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                            }`}
-                          >
-                            58mm
-                          </button>
                         </div>
                       </div>
+                      <Switch
+                        checked={autoPrintOnPayment || false}
+                        onChange={(val) => {
+                          setAutoPrintOnPayment(val);
+                          toast.success(val ? 'Auto-print bill enabled' : 'Auto-print bill disabled');
+                        }}
+                      />
                     </div>
 
                     {/* Cashier Billing Printers Subsection */}
@@ -2483,10 +2928,10 @@ export function SettingsPage() {
                       <div className="flex items-center justify-between">
                         <div>
                           <label className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider block">
-                            Cashier Billing Printers &amp; Counters
+                            {businessCategory.billingStationLabel}
                           </label>
                           <p className="text-[11px] text-slate-500">
-                            Configure one or multiple bill printers (e.g., Main Cashier Counter, Bar Billing, Takeaway Desk).
+                            {businessCategory.billingPrinterDesc}
                           </p>
                         </div>
                         <span className="text-[11px] font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
@@ -2497,7 +2942,7 @@ export function SettingsPage() {
                       {billingPrinters.length === 0 ? (
                         <div className="p-8 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
                           <Receipt className="mx-auto h-8 w-8 text-slate-400 mb-2" />
-                          <p className="text-xs font-bold text-slate-700 dark:text-slate-300">No Cashier Printers Added</p>
+                          <p className="text-xs font-bold text-slate-700 dark:text-slate-300">{businessCategory.noBillingPrintersTitle}</p>
                           <p className="text-[11px] text-slate-500 mt-0.5">Click below to register your first billing printer.</p>
                           <Button
                             size="sm"
@@ -2505,7 +2950,7 @@ export function SettingsPage() {
                             leftIcon={<Plus size={14} />}
                             className="mt-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
                           >
-                            Add Cashier Printer
+                            {businessCategory.addBillingPrinterButtonLabel}
                           </Button>
                         </div>
                       ) : (
@@ -2541,6 +2986,11 @@ export function SettingsPage() {
                                       {printer.connectionType === 'usb' && (
                                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300 border border-teal-200 dark:border-teal-800 flex items-center gap-1">
                                           <Usb size={10} /> Direct USB
+                                        </span>
+                                      )}
+                                      {printer.connectionType === 'bluetooth' && (
+                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1">
+                                          <Bluetooth size={10} /> Direct Bluetooth
                                         </span>
                                       )}
                                       {(!printer.connectionType || printer.connectionType === 'browser') && (
@@ -2668,36 +3118,213 @@ export function SettingsPage() {
                     <ChevronRight size={18} className="text-slate-400 group-hover:text-primary transition-all shrink-0 ml-2" />
                   </div>
 
+                  {/* Mobile Number & Security */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center font-black shrink-0">
+                        <Phone size={18} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase">Registered Mobile</p>
+                          {user?.phone_verified ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/50 dark:text-emerald-400 px-2 py-0.5 rounded-full">
+                              <CheckCircle2 size={10} /> Verified
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-50 dark:bg-amber-950/50 dark:text-amber-400 px-2 py-0.5 rounded-full">
+                              Unverified
+                            </span>
+                          )}
+                        </div>
+                        <p className="font-bold text-sm text-slate-800 dark:text-slate-200">
+                          {user?.phone || 'No mobile number linked'}
+                        </p>
+                      </div>
+                    </div>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => {
+                        resetPhoneFlow();
+                        setIsPhoneModalOpen(true);
+                      }} 
+                      className="rounded-xl font-bold cursor-pointer"
+                    >
+                      {user?.phone ? 'Change Mobile' : 'Link Mobile'}
+                    </Button>
+                  </div>
+
                   {/* Email & Security */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl border border-slate-100">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-primary/10 text-primary rounded-full flex items-center justify-center font-black uppercase text-sm shrink-0">
                         {user?.email?.charAt(0) || 'U'}
                       </div>
                       <div>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase">Signed In Email</p>
-                        <p className="font-bold text-sm text-slate-800 truncate">{user?.email}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase">Signed In Email</p>
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/50 dark:text-emerald-400 px-2 py-0.5 rounded-full">
+                            <CheckCircle2 size={10} /> Verified
+                          </span>
+                        </div>
+                        <p className="font-bold text-sm text-slate-800 dark:text-slate-200 truncate">{user?.email}</p>
                       </div>
                     </div>
-                    <Button variant="outline" size="sm" onClick={() => setIsEmailModalOpen(true)} className="rounded-xl font-bold">
+                    <Button variant="outline" size="sm" onClick={() => setIsEmailModalOpen(true)} className="rounded-xl font-bold cursor-pointer">
                       Change Email
                     </Button>
-                  </div>
-
-                  <div className="bg-slate-50 rounded-2xl p-4 flex justify-between items-center text-xs">
-                    <div>
-                      <p className="font-bold text-slate-700">App Version & Mode</p>
-                      <p className="text-slate-500 dark:text-slate-400">v{APP_VERSION} ({import.meta.env.MODE || 'production'})</p>
-                    </div>
-                    <div className="flex items-center gap-2"><button type="button" onClick={() => setIsWhatsNewOpen(true)} className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-950/60 text-amber-700 dark:text-amber-400 border border-amber-200/80 dark:border-amber-800/60 rounded-full font-bold text-[10px] transition-colors cursor-pointer shadow-2xs"><Sparkles size={11} className="text-amber-500" /><span>What's New</span></button><div className="bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 font-bold px-3 py-1 rounded-full uppercase text-[10px]">Stable</div></div>
                   </div>
                 </CardContent>
               </Card>
             </div>
           )}
 
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Change / Link Mobile Number Modal */}
+      <Modal
+        isOpen={isPhoneModalOpen}
+        onClose={closePhoneModal}
+        title={user?.phone ? "Change Mobile Number" : "Link Mobile Number"}
+        className="max-w-md !overflow-visible"
+      >
+        <div className="mt-4">
+          <div className="flex items-center gap-2 mb-6">
+            <div className={`h-1.5 flex-1 rounded-full ${phoneStep >= 1 ? 'bg-primary' : 'bg-slate-100 dark:bg-slate-800'}`} />
+            <div className={`h-1.5 flex-1 rounded-full ${phoneStep >= 2 ? 'bg-primary' : 'bg-slate-100 dark:bg-slate-800'}`} />
+          </div>
+
+          {phoneStep === 1 && (
+            <div className="space-y-5 animate-fade-in">
+              <div className="text-center space-y-2">
+                <div className="w-12 h-12 bg-primary/10 text-primary rounded-2xl flex items-center justify-center mx-auto mb-2">
+                  <Phone size={24} />
+                </div>
+                <h3 className="font-bold text-slate-800 dark:text-white text-lg">
+                  {user?.phone ? 'Update Mobile Number' : 'Link New Mobile'}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto">
+                  We'll send an SMS verification code to verify your ownership.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2">
+                  New Mobile Number
+                </label>
+                <div className="flex items-center gap-2">
+                  <CountryCodeSelect
+                    value={phoneCountryCode}
+                    onChange={setPhoneCountryCode}
+                    heightClass="h-11"
+                  />
+
+                  <input
+                    type="tel"
+                    autoFocus
+                    value={newPhone}
+                    onChange={(e) => setNewPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                    placeholder="9876543210"
+                    className="flex-1 h-11 px-4 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent text-sm font-bold tracking-wider text-slate-900 dark:text-white focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all placeholder:text-slate-400"
+                  />
+                </div>
+              </div>
+
+              <Button
+                onClick={handleSendNewPhoneOTP}
+                isLoading={isPhoneSubmitting}
+                disabled={newPhone.replace(/\D/g, '').length < 10}
+                className="w-full h-11 text-sm font-bold shadow-md gap-2"
+              >
+                <span>Send Verification Code</span>
+                <ArrowRight size={16} />
+              </Button>
+            </div>
+          )}
+
+          {phoneStep === 2 && (
+            <div className="space-y-6 animate-fade-in text-center">
+              <div className="space-y-2">
+                <div className="w-12 h-12 bg-primary/10 text-primary rounded-2xl flex items-center justify-center mx-auto mb-2">
+                  <Shield size={24} />
+                </div>
+                <h3 className="font-bold text-slate-800 dark:text-white text-lg">Enter Verification Code</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto">
+                  Enter the 6-digit SMS code sent to <strong className="text-slate-800 dark:text-slate-200">{phoneCountryCode} {newPhone.slice(-10)}</strong>
+                </p>
+              </div>
+
+              <div className="flex justify-center gap-2">
+                {phoneOtp.map((digit, idx) => (
+                  <input
+                    key={idx}
+                    id={`settings-phone-otp-${idx}`}
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={1}
+                    value={digit}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, '');
+                      const next = [...phoneOtp];
+                      next[idx] = val.slice(-1);
+                      setPhoneOtp(next);
+                      if (val && idx < 5) {
+                        const nextInput = document.getElementById(`settings-phone-otp-${idx + 1}`);
+                        nextInput?.focus();
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Backspace' && !phoneOtp[idx] && idx > 0) {
+                        const prevInput = document.getElementById(`settings-phone-otp-${idx - 1}`);
+                        prevInput?.focus();
+                      }
+                    }}
+                    className="w-10 h-12 text-center text-xl font-black rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all text-slate-900 dark:text-white"
+                  />
+                ))}
+              </div>
+
+              <Button
+                onClick={handleVerifyNewPhoneOTP}
+                isLoading={isPhoneSubmitting}
+                disabled={phoneOtp.some(d => d === '')}
+                className="w-full h-11 text-sm font-bold shadow-md"
+              >
+                Verify & Save Mobile
+              </Button>
+
+              <div className="flex items-center justify-between text-xs pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPhoneStep(1);
+                    setPhoneOtp(['', '', '', '', '', '']);
+                  }}
+                  className="font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 underline cursor-pointer"
+                >
+                  Change Number
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSendNewPhoneOTP}
+                  disabled={phoneCountdown > 0 || isPhoneSubmitting || phoneResendCount >= 3}
+                  className="inline-flex items-center font-bold text-primary hover:underline disabled:text-slate-400 disabled:no-underline cursor-pointer disabled:cursor-not-allowed"
+                >
+                  {phoneResendCount >= 3
+                    ? 'Resend limit reached (3/3)'
+                    : phoneCountdown > 0
+                    ? `Resend in ${phoneCountdown}s`
+                    : `Resend Code (${3 - phoneResendCount} left)`}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </Modal>
 
       {/* Change Email Modal (No changes to logic) */}
       <Modal
@@ -2786,7 +3413,9 @@ export function SettingsPage() {
       <Modal
         isOpen={isStationModalOpen}
         onClose={() => setIsStationModalOpen(false)}
-        title={editingStationId ? "Edit Kitchen Printer Station" : "Register Kitchen Printer Station"}
+        title={editingStationId 
+          ? (businessCategory.isFood ? "Edit Kitchen Printer Station" : "Edit Packing & Godown Station") 
+          : (businessCategory.isFood ? "Register Kitchen Printer Station" : "Register Packing & Godown Station")}
         className="max-w-lg"
       >
         <form onSubmit={handleSaveStation} className="space-y-5 pt-2">
@@ -2797,7 +3426,7 @@ export function SettingsPage() {
             <Input
               value={stationForm.name}
               onChange={(e) => setStationForm((prev) => ({ ...prev, name: e.target.value }))}
-              placeholder="e.g., Main Kitchen, Tandoor Counter, Bar & Beverages"
+              placeholder={businessCategory.productionStationPlaceholder}
               required
               autoFocus
             />
@@ -2841,7 +3470,7 @@ export function SettingsPage() {
             <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
               Hardware Connection Mode
             </label>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
               {/* Browser / Kiosk */}
               <button
                 type="button"
@@ -2867,7 +3496,7 @@ export function SettingsPage() {
                 }`}
               >
                 <div className="text-xs font-black flex items-center gap-1"><Wifi size={13} /> Network LAN</div>
-                <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">Kitchen Ethernet / Wi-Fi IP (Port 9100)</div>
+                <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">Kitchen Ethernet / Wi-Fi IP (9100)</div>
               </button>
 
               {/* Direct USB */}
@@ -2883,12 +3512,26 @@ export function SettingsPage() {
                 <div className="text-xs font-black flex items-center gap-1"><Usb size={13} /> Direct USB</div>
                 <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">WebUSB / Serial zero-dialog</div>
               </button>
+
+              {/* Direct Bluetooth */}
+              <button
+                type="button"
+                onClick={() => setStationForm(prev => ({ ...prev, connectionType: 'bluetooth' }))}
+                className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                  stationForm.connectionType === 'bluetooth'
+                    ? 'border-primary bg-primary/10 text-primary font-bold shadow-xs'
+                    : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
+                }`}
+              >
+                <div className="text-xs font-black flex items-center gap-1"><Bluetooth size={13} /> Bluetooth</div>
+                <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">Wireless BLE POS direct print</div>
+              </button>
             </div>
 
             {/* Network LAN IP Config Fields */}
             {stationForm.connectionType === 'network' && (
               <div className="p-3 bg-blue-50/60 dark:bg-blue-950/30 rounded-xl border border-blue-200/80 dark:border-blue-800/60 space-y-2.5 animate-fade-in">
-                {bridgeStatus?.online ? (
+                {bridgeStatus?.online && (
                   <div className="flex items-center justify-between p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-[11px] text-emerald-800 dark:text-emerald-300">
                     <div className="flex items-center gap-1.5">
                       <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -2896,20 +3539,6 @@ export function SettingsPage() {
                       <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono">({bridgeStatus.ip || '127.0.0.1'}:9101)</span>
                     </div>
                     <span className="text-[9px] font-extrabold uppercase bg-emerald-100 dark:bg-emerald-900/60 px-1.5 py-0.5 rounded text-emerald-700 dark:text-emerald-300">Direct LAN</span>
-                  </div>
-                ) : (
-                  <div className="p-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-[11px] text-amber-800 dark:text-amber-300 flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
-                      <span className="truncate">For cloud to local printing, run <code className="font-mono font-bold">python -m virtual_kitchen_printer</code></span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => checkLocalPrintBridgeStatus().then(setBridgeStatus)}
-                      className="text-[10px] font-bold text-amber-700 dark:text-amber-300 underline hover:text-amber-900 ml-2 shrink-0 cursor-pointer"
-                    >
-                      Check Bridge
-                    </button>
                   </div>
                 )}
 
@@ -2984,15 +3613,74 @@ export function SettingsPage() {
                 </div>
               </div>
             )}
+
+            {/* Direct Bluetooth Config Fields */}
+            {stationForm.connectionType === 'bluetooth' && (
+              <div className="p-3 bg-indigo-50/60 dark:bg-indigo-950/30 rounded-xl border border-indigo-200/80 dark:border-indigo-800/60 space-y-2.5 animate-fade-in">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <div className="text-xs font-bold text-indigo-900 dark:text-indigo-200 flex items-center gap-1.5">
+                      <Bluetooth size={13} className="text-indigo-600 dark:text-indigo-400" />
+                      <span>{pairedBtName ? `Paired: ${pairedBtName}` : 'Direct Bluetooth ESC/POS'}</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      Wireless direct connection to portable/desktop Bluetooth thermal printers (PT-210, GOOJPRT, MPT-II, Xprinter, etc.).
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => { setBtPermissionBlocked(false); handlePairBluetoothStation(); }}
+                      leftIcon={<Bluetooth size={13} />}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold h-8 cursor-pointer"
+                    >
+                      {pairedBtName ? 'Re-Pair' : 'Pair Bluetooth'}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={isTestingBt}
+                      onClick={() => handleTestBluetoothSlip(stationForm.name || 'Kitchen Station', stationForm.paperWidth || '80mm')}
+                      className="border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 text-xs font-bold h-8 cursor-pointer bg-white dark:bg-slate-900"
+                    >
+                      {isTestingBt ? 'Testing...' : 'Test Slip'}
+                    </Button>
+                  </div>
+                </div>
+                {btPermissionBlocked && (
+                  <div className="mt-2.5 p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-[11px] text-red-800 dark:text-red-300 space-y-2">
+                    <div className="flex items-center gap-1.5 font-bold text-red-700 dark:text-red-400">
+                      <span>🔒</span>
+                      <span>Bluetooth is blocked by your browser</span>
+                    </div>
+                    <p className="text-slate-600 dark:text-slate-400">Follow these steps to allow it:</p>
+                    <ol className="list-decimal list-inside space-y-1 text-slate-700 dark:text-slate-300">
+                      <li>Click the <strong>🔒 lock icon</strong> in the browser address bar (top-left of the URL bar)</li>
+                      <li>Click <strong>"Site settings"</strong> or <strong>"Permissions"</strong></li>
+                      <li>Find <strong>Bluetooth</strong> and change it from <strong className="text-red-600">"Blocked"</strong> to <strong className="text-emerald-600">"Allow"</strong></li>
+                      <li><strong>Refresh the page</strong> (Ctrl+R) then click Pair Bluetooth again</li>
+                    </ol>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* Kitchen Buzzer Option */}
+          {/* Buzzer Option */}
           <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200/80 dark:border-slate-800">
             <div className="flex items-center gap-2.5">
               <Volume2 size={16} className="text-amber-500" />
               <div>
-                <p className="text-xs font-bold text-slate-800 dark:text-slate-200">Sound Kitchen Buzzer / Beeper</p>
-                <p className="text-[11px] text-slate-500">Rings printer beeper twice when a new KOT ticket arrives.</p>
+                <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  {businessCategory.isFood ? 'Sound Kitchen Buzzer / Beeper' : 'Sound Station Buzzer / Beeper'}
+                </p>
+                <p className="text-[11px] text-slate-500">
+                  {businessCategory.isFood 
+                    ? 'Rings printer beeper twice when a new KOT ticket arrives.' 
+                    : 'Rings printer beeper twice when a new packing slip arrives.'}
+                </p>
               </div>
             </div>
             <Switch
@@ -3001,7 +3689,7 @@ export function SettingsPage() {
             />
           </div>
 
-          {/* Food Category Routing with Multi-Select */}
+          {/* Category Routing with Multi-Select */}
           {renderCategoryPicker(
             stationForm.categoryIds,
             (ids) => setStationForm((prev) => ({ ...prev, categoryIds: ids })),
@@ -3094,7 +3782,9 @@ export function SettingsPage() {
       <Modal
         isOpen={isBillingModalOpen}
         onClose={() => setIsBillingModalOpen(false)}
-        title={editingBillingPrinterId ? "Edit Cashier Bill Printer" : "Register Cashier Bill Printer"}
+        title={editingBillingPrinterId 
+          ? (businessCategory.isFood ? "Edit Cashier Bill Printer" : "Edit Billing Counter Printer")
+          : (businessCategory.isFood ? "Register Cashier Bill Printer" : "Register Billing Counter Printer")}
         className="max-w-lg"
       >
         <form onSubmit={handleSaveBillingPrinter} className="space-y-5 pt-2">
@@ -3105,7 +3795,7 @@ export function SettingsPage() {
             <Input
               value={billingPrinterForm.name}
               onChange={(e) => setBillingPrinterForm((prev) => ({ ...prev, name: e.target.value }))}
-              placeholder="e.g., Main Cashier Desk, Counter 2, Bar Cashier"
+              placeholder={businessCategory.billingStationPlaceholder}
               required
               autoFocus
             />
@@ -3149,7 +3839,7 @@ export function SettingsPage() {
             <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
               Hardware Connection Mode
             </label>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
               {/* Browser / System Default */}
               <button
                 type="button"
@@ -3175,7 +3865,7 @@ export function SettingsPage() {
                 }`}
               >
                 <div className="text-xs font-black flex items-center gap-1"><Wifi size={13} /> Network LAN</div>
-                <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">Counter Ethernet / Wi-Fi IP (Port 9100)</div>
+                <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">Counter Ethernet / Wi-Fi IP (9100)</div>
               </button>
 
               {/* Direct USB */}
@@ -3191,12 +3881,26 @@ export function SettingsPage() {
                 <div className="text-xs font-black flex items-center gap-1"><Usb size={13} /> Direct USB</div>
                 <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">WebUSB raw print zero-dialog</div>
               </button>
+
+              {/* Direct Bluetooth */}
+              <button
+                type="button"
+                onClick={() => setBillingPrinterForm(prev => ({ ...prev, connectionType: 'bluetooth' }))}
+                className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                  billingPrinterForm.connectionType === 'bluetooth'
+                    ? 'border-emerald-600 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold shadow-xs'
+                    : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
+                }`}
+              >
+                <div className="text-xs font-black flex items-center gap-1"><Bluetooth size={13} /> Bluetooth</div>
+                <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">Wireless BLE POS direct print</div>
+              </button>
             </div>
 
             {/* Network LAN IP Config Fields */}
             {billingPrinterForm.connectionType === 'network' && (
               <div className="p-3 bg-blue-50/60 dark:bg-blue-950/30 rounded-xl border border-blue-200/80 dark:border-blue-800/60 space-y-2.5 animate-fade-in">
-                {bridgeStatus?.online ? (
+                {bridgeStatus?.online && (
                   <div className="flex items-center justify-between p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-[11px] text-emerald-800 dark:text-emerald-300">
                     <div className="flex items-center gap-1.5">
                       <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -3204,20 +3908,6 @@ export function SettingsPage() {
                       <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono">({bridgeStatus.ip || '127.0.0.1'}:9101)</span>
                     </div>
                     <span className="text-[9px] font-extrabold uppercase bg-emerald-100 dark:bg-emerald-900/60 px-1.5 py-0.5 rounded text-emerald-700 dark:text-emerald-300">Direct LAN</span>
-                  </div>
-                ) : (
-                  <div className="p-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-[11px] text-amber-800 dark:text-amber-300 flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
-                      <span className="truncate">For cloud to local printing, run <code className="font-mono font-bold">python -m virtual_kitchen_printer</code></span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => checkLocalPrintBridgeStatus().then(setBridgeStatus)}
-                      className="text-[10px] font-bold text-amber-700 dark:text-amber-300 underline hover:text-amber-900 ml-2 shrink-0 cursor-pointer"
-                    >
-                      Check Bridge
-                    </button>
                   </div>
                 )}
 
@@ -3293,6 +3983,59 @@ export function SettingsPage() {
                 >
                   Pair USB Printer
                 </Button>
+              </div>
+            )}
+
+            {/* Direct Bluetooth Device Pairing Button */}
+            {billingPrinterForm.connectionType === 'bluetooth' && (
+              <div className="p-3 bg-indigo-50/60 dark:bg-indigo-950/30 rounded-xl border border-indigo-200/80 dark:border-indigo-800/60 space-y-2.5 animate-fade-in">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <div className="text-xs font-bold text-indigo-900 dark:text-indigo-200 flex items-center gap-1.5">
+                      <Bluetooth size={13} className="text-indigo-600 dark:text-indigo-400" />
+                      <span>{pairedBtName ? `Paired: ${pairedBtName}` : 'Direct Bluetooth ESC/POS'}</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      Pair wireless Bluetooth thermal bill printer (PT-210, GOOJPRT, MPT-II, Xprinter, etc.).
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => { setBtPermissionBlocked(false); handlePairBillingPrinterBt(); }}
+                      leftIcon={<Bluetooth size={13} />}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shrink-0 h-8 cursor-pointer"
+                    >
+                      {pairedBtName ? 'Re-Pair' : 'Pair Bluetooth'}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={isTestingBt}
+                      onClick={() => handleTestBluetoothSlip(billingPrinterForm.name || 'Cashier Counter', billingPrinterForm.paperWidth || '80mm')}
+                      className="border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 text-xs font-bold h-8 cursor-pointer bg-white dark:bg-slate-900"
+                    >
+                      {isTestingBt ? 'Testing...' : 'Test Slip'}
+                    </Button>
+                  </div>
+                </div>
+                {btPermissionBlocked && (
+                  <div className="mt-1 p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-[11px] text-red-800 dark:text-red-300 space-y-2">
+                    <div className="flex items-center gap-1.5 font-bold text-red-700 dark:text-red-400">
+                      <span>🔒</span>
+                      <span>Bluetooth is blocked by your browser</span>
+                    </div>
+                    <p className="text-slate-600 dark:text-slate-400">Follow these steps to allow it:</p>
+                    <ol className="list-decimal list-inside space-y-1 text-slate-700 dark:text-slate-300">
+                      <li>Click the <strong>🔒 lock icon</strong> in the browser address bar (top-left of the URL bar)</li>
+                      <li>Click <strong>"Site settings"</strong> or <strong>"Permissions"</strong></li>
+                      <li>Find <strong>Bluetooth</strong> and change it from <strong className="text-red-600">"Blocked"</strong> to <strong className="text-emerald-600">"Allow"</strong></li>
+                      <li><strong>Refresh the page</strong> (Ctrl+R) then click Pair Bluetooth again</li>
+                    </ol>
+                  </div>
+                )}
               </div>
             )}
           </div>

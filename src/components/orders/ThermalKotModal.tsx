@@ -7,11 +7,12 @@ import {
   formatReceiptDateTime, 
   printThermalKot, 
   printOrderToStations,
-  generateKotText,
+  generateKotText, 
   getKotInvocationItems 
 } from '@/utils/thermalPrinter';
 import { usePrinterStore } from '@/store/usePrinterStore';
 import { useShopStore } from '@/store/shopStore';
+import { getBusinessCategory } from '@/config/businessCategories';
 
 interface ThermalKotModalProps {
   isOpen: boolean;
@@ -32,6 +33,7 @@ export function ThermalKotModal({
   const markOrderKotPrinted = usePrinterStore((s) => s.markOrderKotPrinted);
   const stations = usePrinterStore((s) => s.stations);
   const menuItems = useShopStore((s) => s.menuItems);
+  const businessCategory = getBusinessCategory(shop?.category);
   const [paperWidth, setPaperWidth] = useState<'80mm' | '58mm'>(storePaperWidth || '80mm');
   const [invocationMode, setInvocationMode] = useState<'full' | 'new_only' | 'cancelled'>(initialMode);
   const [isPrinting, setIsPrinting] = useState(false);
@@ -40,7 +42,8 @@ export function ThermalKotModal({
   if (!order) return null;
 
   const rawId = order.id ? String(order.daily_order_number || (order.daily_order_number || order.id.slice(0, 8))).toUpperCase() : '00000000';
-  const kotNo = `KOT-${new Date(order.created_at || Date.now()).getFullYear()}-${rawId}`;
+  const prefix = businessCategory.isFood ? 'KOT' : 'POT';
+  const kotNo = `${prefix}-${new Date(order.created_at || Date.now()).getFullYear()}-${rawId}`;
   const { full: formattedDateTime } = formatReceiptDateTime(order.created_at);
 
   const allItems = order.items || [];
@@ -59,7 +62,7 @@ export function ThermalKotModal({
 
   const handlePrint = async () => {
     setIsPrinting(true);
-    const toastId = toast.loading('Dispatching KOT to kitchen printer(s)...');
+    const toastId = toast.loading(`Dispatching ${businessCategory.kotShort} to printer(s)...`);
     try {
       const ok = await printOrderToStations(
         order,
@@ -71,14 +74,14 @@ export function ThermalKotModal({
       );
       if (ok) {
         markOrderKotPrinted(order.id);
-        toast.success('KOT printed successfully', { id: toastId });
+        toast.success(`${businessCategory.kotShort} printed successfully`, { id: toastId });
         onClose();
       } else {
         toast.error('Print canceled or printer unavailable', { id: toastId });
       }
     } catch (e) {
       console.error(e);
-      toast.error('Failed to print KOT', { id: toastId });
+      toast.error(`Failed to print ${businessCategory.kotShort}`, { id: toastId });
     } finally {
       setIsPrinting(false);
     }
@@ -88,14 +91,14 @@ export function ThermalKotModal({
     const txt = generateKotText(order, shop, { invocationMode, kotNumber: kotNo });
     navigator.clipboard.writeText(txt);
     setCopied(true);
-    toast.success('KOT text copied to clipboard!');
+    toast.success(`${businessCategory.kotShort} text copied to clipboard!`);
     setTimeout(() => setCopied(false), 2000);
   };
 
   const handleExportSlip = () => {
     const txt = generateKotText(order, shop, { invocationMode, kotNumber: kotNo });
     const cleanKot = kotNo.toLowerCase().replace(/[^a-z0-9]/g, '_');
-    const filename = `kot_slip_${cleanKot}_${Date.now()}.txt`;
+    const filename = `${prefix.toLowerCase()}_slip_${cleanKot}_${Date.now()}.txt`;
     const blob = new Blob([txt], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -110,15 +113,66 @@ export function ThermalKotModal({
         URL.revokeObjectURL(url);
       } catch {}
     }, 10000);
-    toast.success(`KOT slip exported (${filename})`);
+    toast.success(`${businessCategory.kotShort} slip exported (${filename})`);
   };
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Kitchen Order Ticket (KOT)"
+      title={businessCategory.kotLabel}
       className="max-w-xl"
+      footer={
+        <div className="flex flex-wrap items-center justify-between gap-3 w-full">
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleCopyText}
+              className="text-xs h-9"
+            >
+              {copied ? <Check size={14} className="text-emerald-500 mr-1.5" /> : <Copy size={14} className="mr-1.5" />}
+              <span>{copied ? 'Copied' : 'Copy Slip'}</span>
+            </Button>
+
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleExportSlip}
+              className="text-xs h-9"
+              title="Save slip as text file to Downloads"
+            >
+              <Download size={14} className="mr-1.5" />
+              <span>Export Slip</span>
+            </Button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onClose}
+              className="text-xs h-9"
+            >
+              Close
+            </Button>
+
+            <Button
+              size="sm"
+              onClick={handlePrint}
+              isLoading={isPrinting}
+              className={`text-xs h-9 font-bold px-4 text-white shadow-md ${
+                invocationMode === 'cancelled'
+                  ? 'bg-rose-600 hover:bg-rose-700'
+                  : 'bg-primary hover:bg-primary-600'
+              }`}
+              leftIcon={<Printer size={15} />}
+            >
+              {invocationMode === 'cancelled' ? 'Print Void Slip' : 'Print KOT to Kitchen'}
+            </Button>
+          </div>
+        </div>
+      }
     >
       <div className="space-y-4 pt-1">
         {/* Invocation Mode Selector Tabs */}
@@ -327,57 +381,6 @@ export function ThermalKotModal({
             <div className="text-center text-[10px] text-slate-500 mt-3 pt-1 border-t border-slate-200">
               *** END OF KOT ***
             </div>
-          </div>
-        </div>
-
-        {/* Action Buttons Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleCopyText}
-              className="text-xs h-9"
-            >
-              {copied ? <Check size={14} className="text-emerald-500 mr-1.5" /> : <Copy size={14} className="mr-1.5" />}
-              <span>{copied ? 'Copied' : 'Copy Slip'}</span>
-            </Button>
-
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleExportSlip}
-              className="text-xs h-9"
-              title="Save slip as text file to Downloads"
-            >
-              <Download size={14} className="mr-1.5" />
-              <span>Export Slip</span>
-            </Button>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onClose}
-              className="text-xs h-9"
-            >
-              Close
-            </Button>
-
-            <Button
-              size="sm"
-              onClick={handlePrint}
-              isLoading={isPrinting}
-              className={`text-xs h-9 font-bold px-4 text-white shadow-md ${
-                invocationMode === 'cancelled'
-                  ? 'bg-rose-600 hover:bg-rose-700'
-                  : 'bg-primary hover:bg-primary-600'
-              }`}
-              leftIcon={<Printer size={15} />}
-            >
-              {invocationMode === 'cancelled' ? 'Print Void Slip' : 'Print KOT to Kitchen'}
-            </Button>
           </div>
         </div>
       </div>

@@ -5,6 +5,8 @@ import { Upload, FileText, ImageIcon, Check, Sparkles, Loader2, ChevronLeft } fr
 import { api } from '@/services/api';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { useShopStore } from '@/store/shopStore';
+import { getBusinessCategory } from '@/config/businessCategories';
 
 interface ParsedItem {
   category_name: string;
@@ -18,6 +20,8 @@ interface ParsedItem {
 export function BulkUploadPage() {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { shop } = useShopStore();
+  const businessCategory = getBusinessCategory(shop?.category);
   
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -208,7 +212,7 @@ export function BulkUploadPage() {
                     <th className="px-4 py-3 min-w-[200px]">Item Name</th>
                     <th className="px-4 py-3 min-w-[250px]">Description</th>
                     <th className="px-4 py-3 w-28">Price (₹)</th>
-                    <th className="px-4 py-3 w-32">Type</th>
+                    {businessCategory.dietaryEnabled && <th className="px-4 py-3 w-32">Type</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -252,20 +256,22 @@ export function BulkUploadPage() {
                           className="w-full bg-transparent border border-transparent hover:border-slate-300 focus:border-primary focus:ring-1 focus:ring-primary rounded px-2 py-1 transition-colors"
                         />
                       </td>
-                      <td className="px-4 py-3">
-                        <select
-                          value={item.food_types[0] || 'veg'}
-                          onChange={(e) => handleItemChange(idx, 'food_types', [e.target.value])}
-                          className="w-full bg-transparent text-sm border border-transparent hover:border-slate-300 focus:border-primary focus:ring-1 focus:ring-primary rounded px-1 py-1 transition-colors"
-                        >
-                          <option value="veg">Veg</option>
-                          <option value="non-veg">Non-Veg</option>
-                          <option value="egg">Egg</option>
-                          <option value="drink">Drink</option>
-                          <option value="none">None</option>
-                          <option value="dessert">Dessert</option>
-                        </select>
-                      </td>
+                      {businessCategory.dietaryEnabled && (
+                        <td className="px-4 py-3">
+                          <select
+                            value={item.food_types[0] || 'veg'}
+                            onChange={(e) => handleItemChange(idx, 'food_types', [e.target.value])}
+                            className="w-full bg-transparent text-sm border border-transparent hover:border-slate-300 focus:border-primary focus:ring-1 focus:ring-primary rounded px-1 py-1 transition-colors"
+                          >
+                            <option value="veg">Veg</option>
+                            <option value="non-veg">Non-Veg</option>
+                            <option value="egg">Egg</option>
+                            <option value="drink">Drink</option>
+                            <option value="none">None</option>
+                            <option value="dessert">Dessert</option>
+                          </select>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>

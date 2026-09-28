@@ -210,7 +210,7 @@ export function DiscountsPage() {
   const { setTitle } = useHeaderStore();
 
   useEffect(() => {
-    setTitle('Discounts & Offers', 'Create promotions that appear as banners on your public menu.');
+    setTitle('Discounts & Offers', 'Offers and promotional coupons.');
   }, [setTitle]);
 
   const fetchAll = async (reset = false, search = searchQuery) => {

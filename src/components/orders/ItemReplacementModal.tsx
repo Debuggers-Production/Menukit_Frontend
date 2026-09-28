@@ -107,7 +107,16 @@ export function ItemReplacementModal({
 
       const res = await api.post(`/orders/${order.id}/items/${itemToReplace.id}/replace`, payload);
       const updatedOrder = res.data;
-      toast.success(`Item replaced with ${selectedMenuItem.name}`, { id: toastId });
+      
+      const isPaid = String(order.payment_status || '').toLowerCase() === 'paid';
+      if (isPaid && priceDiff > 0) {
+        toast.success(`Replaced with ${selectedMenuItem.name}. Difference of ₹${priceDiff.toFixed(2)} due from customer.`, { id: toastId, duration: 5000 });
+      } else if (isPaid && priceDiff < 0) {
+        toast.success(`Replaced with ${selectedMenuItem.name}. Refund of ₹${Math.abs(priceDiff).toFixed(2)} initiated to customer.`, { id: toastId, duration: 5000 });
+      } else {
+        toast.success(`Item replaced with ${selectedMenuItem.name}`, { id: toastId });
+      }
+      
       onReplaced(updatedOrder);
       onClose();
 

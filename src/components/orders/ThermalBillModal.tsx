@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Printer, Copy, Check, Sparkles } from 'lucide-react';
+import { Printer, Copy, Check, Sparkles, FileText } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import toast from 'react-hot-toast';
@@ -9,6 +9,7 @@ import {
   printThermalReceipt,
   isNewlyAddedItem,
 } from '@/utils/thermalPrinter';
+import { printOrderA4Invoice } from '@/utils/orderInvoice';
 import { usePrinterStore } from '@/store/usePrinterStore';
 
 interface ThermalBillModalProps {
@@ -93,9 +94,9 @@ export function ThermalBillModal({ isOpen, onClose, order, shop, initialMode }: 
     } else {
       // EXCLUSIVE: Tax is added on top of food subtotal
       taxableValue = Math.max(0, subtotal - discountAmount);
-      cgstAmount = Math.round((taxableValue * (cgstRate / 100)) * 100) / 100;
-      sgstAmount = Math.round((taxableValue * (sgstRate / 100)) * 100) / 100;
-      totalTax = Math.round((cgstAmount + sgstAmount) * 100) / 100;
+      totalTax = Math.round((taxableValue * (totalTaxRate / 100)) * 100) / 100;
+      cgstAmount = Math.round((totalTax * (cgstRate / totalTaxRate)) * 100) / 100;
+      sgstAmount = Math.round((totalTax - cgstAmount) * 100) / 100;
 
       const orderAmountNum = Number(order.total_amount || 0);
       if (!isNewOnlyMode && orderAmountNum >= taxableValue + totalTax - 0.05) {
@@ -204,6 +205,47 @@ export function ThermalBillModal({ isOpen, onClose, order, shop, initialMode }: 
       onClose={onClose}
       title="Thermal Bill Receipt"
       className="max-w-xl"
+      footer={
+        <div className="flex items-center justify-between gap-2 w-full flex-wrap">
+          <Button
+            variant="outline"
+            onClick={() => {
+              const tId = toast.loading('Opening Tax Invoice...');
+              printOrderA4Invoice(order, shop).then((res) => {
+                if (res) {
+                  toast.success('Tax Invoice ready!', { id: tId });
+                } else {
+                  toast.error('Could not open print window', { id: tId });
+                }
+              });
+            }}
+            leftIcon={<FileText size={14} className="text-primary" />}
+            className="text-xs font-bold"
+          >
+            Print Tax Invoice (A4)
+          </Button>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              onClick={onClose}
+              className="text-xs"
+            >
+              Close
+            </Button>
+            <Button
+              onClick={handlePrint}
+              isLoading={isPrinting}
+              leftIcon={<Printer size={15} />}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 cursor-pointer"
+            >
+              {isNewOnlyMode 
+                ? (activePrinters.length > 1 ? `Print New Items (${activePrinters.length} Printers)` : 'Print New Items')
+                : (activePrinters.length > 1 ? `Print Bill (${activePrinters.length} Printers)` : 'Print Bill')}
+            </Button>
+          </div>
+        </div>
+      }
     >
       <div className="space-y-4 pt-1">
         {/* Controls Toolbar: Clean Target Status & Print Action */}
@@ -497,27 +539,6 @@ export function ThermalBillModal({ isOpen, onClose, order, shop, initialMode }: 
               <div className="font-bold text-[11px] pt-1.5">*** Visit again ***</div>
             </div>
           </div>
-        </div>
-
-        {/* Footer Actions */}
-        <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
-          <Button
-            variant="secondary"
-            onClick={onClose}
-            className="text-xs"
-          >
-            Close
-          </Button>
-          <Button
-            onClick={handlePrint}
-            isLoading={isPrinting}
-            leftIcon={<Printer size={15} />}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 cursor-pointer"
-          >
-            {isNewOnlyMode 
-              ? (activePrinters.length > 1 ? `Print New Items (${activePrinters.length} Printers)` : 'Print New Items')
-              : (activePrinters.length > 1 ? `Print Bill (${activePrinters.length} Printers)` : 'Print Bill')}
-          </Button>
         </div>
       </div>
     </Modal>

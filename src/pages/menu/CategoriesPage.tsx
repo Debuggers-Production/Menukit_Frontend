@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'react-hot-toast';
-import { Plus, Edit2, Trash2, GripVertical, MenuSquare, Search, Loader2 } from 'lucide-react';
+import { Plus, Edit2, Trash2, GripVertical, MenuSquare, Search, Loader2, LayoutGrid, CheckCircle2, XCircle } from 'lucide-react';
 import { api } from '@/services/api';
 import { useShopStore } from '@/store/shopStore';
 import { Category } from '@/types';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { SearchableSelect } from '@/components/ui/SearchableSelect';
 import { Modal } from '@/components/ui/Modal';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -141,6 +142,7 @@ export function CategoriesPage() {
   const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
 
   // Debounce search query input (350ms)
   useEffect(() => {
@@ -164,7 +166,7 @@ export function CategoriesPage() {
   const { setTitle } = useHeaderStore();
 
   useEffect(() => {
-    setTitle(`Menu Categories ${categories.length > 0 ? `(${categories.length})` : ''}`, 'Create categories like Starters, Main Course, Drinks.');
+    setTitle(`Menu Categories ${categories.length > 0 ? `(${categories.length})` : ''}`, 'Organize your catalog categories.');
   }, [categories.length, setTitle]);
 
   const fetchCategories = useCallback(async (currentSkip: number | boolean = 0, reset: boolean = false) => {
@@ -185,6 +187,11 @@ export function CategoriesPage() {
       if (debouncedSearch.trim()) {
         params.search = debouncedSearch.trim();
       }
+      if (statusFilter === 'active') {
+        params.is_active = true;
+      } else if (statusFilter === 'inactive') {
+        params.is_active = false;
+      }
 
       const res = await api.get('/categories', { params });
       const newItems: Category[] = Array.isArray(res.data) ? res.data : (res.data?.items || res.data?.categories || []);
@@ -204,11 +211,11 @@ export function CategoriesPage() {
       setIsLoading(false);
       setIsLoadingMore(false);
     }
-  }, [debouncedSearch, setCategories]);
+  }, [debouncedSearch, statusFilter, setCategories]);
 
   useEffect(() => {
     fetchCategories(0, true);
-  }, [debouncedSearch, fetchCategories]);
+  }, [debouncedSearch, statusFilter, fetchCategories]);
 
   const handleLoadMore = () => {
     if (hasMore && !isLoadingMore && !isLoading) {
@@ -258,10 +265,28 @@ export function CategoriesPage() {
   const [loadingTargetId, setLoadingTargetId] = useState<string | null>(null);
 
   const handleOpenSingleDeleteModal = async (id: string) => {
+    const catObj = categories.find(c => c.id === id);
+    const itemCount = Number(catObj?.item_count || 0);
+
+    // If category has no menu items (0 items), delete directly without requiring OTP
+    if (itemCount === 0) {
+      setLoadingTargetId(id);
+      try {
+        await api.delete(`/categories/${id}`);
+        toast.success(`Category "${catObj?.name || 'Item'}" deleted`);
+        setCategories(categories.filter(c => c.id !== id));
+      } catch (error: any) {
+        toast.error(error.response?.data?.detail || 'Failed to delete category');
+      } finally {
+        setLoadingTargetId(null);
+      }
+      return;
+    }
+
+    // If category has menu items, request OTP and open modal
     setIsSendingSingleOtp(true);
     setLoadingTargetId(id);
     try {
-      const catObj = categories.find(c => c.id === id);
       await api.post(`/categories/request-deletion-otp?target=category_${encodeURIComponent(catObj?.name || 'item')}`);
       toast.success('Deletion OTP sent to your registered email');
       setSingleOtpCode('');
@@ -377,7 +402,7 @@ export function CategoriesPage() {
       </HeaderActions>
 
       <PageContainer className="pb-24">
-        <div className="sticky top-[-16px] sm:top-[-24px] lg:top-[-32px] z-20 bg-background/95 backdrop-blur-md pb-4 pt-4 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 border-b border-border mb-6 flex gap-3">
+        <div className="sticky top-[-16px] sm:top-[-24px] lg:top-[-32px] z-20 bg-background/95 backdrop-blur-md pb-4 pt-4 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 border-b border-border mb-6 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
           <div className="w-full sm:max-w-md flex-1">
             <Input
               leftIcon={<Search size={18} />}
@@ -387,17 +412,35 @@ export function CategoriesPage() {
               className="w-full bg-background"
             />
           </div>
-          {categories.length > 0 && canWrite && (
-            <button
-              onClick={handleOpenDeleteAllModal}
-              disabled={isSendingOtp}
-              className="flex items-center justify-center gap-2 px-4 rounded-lg bg-destructive/10 hover:bg-destructive/20 text-destructive font-medium text-sm transition-colors border border-destructive/20 shrink-0"
-              title="Delete All Categories"
-            >
-              <Trash2 size={16} />
-              <span className="hidden sm:inline">{isSendingOtp ? 'Sending OTP...' : 'Delete All'}</span>
-            </button>
-          )}
+
+          <div className="flex items-center justify-between sm:justify-end gap-2.5 w-full sm:w-auto shrink-0">
+            <div className="w-40 sm:w-48">
+              <SearchableSelect
+                options={[
+                  { id: 'all', name: 'All Status', icon: <LayoutGrid size={15} className="text-muted-foreground" /> },
+                  { id: 'active', name: 'Active Only', icon: <CheckCircle2 size={15} className="text-emerald-500" /> },
+                  { id: 'inactive', name: 'Inactive Only', icon: <XCircle size={15} className="text-rose-500" /> },
+                ]}
+                value={statusFilter}
+                onChange={(val) => setStatusFilter(val as any)}
+                showSearch={false}
+                placeholder="Filter Status"
+                className="h-10 border-input bg-background text-foreground text-sm font-medium rounded-xl shadow-xs"
+              />
+            </div>
+
+            {categories.length > 0 && canWrite && (
+              <button
+                onClick={handleOpenDeleteAllModal}
+                disabled={isSendingOtp}
+                className="flex items-center justify-center gap-2 px-4 h-10 rounded-xl bg-destructive/10 hover:bg-destructive/20 text-destructive font-medium text-sm transition-colors border border-destructive/20 shrink-0 cursor-pointer disabled:opacity-60"
+                title="Delete All Categories"
+              >
+                {isSendingOtp ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                <span className="hidden sm:inline">{isSendingOtp ? 'Sending OTP...' : 'Delete All'}</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {isLoading ? (
@@ -407,10 +450,10 @@ export function CategoriesPage() {
         ) : categories.length === 0 ? (
           <EmptyState
             icon={<MenuSquare size={24} />}
-            title={searchQuery ? 'No categories found' : 'No Categories Yet'}
-            description={searchQuery ? 'Try adjusting your search terms.' : 'Create categories to organize your menu items (e.g. Starters, Mains, Desserts).'}
+            title={searchQuery || statusFilter !== 'all' ? 'No categories found' : 'No Categories Yet'}
+            description={searchQuery || statusFilter !== 'all' ? 'Try adjusting your search or status filter.' : 'Create categories to organize your menu items (e.g. Starters, Mains, Desserts).'}
             action={
-              !searchQuery && canWrite ? (
+              !searchQuery && statusFilter === 'all' && canWrite ? (
                 <Button onClick={() => openModal()} className="mt-4">
                   <Plus size={16} className="mr-2" />
                   Add Category

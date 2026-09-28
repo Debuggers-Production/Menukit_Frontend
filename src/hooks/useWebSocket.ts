@@ -33,95 +33,156 @@ export function useWebSocket() {
   const { shop } = useShopStore();
   const { addNotification, setNotifications } = useNotificationStore();
   const wsRef = useRef<WebSocket | null>(null);
+  const pingIntervalRef = useRef<any>(null);
+  const reconnectTimeoutRef = useRef<any>(null);
+  const isUnmountedRef = useRef(false);
 
   useEffect(() => {
     if (!shop?.id) return;
+    isUnmountedRef.current = false;
 
     // Build WS URL based on current environment
     const isProd = import.meta.env.MODE === 'production';
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = isProd ? window.location.host : 'localhost:8000'; // Fallback to 8000 for local dev if not running through vite proxy
+    const host = isProd ? window.location.host : 'localhost:8000';
     const apiBase = APP_CONFIG.API_URL ? `${APP_CONFIG.API_URL}/api/v1` : `${protocol}//${host}/api/v1`;
-    
-    // Replace http(s) with ws(s)
     const wsUrl = apiBase.replace(/^http/, 'ws') + `/notifications/ws/${shop.id}`;
 
     const connect = () => {
-      const ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
+      if (isUnmountedRef.current) return;
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return;
 
-      ws.onopen = () => {
-        console.log('Connected to notification stream');
-      };
+      try {
+        const ws = new WebSocket(wsUrl);
+        wsRef.current = ws;
 
-      ws.onmessage = (event) => {
-        if (typeof event.data !== 'string') return;
-        const trimmed = event.data.trim();
-        if (trimmed === 'ping' || trimmed === 'pong' || !trimmed.startsWith('{')) {
-          return;
-        }
-        try {
-          const message = JSON.parse(trimmed);
+        ws.onopen = () => {
+          console.log('[Merchant WS] Connected to notification stream with 0-delay');
           
-          if (message.type === 'UNREAD_HISTORY') {
-            // Bulk unread notifications loaded on connect
-            setNotifications(message.data);
-          } else if (message.type === 'NEW_NOTIFICATION') {
-            const notif = message.data;
-            if (notif && !notif.metadata && notif.metadata_json) {
+          // Clear any previous ping interval
+          if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+          
+          // Send keep-alive ping every 25 seconds
+          pingIntervalRef.current = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) {
               try {
-                notif.metadata = typeof notif.metadata_json === 'string' ? JSON.parse(notif.metadata_json) : notif.metadata_json;
-              } catch {}
+                ws.send('ping');
+              } catch (e) {
+                console.error('[Merchant WS] Ping failed:', e);
+              }
             }
-            addNotification(notif);
-            
-            // Broadcast real-time update event so pages refresh instantly without HTTP polling
-            window.dispatchEvent(new CustomEvent('menukit-realtime-update', { detail: notif }));
-            
-            // Play notification chime sound
-            playChimeNotificationSound();
+          }, 25000);
+        };
 
-            // Show toast popup
-            toast(notif.title + '\n' + notif.message, {
-              icon: notif.type === 'NEW_ORDER' ? '🛍️' : notif.type === 'ORDER_STATUS' ? '🍳' : notif.type === 'NEW_CUSTOMER' ? '👋' : '⭐',
-              style: {
-                borderRadius: '10px',
-                background: '#333',
-                color: '#fff',
-              },
-            });
-          } else if (message.type === 'NEW_ORDER' || message.event === 'NEW_ORDER') {
-            const orderData = message.data;
-            window.dispatchEvent(new CustomEvent('menukit-realtime-update', { 
-              detail: { 
-                type: 'NEW_ORDER', 
-                order: orderData, 
-                metadata: { order_id: orderData?.id } 
-              } 
-            }));
-            playChimeNotificationSound();
+        ws.onmessage = (event) => {
+          if (typeof event.data !== 'string') return;
+          const trimmed = event.data.trim();
+          if (trimmed === 'ping' || trimmed === 'pong' || !trimmed.startsWith('{')) {
+            return;
           }
-        } catch (e) {
-          console.error("Failed to parse websocket message", e);
+          try {
+            const message = JSON.parse(trimmed);
+            
+            if (message.type === 'UNREAD_HISTORY') {
+              // Bulk unread notifications loaded on connect
+              setNotifications(message.data);
+            } else if (message.type === 'NEW_NOTIFICATION') {
+              const notif = message.data;
+              if (notif && !notif.metadata && notif.metadata_json) {
+                try {
+                  notif.metadata = typeof notif.metadata_json === 'string' ? JSON.parse(notif.metadata_json) : notif.metadata_json;
+                } catch {}
+              }
+              addNotification(notif);
+              
+              // Broadcast real-time update event so pages refresh instantly without HTTP polling
+              window.dispatchEvent(new CustomEvent('menukit-realtime-update', { detail: notif }));
+              
+              // Play notification chime sound
+              playChimeNotificationSound();
+
+              // Show toast popup
+              toast(notif.title + '\n' + notif.message, {
+                icon: notif.type === 'NEW_ORDER' ? '🛍️' : notif.type === 'ORDER_STATUS' ? '🍳' : notif.type === 'NEW_CUSTOMER' ? '👋' : '⭐',
+                style: {
+                  borderRadius: '10px',
+                  background: '#333',
+                  color: '#fff',
+                },
+              });
+            } else if (
+              message.type === 'NEW_ORDER' ||
+              message.event === 'NEW_ORDER' ||
+              message.type === 'ORDER_STATUS' ||
+              message.event === 'ORDER_STATUS' ||
+              message.type === 'ORDER_UPDATED' ||
+              message.event === 'ORDER_UPDATED'
+            ) {
+              const orderData = message.data || message.order;
+              window.dispatchEvent(new CustomEvent('menukit-realtime-update', { 
+                detail: { 
+                  type: message.type || message.event, 
+                  order: orderData, 
+                  metadata: { order_id: orderData?.id || message.order_id } 
+                } 
+              }));
+              
+              if (message.type === 'NEW_ORDER' || message.event === 'NEW_ORDER') {
+                playChimeNotificationSound();
+                toast.success(`New order received! #${orderData?.daily_order_number || String(orderData?.id || '').slice(0, 8).toUpperCase()}`);
+              }
+            }
+          } catch (e) {
+            console.error("[Merchant WS] Failed to parse message:", e);
+          }
+        };
+
+        ws.onclose = () => {
+          if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+          if (!isUnmountedRef.current) {
+            console.log('[Merchant WS] Disconnected. Reconnecting in 1.5s...');
+            clearTimeout(reconnectTimeoutRef.current);
+            reconnectTimeoutRef.current = setTimeout(connect, 1500);
+          }
+        };
+
+        ws.onerror = (error) => {
+          console.error('[Merchant WS] Error:', error);
+          try { ws.close(); } catch {}
+        };
+      } catch (e) {
+        console.error('[Merchant WS] Connection exception:', e);
+        if (!isUnmountedRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
+          reconnectTimeoutRef.current = setTimeout(connect, 2000);
         }
-      };
-
-      ws.onclose = () => {
-        console.log('WebSocket disconnected. Reconnecting in 5s...');
-        setTimeout(connect, 5000);
-      };
-
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
-        ws.close();
-      };
+      }
     };
 
     connect();
 
+    // Reconnect immediately when device comes back online or tab is foregrounded
+    const handleVisibilityOrOnline = () => {
+      if (document.visibilityState === 'visible' || navigator.onLine) {
+        if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED || wsRef.current.readyState === WebSocket.CLOSING) {
+          connect();
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityOrOnline);
+    window.addEventListener('online', handleVisibilityOrOnline);
+    window.addEventListener('focus', handleVisibilityOrOnline);
+
     return () => {
+      isUnmountedRef.current = true;
+      if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+      document.removeEventListener('visibilitychange', handleVisibilityOrOnline);
+      window.removeEventListener('online', handleVisibilityOrOnline);
+      window.removeEventListener('focus', handleVisibilityOrOnline);
       if (wsRef.current) {
-        wsRef.current.onclose = null; // Prevent auto-reconnect on unmount
+        wsRef.current.onclose = null;
         wsRef.current.close();
       }
     };

@@ -90,6 +90,29 @@ export function CustomerProfilePage() {
     loadCustomerProfileData();
   }, [id, token]);
 
+  useEffect(() => {
+    const handleCustomerChange = (e: any) => {
+      const newToken = e?.detail?.token !== undefined ? e.detail.token : localStorage.getItem('customer_token');
+      setToken(newToken);
+      setCustomerPhone(localStorage.getItem('customer_phone') || localStorage.getItem('customer_mobile') || '');
+      setCustomerName(localStorage.getItem('customer_name') || 'Customer');
+      if (!newToken) {
+        setVisitedShops([]);
+        setOrders([]);
+        setDiscounts([]);
+        setMyParticipatedContests([]);
+        setCustomerCredits({ creditLimit: 0, availableCredit: 0, usedCredit: 0 });
+      }
+    };
+
+    window.addEventListener('menukit-customer-changed', handleCustomerChange);
+    window.addEventListener('storage', handleCustomerChange);
+    return () => {
+      window.removeEventListener('menukit-customer-changed', handleCustomerChange);
+      window.removeEventListener('storage', handleCustomerChange);
+    };
+  }, []);
+
   const primaryColor = shop?.theme?.primary_color || '#ea580c';
 
   // Group orders by shop name

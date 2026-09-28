@@ -19,6 +19,7 @@ import {
   Trophy,
   MoreHorizontal,
   Sparkles,
+  Zap,
   Wallet,
   ArrowRight,
   AlertTriangle,
@@ -38,7 +39,11 @@ import {
   Sliders,
   Laptop,
   Download,
-  PenTool
+  PenTool,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelLeft,
+  Bell
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { useShopStore } from '@/store/shopStore';
@@ -62,6 +67,13 @@ export function DashboardLayout() {
   const [isSignOutModalOpen, setIsSignOutModalOpen] = useState(false);
   const [isLanguageModalOpen, setIsLanguageModalOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('menukit_sidebar_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
   const { isInstalled, promptInstall, isModalOpen, setIsModalOpen } = usePWAInstall();
   const [subStatus, setSubStatus] = useState<any>(null);
   const headerTitle = useHeaderStore((state) => state.title);
@@ -71,27 +83,37 @@ export function DashboardLayout() {
   const location = useLocation();
   const mainRef = useRef<HTMLElement>(null);
 
+  const toggleSidebar = () => {
+    setIsSidebarCollapsed(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('menukit_sidebar_collapsed', String(next));
+      } catch {}
+      return next;
+    });
+  };
+
   // Fast route titles for instant header synchronization on click
   const ROUTE_META: Record<string, { title: string; subtitle: string }> = {
     '/dashboard': { title: 'Dashboard', subtitle: 'Overview of your shop' },
-    '/campaigns': { title: 'Campaigns', subtitle: 'Engage customers directly with rich WhatsApp broadcast campaigns.' },
-    '/contests': { title: 'Contests Manager', subtitle: 'Create customer drawing or Kavithai contests with minimum targets.' },
-    '/orders': { title: 'Orders', subtitle: 'Manage incoming and completed orders' },
+    '/campaigns': { title: 'Campaigns', subtitle: 'WhatsApp broadcast campaigns' },
+    '/contests': { title: 'Contests Manager', subtitle: 'Customer drawing & contest campaigns' },
+    '/orders': { title: 'Orders', subtitle: 'Manage live orders & deliveries' },
     '/categories': { title: 'Categories', subtitle: 'Manage menu categories' },
-    '/menu-items': { title: 'Menus', subtitle: 'Manage your food & drink items' },
-    '/discounts': { title: 'Discounts', subtitle: 'Create special offers and promos' },
-    '/members': { title: 'Members', subtitle: 'View customer loyalty and profiles' },
-    '/qr-code': { title: 'QR Code', subtitle: 'Download & customize your shop QR code' },
-    '/analytics': { title: 'Analytics', subtitle: 'Insights and performance reports' },
-    '/customize': { title: 'Customize Theme', subtitle: 'Personalize your digital menu design' },
-    '/chalkboard': { title: 'Chalkboard Sign', subtitle: 'Manage your sidewalk A-frame chalkboard sign and daily specials' },
-    '/shop-setup': { title: 'Shop Settings', subtitle: 'Manage your shop profile' },
-    '/settings/team': { title: 'Staff & Team', subtitle: 'Manage employee access' },
-    '/subscription': { title: 'Subscription', subtitle: 'Manage your plans and billing' },
-    '/settlements': { title: 'Settlements', subtitle: 'Track payouts and finances' },
-    '/settings': { title: 'Settings', subtitle: 'General preferences' },
-    '/notifications': { title: 'Notifications', subtitle: 'Recent shop alerts and updates' },
-    '/internal-bulk': { title: 'Bulk Data Upload', subtitle: 'Import categories, menus, or discounts directly' },
+    '/menu-items': { title: 'Menus', subtitle: 'Manage catalog & items' },
+    '/discounts': { title: 'Discounts', subtitle: 'Offers and promotional coupons' },
+    '/members': { title: 'Members', subtitle: 'Customer loyalty & profiles' },
+    '/qr-code': { title: 'QR Code', subtitle: 'Shop QR code & table cards' },
+    '/analytics': { title: 'Analytics', subtitle: 'Revenue & sales reports' },
+    '/customize': { title: 'Customize Theme', subtitle: 'Digital menu design & theme' },
+    '/chalkboard': { title: 'Chalkboard Sign', subtitle: 'Sidewalk chalkboard specials' },
+    '/shop-setup': { title: 'Shop Settings', subtitle: 'Manage shop profile' },
+    '/settings/team': { title: 'Staff & Team', subtitle: 'Manage staff access' },
+    '/subscription': { title: 'Plans & Subscriptions', subtitle: 'Review your current plan entitlements, explore modular add-ons, and download official invoices.' },
+    '/settlements': { title: 'Settlements', subtitle: 'Payouts and finances' },
+    '/settings': { title: 'Settings', subtitle: 'Shop preferences & rules' },
+    '/notifications': { title: 'Notifications', subtitle: 'Shop alerts and updates' },
+    '/internal-bulk': { title: 'Bulk Data Upload', subtitle: 'Bulk catalog import' },
   };
 
   // Immediate title synchronization on route change so previous page title doesn't linger
@@ -296,10 +318,10 @@ export function DashboardLayout() {
         text: 'text-amber-950 dark:text-amber-200 font-semibold'
       },
       '/subscription': {
-        icon: 'text-purple-500 dark:text-purple-400',
-        bg: 'bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/40 dark:hover:bg-purple-900/50',
-        border: 'border-purple-200/80 dark:border-purple-800/50',
-        text: 'text-purple-950 dark:text-purple-200 font-semibold'
+        icon: 'text-orange-500 dark:text-orange-400',
+        bg: 'bg-orange-50 hover:bg-orange-100 dark:bg-orange-950/40 dark:hover:bg-orange-900/50',
+        border: 'border-orange-200/80 dark:border-orange-800/50',
+        text: 'text-orange-950 dark:text-orange-200 font-semibold'
       },
       '/settlements': {
         icon: 'text-green-600 dark:text-green-400',
@@ -321,6 +343,67 @@ export function DashboardLayout() {
       border: 'border-primary/20 dark:border-primary/40',
       text: 'text-foreground font-semibold'
     };
+  };
+
+  const getPageDetails = () => {
+    const path = location.pathname;
+
+    if (path.startsWith('/dashboard')) {
+      return { icon: LayoutDashboard, iconColor: 'text-violet-500 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-950/40 border-violet-200/80 dark:border-violet-800/50' };
+    }
+    if (path.startsWith('/analytics')) {
+      return { icon: LineChart, iconColor: 'text-blue-500 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-950/40 border-blue-200/80 dark:border-blue-800/50' };
+    }
+    if (path.startsWith('/orders')) {
+      return { icon: ShoppingBag, iconColor: 'text-emerald-500 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200/80 dark:border-emerald-800/50' };
+    }
+    if (path.startsWith('/categories')) {
+      return { icon: MenuSquare, iconColor: 'text-cyan-500 dark:text-cyan-400', bg: 'bg-cyan-50 dark:bg-cyan-950/40 border-cyan-200/80 dark:border-cyan-800/50' };
+    }
+    if (path.startsWith('/menu-items')) {
+      return { icon: Coffee, iconColor: 'text-amber-500 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-950/40 border-amber-200/80 dark:border-amber-800/50' };
+    }
+    if (path.startsWith('/campaigns')) {
+      return { icon: Megaphone, iconColor: 'text-purple-500 dark:text-purple-400', bg: 'bg-purple-50 dark:bg-purple-950/40 border-purple-200/80 dark:border-purple-800/50' };
+    }
+    if (path.startsWith('/members')) {
+      return { icon: Users, iconColor: 'text-teal-500 dark:text-teal-400', bg: 'bg-teal-50 dark:bg-teal-950/40 border-teal-200/80 dark:border-teal-800/50' };
+    }
+    if (path.startsWith('/discounts')) {
+      return { icon: Tag, iconColor: 'text-rose-500 dark:text-rose-400', bg: 'bg-rose-50 dark:bg-rose-950/40 border-rose-200/80 dark:border-rose-800/50' };
+    }
+    if (path.startsWith('/contests')) {
+      return { icon: Trophy, iconColor: 'text-yellow-500 dark:text-yellow-400', bg: 'bg-yellow-50 dark:bg-yellow-950/40 border-yellow-200/80 dark:border-yellow-800/50' };
+    }
+    if (path.startsWith('/chalkboard')) {
+      return { icon: PenTool, iconColor: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-950/40 border-amber-200/80 dark:border-amber-800/50' };
+    }
+    if (path.startsWith('/qr-code')) {
+      return { icon: QrCode, iconColor: 'text-indigo-500 dark:text-indigo-400', bg: 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200/80 dark:border-indigo-800/50' };
+    }
+    if (path.startsWith('/shop-setup')) {
+      return { icon: Store, iconColor: 'text-orange-500 dark:text-orange-400', bg: 'bg-orange-50 dark:bg-orange-950/40 border-orange-200/80 dark:border-orange-800/50' };
+    }
+    if (path.startsWith('/settings/team')) {
+      return { icon: Shield, iconColor: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-950/40 border-blue-200/80 dark:border-blue-800/50' };
+    }
+    if (path.startsWith('/customize')) {
+      return { icon: Palette, iconColor: 'text-pink-500 dark:text-pink-400', bg: 'bg-pink-50 dark:bg-pink-950/40 border-pink-200/80 dark:border-pink-800/50' };
+    }
+    if (path.startsWith('/subscription')) {
+      return { icon: Zap, iconColor: 'text-orange-500 dark:text-orange-400', bg: 'bg-orange-50 dark:bg-orange-950/40 border-orange-200/80 dark:border-orange-800/50' };
+    }
+    if (path.startsWith('/settlements')) {
+      return { icon: Wallet, iconColor: 'text-green-600 dark:text-green-400', bg: 'bg-green-50 dark:bg-green-950/40 border-green-200/80 dark:border-green-800/50' };
+    }
+    if (path.startsWith('/settings')) {
+      return { icon: SettingsIcon, iconColor: 'text-slate-600 dark:text-slate-300', bg: 'bg-slate-100 dark:bg-slate-800/60 border-slate-200/80 dark:border-slate-700/60' };
+    }
+    if (path.startsWith('/notifications')) {
+      return { icon: Bell, iconColor: 'text-indigo-500 dark:text-indigo-400', bg: 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200/80 dark:border-indigo-800/50' };
+    }
+
+    return { icon: Sparkles, iconColor: 'text-primary', bg: 'bg-primary/10 border-primary/20' };
   };
 
   const navGroups: NavGroup[] = [
@@ -357,7 +440,7 @@ export function DashboardLayout() {
         { name: 'Shop', path: '/shop-setup', icon: Store, iconColor: 'text-orange-500', permissionModule: 'settings' },
         { name: 'Staff', path: '/settings/team', icon: Shield, iconColor: 'text-blue-600', permissionModule: 'team' },
         { name: 'Customize Theme', path: '/customize', icon: Palette, iconColor: 'text-pink-500', permissionModule: 'settings' },
-        { name: 'Subscription', path: '/subscription', icon: Sparkles, iconColor: 'text-purple-500', permissionModule: 'subscription' },
+        { name: 'Subscription', path: '/subscription', icon: Zap, iconColor: 'text-orange-500', permissionModule: 'subscription' },
         { name: 'Settlements', path: '/settlements', icon: Wallet, iconColor: 'text-green-600', permissionModule: 'settlements' },
         { name: 'Settings', path: '/settings', icon: SettingsIcon, iconColor: 'text-slate-500', permissionModule: 'settings' },
       ]
@@ -451,14 +534,35 @@ export function DashboardLayout() {
   return (
     <div className="h-screen max-h-screen overflow-hidden bg-slate-50/50 dark:bg-slate-950 flex flex-col lg:flex-row">
       {/* Desktop Sidebar Navigation */}
-      <aside className="hidden lg:flex flex-col w-64 border-r border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0 h-screen overflow-hidden">
-        {/* Desktop Sidebar Top Header (Shop Switcher) */}
-        <div className="p-4 border-b border-slate-100 dark:border-slate-800 shrink-0">
-          <ShopSwitcherDropdown />
+      <aside className={cn(
+        "hidden lg:flex flex-col border-r border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0 h-screen overflow-hidden transition-all duration-300 ease-in-out select-none",
+        isSidebarCollapsed ? "w-18" : "w-64"
+      )}>
+        {/* Desktop Sidebar Top Header (Shop Switcher & Collapse Toggle) */}
+        <div className={cn(
+          "border-b border-slate-100 dark:border-slate-800 shrink-0 flex items-center gap-1.5",
+          isSidebarCollapsed ? "p-2.5 flex-col justify-center" : "p-3.5 justify-between"
+        )}>
+          <div className={cn("min-w-0", isSidebarCollapsed ? "w-full flex justify-center" : "flex-1")}>
+            <ShopSwitcherDropdown collapsed={isSidebarCollapsed} />
+          </div>
+          <button
+            id="sidebar-collapse-toggle-btn"
+            type="button"
+            onClick={toggleSidebar}
+            className={cn(
+              "rounded-xl transition-all cursor-pointer shrink-0 flex items-center justify-center",
+              "bg-primary/10 hover:bg-primary text-primary hover:text-white border border-primary/20 hover:border-primary shadow-2xs hover:scale-105 active:scale-95",
+              isSidebarCollapsed ? "w-8 h-8 mt-1 p-0" : "p-1.5"
+            )}
+            title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {isSidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+          </button>
         </div>
 
         {/* Scrollable Navigation Items */}
-        <nav className="flex-1 p-3 space-y-2.5 overflow-y-auto custom-scrollbar">
+        <nav className={cn("flex-1 overflow-y-auto custom-scrollbar", isSidebarCollapsed ? "p-2 space-y-2" : "p-3 space-y-2.5")}>
           {navGroups.map((group) => {
             const visibleItems = group.items.filter(item => hasPermission(item.permissionModule));
             if (visibleItems.length === 0) return null;
@@ -469,6 +573,40 @@ export function DashboardLayout() {
             const isOpen = openSections[group.section] ?? true;
             const secTheme = getSectionTheme(group.section, hasActiveChild);
             const SecIcon = getSectionIcon(group.section);
+
+            if (isSidebarCollapsed) {
+              return (
+                <div key={group.section} className="space-y-1 py-1 border-b border-slate-100 dark:border-slate-800/60 last:border-0">
+                  {visibleItems.map((item) => {
+                    const isActive = item.path === '/settings'
+                      ? location.pathname === '/settings'
+                      : location.pathname.startsWith(item.path);
+                    const Icon = item.icon;
+                    const theme = getItemTheme(item.path);
+
+                    return (
+                      <NavLink
+                        key={item.path}
+                        id={item.path === '/chalkboard' ? 'sidebar-nav-chalkboard' : undefined}
+                        to={item.path}
+                        onMouseEnter={() => preloadRoute(item.path)}
+                        onFocus={() => preloadRoute(item.path)}
+                        onTouchStart={() => preloadRoute(item.path)}
+                        title={`${item.name} (${group.section})`}
+                        className={cn(
+                          "w-full flex items-center justify-center p-2.5 rounded-xl transition-all relative group",
+                          isActive
+                            ? "bg-primary text-white shadow-xs"
+                            : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-white"
+                        )}
+                      >
+                        <Icon size={18} className={isActive ? "text-white" : (item.iconColor ?? theme.icon)} />
+                      </NavLink>
+                    );
+                  })}
+                </div>
+              );
+            }
 
             return (
               <div key={group.section} className="space-y-1">
@@ -518,12 +656,10 @@ export function DashboardLayout() {
                         <div key={item.path} className="relative flex items-center">
                           {/* Tree Line Connector Arms */}
                           <div className="absolute -left-3.5 top-0 bottom-0 w-3.5 pointer-events-none">
-                            {/* Vertical stem */}
                             <div className="absolute left-0 top-0 w-0.5 h-1/2 bg-slate-200 dark:bg-slate-800" />
                             {!isLast && (
                               <div className="absolute left-0 top-1/2 w-0.5 h-1/2 bg-slate-200 dark:bg-slate-800" />
                             )}
-                            {/* Horizontal branch arm */}
                             <div className="absolute left-0 top-1/2 w-3.5 h-0.5 bg-slate-200 dark:bg-slate-800 rounded-r" />
                           </div>
 
@@ -553,44 +689,62 @@ export function DashboardLayout() {
 
         {/* PWA Desktop Web App Installation Banner in Sidebar */}
         {!isInstalled && (
-          <div className="p-2.5 border-t border-slate-100 dark:border-slate-800">
-            <button
-              onClick={promptInstall}
-              className="w-full p-2.5 rounded-xl bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-orange-500/5 hover:from-orange-500/20 hover:to-amber-500/20 border border-orange-500/20 text-left transition-all group cursor-pointer flex items-center justify-between shadow-2xs"
-              title="Install Menukit Desktop Web App"
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-7 h-7 rounded-lg bg-primary text-white flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform">
-                  <Laptop size={14} />
+          <div className={cn("border-t border-slate-100 dark:border-slate-800", isSidebarCollapsed ? "p-2 flex justify-center" : "p-2.5")}>
+            {isSidebarCollapsed ? (
+              <button
+                type="button"
+                onClick={promptInstall}
+                className="w-10 h-10 rounded-xl bg-gradient-to-r from-orange-500/10 to-amber-500/10 hover:from-orange-500/20 hover:to-amber-500/20 border border-orange-500/20 text-primary flex items-center justify-center transition-all cursor-pointer shadow-2xs"
+                title="Install Menukit Desktop App"
+              >
+                <Laptop size={16} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={promptInstall}
+                className="w-full p-2.5 rounded-xl bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-orange-500/5 hover:from-orange-500/20 hover:to-amber-500/20 border border-orange-500/20 text-left transition-all group cursor-pointer flex items-center justify-between shadow-2xs"
+                title="Install Menukit Desktop Web App"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-7 h-7 rounded-lg bg-primary text-white flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform">
+                    <Laptop size={14} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-tight">Install Desktop App</p>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">Faster POS & Printing</p>
+                  </div>
                 </div>
-                <div className="min-w-0">
-                  <p className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-tight">Install Desktop App</p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">Faster POS & Printing</p>
-                </div>
-              </div>
-              <Download size={14} className="text-primary shrink-0 opacity-70 group-hover:opacity-100 transition-opacity ml-1" />
-            </button>
+                <Download size={14} className="text-primary shrink-0 opacity-70 group-hover:opacity-100 transition-opacity ml-1" />
+              </button>
+            )}
           </div>
         )}
 
         {/* Sidebar Footer - Logged in user info */}
-        <div className="p-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/60 shrink-0 flex items-center justify-between gap-2.5">
-          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+        <div className={cn(
+          "border-t border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/60 shrink-0 flex items-center",
+          isSidebarCollapsed ? "p-2 flex-col gap-2 justify-center" : "p-3 justify-between gap-2.5"
+        )}>
+          <div className="flex items-center gap-2.5 min-w-0 flex-1" title={user?.email || ''}>
             <div className="w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-xs flex items-center justify-center shrink-0 border border-primary/20">
               {user?.email ? user.email.charAt(0).toUpperCase() : 'U'}
             </div>
-            <div className="flex flex-col min-w-0 flex-1">
-              <span className="text-[12px] font-semibold text-slate-800 dark:text-slate-200 truncate leading-tight" title={user?.email || ''}>
-                {user?.email || 'Logged in user'}
-              </span>
-              <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium capitalize leading-tight">
-                {isOwner ? 'Shop Owner' : 'Collaborator'}
-              </span>
-            </div>
+            {!isSidebarCollapsed && (
+              <div className="flex flex-col min-w-0 flex-1">
+                <span className="text-[12px] font-semibold text-slate-800 dark:text-slate-200 truncate leading-tight">
+                  {user?.email || 'Logged in user'}
+                </span>
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium capitalize leading-tight">
+                  {isOwner ? 'Shop Owner' : 'Collaborator'}
+                </span>
+              </div>
+            )}
           </div>
           <button
+            type="button"
             onClick={() => setIsSignOutModalOpen(true)}
-            className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors shrink-0"
+            className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors shrink-0 cursor-pointer"
             title="Sign Out"
           >
             <LogOut size={16} />
@@ -601,10 +755,38 @@ export function DashboardLayout() {
       {/* Main Container Area */}
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
         {/* DESKTOP Top Bar Header */}
-        <div className="hidden lg:flex h-16 border-b border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 px-6 items-center justify-between shrink-0 z-30">
-          <div className="flex flex-col">
-            <h1 className="text-xl font-bold text-slate-900 dark:text-white leading-tight font-heading">{headerTitle}</h1>
-            {headerSubtitle && <p className="text-[13px] font-medium text-slate-500 dark:text-slate-400 mt-0.5">{headerSubtitle}</p>}
+        <div className="hidden lg:flex h-16 border-b border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 px-6 items-center justify-between shrink-0 z-40 relative">
+          <div className="flex items-center gap-3 min-w-0">
+            {/* Collapse toggle button when sidebar is collapsed */}
+            {isSidebarCollapsed && (
+              <button
+                type="button"
+                onClick={toggleSidebar}
+                className="p-2 rounded-xl bg-primary/10 hover:bg-primary text-primary hover:text-white border border-primary/20 hover:border-primary transition-all cursor-pointer shrink-0 shadow-2xs hover:scale-105 active:scale-95"
+                title="Expand sidebar"
+              >
+                <PanelLeftOpen size={18} />
+              </button>
+            )}
+
+            {/* Page Module Icon Badge matching Title */}
+            {(() => {
+              const page = getPageDetails();
+              const PageIcon = page.icon;
+              return (
+                <div className={cn(
+                  "w-10 h-10 rounded-xl flex items-center justify-center border shrink-0 shadow-2xs transition-all",
+                  page.bg
+                )}>
+                  <PageIcon size={20} className={page.iconColor} />
+                </div>
+              );
+            })()}
+
+            <div className="flex flex-col min-w-0">
+              <h1 className="text-lg font-bold text-slate-900 dark:text-white leading-tight font-heading truncate">{headerTitle}</h1>
+              {headerSubtitle && <p className="text-xs font-normal text-slate-400 dark:text-slate-500 mt-0.5 truncate max-w-lg">{headerSubtitle}</p>}
+            </div>
           </div>
           <div className="flex items-center gap-4">
             <div id="header-actions-portal" className="flex items-center gap-3"></div>
@@ -644,7 +826,7 @@ export function DashboardLayout() {
         </div>
 
         {/* FIXED Mobile Header Bar */}
-        <div className="lg:hidden h-14 border-b border-slate-200/80 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-3 flex items-center justify-between shrink-0 z-30 relative">
+        <div className="lg:hidden h-14 border-b border-slate-200/80 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-3 flex items-center justify-between shrink-0 z-40 relative">
           {/* Shop Switcher Dropdown on Mobile */}
           <div className="flex items-center gap-2 min-w-0 max-w-[65%] z-20">
             <ShopSwitcherDropdown />

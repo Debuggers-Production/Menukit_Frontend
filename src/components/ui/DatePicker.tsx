@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, X } from 'lucide-react';
 import { cn } from '@/utils/cn';
 
@@ -24,40 +25,62 @@ export function DatePicker({
   direction = 'auto',
 }: DatePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [openUpwards, setOpenUpwards] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top?: number; bottom?: number; left: number; isMobile: boolean }>({
+    left: 0,
+    isMobile: false,
+  });
 
-  // Auto-detect optimal dropdown direction (upwards if near bottom)
+  // Calculate position and responsiveness
   useEffect(() => {
     if (!isOpen || !containerRef.current) return;
-    if (direction === 'up') {
-      setOpenUpwards(true);
-      return;
-    }
-    if (direction === 'down') {
-      setOpenUpwards(false);
-      return;
-    }
 
-    const checkDirection = () => {
+    const updatePosition = () => {
       if (!containerRef.current) return;
+      const isMob = window.innerWidth < 640;
+      if (isMob) {
+        setPos({ left: 0, isMobile: true });
+        return;
+      }
+
       const rect = containerRef.current.getBoundingClientRect();
       const spaceBelow = window.innerHeight - rect.bottom;
       const spaceAbove = rect.top;
-      // Calendar popover is approx 330px high
-      if (spaceBelow < 330 && spaceAbove > spaceBelow) {
-        setOpenUpwards(true);
+      const calendarHeight = 330;
+      const calendarWidth = 260;
+
+      let left = rect.left;
+      if (left + calendarWidth > window.innerWidth - 16) {
+        left = Math.max(16, rect.right - calendarWidth);
+      }
+
+      let shouldOpenUpwards = false;
+      if (direction === 'up') shouldOpenUpwards = true;
+      else if (direction === 'down') shouldOpenUpwards = false;
+      else if (spaceBelow < calendarHeight && spaceAbove > spaceBelow) shouldOpenUpwards = true;
+
+      if (shouldOpenUpwards) {
+        setPos({
+          bottom: window.innerHeight - rect.top + 6,
+          left,
+          isMobile: false,
+        });
       } else {
-        setOpenUpwards(false);
+        setPos({
+          top: rect.bottom + 6,
+          left,
+          isMobile: false,
+        });
       }
     };
 
-    checkDirection();
-    window.addEventListener('resize', checkDirection);
-    window.addEventListener('scroll', checkDirection, true);
+    updatePosition();
+    window.addEventListener('scroll', updatePosition, true);
+    window.addEventListener('resize', updatePosition);
     return () => {
-      window.removeEventListener('resize', checkDirection);
-      window.removeEventListener('scroll', checkDirection, true);
+      window.removeEventListener('scroll', updatePosition, true);
+      window.removeEventListener('resize', updatePosition);
     };
   }, [isOpen, direction]);
 
@@ -66,7 +89,6 @@ export function DatePicker({
   const [viewDate, setViewDate] = useState<Date>(
     isNaN(initialDate.getTime()) ? new Date() : initialDate
   );
-
 
   // Update viewDate when value or minDate changes if current view is uninitialized
   useEffect(() => {
@@ -78,17 +100,6 @@ export function DatePicker({
       if (!isNaN(d.getTime())) setViewDate(d);
     }
   }, [value, minDate]);
-
-  // Close dropdown on click outside
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   const viewYear = viewDate.getFullYear();
   const viewMonth = viewDate.getMonth(); // 0-indexed
@@ -154,7 +165,7 @@ export function DatePicker({
   const todayStr = new Date().toISOString().slice(0, 10);
 
   return (
-    <div ref={containerRef} className={cn("relative inline-block w-full", isOpen ? "z-[100]" : "z-10", className)}>
+    <div ref={containerRef} className={cn("relative inline-block w-full", className)}>
       {label && (
         <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
           {label}
@@ -174,138 +185,154 @@ export function DatePicker({
         <CalendarIcon size={14} className="text-primary shrink-0 ml-1.5" />
       </button>
 
-      {/* Mobile Backdrop */}
-      {isOpen && (
-        <div 
-          className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-[90] sm:hidden"
-          onClick={() => setIsOpen(false)}
-        />
-      )}
+      {/* Calendar Dropdown Popover / Modal with Portal */}
+      {isOpen && typeof document !== 'undefined' && createPortal(
+        <>
+          {/* Backdrop for outside click dismissal */}
+          <div 
+            className={cn(
+              "fixed inset-0 z-[99998]",
+              pos.isMobile ? "bg-slate-950/60 backdrop-blur-xs" : "bg-transparent"
+            )}
+            onClick={() => setIsOpen(false)}
+          />
 
-      {/* Calendar Dropdown Popover */}
-      {isOpen && (
-        <div 
-          data-lenis-prevent
-          className={cn(
-            "fixed sm:absolute inset-x-4 sm:inset-x-auto sm:left-0 top-1/2 sm:top-auto -translate-y-1/2 sm:translate-y-0 w-auto sm:w-64 max-w-sm mx-auto sm:mx-0 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-3.5 z-[100] animate-in fade-in zoom-in-95 duration-150",
-            openUpwards ? "sm:bottom-full sm:mb-2" : "sm:top-full sm:mt-1.5"
-          )}
-        >
-
-          {/* Calendar Header: Month + Year + Nav */}
-          <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-100 dark:border-slate-800">
-            <span className="text-xs font-black text-slate-800 dark:text-white font-heading">
-              {monthNames[viewMonth]} {viewYear}
-            </span>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={prevMonth}
-                className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-colors"
-                title="Previous Month"
-              >
-                <ChevronLeft size={16} />
-              </button>
-              <button
-                type="button"
-                onClick={nextMonth}
-                className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-colors"
-                title="Next Month"
-              >
-                <ChevronRight size={16} />
-              </button>
-            </div>
-          </div>
-
-          {/* Quick Presets Bar */}
-          <div className="flex items-center gap-1.5 mb-3">
-            <button
-              type="button"
-              onClick={() => handlePreset('today')}
-              className="flex-1 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-[11px] font-bold text-slate-700 dark:text-slate-300 transition-colors"
-            >
-              Today
-            </button>
-            <button
-              type="button"
-              onClick={() => handlePreset('yesterday')}
-              className="flex-1 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-[11px] font-bold text-slate-700 dark:text-slate-300 transition-colors"
-            >
-              Yesterday
-            </button>
-          </div>
-
-          {/* Day Names Grid Header */}
-          <div className="grid grid-cols-7 text-center mb-1">
-            {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => (
-              <span key={d} className="text-[10px] font-bold text-slate-400 dark:text-slate-500 py-1">
-                {d}
+          {/* Popover / Modal Content */}
+          <div 
+            data-lenis-prevent
+            ref={popoverRef}
+            className={cn(
+              "fixed z-[99999] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-3.5 animate-in fade-in zoom-in-95 duration-150 select-none",
+              pos.isMobile
+                ? "inset-x-4 top-1/2 -translate-y-1/2 max-w-[320px] mx-auto"
+                : "w-64"
+            )}
+            style={
+              pos.isMobile
+                ? {}
+                : {
+                    top: pos.top !== undefined ? `${pos.top}px` : 'auto',
+                    bottom: pos.bottom !== undefined ? `${pos.bottom}px` : 'auto',
+                    left: `${pos.left}px`,
+                  }
+            }
+          >
+            {/* Calendar Header: Month + Year + Nav */}
+            <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-100 dark:border-slate-800">
+              <span className="text-xs font-black text-slate-800 dark:text-white font-heading">
+                {monthNames[viewMonth]} {viewYear}
               </span>
-            ))}
-          </div>
-
-          {/* Days Grid */}
-          <div className="grid grid-cols-7 gap-1 text-center">
-            {/* Empty slots for previous month padding */}
-            {Array.from({ length: firstDayOfMonth }).map((_, i) => (
-              <span key={`prev-${i}`} className="text-[10px] text-slate-300 dark:text-slate-700 py-1.5 select-none">
-                {daysInPrevMonth - firstDayOfMonth + i + 1}
-              </span>
-            ))}
-
-            {/* Current Month Days */}
-            {Array.from({ length: daysInMonth }).map((_, i) => {
-              const dayNum = i + 1;
-              const dayStr = String(dayNum).padStart(2, '0');
-              const monthStr = String(viewMonth + 1).padStart(2, '0');
-              const thisDateStr = `${viewYear}-${monthStr}-${dayStr}`;
-
-              const isSelected = selectedDateStr === thisDateStr;
-              const isToday = todayStr === thisDateStr;
-
-              const isBeforeMin = minDate ? thisDateStr < minDate : false;
-              const isAfterMax = maxDate ? thisDateStr > maxDate : false;
-              const isDisabled = isBeforeMin || isAfterMax;
-
-              return (
+              <div className="flex items-center gap-1">
                 <button
-                  key={dayNum}
                   type="button"
-                  disabled={isDisabled}
-                  onClick={() => !isDisabled && handleSelectDay(dayNum)}
-                  className={cn(
-                    "text-xs font-bold py-1.5 rounded-lg transition-all flex items-center justify-center",
-                    isDisabled
-                      ? "text-slate-300 dark:text-slate-700 cursor-not-allowed opacity-40 bg-slate-50/50 dark:bg-slate-900/30"
-                      : isSelected
-                      ? "bg-primary text-white shadow-sm font-black scale-105"
-                      : isToday
-                      ? "bg-primary-100 dark:bg-primary-950/60 text-primary font-black border border-primary/30"
-                      : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-                  )}
+                  onClick={prevMonth}
+                  className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-colors cursor-pointer"
+                  title="Previous Month"
                 >
-                  {dayNum}
+                  <ChevronLeft size={16} />
                 </button>
-              );
-            })}
-          </div>
+                <button
+                  type="button"
+                  onClick={nextMonth}
+                  className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-colors cursor-pointer"
+                  title="Next Month"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            </div>
 
-          {/* Footer Clear */}
-          {value && (
-            <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+            {/* Quick Presets Bar */}
+            <div className="flex items-center gap-1.5 mb-3">
               <button
                 type="button"
-                onClick={() => {
-                  onChange('');
-                  setIsOpen(false);
-                }}
-                className="text-[10px] font-bold text-rose-500 hover:text-rose-600 px-2 py-0.5 rounded hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
+                onClick={() => handlePreset('today')}
+                className="flex-1 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-[11px] font-bold text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
               >
-                Clear Date
+                Today
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePreset('yesterday')}
+                className="flex-1 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-[11px] font-bold text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
+              >
+                Yesterday
               </button>
             </div>
-          )}
-        </div>
+
+            {/* Day Names Grid Header */}
+            <div className="grid grid-cols-7 text-center mb-1">
+              {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => (
+                <span key={d} className="text-[10px] font-bold text-slate-400 dark:text-slate-500 py-1">
+                  {d}
+                </span>
+              ))}
+            </div>
+
+            {/* Days Grid */}
+            <div className="grid grid-cols-7 gap-1 text-center">
+              {/* Empty slots for previous month padding */}
+              {Array.from({ length: firstDayOfMonth }).map((_, i) => (
+                <span key={`prev-${i}`} className="text-[10px] text-slate-300 dark:text-slate-700 py-1.5 select-none">
+                  {daysInPrevMonth - firstDayOfMonth + i + 1}
+                </span>
+              ))}
+
+              {/* Current Month Days */}
+              {Array.from({ length: daysInMonth }).map((_, i) => {
+                const dayNum = i + 1;
+                const dayStr = String(dayNum).padStart(2, '0');
+                const monthStr = String(viewMonth + 1).padStart(2, '0');
+                const thisDateStr = `${viewYear}-${monthStr}-${dayStr}`;
+
+                const isSelected = selectedDateStr === thisDateStr;
+                const isToday = todayStr === thisDateStr;
+
+                const isBeforeMin = minDate ? thisDateStr < minDate : false;
+                const isAfterMax = maxDate ? thisDateStr > maxDate : false;
+                const isDisabled = isBeforeMin || isAfterMax;
+
+                return (
+                  <button
+                    key={dayNum}
+                    type="button"
+                    disabled={isDisabled}
+                    onClick={() => !isDisabled && handleSelectDay(dayNum)}
+                    className={cn(
+                      "text-xs font-bold py-1.5 rounded-lg transition-all flex items-center justify-center",
+                      isDisabled
+                        ? "text-slate-300 dark:text-slate-700 cursor-not-allowed opacity-40 bg-slate-50/50 dark:bg-slate-900/30"
+                        : isSelected
+                        ? "bg-primary text-white shadow-sm font-black scale-105"
+                        : isToday
+                        ? "bg-primary-100 dark:bg-primary-950/60 text-primary font-black border border-primary/30"
+                        : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                    )}
+                  >
+                    {dayNum}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Footer Clear */}
+            {value && (
+              <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onChange('');
+                    setIsOpen(false);
+                  }}
+                  className="text-[10px] font-bold text-rose-500 hover:text-rose-600 px-2 py-0.5 rounded hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer"
+                >
+                  Clear Date
+                </button>
+              </div>
+            )}
+          </div>
+        </>,
+        document.body
       )}
     </div>
   );

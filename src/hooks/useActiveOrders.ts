@@ -33,9 +33,26 @@ export function getCustomerUserId(phone: string): string {
   return `usr_${h1}${h2}`;
 }
 
+function getCustomerMobile(): string | null {
+  const stored = localStorage.getItem('customer_mobile') || localStorage.getItem('customer_phone');
+  if (stored) return stored;
+  const token = localStorage.getItem('customer_token');
+  if (token) {
+    try {
+      const parts = token.split('.');
+      if (parts.length >= 2) {
+        const payload = JSON.parse(atob(parts[1]));
+        return payload.mobile_number || payload.phone || payload.sub || null;
+      }
+    } catch {}
+  }
+  return null;
+}
+
 export function useActiveOrders(shopId: string | undefined) {
   const [activeOrders, setActiveOrders] = useState<ActiveOrderInfo[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentMobile, setCurrentMobile] = useState<string | null>(() => getCustomerMobile());
 
   const fetchActiveOrders = async () => {
     if (!shopId) return;
@@ -60,23 +77,40 @@ export function useActiveOrders(shopId: string | undefined) {
     }
   };
 
+  // Initial load only & local event trigger (e.g. order placed, customer changed)
   useEffect(() => {
     if (!shopId) return;
     fetchActiveOrders();
 
-    window.addEventListener('menukit-realtime-update', fetchActiveOrders);
-    const interval = setInterval(fetchActiveOrders, 60000); // 60s fallback
+    const handleRealtimeLocalEvent = () => {
+      fetchActiveOrders();
+    };
+
+    const handleCustomerChange = (e: any) => {
+      const newMobile = e?.detail?.mobile ?? getCustomerMobile();
+      setCurrentMobile(newMobile);
+      fetchActiveOrders();
+    };
+
+    window.addEventListener('menukit-realtime-update', handleRealtimeLocalEvent);
+    window.addEventListener('menukit-customer-changed', handleCustomerChange);
+    window.addEventListener('storage', handleCustomerChange);
 
     return () => {
-      window.removeEventListener('menukit-realtime-update', fetchActiveOrders);
-      clearInterval(interval);
+      window.removeEventListener('menukit-realtime-update', handleRealtimeLocalEvent);
+      window.removeEventListener('menukit-customer-changed', handleCustomerChange);
+      window.removeEventListener('storage', handleCustomerChange);
     };
   }, [shopId]);
 
+  // Pure WebSocket real-time connection without API polling
   useEffect(() => {
     if (!shopId) return;
-    const mobile = localStorage.getItem('customer_mobile');
-    if (!mobile) return;
+    const mobile = currentMobile || getCustomerMobile();
+    if (!mobile) {
+      setActiveOrders([]);
+      return;
+    }
 
     const userId = getCustomerUserId(mobile);
     const isProd = import.meta.env.MODE === 'production';
@@ -84,44 +118,72 @@ export function useActiveOrders(shopId: string | undefined) {
     const host = isProd ? window.location.host : 'localhost:8000';
     const wsUrl = (APP_CONFIG.API_URL ? APP_CONFIG.API_URL.replace(/^http/, 'ws') : `${protocol}//${host}`) + `/api/v1/public/shop/${shopId}/ws/customer/${userId}`;
 
-    let socket: WebSocket;
-    let reconnectTimeout: any;
+    let socket: WebSocket | null = null;
+    let reconnectTimeout: any = null;
+    let pingInterval: any = null;
+    let isDisposed = false;
 
     const connect = () => {
-      socket = new WebSocket(wsUrl);
+      if (isDisposed) return;
+      if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
 
-      socket.onopen = () => {
-        console.log('Customer WebSocket connected for user ID:', userId);
-      };
+      try {
+        socket = new WebSocket(wsUrl);
 
-      socket.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === 'order_update') {
-            console.log('Real-time order update received:', data);
-            fetchActiveOrders();
+        socket.onopen = () => {
+          if (pingInterval) clearInterval(pingInterval);
+          pingInterval = setInterval(() => {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+              try {
+                socket.send('ping');
+              } catch {}
+            }
+          }, 25000);
+        };
+
+        socket.onmessage = (event) => {
+          if (typeof event.data !== 'string') return;
+          const trimmed = event.data.trim();
+          if (trimmed === 'ping' || trimmed === 'pong' || !trimmed.startsWith('{')) return;
+          try {
+            const data = JSON.parse(trimmed);
+            if (data.type === 'order_update' || data.event === 'order_update') {
+              fetchActiveOrders();
+            }
+          } catch (err) {
+            console.error('[ActiveOrders WS] Failed to parse message:', err);
           }
-        } catch (err) {
-          console.error('Failed to parse customer websocket message:', err);
+        };
+
+        socket.onclose = () => {
+          if (pingInterval) clearInterval(pingInterval);
+          if (!isDisposed) {
+            clearTimeout(reconnectTimeout);
+            reconnectTimeout = setTimeout(connect, 3000);
+          }
+        };
+
+        socket.onerror = () => {
+          try { socket?.close(); } catch {}
+        };
+      } catch (err) {
+        if (!isDisposed) {
+          clearTimeout(reconnectTimeout);
+          reconnectTimeout = setTimeout(connect, 4000);
         }
-      };
-
-      socket.onclose = () => {
-        console.log('Customer WebSocket disconnected. Reconnecting...');
-        reconnectTimeout = setTimeout(connect, 3000);
-      };
-
-      socket.onerror = (err) => {
-        console.error('Customer websocket error:', err);
-        socket.close();
-      };
+      }
     };
 
     connect();
 
     return () => {
-      if (socket) socket.close();
-      clearTimeout(reconnectTimeout);
+      isDisposed = true;
+      if (pingInterval) clearInterval(pingInterval);
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (socket) {
+        socket.close();
+        socket = null;
+      }
     };
   }, [shopId]);
 

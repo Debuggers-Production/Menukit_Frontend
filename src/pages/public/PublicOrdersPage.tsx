@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { ChevronLeft, ShoppingBag, Clock, ArrowRight, History, UtensilsCrossed, Gamepad2, MapPin, ArrowUpRight, Trophy, ChefHat, CheckCircle2, XCircle, CreditCard, AlertCircle, SlidersHorizontal, Bike, Home, Hotel, User } from 'lucide-react';
+import { ChevronLeft, ShoppingBag, Clock, ArrowRight, History, UtensilsCrossed, Gamepad2, MapPin, ArrowUpRight, Trophy, ChefHat, CheckCircle2, XCircle, CreditCard, AlertCircle, SlidersHorizontal, Bike, Home, Hotel, User, Plus } from 'lucide-react';
 import { api } from '@/services/api';
 import { APP_CONFIG } from '@/config';
 import { Shop } from '@/types';
 import { DiscountUnlockPopup } from '@/components/public/DiscountUnlockPopup';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { InfiniteScrollTrigger } from '@/components/ui/InfiniteScrollTrigger';
 import { useCartStore, useShopCart } from '@/store/cartStore';
 import toast from 'react-hot-toast';
 import { useActiveOrders } from '@/hooks/useActiveOrders';
@@ -13,6 +14,8 @@ import { contestService } from '@/services/contestService';
 import { motion } from 'framer-motion';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { triggerHaptic, HAPTIC_PATTERNS } from '@/utils/haptic';
+
+const ORDERS_LIMIT = 8;
 
 export function PublicOrdersPage() {
   const { id } = useParams();
@@ -23,51 +26,33 @@ export function PublicOrdersPage() {
   const [shop, setShop] = useState<Shop | null>(null);
   const [orders, setOrders] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [showVerifyPopup, setShowVerifyPopup] = useState(false);
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('customer_token'));
+  const [channelFilter, setChannelFilter] = useState<'all' | 'dine_in' | 'takeaway' | 'delivery'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'cooking' | 'accepted' | 'completed' | 'cancelled'>('all');
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<'all' | 'paid' | 'unpaid'>('all');
   const [paymentMethodFilter, setPaymentMethodFilter] = useState<'all' | 'cash' | 'online'>('all');
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'pending' | 'completed' | 'cancelled'>('pending');
   const [contestBtnTextIndex, setContestBtnTextIndex] = useState(0);
   const [globalParticipantsCount, setGlobalParticipantsCount] = useState<number | null>(null);
+
+  const activeFilterCount = useMemo(() => {
+    return (
+      (channelFilter !== 'all' ? 1 : 0) +
+      (statusFilter !== 'all' ? 1 : 0) +
+      (paymentStatusFilter !== 'all' ? 1 : 0) +
+      (paymentMethodFilter !== 'all' ? 1 : 0)
+    );
+  }, [channelFilter, statusFilter, paymentStatusFilter, paymentMethodFilter]);
 
   const contestTexts = useMemo(() => [
     'Contest',
     globalParticipantsCount !== null ? `${globalParticipantsCount}+ Joined` : '1000+ Members',
     'Live Join Now'
   ], [globalParticipantsCount]);
-
-  const filteredOrders = useMemo(() => {
-    let result = [...orders];
-
-    // Apply live status filter
-    if (statusFilter !== 'all') {
-      result = result.filter(o => {
-        if (statusFilter === 'cooking') return o.order_status === 'preparing' || o.order_status === 'cooking';
-        return o.order_status === statusFilter;
-      });
-    }
-
-    // Apply payment status filter
-    if (paymentStatusFilter !== 'all') {
-      result = result.filter(o => {
-        if (paymentStatusFilter === 'paid') return o.payment_status === 'paid';
-        return o.payment_status === 'pending';
-      });
-    }
-
-    // Apply payment method filter
-    if (paymentMethodFilter !== 'all') {
-      result = result.filter(o => {
-        if (paymentMethodFilter === 'cash') return o.payment_method === 'cash_on_delivery' || o.payment_method === 'cash';
-        return o.payment_method === 'online' || o.payment_method === 'pay_online' || o.payment_method === 'upi' || o.payment_method === 'card';
-      });
-    }
-
-    return result.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  }, [orders, statusFilter, paymentStatusFilter, paymentMethodFilter]);
 
   useEffect(() => {
     if (!id) return;
@@ -89,18 +74,52 @@ export function PublicOrdersPage() {
     return () => clearInterval(timer);
   }, [contestTexts.length]);
 
-  const fetchOrders = async (tokenStr: string) => {
-    setIsLoading(true);
+  const fetchOrders = async (tokenStr: string, isInitial = false) => {
+    if (isInitial) {
+      setIsLoading(true);
+      setOffset(0);
+      setHasMore(true);
+    } else {
+      setIsLoadingMore(true);
+    }
+
     try {
-      const res = await api.get(`/public/shop/${id}/my-orders`, {
-        params: { token: tokenStr }
-      });
-      setOrders(res.data);
+      const fetchOffset = isInitial ? 0 : offset;
+      const params: any = { 
+        token: tokenStr,
+        limit: ORDERS_LIMIT,
+        offset: fetchOffset,
+      };
+      if (channelFilter !== 'all') params.channel = channelFilter;
+      if (statusFilter !== 'all') params.status = statusFilter;
+      if (paymentStatusFilter !== 'all') params.payment_status = paymentStatusFilter;
+      if (paymentMethodFilter !== 'all') params.payment_method = paymentMethodFilter;
+
+      const res = await api.get(`/public/shop/${id}/my-orders`, { params });
+      const newOrders = res.data || [];
+      if (isInitial) {
+        setOrders(newOrders);
+      } else {
+        setOrders(prev => {
+          const existingIds = new Set(prev.map((o: any) => o.id));
+          const unique = newOrders.filter((o: any) => !existingIds.has(o.id));
+          return [...prev, ...unique];
+        });
+      }
+      setHasMore(newOrders.length === ORDERS_LIMIT);
+      setOffset(fetchOffset + newOrders.length);
     } catch (err) {
       console.error("Failed to fetch orders", err);
       toast.error("Failed to load order history.");
     } finally {
       setIsLoading(false);
+      setIsLoadingMore(false);
+    }
+  };
+
+  const handleLoadMore = () => {
+    if (token && hasMore && !isLoading && !isLoadingMore) {
+      fetchOrders(token, false);
     }
   };
 
@@ -123,11 +142,32 @@ export function PublicOrdersPage() {
 
   useEffect(() => {
     if (id && token) {
-      fetchOrders(token);
+      fetchOrders(token, true);
     } else {
+      setOrders([]);
       setIsLoading(false);
     }
-  }, [id, token]);
+  }, [id, token, channelFilter, statusFilter, paymentStatusFilter, paymentMethodFilter]);
+
+  // Listen to customer change / reset events
+  useEffect(() => {
+    const handleCustomerChange = (e: any) => {
+      const newToken = e?.detail?.token !== undefined ? e.detail.token : localStorage.getItem('customer_token');
+      setToken(newToken);
+      if (!newToken) {
+        setOrders([]);
+        setIsLoading(false);
+      }
+    };
+
+    window.addEventListener('menukit-customer-changed', handleCustomerChange);
+    window.addEventListener('storage', handleCustomerChange);
+
+    return () => {
+      window.removeEventListener('menukit-customer-changed', handleCustomerChange);
+      window.removeEventListener('storage', handleCustomerChange);
+    };
+  }, []);
 
   const [payingOrderId, setPayingOrderId] = useState<string | null>(null);
 
@@ -492,35 +532,52 @@ export function PublicOrdersPage() {
             <Skeleton className="h-28 rounded-2xl w-full" />
           </div>
         ) : orders.length === 0 ? (
-          <div className="bg-white rounded-2xl p-6 text-center border border-slate-100 shadow-sm">
-            <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
-              <ShoppingBag className="w-8 h-8 text-slate-400" />
-            </div>
-            <h2 className="text-lg font-bold text-slate-800 mb-1">No Orders Found</h2>
-            <p className="text-sm text-slate-500 mb-5">
-              You haven't placed any orders from this shop yet.
-            </p>
-            <button
-              onClick={() => navigate(`/shop/${id}`)}
-              className="w-full py-3 text-white font-bold rounded-xl transition-all"
-              style={{ backgroundColor: primaryColor }}
-            >
-              Browse Menu
-            </button>
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 text-center border border-slate-100 dark:border-slate-800 shadow-sm">
+            {activeFilterCount > 0 ? (
+              <>
+                <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <SlidersHorizontal className="w-8 h-8 text-slate-400" />
+                </div>
+                <h2 className="text-lg font-bold text-slate-850 dark:text-slate-200 mb-1">No Matching Orders</h2>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mb-5">
+                  No orders match the selected filters.
+                </p>
+                <button
+                  onClick={() => {
+                    triggerHaptic(HAPTIC_PATTERNS.SELECTION);
+                    setChannelFilter('all');
+                    setStatusFilter('all');
+                    setPaymentStatusFilter('all');
+                    setPaymentMethodFilter('all');
+                  }}
+                  className="px-6 py-2.5 text-white font-bold rounded-xl transition-all cursor-pointer shadow-md inline-flex items-center gap-2"
+                  style={{ backgroundColor: primaryColor }}
+                >
+                  Reset Filters
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <ShoppingBag className="w-8 h-8 text-slate-400" />
+                </div>
+                <h2 className="text-lg font-bold text-slate-800 dark:text-slate-200 mb-1">No Orders Found</h2>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mb-5">
+                  You haven't placed any orders from this shop yet.
+                </p>
+                <button
+                  onClick={() => navigate(`/shop/${id}`)}
+                  className="w-full py-3 text-white font-bold rounded-xl transition-all cursor-pointer shadow-md"
+                  style={{ backgroundColor: primaryColor }}
+                >
+                  Browse Menu
+                </button>
+              </>
+            )}
           </div>
         ) : (
           <div className="space-y-4">
-            {filteredOrders.length === 0 ? (
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="bg-white dark:bg-slate-900 rounded-3xl p-8 text-center border border-slate-100 dark:border-slate-800 shadow-sm"
-              >
-                <p className="text-sm text-slate-500 dark:text-slate-400 capitalize">No orders match the selected filters.</p>
-              </motion.div>
-            ) : (
-              <div className="space-y-4">
-                {filteredOrders.map((order, idx) => {
+            {orders.map((order, idx) => {
                   const isUnpaid = order.payment_status === 'pending';
                   const isPendingAccept = order.order_status === 'pending' || order.order_status === 'PENDING_VENDOR';
                   const isPaymentPending = order.order_status === 'PAYMENT_PENDING';
@@ -602,7 +659,13 @@ export function PublicOrdersPage() {
                       </div>
 
                       {/* Warning notice for pending payment */}
-                      {isUnpaid && !isCancelled && shop?.settings?.online_payments_enabled !== false && (
+                      {isUnpaid && !isCancelled && (
+                        (shop?.settings?.online_payments_enabled !== false && (
+                          order.order_type === 'dine_in' ? shop?.settings?.online_payments_dinein_enabled !== false :
+                          order.order_type === 'takeaway' ? shop?.settings?.online_payments_takeaway_enabled !== false :
+                          order.order_type === 'delivery' ? shop?.settings?.online_payments_delivery_enabled !== false : true
+                        ))
+                      ) && (
                         <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2 text-[10px] text-amber-800 dark:text-amber-300 font-bold mb-3.5 flex items-center justify-between gap-1.5">
                           <div className="flex items-center gap-1.5">
                             <AlertCircle size={12} className="text-amber-600 dark:text-amber-400 animate-pulse shrink-0" />
@@ -630,34 +693,85 @@ export function PublicOrdersPage() {
 
                       {/* Items Summary list with mini monospaced details */}
                       <div className="bg-slate-50 dark:bg-slate-950/60 rounded-xl p-3 text-[11px] text-slate-650 dark:text-slate-400 space-y-1.5 mb-4 border border-slate-100/50 dark:border-slate-850">
-                        {order.items.map((it: any) => (
-                          <div key={it.id} className="flex justify-between items-center font-mono">
-                            <span className="font-semibold text-slate-700 dark:text-slate-350">
-                              {it.name} <span className="text-[10px] text-slate-450 font-bold px-1 bg-slate-200/50 dark:bg-slate-800 rounded">x{it.quantity}</span>
-                            </span>
-                            <span className="font-bold text-slate-900 dark:text-white">{shop?.settings?.currency || '₹'}{(Number(it.price) * it.quantity).toFixed(2)}</span>
-                          </div>
-                        ))}
+                        {order.items.map((it: any) => {
+                          const isReplaced = it.is_cancelled && String(it.cancellation_reason || '').startsWith('Replaced with');
+                          return (
+                            <div key={it.id} className="flex justify-between items-center font-mono">
+                              <span className={`font-semibold ${it.is_cancelled ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-350'}`}>
+                                {it.name} <span className="text-[10px] text-slate-450 font-bold px-1 bg-slate-200/50 dark:bg-slate-800 rounded">x{it.quantity}</span>
+                                {it.is_cancelled && (
+                                  <span className={`ml-1.5 text-[8px] font-bold uppercase not-italic no-underline inline-block ${
+                                    isReplaced ? 'text-amber-600 dark:text-amber-400' : 'text-rose-500'
+                                  }`}>
+                                    ({isReplaced ? 'Replaced' : 'Cancelled'})
+                                  </span>
+                                )}
+                              </span>
+                              <span className={`font-bold ${it.is_cancelled ? 'text-slate-400 line-through' : 'text-slate-900 dark:text-white'}`}>
+                                {shop?.settings?.currency || '₹'}{(Number(it.price) * it.quantity).toFixed(2)}
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
 
                       {/* Dotted invoice perforation separator */}
                       <div className="border-b border-dashed border-slate-200 dark:border-slate-800 my-4" />
 
-                      <div className="flex justify-between items-center pt-1">
-                        <div>
-                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none block">Total Bill</span>
-                          <span className="font-black text-lg text-slate-850 dark:text-white mt-1.5 block">{shop?.settings?.currency || '₹'}{Number(order.total_amount).toFixed(2)}</span>
-                        </div>
-                        <div className="flex gap-2">
-                          {/* Pay Now for any unpaid, non-cancelled order when online payments are enabled */}
-                          {isUnpaid && !isCancelled && shop?.settings?.online_payments_enabled !== false && (
+                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 pt-1">
+                        {(() => {
+                          const activeItems = (order.items || []).filter((it: any) => !it.is_cancelled);
+                          const activeItemsSubtotal = activeItems.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+                          const rawTotal = Number(order.total_amount || 0);
+                          const cgstRate = Number(shop?.settings?.cgst_rate || 0);
+                          const sgstRate = Number(shop?.settings?.sgst_rate || 0);
+                          const totalTaxRate = cgstRate + sgstRate;
+                          let computedTotal = activeItemsSubtotal;
+                          if (shop?.settings?.gst_enabled && totalTaxRate > 0 && !shop?.settings?.inclusive_tax) {
+                            computedTotal = Math.round((activeItemsSubtotal + (activeItemsSubtotal * totalTaxRate / 100)) * 100) / 100;
+                          }
+                          const finalDisplayTotal = rawTotal > 0 ? rawTotal : (isCancelled ? 0 : computedTotal);
+                          return (
+                            <div className="flex items-center justify-between sm:block">
+                              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none block">Total Bill</span>
+                              <span className="font-black text-lg text-slate-850 dark:text-white sm:mt-1.5 block">
+                                {shop?.settings?.currency || '₹'}{finalDisplayTotal.toFixed(2)}
+                              </span>
+                            </div>
+                          );
+                        })()}
+                        <div className="flex items-center gap-2 flex-wrap justify-end">
+                          {/* Add More button ONLY for ACCEPTED non-cancelled, non-completed DINE-IN orders */}
+                          {order.order_type === 'dine_in' && !['PENDING_VENDOR', 'PENDING'].includes(String(order.order_status).toUpperCase()) && !isCancelled && !isCompleted && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const tableParam = order.table_number ? `?table=${encodeURIComponent(order.table_number)}` : '';
+                                navigate(`/shop/${id}${tableParam}`);
+                              }}
+                              className="flex items-center gap-1 px-3 py-2 rounded-xl border border-orange-500/30 text-orange-600 dark:text-orange-400 hover:bg-orange-500/10 text-[11px] font-black uppercase tracking-wider transition-all cursor-pointer active:scale-95 bg-orange-500/5 whitespace-nowrap shrink-0"
+                              title="Add more items to this order"
+                            >
+                              <Plus size={13} />
+                              <span>Add More</span>
+                            </button>
+                          )}
+
+                          {/* Pay Now for any unpaid, non-cancelled order when online payments are enabled for this channel */}
+                          {isUnpaid && !isCancelled && (
+                            shop?.settings?.online_payments_enabled !== false && (
+                              order.order_type === 'dine_in' ? shop?.settings?.online_payments_dinein_enabled !== false :
+                              order.order_type === 'takeaway' ? shop?.settings?.online_payments_takeaway_enabled !== false :
+                              order.order_type === 'delivery' ? shop?.settings?.online_payments_delivery_enabled !== false : true
+                            )
+                          ) && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handlePayNow(order.id);
                               }}
                               disabled={payingOrderId === order.id}
-                              className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-white text-[11px] font-black uppercase tracking-wider shadow-md bg-gradient-to-r from-orange-500 to-amber-500 hover:brightness-110 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-white text-[11px] font-black uppercase tracking-wider shadow-md bg-gradient-to-r from-orange-500 to-amber-500 hover:brightness-110 active:scale-95 transition-all cursor-pointer disabled:opacity-50 whitespace-nowrap shrink-0"
                             >
                               {payingOrderId === order.id ? (
                                 <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white" />
@@ -674,22 +788,26 @@ export function PublicOrdersPage() {
                               e.stopPropagation();
                               navigate(`/shop/${id}/order/${order.id}`);
                             }}
-                            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-white text-[11px] font-black uppercase tracking-wider shadow-sm hover:brightness-110 active:scale-95 transition-all cursor-pointer group"
+                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-white text-[11px] font-black uppercase tracking-wider shadow-sm hover:brightness-110 active:scale-95 transition-all cursor-pointer group whitespace-nowrap shrink-0"
                             style={{ backgroundColor: primaryColor }}
                           >
                             <span>View</span>
-                            <ArrowRight size={13} className="group-hover:translate-x-1.5 transition-transform" />
+                            <ArrowRight size={13} className="group-hover:translate-x-1 transition-transform" />
                           </button>
-
                         </div>
                       </div>
                     </motion.div>
                   );
                 })}
+
+                {/* Infinite Scroll Trigger */}
+                <InfiniteScrollTrigger
+                  onIntersect={handleLoadMore}
+                  isLoading={isLoadingMore}
+                  hasMore={hasMore}
+                />
               </div>
             )}
-          </div>
-        )}
       </div>
 
       {/* 🏷️ Zomato District Style Side Tab (Clings to right wall) */}
@@ -841,14 +959,17 @@ export function PublicOrdersPage() {
           style={{ transform: isScrollingDown ? 'translateX(100px)' : 'translateX(0)' }}
         >
           <button
-            onClick={() => setIsFilterSheetOpen(true)}
+            onClick={() => {
+              triggerHaptic(HAPTIC_PATTERNS.SELECTION);
+              setIsFilterSheetOpen(true);
+            }}
             className="w-12 h-12 rounded-full text-white shadow-lg hover:brightness-110 active:scale-95 transition-all flex items-center justify-center cursor-pointer relative"
             style={{ backgroundColor: primaryColor }}
           >
             <SlidersHorizontal size={20} />
-            {(statusFilter !== 'all' || paymentStatusFilter !== 'all' || paymentMethodFilter !== 'all') && (
-              <span className="absolute -top-1 -right-1 w-4.5 h-4.5 bg-red-500 rounded-full text-[9px] font-black flex items-center justify-center text-white ring-2 ring-white">
-                {Number(statusFilter !== 'all') + Number(paymentStatusFilter !== 'all') + Number(paymentMethodFilter !== 'all')}
+            {activeFilterCount > 0 && (
+              <span className="absolute -top-1 -right-1 w-4.5 h-4.5 bg-red-500 rounded-full text-[9px] font-black flex items-center justify-center text-white ring-2 ring-white dark:ring-slate-900">
+                {activeFilterCount}
               </span>
             )}
           </button>
@@ -862,6 +983,35 @@ export function PublicOrdersPage() {
         title="Filter Orders"
       >
         <div className="p-5 space-y-5">
+          {/* Delivery Channel Filter Row */}
+          <div>
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2.5">Delivery Channel</span>
+            <div className="flex flex-wrap gap-2">
+              {([
+                { key: 'all', label: 'All Channels' },
+                { key: 'dine_in', label: 'Dine-In' },
+                { key: 'takeaway', label: 'Takeaway' },
+                { key: 'delivery', label: 'Delivery' }
+              ] as const).map((opt) => (
+                <button
+                  key={opt.key}
+                  onClick={() => {
+                    triggerHaptic(HAPTIC_PATTERNS.SELECTION);
+                    setChannelFilter(opt.key);
+                  }}
+                  className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold transition-all cursor-pointer border ${
+                    channelFilter === opt.key
+                      ? 'text-white border-transparent shadow-sm'
+                      : 'text-slate-650 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-850'
+                  }`}
+                  style={channelFilter === opt.key ? { backgroundColor: primaryColor } : {}}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Status Filter Row */}
           <div>
             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2.5">Live Status</span>
@@ -875,11 +1025,14 @@ export function PublicOrdersPage() {
               ] as const).map((opt) => (
                 <button
                   key={opt.key}
-                  onClick={() => setStatusFilter(opt.key)}
+                  onClick={() => {
+                    triggerHaptic(HAPTIC_PATTERNS.SELECTION);
+                    setStatusFilter(opt.key);
+                  }}
                   className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold transition-all cursor-pointer border ${
                     statusFilter === opt.key
-                      ? 'text-white border-transparent'
-                      : 'text-slate-650 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-50'
+                      ? 'text-white border-transparent shadow-sm'
+                      : 'text-slate-650 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-850'
                   }`}
                   style={statusFilter === opt.key ? { backgroundColor: primaryColor } : {}}
                 >
@@ -900,11 +1053,14 @@ export function PublicOrdersPage() {
               ] as const).map((opt) => (
                 <button
                   key={opt.key}
-                  onClick={() => setPaymentStatusFilter(opt.key)}
+                  onClick={() => {
+                    triggerHaptic(HAPTIC_PATTERNS.SELECTION);
+                    setPaymentStatusFilter(opt.key);
+                  }}
                   className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold transition-all cursor-pointer border ${
                     paymentStatusFilter === opt.key
-                      ? 'text-white border-transparent'
-                      : 'text-slate-650 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-50'
+                      ? 'text-white border-transparent shadow-sm'
+                      : 'text-slate-650 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-850'
                   }`}
                   style={paymentStatusFilter === opt.key ? { backgroundColor: primaryColor } : {}}
                 >
@@ -925,11 +1081,14 @@ export function PublicOrdersPage() {
               ] as const).map((opt) => (
                 <button
                   key={opt.key}
-                  onClick={() => setPaymentMethodFilter(opt.key)}
+                  onClick={() => {
+                    triggerHaptic(HAPTIC_PATTERNS.SELECTION);
+                    setPaymentMethodFilter(opt.key);
+                  }}
                   className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold transition-all cursor-pointer border ${
                     paymentMethodFilter === opt.key
-                      ? 'text-white border-transparent'
-                      : 'text-slate-650 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-50'
+                      ? 'text-white border-transparent shadow-sm'
+                      : 'text-slate-650 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-850'
                   }`}
                   style={paymentMethodFilter === opt.key ? { backgroundColor: primaryColor } : {}}
                 >
@@ -943,6 +1102,8 @@ export function PublicOrdersPage() {
           <div className="flex gap-3 pt-3 border-t border-slate-100 dark:border-slate-800/80">
             <button
               onClick={() => {
+                triggerHaptic(HAPTIC_PATTERNS.SELECTION);
+                setChannelFilter('all');
                 setStatusFilter('all');
                 setPaymentStatusFilter('all');
                 setPaymentMethodFilter('all');
@@ -952,7 +1113,10 @@ export function PublicOrdersPage() {
               Reset Filters
             </button>
             <button
-              onClick={() => setIsFilterSheetOpen(false)}
+              onClick={() => {
+                triggerHaptic(HAPTIC_PATTERNS.SELECTION);
+                setIsFilterSheetOpen(false);
+              }}
               className="flex-1 py-3 text-white rounded-2xl text-xs font-black uppercase tracking-wider cursor-pointer shadow-md"
               style={{ backgroundColor: primaryColor }}
             >

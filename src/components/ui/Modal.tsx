@@ -15,7 +15,7 @@ interface ModalProps {
   closeOnBackdropClick?: boolean;
 }
 
-export function Modal({ isOpen, onClose, title, description, children, footer, className, closeOnBackdropClick = true }: ModalProps) {
+export function Modal({ isOpen, onClose, title, description, children, footer, className, closeOnBackdropClick = false }: ModalProps) {
   const [mounted, setMounted] = React.useState(false);
 
   React.useEffect(() => {
@@ -59,11 +59,11 @@ export function Modal({ isOpen, onClose, title, description, children, footer, c
 
 
             {/* Fixed Header */}
-            {(title || description) && (
+            {(title || description) ? (
               <div className="relative z-30 bg-background pt-3.5 pb-3.5 px-4 sm:pt-4 sm:pb-4 sm:px-8 border-b border-border shrink-0">
                 <button
                   onClick={onClose}
-                  className="absolute right-3.5 top-3.5 sm:right-4 sm:top-4 rounded-full p-1.5 text-muted-foreground hover:bg-muted transition-colors"
+                  className="absolute right-3.5 top-3.5 sm:right-4 sm:top-4 rounded-full p-1.5 text-muted-foreground hover:bg-muted transition-colors cursor-pointer"
                 >
                   <X className="h-4.5 w-4.5" />
                   <span className="sr-only">Close</span>
@@ -74,6 +74,14 @@ export function Modal({ isOpen, onClose, title, description, children, footer, c
                   {description && <p className="text-xs sm:text-sm text-muted-foreground">{description}</p>}
                 </div>
               </div>
+            ) : (
+              <button
+                onClick={onClose}
+                className="absolute right-3.5 top-3.5 sm:right-4 sm:top-4 rounded-full p-1.5 text-muted-foreground hover:bg-muted transition-colors z-40 cursor-pointer"
+              >
+                <X className="h-4.5 w-4.5" />
+                <span className="sr-only">Close</span>
+              </button>
             )}
 
             {/* Scrollable Content Container */}

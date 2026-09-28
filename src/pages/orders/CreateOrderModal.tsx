@@ -1,12 +1,13 @@
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, Plus, Minus, ShoppingBag, ArrowRight, ArrowLeft, User, Phone, Check, X, ChevronDown, LayoutGrid, RotateCcw } from 'lucide-react';
+import { Search, Plus, Minus, ShoppingBag, ArrowRight, ArrowLeft, User, Phone, Check, X, ChevronDown, LayoutGrid, RotateCcw, UtensilsCrossed } from 'lucide-react';
 
 
 
 
 import { api } from '@/services/api';
 import { useShopStore } from '@/store/shopStore';
+import { getBusinessCategory } from '@/config/businessCategories';
 import { MenuItem } from '@/types';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
@@ -27,8 +28,13 @@ interface CreateOrderModalProps {
 }
 
 interface CartItem {
+  id: string;
   menuItem: MenuItem;
+  selectedVariantIdx: number;
+  selectedVariant?: any;
+  selectedAddons: number[]; // indices of menuItem.addons
   quantity: number;
+  unitPrice: number;
 }
 
 const REPLACEMENT_REASONS = [
@@ -49,6 +55,7 @@ export function CreateOrderModal({
   onItemReplaced,
 }: CreateOrderModalProps) {
   const { menuItems, setMenuItems, categories, setCategories, shop } = useShopStore();
+  const businessCategory = getBusinessCategory(shop?.category);
   
   const [step, setStep] = useState<1 | 2>(1);
   const [loading, setLoading] = useState(false);
@@ -62,6 +69,12 @@ export function CreateOrderModal({
   // Cart state
   const [cart, setCart] = useState<Record<string, CartItem>>({});
 
+  // Item Customization state (Variants & Add-ons)
+  const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
+  const [selectedVariantIdx, setSelectedVariantIdx] = useState<number>(0);
+  const [selectedAddons, setSelectedAddons] = useState<number[]>([]);
+  const [customizingQty, setCustomizingQty] = useState<number>(1);
+
   // Customer details for Step 2
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -72,6 +85,7 @@ export function CreateOrderModal({
   }>({ loading: false, found: null });
   const [orderType, setOrderType] = useState<'dine_in' | 'takeaway' | 'delivery'>('dine_in');
   const [tableNumber, setTableNumber] = useState('');
+  const [occupiedTables, setOccupiedTables] = useState<any[]>([]);
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'online'>('cash');
   const [paymentStatus, setPaymentStatus] = useState<'paid' | 'pending'>('pending');
@@ -140,6 +154,7 @@ export function CreateOrderModal({
     if (isOpen) {
       setStep(1);
       setCart({});
+      setCustomizingItem(null);
       setIsConfirmingReplacement(false);
       setReplacementReason('Customer changed item preference');
       setCustomReplacementReason('');
@@ -158,8 +173,14 @@ export function CreateOrderModal({
       api.get('/categories')
         .then(catRes => setCategories(catRes.data || []))
         .catch(err => console.error(err));
+
+      if (shop?.id) {
+        api.get(`/public/shop/${shop.id}/occupied-tables`)
+          .then(res => setOccupiedTables(res.data || []))
+          .catch(err => console.error(err));
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, shop?.id]);
 
   // Fetch backend menu items whenever search or modal open changes
   useEffect(() => {
@@ -200,40 +221,154 @@ export function CreateOrderModal({
     });
   }, [safeMenuItems, activeCategory, foodFilter]);
 
-  // Cart operations
-  const getItemQuantity = (itemId: string) => cart[itemId]?.quantity || 0;
+  // Unit Price Calculation Helper
+  const computeUnitPrice = (item: MenuItem, variantIdx: number, addonIndices: number[]) => {
+    let basePrice = 0;
+    if (item.variants && item.variants.length > 0) {
+      const v = item.variants[variantIdx] || item.variants[0];
+      basePrice = Number(v.offer_price || v.price || item.offer_price || item.price || 0);
+    } else {
+      basePrice = Number(item.offer_price || item.price || 0);
+    }
 
-  const updateQuantity = (item: MenuItem, delta: number) => {
+    let addonsTotal = 0;
+    if (item.addons && addonIndices.length > 0) {
+      addonIndices.forEach(idx => {
+        if (item.addons && item.addons[idx]) {
+          addonsTotal += Number(item.addons[idx].price || 0);
+        }
+      });
+    }
+    return basePrice + addonsTotal;
+  };
+
+  const isItemCustomizable = (item: MenuItem) => {
+    return Boolean((item.variants && item.variants.length > 0) || (item.addons && item.addons.length > 0));
+  };
+
+  const getItemTotalQuantity = (itemId: string) => {
+    return Object.values(cart)
+      .filter(i => i.menuItem.id === itemId)
+      .reduce((sum, i) => sum + i.quantity, 0);
+  };
+
+  // Open Customization Modal
+  const handleOpenCustomization = (item: MenuItem) => {
+    setCustomizingItem(item);
+    setSelectedVariantIdx(0);
+    setSelectedAddons([]);
+    setCustomizingQty(replacingItem ? (replacingItem.item?.quantity || 1) : 1);
+  };
+
+  // Confirm Customization and Add to Cart
+  const handleConfirmCustomization = () => {
+    if (!customizingItem) return;
+    const unitPrice = computeUnitPrice(customizingItem, selectedVariantIdx, selectedAddons);
+    const cartItemId = `${customizingItem.id}_v${selectedVariantIdx}_a${[...selectedAddons].sort().join('-')}`;
+    
     setCart(prev => {
       if (replacingItem) {
-        // In replacement mode, exactly 1 replacement item is selected
-        const currentQty = prev[item.id]?.quantity || 0;
+        return {
+          [cartItemId]: {
+            id: cartItemId,
+            menuItem: customizingItem,
+            selectedVariantIdx,
+            selectedVariant: customizingItem.variants?.[selectedVariantIdx],
+            selectedAddons,
+            quantity: customizingQty,
+            unitPrice,
+          }
+        };
+      }
+      const existing = prev[cartItemId];
+      const newQty = (existing?.quantity || 0) + customizingQty;
+      return {
+        ...prev,
+        [cartItemId]: {
+          id: cartItemId,
+          menuItem: customizingItem,
+          selectedVariantIdx,
+          selectedVariant: customizingItem.variants?.[selectedVariantIdx],
+          selectedAddons,
+          quantity: newQty,
+          unitPrice,
+        }
+      };
+    });
+
+    toast.success(`Added ${customizingItem.name} to order`);
+    setCustomizingItem(null);
+  };
+
+  // Cart operations for simple non-customizable items
+  const handleSimpleQuantity = (item: MenuItem, delta: number) => {
+    const cartItemId = item.id;
+    const unitPrice = Number(item.offer_price || item.price);
+    setCart(prev => {
+      if (replacingItem) {
+        const currentQty = prev[cartItemId]?.quantity || 0;
         let newQty = currentQty === 0 
           ? (delta > 0 ? (replacingItem.item?.quantity || 1) : 1) 
           : currentQty + delta;
         if (newQty <= 0) return {};
         return {
-          [item.id]: {
+          [cartItemId]: {
+            id: cartItemId,
             menuItem: item,
+            selectedVariantIdx: 0,
+            selectedAddons: [],
             quantity: newQty,
+            unitPrice,
           }
         };
       }
 
-      const currentQty = prev[item.id]?.quantity || 0;
+      const currentQty = prev[cartItemId]?.quantity || 0;
       const newQty = currentQty + delta;
       if (newQty <= 0) {
         const next = { ...prev };
-        delete next[item.id];
+        delete next[cartItemId];
         return next;
       }
       return {
         ...prev,
-        [item.id]: {
+        [cartItemId]: {
+          id: cartItemId,
           menuItem: item,
+          selectedVariantIdx: 0,
+          selectedAddons: [],
+          quantity: newQty,
+          unitPrice,
+        }
+      };
+    });
+  };
+
+  const updateCartItemQuantity = (cartItemId: string, delta: number) => {
+    setCart(prev => {
+      const item = prev[cartItemId];
+      if (!item) return prev;
+      const newQty = item.quantity + delta;
+      if (newQty <= 0) {
+        const next = { ...prev };
+        delete next[cartItemId];
+        return next;
+      }
+      return {
+        ...prev,
+        [cartItemId]: {
+          ...item,
           quantity: newQty,
         }
       };
+    });
+  };
+
+  const removeCartItem = (cartItemId: string) => {
+    setCart(prev => {
+      const next = { ...prev };
+      delete next[cartItemId];
+      return next;
     });
   };
 
@@ -243,8 +378,7 @@ export function CreateOrderModal({
 
   const totalCartAmount = useMemo(() => {
     return Object.values(cart).reduce((sum, item) => {
-      const price = item.menuItem.offer_price || item.menuItem.price;
-      return sum + Number(price) * item.quantity;
+      return sum + item.unitPrice * item.quantity;
     }, 0);
   }, [cart]);
 
@@ -267,9 +401,9 @@ export function CreateOrderModal({
     }
     if (isExclusiveTax) {
       // EXCLUSIVE: Tax is added on top of food items
-      const cgst = Math.round((totalCartAmount * (cgstRate / 100)) * 100) / 100;
-      const sgst = Math.round((totalCartAmount * (sgstRate / 100)) * 100) / 100;
-      const totalTax = Math.round((cgst + sgst) * 100) / 100;
+      const totalTax = Math.round((totalCartAmount * (totalTaxRate / 100)) * 100) / 100;
+      const cgst = Math.round((totalTax * (cgstRate / totalTaxRate)) * 100) / 100;
+      const sgst = Math.round((totalTax - cgst) * 100) / 100;
       const finalTotal = Math.round((totalCartAmount + totalTax) * 100) / 100;
       return {
         taxable: totalCartAmount,
@@ -300,7 +434,7 @@ export function CreateOrderModal({
     ? Number(replacingItem.item?.price || 0) * Number(replacingItem.item?.quantity || 1) 
     : 0;
   const newReplacementTotal = selectedReplacement 
-    ? Number(selectedReplacement.menuItem.offer_price || selectedReplacement.menuItem.price) * selectedReplacement.quantity 
+    ? selectedReplacement.unitPrice * selectedReplacement.quantity 
     : 0;
   const replacementPriceDiff = newReplacementTotal - oldReplacementTotal;
 
@@ -313,13 +447,24 @@ export function CreateOrderModal({
     setLoading(true);
     const toastId = toast.loading(`Replacing ${replacingItem.item.name} with ${selectedReplacement.menuItem.name}...`);
     try {
+      const variant = selectedReplacement.menuItem.variants && selectedReplacement.menuItem.variants.length > 0 
+        ? selectedReplacement.menuItem.variants[selectedReplacement.selectedVariantIdx] 
+        : null;
+      const variant_info = variant ? { name: variant.name, price: Number(variant.offer_price || variant.price) } : null;
+      const addons_info = (selectedReplacement.menuItem.addons && selectedReplacement.selectedAddons.length > 0)
+        ? selectedReplacement.selectedAddons.map(idx => ({
+            name: selectedReplacement.menuItem.addons![idx].name,
+            price: Number(selectedReplacement.menuItem.addons![idx].price),
+          }))
+        : null;
+
       const payload = {
         new_menu_item_id: selectedReplacement.menuItem.id,
         name: selectedReplacement.menuItem.name,
         quantity: selectedReplacement.quantity,
-        price: Number(selectedReplacement.menuItem.offer_price || selectedReplacement.menuItem.price),
-        variant_info: null,
-        addons_info: null,
+        price: selectedReplacement.unitPrice,
+        variant_info,
+        addons_info,
         reason: finalReason,
       };
 
@@ -339,7 +484,9 @@ export function CreateOrderModal({
           menu_item_id: selectedReplacement.menuItem.id,
           name: selectedReplacement.menuItem.name,
           quantity: selectedReplacement.quantity,
-          price: Number(selectedReplacement.menuItem.offer_price || selectedReplacement.menuItem.price),
+          price: selectedReplacement.unitPrice,
+          variant_info,
+          addons_info,
           category_id: selectedReplacement.menuItem.category_id,
         };
         onItemReplaced(updatedOrder, cancelledPrevItem, newlyAddedItem);
@@ -358,12 +505,27 @@ export function CreateOrderModal({
     if (!targetOrder || totalCartCount === 0) return;
     setLoading(true);
     try {
-      const itemsPayload = Object.values(cart).map(item => ({
-        menu_item_id: item.menuItem.id,
-        name: item.menuItem.name,
-        quantity: item.quantity,
-        price: Number(item.menuItem.offer_price || item.menuItem.price),
-      }));
+      const itemsPayload = Object.values(cart).map(item => {
+        const variant = item.menuItem.variants && item.menuItem.variants.length > 0 
+          ? item.menuItem.variants[item.selectedVariantIdx] 
+          : null;
+        const variant_info = variant ? { name: variant.name, price: Number(variant.offer_price || variant.price) } : null;
+        const addons_info = (item.menuItem.addons && item.selectedAddons.length > 0)
+          ? item.selectedAddons.map(idx => ({
+              name: item.menuItem.addons![idx].name,
+              price: Number(item.menuItem.addons![idx].price),
+            }))
+          : null;
+
+        return {
+          menu_item_id: item.menuItem.id,
+          name: item.menuItem.name,
+          quantity: item.quantity,
+          price: item.unitPrice,
+          variant_info,
+          addons_info,
+        };
+      });
 
       const res = await api.post(`/orders/${targetOrder.id}/items`, { items: itemsPayload });
       toast.success(`Added ${totalCartCount} item(s) to Order #${String(targetOrder.daily_order_number || (targetOrder.daily_order_number || targetOrder.id.slice(0, 8))).toUpperCase()}`);
@@ -401,14 +563,41 @@ export function CreateOrderModal({
       return;
     }
 
+    if (orderType === 'dine_in' && tableNumber) {
+      const isOcc = occupiedTables.some((ot: any) => {
+        const otNorm = String(ot.table_number || '').trim().toLowerCase();
+        const tblNorm = tableNumber.trim().toLowerCase();
+        return otNorm === tblNorm || otNorm.replace('table-', '') === tblNorm.replace('table-', '');
+      });
+      if (isOcc) {
+        toast.error(`${tableNumber} is currently occupied. Please choose another table.`);
+        return;
+      }
+    }
+
     setLoading(true);
     try {
-      const itemsPayload = Object.values(cart).map(item => ({
-        menu_item_id: item.menuItem.id,
-        name: item.menuItem.name,
-        quantity: item.quantity,
-        price: Number(item.menuItem.offer_price || item.menuItem.price),
-      }));
+      const itemsPayload = Object.values(cart).map(item => {
+        const variant = item.menuItem.variants && item.menuItem.variants.length > 0 
+          ? item.menuItem.variants[item.selectedVariantIdx] 
+          : null;
+        const variant_info = variant ? { name: variant.name, price: Number(variant.offer_price || variant.price) } : null;
+        const addons_info = (item.menuItem.addons && item.selectedAddons.length > 0)
+          ? item.selectedAddons.map(idx => ({
+              name: item.menuItem.addons![idx].name,
+              price: Number(item.menuItem.addons![idx].price),
+            }))
+          : null;
+
+        return {
+          menu_item_id: item.menuItem.id,
+          name: item.menuItem.name,
+          quantity: item.quantity,
+          price: item.unitPrice,
+          variant_info,
+          addons_info,
+        };
+      });
 
       const payload = {
         customer_name: customerName.trim() || 'Walk-in',
@@ -523,40 +712,42 @@ export function CreateOrderModal({
               </div>
 
               {/* Food Filter Pills */}
-              <div className="flex bg-slate-100 dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 rounded-full p-0.5 shrink-0 items-center gap-0.5">
-                <button
-                  type="button"
-                  onClick={() => setFoodFilter(foodFilter === 'veg' ? 'all' : 'veg')}
-                  className={`p-1 rounded-full transition-all shrink-0 ${foodFilter === 'veg' ? 'bg-emerald-100 dark:bg-emerald-950/60 shadow-xs ring-1 ring-emerald-400' : 'text-slate-400 hover:text-slate-600'}`}
-                  title="Veg Only"
-                >
-                  <span className="w-3 h-3 border-2 border-emerald-600 rounded-[2.5px] flex items-center justify-center">
-                    <span className="w-1 h-1 bg-emerald-600 rounded-full"></span>
-                  </span>
-                </button>
+              {businessCategory.dietaryEnabled && (
+                <div className="flex bg-slate-100 dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 rounded-full p-0.5 shrink-0 items-center gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setFoodFilter(foodFilter === 'veg' ? 'all' : 'veg')}
+                    className={`p-1 rounded-full transition-all shrink-0 ${foodFilter === 'veg' ? 'bg-emerald-100 dark:bg-emerald-950/60 shadow-xs ring-1 ring-emerald-400' : 'text-slate-400 hover:text-slate-600'}`}
+                    title="Veg Only"
+                  >
+                    <span className="w-3 h-3 border-2 border-emerald-600 rounded-[2.5px] flex items-center justify-center">
+                      <span className="w-1 h-1 bg-emerald-600 rounded-full"></span>
+                    </span>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => setFoodFilter(foodFilter === 'non-veg' ? 'all' : 'non-veg')}
-                  className={`p-1 rounded-full transition-all shrink-0 ${foodFilter === 'non-veg' ? 'bg-rose-100 dark:bg-rose-950/60 shadow-xs ring-1 ring-rose-400' : 'text-slate-400 hover:text-slate-600'}`}
-                  title="Non-veg Only"
-                >
-                  <span className="w-3 h-3 border-2 border-rose-600 rounded-[2.5px] flex items-center justify-center">
-                    <span className="w-0 h-0 border-l-[2.5px] border-r-[2.5px] border-b-[4.5px] border-transparent border-b-rose-600"></span>
-                  </span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setFoodFilter(foodFilter === 'non-veg' ? 'all' : 'non-veg')}
+                    className={`p-1 rounded-full transition-all shrink-0 ${foodFilter === 'non-veg' ? 'bg-rose-100 dark:bg-rose-950/60 shadow-xs ring-1 ring-rose-400' : 'text-slate-400 hover:text-slate-600'}`}
+                    title="Non-veg Only"
+                  >
+                    <span className="w-3 h-3 border-2 border-rose-600 rounded-[2.5px] flex items-center justify-center">
+                      <span className="w-0 h-0 border-l-[2.5px] border-r-[2.5px] border-b-[4.5px] border-transparent border-b-rose-600"></span>
+                    </span>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => setFoodFilter(foodFilter === 'egg' ? 'all' : 'egg')}
-                  className={`p-1 rounded-full transition-all shrink-0 ${foodFilter === 'egg' ? 'bg-amber-100 dark:bg-amber-950/60 shadow-xs ring-1 ring-amber-400' : 'text-slate-400 hover:text-slate-600'}`}
-                  title="Contains Egg"
-                >
-                  <span className="w-3 h-3 border-2 border-amber-500 rounded-[2.5px] flex items-center justify-center">
-                    <span className="w-1 h-1 bg-amber-500 rounded-full"></span>
-                  </span>
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    onClick={() => setFoodFilter(foodFilter === 'egg' ? 'all' : 'egg')}
+                    className={`p-1 rounded-full transition-all shrink-0 ${foodFilter === 'egg' ? 'bg-amber-100 dark:bg-amber-950/60 shadow-xs ring-1 ring-amber-400' : 'text-slate-400 hover:text-slate-600'}`}
+                    title="Contains Egg"
+                  >
+                    <span className="w-3 h-3 border-2 border-amber-500 rounded-[2.5px] flex items-center justify-center">
+                      <span className="w-1 h-1 bg-amber-500 rounded-full"></span>
+                    </span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Categories Scrolling Pills */}
@@ -618,16 +809,16 @@ export function CreateOrderModal({
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-3.5">
-
                 {filteredItems.map((item) => {
-                  const qty = getItemQuantity(item.id);
+                  const customizable = isItemCustomizable(item);
+                  const totalItemQty = getItemTotalQuantity(item.id);
                   const displayPrice = item.offer_price || item.price;
 
                   return (
                     <div
                       key={item.id}
                       className={`flex items-center justify-between p-3 sm:p-3.5 rounded-2xl border transition-all ${
-                        qty > 0 
+                        totalItemQty > 0 
                           ? 'border-primary/60 bg-primary/5 dark:bg-primary/10 shadow-xs' 
                           : 'border-slate-100 dark:border-slate-800/80 bg-card hover:border-slate-200 dark:hover:border-slate-700 shadow-2xs'
                       }`}
@@ -680,13 +871,20 @@ export function CreateOrderModal({
                         </h4>
 
                         {/* Price */}
-                        <div className="flex items-baseline gap-1.5 mt-1">
+                        <div className="flex items-baseline gap-1.5 mt-1 flex-wrap">
                           <span className="font-extrabold text-sm sm:text-base text-foreground font-mono">
                             ₹{Number(displayPrice).toFixed(2)}
                           </span>
                           {item.offer_price && (
                             <span className="text-xs text-muted-foreground line-through font-medium font-mono">
                               ₹{Number(item.price).toFixed(2)}
+                            </span>
+                          )}
+                          {customizable && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-primary/10 text-primary">
+                              {item.variants?.length ? `${item.variants.length} Variants` : ''}
+                              {item.variants?.length && item.addons?.length ? ' • ' : ''}
+                              {item.addons?.length ? `${item.addons.length} Add-ons` : ''}
                             </span>
                           )}
                         </div>
@@ -715,10 +913,27 @@ export function CreateOrderModal({
 
                         {/* Quantity Controls Floating at Bottom of Image */}
                         <div className="absolute -bottom-2.5 shadow-sm">
-                          {qty === 0 ? (
+                          {customizable ? (
                             <button
                               type="button"
-                              onClick={() => updateQuantity(item, 1)}
+                              onClick={() => handleOpenCustomization(item)}
+                              className={`h-7 px-3 rounded-xl font-black text-xs transition-all active:scale-95 cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                                totalItemQty > 0
+                                  ? 'bg-primary text-white shadow-md'
+                                  : 'bg-background border border-primary/40 text-primary hover:bg-primary hover:text-white shadow-xs'
+                              }`}
+                            >
+                              <span>+ ADD</span>
+                              {totalItemQty > 0 && (
+                                <span className="bg-white/30 text-white px-1.5 py-0.2 rounded-md text-[10px] font-mono">
+                                  {totalItemQty}
+                                </span>
+                              )}
+                            </button>
+                          ) : totalItemQty === 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => handleSimpleQuantity(item, 1)}
                               className="h-7 px-3.5 rounded-xl font-black text-xs bg-background border border-primary/40 text-primary hover:bg-primary hover:text-white shadow-xs transition-all active:scale-95 cursor-pointer whitespace-nowrap"
                             >
                               + ADD
@@ -727,15 +942,15 @@ export function CreateOrderModal({
                             <div className="flex items-center bg-primary text-white rounded-xl shadow-md h-7 px-1 font-bold">
                               <button
                                 type="button"
-                                onClick={() => updateQuantity(item, -1)}
+                                onClick={() => handleSimpleQuantity(item, -1)}
                                 className="w-6 h-6 flex items-center justify-center hover:bg-white/20 rounded-lg transition-colors cursor-pointer text-sm"
                               >
                                 -
                               </button>
-                              <span className="w-6 text-center text-xs font-black">{qty}</span>
+                              <span className="w-6 text-center text-xs font-black">{totalItemQty}</span>
                               <button
                                 type="button"
-                                onClick={() => updateQuantity(item, 1)}
+                                onClick={() => handleSimpleQuantity(item, 1)}
                                 className="w-6 h-6 flex items-center justify-center hover:bg-white/20 rounded-lg transition-colors cursor-pointer text-sm"
                               >
                                 +
@@ -785,6 +1000,77 @@ export function CreateOrderModal({
               )}
             </div>
 
+            {/* Selected Items Detail Breakdown */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  Order Items ({totalCartCount})
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setStep(1)}
+                  className="text-xs font-bold text-primary hover:underline cursor-pointer"
+                >
+                  + Add More Items
+                </button>
+              </div>
+
+              <div className="bg-card rounded-2xl border border-border divide-y divide-border/60 overflow-hidden shadow-2xs">
+                {Object.values(cart).map((item) => {
+                  const variant = item.menuItem.variants && item.menuItem.variants.length > 0 
+                    ? item.menuItem.variants[item.selectedVariantIdx] 
+                    : null;
+                  const addonNames = item.selectedAddons.map(idx => item.menuItem.addons?.[idx]?.name).filter(Boolean);
+
+                  return (
+                    <div key={item.id} className="p-3 flex items-center justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-bold text-sm text-foreground">{item.menuItem.name}</span>
+                          {variant && (
+                            <span className="text-[10px] font-extrabold bg-primary/10 text-primary px-1.5 py-0.5 rounded-md">
+                              {variant.name}
+                            </span>
+                          )}
+                        </div>
+                        {addonNames.length > 0 && (
+                          <div className="text-[11px] text-muted-foreground font-medium mt-0.5">
+                            Add-ons: {addonNames.join(', ')}
+                          </div>
+                        )}
+                        <div className="text-xs text-muted-foreground font-mono mt-0.5">
+                          ₹{item.unitPrice.toFixed(2)} × {item.quantity}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="font-black text-sm text-foreground font-mono">
+                          ₹{(item.unitPrice * item.quantity).toFixed(2)}
+                        </span>
+                        <div className="flex items-center bg-muted rounded-xl border border-border h-7 px-1">
+                          <button
+                            type="button"
+                            onClick={() => updateCartItemQuantity(item.id, -1)}
+                            className="w-5 h-5 flex items-center justify-center hover:bg-background rounded text-foreground text-xs font-bold"
+                          >
+                            -
+                          </button>
+                          <span className="w-6 text-center text-xs font-black font-mono">{item.quantity}</span>
+                          <button
+                            type="button"
+                            onClick={() => updateCartItemQuantity(item.id, 1)}
+                            className="w-5 h-5 flex items-center justify-center hover:bg-background rounded text-foreground text-xs font-bold"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Order Type Tabs */}
             <div>
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1.5">
@@ -809,17 +1095,51 @@ export function CreateOrderModal({
             </div>
 
             {/* Conditional Dine-in / Delivery fields */}
-            {orderType === 'dine_in' && (
-              <div>
-                <label className="text-xs font-medium text-foreground block mb-1">Table Number (Optional)</label>
-                <Input
-                  placeholder="e.g. T-4"
-                  value={tableNumber}
-                  onChange={(e) => setTableNumber(e.target.value)}
-                  className="rounded-xl"
-                />
-              </div>
-            )}
+            {orderType === 'dine_in' && (() => {
+              const totalTables = Number((shop?.settings as any)?.dinein_tables_count || 10);
+              const tablesList = Array.from({ length: totalTables }, (_, i) => `Table-${i + 1}`);
+
+              const tableOptions = tablesList.map((tbl) => {
+                const occ = occupiedTables.find((ot: any) => {
+                  const otNorm = String(ot.table_number || '').trim().toLowerCase();
+                  const tblNorm = tbl.toLowerCase();
+                  return otNorm === tblNorm || otNorm.replace('table-', '') === tblNorm.replace('table-', '');
+                });
+
+                const isOccupied = Boolean(occ);
+
+                return {
+                  id: tbl,
+                  name: tbl,
+                  icon: <UtensilsCrossed size={14} className={isOccupied ? 'text-amber-500' : 'text-primary'} />,
+                  subtext: isOccupied ? `Occupied (Order #${occ?.daily_order_number || 'Active'})` : 'Available',
+                  disabled: isOccupied,
+                };
+              });
+
+              return (
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <label className="text-xs font-medium text-foreground block">
+                      {businessCategory.tableOrStallLabel || 'Table Number'}
+                    </label>
+                    {tableNumber && (
+                      <span className="text-[10px] font-bold text-amber-600 bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 rounded border border-amber-200">
+                        {tableNumber} Selected
+                      </span>
+                    )}
+                  </div>
+                  <SearchableSelect
+                    options={tableOptions}
+                    value={tableNumber}
+                    onChange={(val) => setTableNumber(val)}
+                    placeholder={`-- Choose ${businessCategory.tableOrStallLabel || 'Table Number'} --`}
+                    showSearch={tablesList.length > 8}
+                    className="w-full bg-background border-border rounded-xl text-xs font-bold text-foreground"
+                  />
+                </div>
+              );
+            })()}
 
             {orderType === 'delivery' && (
               <div>
@@ -931,8 +1251,13 @@ export function CreateOrderModal({
             <div>
               {selectedReplacement ? (
                 <div>
-                  <div className="text-xs font-bold text-foreground truncate max-w-[190px] sm:max-w-none flex items-center gap-1.5">
+                  <div className="text-xs font-bold text-foreground truncate max-w-[190px] sm:max-w-none flex items-center gap-1.5 flex-wrap">
                     <span>New: {selectedReplacement.menuItem.name}</span>
+                    {selectedReplacement.menuItem.variants?.[selectedReplacement.selectedVariantIdx]?.name && (
+                      <span className="text-[10px] bg-primary/10 text-primary font-bold px-1.5 py-0.2 rounded">
+                        {selectedReplacement.menuItem.variants[selectedReplacement.selectedVariantIdx].name}
+                      </span>
+                    )}
                     <span className="text-[11px] font-mono text-muted-foreground">×{selectedReplacement.quantity}</span>
                   </div>
                   <div className="flex items-baseline gap-2 mt-0.5">
@@ -1010,6 +1335,181 @@ export function CreateOrderModal({
           </>
         )}
       </div>
+
+      {/* Item Customization Modal (Variants & Add-ons) */}
+      {customizingItem && (
+        <Modal
+          isOpen={Boolean(customizingItem)}
+          onClose={() => setCustomizingItem(null)}
+          title={`Customize ${customizingItem.name}`}
+          className="max-w-lg"
+          footer={
+            <div className="flex items-center justify-between w-full gap-3">
+              <div>
+                <div className="text-[11px] text-muted-foreground font-semibold">Total Price</div>
+                <div className="text-lg font-black text-foreground font-mono">
+                  ₹{(computeUnitPrice(customizingItem, selectedVariantIdx, selectedAddons) * customizingQty).toFixed(2)}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  className="rounded-xl px-4"
+                  onClick={() => setCustomizingItem(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className="rounded-xl px-5 font-bold bg-primary hover:bg-primary/90 text-white shadow-md gap-1.5"
+                  onClick={handleConfirmCustomization}
+                >
+                  <Check size={16} />
+                  {replacingItem ? 'Select for Replacement' : 'Add to Order'}
+                </Button>
+              </div>
+            </div>
+          }
+        >
+          <div className="space-y-4 pt-1 max-h-[60vh] overflow-y-auto px-1">
+            {/* Item Brief */}
+            <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-2xl border border-border">
+              {customizingItem.image_url ? (
+                <img
+                  src={customizingItem.image_url}
+                  alt={customizingItem.name}
+                  className="w-14 h-14 rounded-xl object-cover border border-border shrink-0"
+                />
+              ) : (
+                <div className="w-14 h-14 rounded-xl bg-muted border border-border flex items-center justify-center text-muted-foreground shrink-0">
+                  <ShoppingBag size={20} />
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <h4 className="font-bold text-sm sm:text-base text-foreground truncate">{customizingItem.name}</h4>
+                {customizingItem.description && (
+                  <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{customizingItem.description}</p>
+                )}
+                <div className="text-xs font-mono font-bold text-primary mt-0.5">
+                  Unit Price: ₹{computeUnitPrice(customizingItem, selectedVariantIdx, selectedAddons).toFixed(2)}
+                </div>
+              </div>
+            </div>
+
+            {/* Variants Selection */}
+            {customizingItem.variants && customizingItem.variants.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-foreground uppercase tracking-wider">
+                    Select Portion / Size <span className="text-rose-500">*</span>
+                  </label>
+                  <span className="text-[11px] text-muted-foreground">Required (1 choice)</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {customizingItem.variants.map((v, idx) => {
+                    const isSelected = selectedVariantIdx === idx;
+                    const vPrice = v.offer_price || v.price;
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setSelectedVariantIdx(idx)}
+                        className={`p-3 rounded-xl border text-left flex items-center justify-between transition-all cursor-pointer ${
+                          isSelected
+                            ? 'border-primary bg-primary/10 ring-2 ring-primary/30 shadow-xs'
+                            : 'border-border bg-card hover:border-border/80 hover:bg-muted/40'
+                        }`}
+                      >
+                        <div className="min-w-0 pr-2">
+                          <div className={`font-bold text-xs sm:text-sm ${isSelected ? 'text-primary' : 'text-foreground'}`}>
+                            {v.name}
+                          </div>
+                          <div className="flex items-baseline gap-1 mt-0.5 font-mono">
+                            <span className="text-xs font-bold text-foreground">₹{Number(vPrice).toFixed(2)}</span>
+                            {v.offer_price && (
+                              <span className="text-[10px] text-muted-foreground line-through">₹{Number(v.price).toFixed(2)}</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${isSelected ? 'border-primary bg-primary text-white' : 'border-slate-300 dark:border-slate-600'}`}>
+                          {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Add-ons Selection */}
+            {customizingItem.addons && customizingItem.addons.length > 0 && (
+              <div className="space-y-2 pt-1 border-t border-border/60">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-foreground uppercase tracking-wider">
+                    Select Add-ons
+                  </label>
+                  <span className="text-[11px] text-muted-foreground">Optional (multi-select)</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {customizingItem.addons.map((addon, idx) => {
+                    const isSelected = selectedAddons.includes(idx);
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          setSelectedAddons(prev => 
+                            prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx]
+                          );
+                        }}
+                        className={`p-3 rounded-xl border text-left flex items-center justify-between transition-all cursor-pointer ${
+                          isSelected
+                            ? 'border-primary bg-primary/10 ring-2 ring-primary/30 shadow-xs'
+                            : 'border-border bg-card hover:border-border/80 hover:bg-muted/40'
+                        }`}
+                      >
+                        <div className="min-w-0 pr-2">
+                          <div className={`font-bold text-xs sm:text-sm ${isSelected ? 'text-primary' : 'text-foreground'}`}>
+                            {addon.name}
+                          </div>
+                          <div className="text-xs font-bold text-primary font-mono mt-0.5">
+                            +₹{Number(addon.price).toFixed(2)}
+                          </div>
+                        </div>
+                        <div className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 ${isSelected ? 'border-primary bg-primary text-white' : 'border-slate-300 dark:border-slate-600'}`}>
+                          {isSelected && <Check size={12} strokeWidth={3} />}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Quantity Stepper */}
+            <div className="flex items-center justify-between p-3 bg-muted/40 rounded-xl border border-border">
+              <span className="text-xs font-bold text-foreground">Quantity</span>
+              <div className="flex items-center bg-background rounded-lg border border-border h-8 px-1">
+                <button
+                  type="button"
+                  onClick={() => setCustomizingQty(Math.max(1, customizingQty - 1))}
+                  disabled={customizingQty <= 1}
+                  className="w-7 h-7 flex items-center justify-center hover:bg-muted rounded text-foreground text-sm font-bold disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  -
+                </button>
+                <span className="w-8 text-center text-xs font-black font-mono">{customizingQty}</span>
+                <button
+                  type="button"
+                  onClick={() => setCustomizingQty(customizingQty + 1)}
+                  className="w-7 h-7 flex items-center justify-center hover:bg-muted rounded text-foreground text-sm font-bold"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {/* Category Picker Modal (Exact Public Menu 'Filter by Category' UI) */}
       <Modal
@@ -1161,6 +1661,11 @@ export function CreateOrderModal({
               <div className="space-y-0.5 min-w-0 flex-1 text-right">
                 <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider block">New Item (Add)</span>
                 <div className="font-bold text-sm text-foreground truncate">{selectedReplacement?.menuItem?.name}</div>
+                {selectedReplacement?.menuItem?.variants?.[selectedReplacement?.selectedVariantIdx]?.name && (
+                  <div className="text-[11px] text-primary font-bold">
+                    ({selectedReplacement.menuItem.variants[selectedReplacement.selectedVariantIdx].name})
+                  </div>
+                )}
                 <div className="text-xs text-emerald-600 font-bold font-mono">
                   ×{selectedReplacement?.quantity} • ₹{newReplacementTotal.toFixed(2)}
                 </div>
@@ -1175,7 +1680,7 @@ export function CreateOrderModal({
                   ? `+₹${replacementPriceDiff.toFixed(2)} (To collect)` 
                   : replacementPriceDiff < 0 
                   ? `-₹${Math.abs(replacementPriceDiff).toFixed(2)} (Refund / Deduct)` 
-                  : '₹0.00 (Same price)'}
+                  : '₹0.00 (Same price — no refund needed)'}
               </span>
             </div>
 

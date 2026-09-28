@@ -395,9 +395,9 @@ export function buildReceiptEscPos(
     } else {
       // EXCLUSIVE: Tax is added on top of food subtotal
       taxable = Math.max(0, subtotal - discountAmount);
-      cgst = Math.round((taxable * (cgstRate / 100)) * 100) / 100;
-      sgst = Math.round((taxable * (sgstRate / 100)) * 100) / 100;
-      totalTax = Math.round((cgst + sgst) * 100) / 100;
+      totalTax = Math.round((taxable * (totalTaxRate / 100)) * 100) / 100;
+      cgst = Math.round((totalTax * (cgstRate / totalTaxRate)) * 100) / 100;
+      sgst = Math.round((totalTax - cgst) * 100) / 100;
 
       const orderAmountNum = Number(order?.total_amount || 0);
       if (!isNewOnly && orderAmountNum >= taxable + totalTax - 0.05) {

@@ -1,11 +1,14 @@
-/**
- * Utility for rendering and printing thermal receipt bills (58mm & 80mm POS printers).
- */
-
 import { api } from '@/services/api';
 import toast from 'react-hot-toast';
 import { buildKotEscPos, buildReceiptEscPos } from './escpos';
 import { sendEscPosToDevice } from './webUsbPrinter';
+import { 
+  sendEscPosToBluetooth, 
+  requestWebBluetoothPrinter, 
+  isBluetoothPrintingSupported,
+  getActiveBluetoothPrinter,
+  disconnectBluetoothPrinter
+} from './webBluetoothPrinter';
 import type { BillingPrinterConfig } from '@/store/usePrinterStore';
 
 /**
@@ -107,6 +110,32 @@ export async function testNetworkPrinterConnection(
       errorDetail = `Printer at ${targetIp}:${targetPort} did not respond. The cloud server cannot reach your local private Wi-Fi network. Please make sure the Menukit Print Bridge ('python -m virtual_kitchen_printer') is running on your computer to bridge print jobs!`;
     }
     throw new Error(errorDetail);
+  }
+}
+
+/**
+ * Tests connection to a Bluetooth thermal printer by streaming a test slip over Web Bluetooth.
+ */
+export async function testBluetoothPrinterConnection(
+  printerName: string = 'Bluetooth Thermal Printer',
+  paperWidth: '80mm' | '58mm' = '80mm'
+): Promise<{ success: boolean; message: string }> {
+  try {
+    const is58 = paperWidth === '58mm';
+    const sepLine = is58 ? '--------------------------------' : '------------------------------------------------';
+    const now = new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' });
+
+    let slipText = `\x1b\x40\x1b\x61\x01\x1b\x21\x30MENUKIT POS\x1b\x21\x00\n\x1b\x21\x08BLUETOOTH PRINTER TEST\x1b\x21\x00\n\x1b\x61\x00${sepLine}\nDevice   : ${printerName}\nInterface: Web Bluetooth (GATT Direct)\nWidth    : ${paperWidth}\nStatus   : PAIRED & READY\nTimestamp: ${now}\n${sepLine}\n\x1b\x61\x01[TEST PRINT SUCCESSFUL]\nESC/POS Wireless Direct Link Active\n\n\n\x1d\x56\x41\x03\x1b\x70\x00\x19\xfa`;
+    
+    const encoder = new TextEncoder();
+    const data = encoder.encode(slipText);
+    await sendEscPosToBluetooth(data);
+    return { 
+      success: true, 
+      message: `Test slip successfully printed to "${printerName}" over Bluetooth!` 
+    };
+  } catch (err: any) {
+    throw new Error(err.message || 'Bluetooth test print failed. Please ensure the printer is turned on and paired.');
   }
 }
 
@@ -296,9 +325,9 @@ export function generateThermalReceiptHtml(
     } else {
       // EXCLUSIVE: Tax is added on top of food items
       taxableValue = Math.max(0, subtotal - discountAmount);
-      cgstAmount = Math.round((taxableValue * (cgstRate / 100)) * 100) / 100;
-      sgstAmount = Math.round((taxableValue * (sgstRate / 100)) * 100) / 100;
-      totalTax = Math.round((cgstAmount + sgstAmount) * 100) / 100;
+      totalTax = Math.round((taxableValue * (totalTaxRate / 100)) * 100) / 100;
+      cgstAmount = Math.round((totalTax * (cgstRate / totalTaxRate)) * 100) / 100;
+      sgstAmount = Math.round((totalTax - cgstAmount) * 100) / 100;
 
       const orderAmountNum = Number(order?.total_amount || 0);
       if (!isNewOnly && orderAmountNum >= taxableValue + totalTax - 0.05) {
@@ -726,6 +755,29 @@ export async function printBillToPrinter(
         isNewOnly 
       });
     }
+  } else if (connectionType === 'bluetooth') {
+    const toastId = toast.loading(`Sending bill to Bluetooth printer (${printerName})...`);
+    try {
+      const escPosBytes = buildReceiptEscPos(order, shop, { 
+        paperWidth, 
+        cutPaper: true, 
+        customItems, 
+        receiptTitle, 
+        isNewOnly 
+      });
+      await sendEscPosToBluetooth(escPosBytes);
+      toast.success(`Bill printed to Bluetooth printer (${printerName})!`, { id: toastId });
+      return true;
+    } catch (btErr: any) {
+      console.warn('Bluetooth bill print failed:', btErr);
+      toast.error(`Bluetooth print failed: ${btErr.message || 'Device disconnected'}. Opening browser print dialog...`, { id: toastId, duration: 4000 });
+      return await printThermalReceipt(order, shop, { 
+        paperWidth, 
+        customItems, 
+        receiptTitle, 
+        isNewOnly 
+      });
+    }
   } else if (connectionType === 'usb') {
     const toastId = toast.loading('Sending bill to USB printer...');
     try {
@@ -790,8 +842,8 @@ export async function printBillToAllPrinters(
     return await printThermalReceipt(order, shop, options);
   }
 
-  // Separate hardware printers (network LAN, USB) from browser system print
-  const hardwarePrinters = activePrinters.filter(p => p.connectionType === 'network' || p.connectionType === 'usb');
+  // Separate hardware printers (network LAN, USB, Bluetooth) from browser system print
+  const hardwarePrinters = activePrinters.filter(p => p.connectionType === 'network' || p.connectionType === 'usb' || p.connectionType === 'bluetooth');
   const hasBrowserPrinter = activePrinters.some(p => p.connectionType === 'browser');
 
   let anyHardwareSuccess = false;
@@ -1204,6 +1256,7 @@ export async function printOrderToStations(
     reason?: string;
     kotTitle?: string;
     kotNumber?: string;
+    silent?: boolean;
   }
 ): Promise<boolean> {
   const activeStations = (stations || []).filter((s: any) => s.enabled !== false);
@@ -1242,7 +1295,11 @@ export async function printOrderToStations(
       return true;
     } catch (err) {
       console.warn('Direct 127.0.0.1:9100 attempt without stations failed:', err);
-      toast.error('No printer stations configured. Please configure your kitchen printer in Settings.');
+      if (!options?.silent) {
+        toast.error('No printer stations configured. Please configure your kitchen printer in Settings.', {
+          id: 'no-printer-stations-err',
+        });
+      }
       return false;
     }
   }
@@ -1294,7 +1351,37 @@ export async function printOrderToStations(
           });
         } catch (netErr: any) {
           console.error(`Network LAN print failed for ${station.name} (${ipAddress}:${port}):`, netErr);
-          toast.error(`Printer "${station.name}" (${ipAddress}:${port}) offline or unreachable`);
+          if (!options?.silent) {
+            toast.error(`Printer "${station.name}" (${ipAddress}:${port}) offline or unreachable`, {
+              id: `printer-offline-${station.name}`,
+            });
+          }
+          overallSuccess = false;
+        }
+      } else if (connectionType === 'bluetooth') {
+        // Direct Web Bluetooth
+        try {
+          const escPosBytes = buildKotEscPos(order, shop, {
+            paperWidth,
+            stationName: station.name,
+            customItems: stationItems,
+            soundBuzzer: station.soundBuzzer !== false,
+            invocationMode,
+            kotTitle: options?.kotTitle,
+            reason: options?.reason,
+            kotNumber: options?.kotNumber,
+          });
+          await sendEscPosToBluetooth(escPosBytes);
+          if (!options?.silent) {
+            toast.success(`KOT sent to Bluetooth station "${station.name}"!`);
+          }
+        } catch (btErr: any) {
+          console.error(`Direct Bluetooth print failed for ${station.name}:`, btErr);
+          if (!options?.silent) {
+            toast.error(`Bluetooth print failed for "${station.name}": ${btErr.message || 'Offline'}`, {
+              id: `printer-offline-bt-${station.name}`,
+            });
+          }
           overallSuccess = false;
         }
       } else if (connectionType === 'usb') {
@@ -1312,12 +1399,20 @@ export async function printOrderToStations(
           });
           const sent = await sendEscPosToDevice(escPosBytes);
           if (!sent) {
-            toast.error(`USB printer "${station.name}" not connected or ready`);
+            if (!options?.silent) {
+              toast.error(`USB printer "${station.name}" not connected or ready`, {
+                id: `printer-offline-usb-${station.name}`,
+              });
+            }
             overallSuccess = false;
           }
         } catch (usbErr) {
           console.error(`Direct USB print failed for ${station.name}:`, usbErr);
-          toast.error(`Direct USB print failed for "${station.name}"`);
+          if (!options?.silent) {
+            toast.error(`Direct USB print failed for "${station.name}"`, {
+              id: `printer-offline-usb-${station.name}`,
+            });
+          }
           overallSuccess = false;
         }
       } else {

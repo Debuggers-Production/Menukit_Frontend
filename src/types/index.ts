@@ -1,6 +1,8 @@
 export interface User {
   id: string;
   email: string;
+  phone?: string | null;
+  phone_verified?: boolean;
   role: string;
   is_active: boolean;
   last_login: string | null;
@@ -39,6 +41,9 @@ export interface ShopSettings {
   bank_account_number?: string;
   ifsc_code?: string;
   online_payments_enabled: boolean;
+  online_payments_dinein_enabled?: boolean;
+  online_payments_takeaway_enabled?: boolean;
+  online_payments_delivery_enabled?: boolean;
 }
 
 export interface ThemeSettings {
@@ -75,6 +80,10 @@ export interface Shop {
   phone: string | null;
   whatsapp: string | null;
   address: string | null;
+  category?: string | null;
+  cuisine?: string | null;
+  city?: string | null;
+  area?: string | null;
   opening_time: string | null;
   closing_time: string | null;
   is_active: boolean;

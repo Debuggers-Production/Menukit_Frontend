@@ -11,7 +11,11 @@ interface Shop {
 
 import logo from "@/assets/menukit-logo.svg";
 
-export function ShopSwitcherDropdown() {
+interface ShopSwitcherProps {
+  collapsed?: boolean;
+}
+
+export function ShopSwitcherDropdown({ collapsed = false }: ShopSwitcherProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const isCreateNew = ((location.state?.createNew === true) || new URLSearchParams(location.search).get('create') === 'true') && location.pathname === '/shop-setup';
@@ -65,19 +69,28 @@ export function ShopSwitcherDropdown() {
   return (
     <div className="relative w-full" ref={dropdownRef}>
       <button
+        type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between p-1 rounded-xl hover:bg-slate-100/80 dark:hover:bg-slate-800/60 transition-colors"
+        className={cn(
+          "w-full flex items-center rounded-xl hover:bg-slate-100/80 dark:hover:bg-slate-800/60 transition-colors cursor-pointer",
+          collapsed ? "justify-center p-1.5" : "justify-between p-1"
+        )}
+        title={collapsed ? (isCreateNew ? 'New Shop' : activeShop?.name || 'Select Shop') : undefined}
       >
-        <div className="flex items-center gap-2 min-w-0">
+        <div className={cn("flex items-center gap-2 min-w-0", collapsed && "justify-center")}>
           <img src={logo} alt="Menukit Logo" className="h-7 sm:h-8 w-auto object-contain shrink-0" />
-          <div className="min-w-0 text-left flex flex-col items-start justify-center">
-            <span className="font-heading font-black text-xs sm:text-[14px] leading-tight text-slate-900 dark:text-white truncate max-w-[110px] sm:max-w-[140px]">
-              {isCreateNew ? 'New Shop' : activeShop?.name || 'Select Shop'}
-            </span>
-            <span className="text-[8px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-wider block mt-0.5">Merchant Portal</span>
-          </div>
+          {!collapsed && (
+            <div className="min-w-0 text-left flex flex-col items-start justify-center">
+              <span className="font-heading font-black text-xs sm:text-[14px] leading-tight text-slate-900 dark:text-white truncate max-w-[110px] sm:max-w-[140px]">
+                {isCreateNew ? 'New Shop' : activeShop?.name || 'Select Shop'}
+              </span>
+              <span className="text-[8px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-wider block mt-0.5">Merchant Portal</span>
+            </div>
+          )}
         </div>
-        <ChevronDown size={14} className="text-slate-400 shrink-0 ml-1.5" />
+        {!collapsed && (
+          <ChevronDown size={14} className="text-slate-400 shrink-0 ml-1.5" />
+        )}
       </button>
 
       {isOpen && (

@@ -6,6 +6,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useShopStore } from '@/store/shopStore';
 import { Button } from '@/components/ui/Button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
+import { getBusinessCategory } from '@/config/businessCategories';
 
 export function ShopSelectionPage() {
   const [shops, setShops] = useState<{ owned: any[], employed: any[] }>({ owned: [], employed: [] });
@@ -78,8 +79,15 @@ export function ShopSelectionPage() {
                 </div>
                 <div>
                   <h3 className="font-semibold text-lg">{shop.name}</h3>
-                  <div className="flex items-center justify-center mt-1 text-xs font-medium text-emerald-600 bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-400 px-2 py-1 rounded-full">
-                    <Shield size={12} className="mr-1" /> Owner
+                  <div className="flex flex-wrap items-center justify-center gap-1.5 mt-1.5">
+                    <div className="flex items-center justify-center text-xs font-medium text-emerald-600 bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-400 px-2 py-0.5 rounded-full">
+                      <Shield size={12} className="mr-1" /> Owner
+                    </div>
+                    {shop.category && (
+                      <div className="text-[11px] font-semibold text-slate-600 bg-slate-100 dark:bg-slate-800 dark:text-slate-300 px-2 py-0.5 rounded-full">
+                        {getBusinessCategory(shop.category).shortLabel}
+                      </div>
+                    )}
                   </div>
                 </div>
               </CardContent>
@@ -94,8 +102,15 @@ export function ShopSelectionPage() {
                 </div>
                 <div>
                   <h3 className="font-semibold text-lg">{emp.name}</h3>
-                  <div className="flex items-center justify-center mt-1 text-xs font-medium text-blue-600 bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-1 rounded-full">
-                    Staff Member
+                  <div className="flex flex-wrap items-center justify-center gap-1.5 mt-1.5">
+                    <div className="flex items-center justify-center text-xs font-medium text-blue-600 bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-0.5 rounded-full">
+                      Staff Member
+                    </div>
+                    {emp.category && (
+                      <div className="text-[11px] font-semibold text-slate-600 bg-slate-100 dark:bg-slate-800 dark:text-slate-300 px-2 py-0.5 rounded-full">
+                        {getBusinessCategory(emp.category).shortLabel}
+                      </div>
+                    )}
                   </div>
                 </div>
               </CardContent>

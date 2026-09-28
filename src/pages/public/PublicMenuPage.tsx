@@ -1,11 +1,12 @@
 import { LinkifiedText } from '../../components/LinkifiedText';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router';
-import { Search, Flame, MapPin, Phone, Info, UtensilsCrossed, X, Star, LayoutGrid, List as ListIcon, Clock, Sparkles, ExternalLink, SlidersHorizontal, Check, Languages, Tag, Crown, Calendar, ShoppingBag, ArrowUpRight, ChevronDown, QrCode, Download, History, Trophy, ChefHat, User, Truck, CheckCircle2, XCircle, Lock, Copy, RefreshCw, AlertCircle, ShieldCheck } from 'lucide-react';
+import { Search, Flame, MapPin, Phone, Info, UtensilsCrossed, X, Star, LayoutGrid, List as ListIcon, Clock, Sparkles, ExternalLink, SlidersHorizontal, Check, Languages, Tag, Crown, Calendar, ShoppingBag, ArrowUpRight, ChevronDown, QrCode, Download, History, Trophy, ChefHat, User, Truck, CheckCircle2, XCircle, Lock, Copy, RefreshCw, AlertCircle, ShieldCheck, Store } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { api } from '@/services/api';
 import { APP_CONFIG } from '@/config';
 import { Shop, Category, MenuItem, Discount } from '@/types';
+import { getBusinessCategory, isFoodBusiness } from '@/config/businessCategories';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Modal } from '@/components/ui/Modal';
 import { BottomSheet } from '@/components/ui/BottomSheet';
@@ -18,6 +19,7 @@ import { OrderTypeModal } from '@/components/public/OrderTypeModal';
 import { useCartStore, useShopCart } from '@/store/cartStore';
 import { useActiveOrders } from '@/hooks/useActiveOrders';
 import { InfiniteScrollTrigger } from '@/components/ui/InfiniteScrollTrigger';
+import { checkShopOpenStatus } from '@/utils/shopTiming';
 import QRCodeStyling from 'qr-code-styling';
 import confetti from 'canvas-confetti';
 import { contestService } from '@/services/contestService';
@@ -117,6 +119,8 @@ export function PublicMenuPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [shop, setShop] = useState<Shop | null>(() => (id ? publicCache.get<Shop>(`shop_${id}`) : null));
+  const shopOpenStatus = useMemo(() => checkShopOpenStatus(shop), [shop]);
+  const businessCategory = getBusinessCategory(shop?.category);
   const { currentOrder, totalActiveCount } = useActiveOrders(id);
   const [categories, setCategories] = useState<PublicCategory[]>(() => (id ? publicCache.get<PublicCategory[]>(`categories_${id}`) || [] : []));
   const [items, setItems] = useState<MenuItem[]>(() => (id ? publicCache.get<MenuItem[]>(`items_${id}`) || [] : []));
@@ -365,16 +369,43 @@ export function PublicMenuPage() {
       img.crossOrigin = "anonymous";
       img.onload = () => {
         const canvas = document.createElement("canvas");
-        const size = Math.min(img.width, img.height);
+        const size = 1024;
         canvas.width = size;
         canvas.height = size;
         const ctx = canvas.getContext("2d");
         if (ctx) {
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = "high";
+          ctx.clearRect(0, 0, size, size);
+
+          // 1. Draw solid opaque white circular badge
           ctx.beginPath();
-          ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+          ctx.arc(size / 2, size / 2, (size / 2) - 8, 0, Math.PI * 2);
+          ctx.fillStyle = "#FFFFFF";
+          ctx.fill();
+
+          // 2. Draw logo clipped inside circle
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(size / 2, size / 2, (size / 2) - 20, 0, Math.PI * 2);
           ctx.clip();
-          ctx.drawImage(img, (size - img.width) / 2, (size - img.height) / 2, img.width, img.height);
-          setRoundedPublicLogo(canvas.toDataURL());
+          const maxDim = size - 56;
+          const scale = Math.min(maxDim / img.width, maxDim / img.height);
+          const w = img.width * scale;
+          const h = img.height * scale;
+          const x = (size - w) / 2;
+          const y = (size - h) / 2;
+          ctx.drawImage(img, x, y, w, h);
+          ctx.restore();
+
+          // 3. Crisp circular border ring
+          ctx.beginPath();
+          ctx.arc(size / 2, size / 2, (size / 2) - 12, 0, Math.PI * 2);
+          ctx.strokeStyle = "#CBD5E1";
+          ctx.lineWidth = 18;
+          ctx.stroke();
+
+          setRoundedPublicLogo(canvas.toDataURL("image/png", 1.0));
         } else {
           setRoundedPublicLogo(shop.logo_url || undefined);
         }
@@ -402,10 +433,14 @@ export function PublicMenuPage() {
 
       if (!publicQrInstance.current) {
         publicQrInstance.current = new QRCodeStyling({
+          type: 'svg',
           width: 280,
           height: 280,
           margin: 8,
           data: qrUrl,
+          qrOptions: {
+            errorCorrectionLevel: 'H',
+          },
           dotsOptions: {
             type: dotsPattern as any,
             color: themeColor,
@@ -424,15 +459,20 @@ export function PublicMenuPage() {
           image: qrStyleData.include_logo && roundedPublicLogo ? roundedPublicLogo : undefined,
           imageOptions: {
             crossOrigin: "anonymous",
-            margin: 6,
-            imageSize: 0.35,
+            margin: 0,
+            imageSize: 0.20,
+            hideBackgroundDots: true,
           }
         });
         publicQrRef.current.innerHTML = '';
         publicQrInstance.current.append(publicQrRef.current);
       } else {
         publicQrInstance.current.update({
+          type: 'svg',
           data: qrUrl,
+          qrOptions: {
+            errorCorrectionLevel: 'H',
+          },
           dotsOptions: {
             type: dotsPattern as any,
             color: themeColor,
@@ -446,6 +486,12 @@ export function PublicMenuPage() {
             color: themeColor,
           },
           image: qrStyleData.include_logo && roundedPublicLogo ? roundedPublicLogo : undefined,
+          imageOptions: {
+            crossOrigin: "anonymous",
+            margin: 0,
+            imageSize: 0.20,
+            hideBackgroundDots: true,
+          }
         });
         if (!publicQrRef.current.hasChildNodes()) {
           publicQrRef.current.innerHTML = '';
@@ -457,12 +503,50 @@ export function PublicMenuPage() {
     return () => clearTimeout(timer);
   }, [isQRModalOpen, qrStyleData, roundedPublicLogo]);
 
-  const handleDownloadPublicQR = () => {
-    if (publicQrInstance.current) {
-      publicQrInstance.current.download({
-        name: `${shop?.name || 'shop'}-qr-code`,
+  const handleDownloadPublicQR = async () => {
+    if (!qrStyleData?.qr_url) return;
+    try {
+      const themeColor = qrStyleData.qr_color || '#1A1515';
+      const dotsPattern = qrStyleData.dot_type || 'dots';
+      const cornersRing = qrStyleData.corners_square_type || 'rounded';
+      const cornersCenter = qrStyleData.corners_dot_type || 'dot';
+
+      const exportQr = new QRCodeStyling({
+        width: 2400,
+        height: 2400,
+        data: qrStyleData.qr_url,
+        qrOptions: {
+          errorCorrectionLevel: 'H',
+        },
+        dotsOptions: {
+          type: dotsPattern as any,
+          color: themeColor,
+        },
+        cornersSquareOptions: {
+          type: cornersRing as any,
+          color: themeColor,
+        },
+        cornersDotOptions: {
+          type: cornersCenter as any,
+          color: themeColor,
+        },
+        backgroundOptions: {
+          color: "#FFFFFF",
+        },
+        image: qrStyleData.include_logo && roundedPublicLogo ? roundedPublicLogo : undefined,
+        imageOptions: {
+          crossOrigin: "anonymous",
+          margin: 0,
+          imageSize: 0.20,
+          hideBackgroundDots: true,
+        }
+      });
+      await exportQr.download({
+        name: `${shop?.name || 'shop'}-qr-2400px`,
         extension: 'png'
       });
+    } catch (e) {
+      console.error('Failed to download public QR', e);
     }
   };
 
@@ -603,7 +687,7 @@ export function PublicMenuPage() {
 
         setMemberCheckMessage({
           type: 'success',
-          text: 'Verified! You are registered as a hotel member. Offer unlocked!'
+          text: 'Verified! You are registered as a member. Offer unlocked!'
         });
         toast.success('Membership verified! Discount code unlocked.');
 
@@ -616,16 +700,16 @@ export function PublicMenuPage() {
         setMemberCheckMessage({
           type: 'not_member',
           text: phoneDisplay
-            ? `Your mobile number (${phoneDisplay}) is not registered as a hotel member yet. Please ask the hotel staff or cashier at the counter to add your number, then tap Check Membership Status again.`
-            : 'Your account is not registered as a hotel member yet. Please ask the hotel staff or cashier at the counter to add your number as a member, then tap Check Membership Status again.'
+            ? `Your mobile number (${phoneDisplay}) is not registered as a member yet. Please ask the shop staff or cashier at the counter to add your number, then tap Check Membership Status again.`
+            : 'Your account is not registered as a member yet. Please ask the shop staff or cashier at the counter to add your number as a member, then tap Check Membership Status again.'
         });
-        toast.error('Not registered as a hotel member yet. Please ask the hotel staff.');
+        toast.error('Not registered as a member yet. Please ask the shop staff.');
       }
     } catch (err: any) {
       console.error('Failed to check membership', err);
       setMemberCheckMessage({
         type: 'error',
-        text: err.response?.data?.detail || 'Could not verify status. Please try again or ask hotel staff.'
+        text: err.response?.data?.detail || 'Could not verify status. Please try again or ask staff.'
       });
       toast.error('Could not verify membership status.');
     } finally {
@@ -1510,22 +1594,40 @@ export function PublicMenuPage() {
           >
             {orderType === 'dine_in' ? (
               <>
-                <UtensilsCrossed size={14} className="text-emerald-600 dark:text-emerald-400" />
-                <span>Dine-in Mode</span>
+                {businessCategory.isFood ? <UtensilsCrossed size={14} className="text-emerald-600 dark:text-emerald-400" /> : <Store size={14} className="text-emerald-600 dark:text-emerald-400" />}
+                <span>{businessCategory.orderTypeDineInTitle}</span>
               </>
             ) : orderType === 'delivery' ? (
               <>
                 <Truck size={14} className="text-white" />
-                <span>Delivery Mode</span>
+                <span>{businessCategory.orderTypeDeliveryTitle}</span>
               </>
             ) : (
               <>
                 <ShoppingBag size={14} className="text-slate-600 dark:text-slate-300" />
-                <span>Takeaway Mode</span>
+                <span>{businessCategory.orderTypeTakeawayTitle}</span>
               </>
             )}
             <ChevronDown size={12} className="opacity-70" />
           </button>
+
+          {/* Shop Closed Alert Banner */}
+          {!shopOpenStatus.isOpen && (
+            <div className="w-full max-w-md mt-2 p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/10 dark:from-amber-950/40 dark:to-orange-950/40 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs shadow-sm flex items-center gap-3 text-left animate-in fade-in">
+              <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs font-bold">
+                <Clock size={18} />
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-extrabold text-xs text-amber-800 dark:text-amber-300">Currently Closed</span>
+                  <span className="text-[10px] px-2 py-0.5 bg-amber-200/80 dark:bg-amber-900/80 rounded-full font-bold">Orders Paused</span>
+                </div>
+                <p className="text-[11px] text-amber-700 dark:text-amber-300/90 mt-0.5 font-medium">
+                  {shopOpenStatus.message || 'Restaurant is currently not accepting orders.'}
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Delivery Coverage & Distance Status Banner */}
           {orderType === 'delivery' && (
@@ -1534,7 +1636,7 @@ export function PublicMenuPage() {
                 <div className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300 text-xs flex items-center justify-between gap-2 shadow-xs">
                   <div className="flex items-center gap-2 text-left">
                     <AlertCircle size={16} className="shrink-0 text-rose-600 dark:text-rose-400" />
-                    <span className="font-semibold">Delivery is disabled for this restaurant.</span>
+                    <span className="font-semibold">Delivery is disabled for this shop.</span>
                   </div>
                   <button
                     onClick={() => setIsOrderTypeModalOpen(true)}
@@ -1586,7 +1688,7 @@ export function PublicMenuPage() {
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5 pointer-events-none z-10" />
           <input
             type="text"
-            placeholder="Search for a dish or drink..."
+            placeholder={businessCategory.searchPlaceholder}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full h-12 rounded-2xl border shadow-xs focus:outline-none focus:ring-2 transition-all duration-200 bg-white border-slate-200 text-sm sm:text-base pl-12 pr-10 text-slate-900 placeholder-slate-400"
@@ -1605,7 +1707,8 @@ export function PublicMenuPage() {
 
         {/* Dietary Filters & View Toggle Row */}
         <div className="flex items-center justify-between gap-2 mb-3.5 w-full">
-          <div className="flex bg-white shadow-xs border border-slate-200 rounded-full p-1 shrink-0 items-center overflow-x-auto no-scrollbar scrollbar-hide">
+          {businessCategory.dietaryEnabled && (
+            <div className="flex bg-white shadow-xs border border-slate-200 rounded-full p-1 shrink-0 items-center overflow-x-auto no-scrollbar scrollbar-hide">
             <button
               onClick={() => setFoodFilter(foodFilter === 'veg' ? 'all' : 'veg')}
               className={`p-2 rounded-full transition-all shrink-0 ${foodFilter === 'veg' ? 'bg-green-50 shadow-xs ring-1 ring-green-200' : 'text-slate-400 hover:text-slate-600'}`}
@@ -1652,6 +1755,8 @@ export function PublicMenuPage() {
               </span>
             </button>
           </div>
+
+          )}
 
           <div className="flex bg-white shadow-xs border border-slate-200 rounded-full p-1 shrink-0 items-center">
             <button
@@ -2203,7 +2308,7 @@ export function PublicMenuPage() {
       </div>
 
       {/* Shop Info Modal */}
-      <Modal isOpen={isShopInfoOpen} onClose={() => setIsShopInfoOpen(false)} title="Restaurant Info" className="bg-white text-slate-900">
+      <Modal isOpen={isShopInfoOpen} onClose={() => setIsShopInfoOpen(false)} title={`${shop.name} Info`} className="bg-white text-slate-900">
         <div className="space-y-4 mt-4">
           {shop.address && (
             <div className="flex items-start gap-3">
@@ -2230,44 +2335,28 @@ export function PublicMenuPage() {
             </div>
           )}
 
-          {(shop.opening_time || shop.closing_time) && (() => {
-            const now = new Date();
-            const currentMinutes = now.getHours() * 60 + now.getMinutes();
-            let isOpen = false;
-            if (shop.opening_time && shop.closing_time) {
-              const [oh, om] = shop.opening_time.split(':').map(Number);
-              const [ch, cm] = shop.closing_time.split(':').map(Number);
-              const openMin = oh * 60 + om;
-              const closeMin = ch * 60 + cm;
-              if (closeMin > openMin) {
-                isOpen = currentMinutes >= openMin && currentMinutes < closeMin;
-              } else {
-                isOpen = currentMinutes >= openMin || currentMinutes < closeMin;
-              }
-            }
-            return (
-              <div className="flex items-start gap-3 mt-4">
-                <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: `${primaryColor}20`, color: primaryColor }}>
-                  <Clock size={20} />
-                </div>
-                <div>
-                  <h4 className="font-medium text-sm flex items-center gap-2">
-                    Hours
-                    {shop.opening_time && shop.closing_time && (
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isOpen ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>
-                        {isOpen ? 'Open Now' : 'Closed'}
-                      </span>
-                    )}
-                  </h4>
-                  <p className="text-sm opacity-70 mt-1">
-                    {shop.opening_time && formatTime(shop.opening_time)}
-                    {shop.opening_time && shop.closing_time && ' — '}
-                    {shop.closing_time && formatTime(shop.closing_time)}
-                  </p>
-                </div>
+          {(shop.opening_time || shop.closing_time) && (
+            <div className="flex items-start gap-3 mt-4">
+              <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: `${primaryColor}20`, color: primaryColor }}>
+                <Clock size={20} />
               </div>
-            );
-          })()}
+              <div>
+                <h4 className="font-medium text-sm flex items-center gap-2">
+                  Hours
+                  {shop.opening_time && shop.closing_time && (
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${shopOpenStatus.isOpen ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>
+                      {shopOpenStatus.badgeText}
+                    </span>
+                  )}
+                </h4>
+                <p className="text-sm opacity-70 mt-1">
+                  {shop.opening_time && formatTime(shop.opening_time)}
+                  {shop.opening_time && shop.closing_time && ' — '}
+                  {shop.closing_time && formatTime(shop.closing_time)}
+                </p>
+              </div>
+            </div>
+          )}
 
           {shop.address && (
             <div className="pt-4 mt-4 border-t border-slate-100 space-y-2">
@@ -2412,7 +2501,7 @@ export function PublicMenuPage() {
                   {sortOrder === 'default' && <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: primaryColor }} />}
                 </div>
                 <input type="radio" className="hidden" checked={sortOrder === 'default'} onChange={() => setSortOrder('default')} />
-                <span className="text-sm font-medium">Default (Chef's Specials first)</span>
+                <span className="text-sm font-medium">Default ({businessCategory.featuredBadgeLabel} first)</span>
               </label>
               <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/50 cursor-pointer hover:bg-slate-50 transition-colors">
                 <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${sortOrder === 'price_asc' ? 'border-primary' : 'border-slate-300'}`} style={{ borderColor: sortOrder === 'price_asc' ? primaryColor : undefined }}>
@@ -2431,76 +2520,78 @@ export function PublicMenuPage() {
             </div>
           </div>
 
-          {/* Dietary Preference */}
-          <div>
-            <h3 className="text-xs font-bold mb-3 opacity-70 uppercase tracking-wider">Dietary Type</h3>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {[
-                { 
-                  id: 'all', 
-                  label: 'All Items', 
-                  icon: <span className="w-4 h-4 rounded-full border-2 border-slate-400 flex items-center justify-center shrink-0"><span className="w-1.5 h-1.5 bg-slate-400 rounded-full" /></span> 
-                },
-                { 
-                  id: 'veg', 
-                  label: 'Pure Veg', 
-                  icon: <span className="w-4 h-4 border-2 border-green-600 rounded-[3px] flex items-center justify-center shrink-0"><span className="w-2 h-2 bg-green-600 rounded-full" /></span> 
-                },
-                { 
-                  id: 'non-veg', 
-                  label: 'Non-Veg', 
-                  icon: <span className="w-4 h-4 border-2 border-red-600 rounded-[3px] flex items-center justify-center shrink-0"><span className="w-0 h-0 border-l-[4px] border-r-[4px] border-b-[6px] border-transparent border-b-red-600" /></span> 
-                },
-                { 
-                  id: 'egg', 
-                  label: 'Contains Egg', 
-                  icon: <span className="w-4 h-4 border-2 border-yellow-500 rounded-[3px] flex items-center justify-center shrink-0"><span className="w-2 h-2 bg-yellow-500 rounded-full" /></span> 
-                },
-                { 
-                  id: 'drink', 
-                  label: 'Drinks Only', 
-                  icon: <span className="w-4 h-4 border-2 border-blue-500 rounded-full flex items-center justify-center shrink-0"><span className="w-2 h-2 bg-blue-500 rounded-full" /></span> 
-                },
-                { 
-                  id: 'dessert', 
-                  label: 'Desserts Only', 
-                  icon: <span className="w-4 h-4 border-2 border-pink-500 rounded-[3px] flex items-center justify-center shrink-0"><span className="w-2 h-2 bg-pink-500 rounded-[2px]" /></span> 
-                },
-              ].map(item => {
-                const isSelected = foodFilter === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setFoodFilter(item.id as any)}
-                    className={`relative flex items-center gap-2 py-3 px-3 rounded-xl border cursor-pointer transition-all text-left ${
-                      isSelected
-                        ? 'shadow-xs border-slate-900 bg-slate-50'
-                        : 'border-slate-200 bg-white hover:bg-slate-50'
-                    }`}
-                    style={isSelected ? { borderColor: primaryColor, backgroundColor: `${primaryColor}12` } : undefined}
-                  >
-                    <div className="shrink-0">{item.icon}</div>
-                    <span className={`text-xs truncate ${isSelected ? 'text-slate-900 font-bold' : 'text-slate-600 font-medium'}`}>
-                      {item.label}
-                    </span>
-                    {isSelected && (
-                      <div className="ml-auto shrink-0">
-                        <Check size={14} style={{ color: primaryColor }} />
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
+          {/* Dietary Preference (Only shown for food businesses) */}
+          {businessCategory.dietaryEnabled && (
+            <div>
+              <h3 className="text-xs font-bold mb-3 opacity-70 uppercase tracking-wider">Dietary Type</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {[
+                  { 
+                    id: 'all', 
+                    label: 'All Items', 
+                    icon: <span className="w-4 h-4 rounded-full border-2 border-slate-400 flex items-center justify-center shrink-0"><span className="w-1.5 h-1.5 bg-slate-400 rounded-full" /></span> 
+                  },
+                  { 
+                    id: 'veg', 
+                    label: 'Pure Veg', 
+                    icon: <span className="w-4 h-4 border-2 border-green-600 rounded-[3px] flex items-center justify-center shrink-0"><span className="w-2 h-2 bg-green-600 rounded-full" /></span> 
+                  },
+                  { 
+                    id: 'non-veg', 
+                    label: 'Non-Veg', 
+                    icon: <span className="w-4 h-4 border-2 border-red-600 rounded-[3px] flex items-center justify-center shrink-0"><span className="w-0 h-0 border-l-[4px] border-r-[4px] border-b-[6px] border-transparent border-b-red-600" /></span> 
+                  },
+                  { 
+                    id: 'egg', 
+                    label: 'Contains Egg', 
+                    icon: <span className="w-4 h-4 border-2 border-yellow-500 rounded-[3px] flex items-center justify-center shrink-0"><span className="w-2 h-2 bg-yellow-500 rounded-full" /></span> 
+                  },
+                  { 
+                    id: 'drink', 
+                    label: 'Drinks Only', 
+                    icon: <span className="w-4 h-4 border-2 border-blue-500 rounded-full flex items-center justify-center shrink-0"><span className="w-2 h-2 bg-blue-500 rounded-full" /></span> 
+                  },
+                  { 
+                    id: 'dessert', 
+                    label: 'Desserts Only', 
+                    icon: <span className="w-4 h-4 border-2 border-pink-500 rounded-[3px] flex items-center justify-center shrink-0"><span className="w-2 h-2 bg-pink-500 rounded-[2px]" /></span> 
+                  },
+                ].map(item => {
+                  const isSelected = foodFilter === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setFoodFilter(item.id as any)}
+                      className={`relative flex items-center gap-2 py-3 px-3 rounded-xl border cursor-pointer transition-all text-left ${
+                        isSelected
+                          ? 'shadow-xs border-slate-900 bg-slate-50'
+                          : 'border-slate-200 bg-white hover:bg-slate-50'
+                      }`}
+                      style={isSelected ? { borderColor: primaryColor, backgroundColor: `${primaryColor}12` } : undefined}
+                    >
+                      <div className="shrink-0">{item.icon}</div>
+                      <span className={`text-xs truncate ${isSelected ? 'text-slate-900 font-bold' : 'text-slate-600 font-medium'}`}>
+                        {item.label}
+                      </span>
+                      {isSelected && (
+                        <div className="ml-auto shrink-0">
+                          <Check size={14} style={{ color: primaryColor }} />
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Quick Filters */}
           <div>
             <h3 className="text-xs font-bold mb-3 opacity-70 uppercase tracking-wider">Quick Filters</h3>
             <div className="grid grid-cols-2 gap-2">
               {[
-                { id: 'chef_special', label: "Chef's Specials", icon: <Flame size={18} className="text-orange-500" /> },
+                { id: 'chef_special', label: businessCategory.featuredBadgeLabel, icon: <Flame size={18} className="text-orange-500" /> },
                 { id: 'bestseller', label: "Bestsellers", icon: <Star size={18} className="text-amber-500" /> },
                 { id: 'available', label: "Available", icon: <CheckCircle2 size={18} className="text-emerald-500" /> },
                 { id: 'not_available', label: "Not Available", icon: <XCircle size={18} className="text-rose-500" /> }
@@ -2792,11 +2883,11 @@ export function PublicMenuPage() {
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs font-black uppercase tracking-wider text-amber-900">Hotel Member Exclusive</span>
+                          <span className="text-xs font-black uppercase tracking-wider text-amber-900">Member Exclusive</span>
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 text-amber-900">Locked</span>
                         </div>
                         <p className="text-xs text-amber-800/85 mt-1 leading-snug">
-                          This discount code is reserved exclusively for hotel members. Become a member to reveal and copy your unique code.
+                          This discount code is reserved exclusively for registered members. Become a member to reveal and copy your unique code.
                         </p>
                       </div>
                     </div>
@@ -2911,7 +3002,7 @@ export function PublicMenuPage() {
           setIsBecomeMemberModalOpen(false);
           setMemberCheckMessage({ type: 'idle', text: '' });
         }}
-        title="Become a Hotel Member"
+        title="Become a Member"
         className="bg-white text-slate-900 max-w-md relative z-[110]"
       >
         <div className="space-y-4 mt-2">
@@ -2920,9 +3011,9 @@ export function PublicMenuPage() {
             <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-500 to-amber-400 text-white flex items-center justify-center shadow-lg shadow-amber-500/30 mb-3 transform hover:scale-105 transition-transform">
               <Crown size={28} className="text-white" />
             </div>
-            <h3 className="text-xl font-bold font-heading text-slate-900">Hotel Member Exclusive Offer</h3>
+            <h3 className="text-xl font-bold font-heading text-slate-900">Member Exclusive Offer</h3>
             <p className="text-xs text-slate-500 mt-1 max-w-[280px]">
-              This discount code is reserved exclusively for registered hotel members.
+              This discount code is reserved exclusively for registered members.
             </p>
           </div>
 
@@ -2981,7 +3072,7 @@ export function PublicMenuPage() {
             <div className="flex items-start gap-2.5">
               <span className="w-5 h-5 rounded-full bg-amber-200 text-amber-900 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">1</span>
               <p className="text-xs font-semibold text-amber-950 leading-snug">
-                Ask the hotel staff or cashier at the counter to <span className="underline decoration-amber-500 underline-offset-2">add your mobile number as a member</span>.
+                Ask the staff or cashier at the counter to <span className="underline decoration-amber-500 underline-offset-2">add your mobile number as a member</span>.
               </p>
             </div>
             <div className="flex items-start gap-2.5">

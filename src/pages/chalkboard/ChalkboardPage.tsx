@@ -9,7 +9,6 @@ import { useShopStore } from '@/store/shopStore';
 import { useHeaderStore } from '@/store/useHeaderStore';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Switch } from '@/components/ui/Switch';
 import { ChalkboardModal } from '@/components/chalkboard/ChalkboardModal';
 import { resolveChalkboardMessage } from '@/components/chalkboard/chalkboardUtils';
 import { MiniAFrame } from '@/components/chalkboard/AFrameIllustration';
@@ -19,7 +18,7 @@ export function ChalkboardPage() {
   const { shop, setShop } = useShopStore();
   const { setTitle: setHeaderTitle } = useHeaderStore();
 
-  const [isEnabled, setIsEnabled] = useState<boolean>(true);
+  const [isEnabled] = useState<boolean>(true);
   const [title, setTitle] = useState<string>('');
   const [message, setMessage] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -29,22 +28,19 @@ export function ChalkboardPage() {
   const [isMobileFloatingMinimized, setIsMobileFloatingMinimized] = useState<boolean>(false);
 
   useEffect(() => {
-    setHeaderTitle('Chalkboard Sign', 'Configure your restaurant sidewalk A-frame chalkboard sign.');
+    setHeaderTitle('Chalkboard Sign', 'Sidewalk chalkboard specials.');
 
     const fetchChalkboard = async () => {
       try {
         setIsLoading(true);
         const res = await api.get('/shops/me/chalkboard');
         if (res.data) {
-          setIsEnabled(res.data.is_enabled ?? true);
           setTitle(res.data.title ?? '');
           setMessage(res.data.message ?? '');
         }
       } catch (err) {
         console.error('Failed to fetch chalkboard settings', err);
-        // If shop object already has it
         if (shop?.chalkboard) {
-          setIsEnabled(shop.chalkboard.is_enabled ?? true);
           setTitle(shop.chalkboard.title ?? '');
           setMessage(shop.chalkboard.message ?? '');
         }
@@ -60,7 +56,7 @@ export function ChalkboardPage() {
     try {
       setIsSaving(true);
       const res = await api.put('/shops/me/chalkboard', {
-        is_enabled: isEnabled,
+        is_enabled: true,
         title: title.trim() ? title.trim() : null,
         message: message.trim() ? message.trim() : null,
       });
@@ -189,140 +185,109 @@ export function ChalkboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column: Form Settings */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Main Control Card */}
-          <Card className="border border-slate-200/80 dark:border-slate-800 shadow-sm rounded-2xl">
-            <CardHeader className="pb-4">
-              <CardTitle className="text-lg font-bold flex items-center gap-2 text-slate-900 dark:text-slate-100">
-                <PenTool size={18} className="text-amber-500" />
-                Chalkboard Controls
-              </CardTitle>
-              <CardDescription>
-                Configure whether the floating A-frame sign appears on the public menu and what text it displays.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Enable / Disable Toggle */}
-              <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/60 dark:border-slate-800">
-                <div className="space-y-0.5 pr-4">
-                  <span className="text-sm font-bold text-slate-800 dark:text-slate-200 block">
-                    Enable Chalkboard Sign on Public Menu
-                  </span>
-                  <span className="text-xs text-slate-500 dark:text-slate-400">
-                    When active, a miniature floating A-frame sign sits beside your menu on the right.
-                  </span>
-                </div>
-                <Switch
-                  checked={isEnabled}
-                  onChange={setIsEnabled}
-                />
-              </div>
-
-              {/* Board Header Title Field */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                    <Type size={16} className="text-amber-500" />
-                    Board Header Title
-                  </label>
-                  <span className="text-xs text-slate-400 font-medium">
-                    {title.length}/30 characters
-                  </span>
-                </div>
-                <input
-                  type="text"
-                  maxLength={30}
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="TODAY'S SPECIAL (Default if left empty)"
-                  className="w-full px-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 text-sm font-semibold tracking-wide focus:outline-none focus:ring-2 focus:ring-amber-500 transition-all placeholder:text-slate-400 placeholder:font-normal"
-                />
-                <p className="text-[12px] text-slate-500 dark:text-slate-400">
-                  The prominent banner heading written in chalk at the top of your sidewalk board. If left blank, it automatically displays <b>&quot;TODAY&apos;S SPECIAL&quot;</b>.
-                </p>
-              </div>
-
-              {/* Message Textarea */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                    <MessageSquareQuote size={16} className="text-amber-500" />
-                    Custom Chalkboard Message
-                  </label>
-                  <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold transition-colors ${
-                    isAtCharLimit || isAtLineLimit
-                      ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 font-bold'
-                      : message.length >= MAX_CHARS * 0.8 || lineCount >= MAX_LINES - 1
-                      ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
-                  }`}>
-                    {message.length}/{MAX_CHARS} chars • {lineCount}/{MAX_LINES} lines
-                  </span>
-                </div>
-                <textarea
-                  rows={5}
-                  value={message}
-                  maxLength={MAX_CHARS}
-                  onChange={handleMessageChange}
-                  onKeyDown={handleMessageKeyDown}
-                  placeholder={`Welcome to our hotel!\nToday's special:\nChicken Biryani + Fresh Lime\nOnly ₹199`}
-                  className={`w-full p-4 rounded-2xl border bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 text-sm leading-relaxed focus:outline-none focus:ring-2 font-sans resize-none transition-all placeholder:text-slate-400 ${
-                    isAtCharLimit || isAtLineLimit
-                      ? 'border-rose-300 dark:border-rose-800 focus:ring-rose-500'
-                      : 'border-slate-200 dark:border-slate-700 focus:ring-amber-500'
-                  }`}
-                />
-                <div className="flex items-center justify-between text-[12px] text-slate-500 dark:text-slate-400">
-                  <span>Tip: Formatted for sidewalk boards (max {MAX_LINES} lines & {MAX_CHARS} characters).</span>
-                  {(isAtCharLimit || isAtLineLimit) && (
-                    <span className="text-rose-600 dark:text-rose-400 font-bold text-[11px] flex items-center gap-1">
-                      <AlertCircle size={12} /> Limit reached
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Quick Preset Templates */}
-              <div className="space-y-2 pt-2">
-                <label className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                  Quick Message Templates
+          {/* Main Control Container */}
+          <div className="space-y-5 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs rounded-2xl p-5">
+            {/* Board Header Title Field */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                  <Type size={16} className="text-amber-500" />
+                  Board Header Title
                 </label>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => applyPreset("TODAY'S SPECIAL", "Welcome to our hotel!\nToday's special:\nChicken Biryani + Fresh Lime\nOnly ₹199")}
-                    className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60 hover:bg-amber-100 dark:hover:bg-amber-900/60 transition-colors cursor-pointer"
-                  >
-                    🍗 Today's Special Combo
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => applyPreset("WEEKEND SPECIAL", "Weekend Bonanza!\nFlat 20% OFF on all Starters.\nOrder now!")}
-                    className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition-colors cursor-pointer"
-                  >
-                    🔥 Weekend 20% Promo
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => applyPreset("CHEF'S PICK", "Chef's Recommendation:\nPaneer Butter Masala\nwith Garlic Naan")}
-                    className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors cursor-pointer"
-                  >
-                    🍲 Chef's Choice
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTitle('');
-                      setMessage('');
-                      toast.success('Cleared to dynamic customer greeting mode!');
-                    }}
-                    className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
-                  >
-                    ✨ Clear (Dynamic "Hi, {`{Name}`}!")
-                  </button>
-                </div>
+                <span className="text-xs text-slate-400 font-medium">
+                  {title.length}/30 characters
+                </span>
               </div>
-            </CardContent>
-          </Card>
+              <input
+                type="text"
+                maxLength={30}
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="TODAY'S SPECIAL (Default if left empty)"
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 text-sm font-semibold tracking-wide focus:outline-none focus:ring-2 focus:ring-amber-500 transition-all placeholder:text-slate-400 placeholder:font-normal"
+              />
+            </div>
+
+            {/* Message Textarea */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                  <MessageSquareQuote size={16} className="text-amber-500" />
+                  Custom Chalkboard Message
+                </label>
+                <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold transition-colors ${
+                  isAtCharLimit || isAtLineLimit
+                    ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 font-bold'
+                    : message.length >= MAX_CHARS * 0.8 || lineCount >= MAX_LINES - 1
+                    ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                }`}>
+                  {message.length}/{MAX_CHARS} chars • {lineCount}/{MAX_LINES} lines
+                </span>
+              </div>
+              <textarea
+                rows={5}
+                value={message}
+                maxLength={MAX_CHARS}
+                onChange={handleMessageChange}
+                onKeyDown={handleMessageKeyDown}
+                placeholder={`Welcome to our hotel!\nToday's special:\nChicken Biryani + Fresh Lime\nOnly ₹199`}
+                className={`w-full p-4 rounded-xl border bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 text-sm leading-relaxed focus:outline-none focus:ring-2 font-sans resize-none transition-all placeholder:text-slate-400 ${
+                  isAtCharLimit || isAtLineLimit
+                    ? 'border-rose-300 dark:border-rose-800 focus:ring-rose-500'
+                    : 'border-slate-200 dark:border-slate-700 focus:ring-amber-500'
+                }`}
+              />
+              {(isAtCharLimit || isAtLineLimit) && (
+                <div className="flex justify-end">
+                  <span className="text-rose-600 dark:text-rose-400 font-bold text-[11px] flex items-center gap-1">
+                    <AlertCircle size={12} /> Limit reached
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Quick Preset Templates */}
+            <div className="space-y-2 pt-1">
+              <label className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
+                Quick Message Templates
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => applyPreset("TODAY'S SPECIAL", "Welcome to our hotel!\nToday's special:\nChicken Biryani + Fresh Lime\nOnly ₹199")}
+                  className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60 hover:bg-amber-100 dark:hover:bg-amber-900/60 transition-colors cursor-pointer"
+                >
+                  🍗 Today's Special Combo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyPreset("WEEKEND SPECIAL", "Weekend Bonanza!\nFlat 20% OFF on all Starters.\nOrder now!")}
+                  className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition-colors cursor-pointer"
+                >
+                  🔥 Weekend 20% Promo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyPreset("CHEF'S PICK", "Chef's Recommendation:\nPaneer Butter Masala\nwith Garlic Naan")}
+                  className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors cursor-pointer"
+                >
+                  🍲 Chef's Choice
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTitle('');
+                    setMessage('');
+                    toast.success('Cleared to dynamic customer greeting mode!');
+                  }}
+                  className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                >
+                  ✨ Clear (Dynamic "Hi, {`{Name}`}!")
+                </button>
+              </div>
+            </div>
+          </div>
 
           {/* Fallback Logic Explanation Card */}
           <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/20 text-slate-800 dark:text-slate-200 space-y-2.5">
@@ -357,7 +322,7 @@ export function ChalkboardPage() {
               <CardTitle className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between">
                 <span>Sidewalk Sign Look</span>
                 <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-semibold">
-                  {isEnabled ? 'Live on Menu' : 'Disabled'}
+                  Live on Menu
                 </span>
               </CardTitle>
             </CardHeader>

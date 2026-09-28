@@ -1,8 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { ChevronLeft, CookingPot, CheckCircle2, Clock, XCircle, AlertCircle, CreditCard, Printer, Receipt, FileText, CheckCircle, ChefHat, Download, History, Lock } from 'lucide-react';
+import { ChevronLeft, CookingPot, CheckCircle2, Clock, XCircle, AlertCircle, CreditCard, Printer, Receipt, FileText, CheckCircle, ChefHat, Download, History, Lock, PackageCheck, Info, Plus } from 'lucide-react';
 import { api } from '@/services/api';
 import { Shop } from '@/types';
+import { getBusinessCategory } from '@/config/businessCategories';
+import { APP_CONFIG } from '@/config';
+import { getCustomerUserId } from '@/hooks/useActiveOrders';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BottomSheet } from '@/components/ui/BottomSheet';
@@ -36,6 +39,7 @@ export function OrderStatusPage() {
   const { id, orderId } = useParams();
   const navigate = useNavigate();
   const [shop, setShop] = useState<Shop | null>(null);
+  const businessCategory = getBusinessCategory(shop?.category);
   const [order, setOrder] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const statusRef = useRef<string | null>(null);
@@ -55,7 +59,7 @@ export function OrderStatusPage() {
 
   const handlePayOnline = async () => {
     if (order?.order_type === 'dine_in' && (order?.order_status === 'PENDING_VENDOR' || order?.order_status === 'PENDING')) {
-      toast.error("Please wait for the restaurant to accept your order before completing payment.");
+      toast.error("Please wait for the shop to accept your order before completing payment.");
       return;
     }
     setIsRedirecting(true);
@@ -345,9 +349,24 @@ export function OrderStatusPage() {
 
     const isFinal = order && ['completed', 'cancelled', 'delivered', 'rejected'].includes(order.order_status);
     if (isFinal) return;
-    
-    const handleRealtimeUpdate = () => {
-      fetchOrderStatus();
+
+    // Realtime broadcast listener (for in-app / window updates)
+    const handleRealtimeUpdate = (e: any) => {
+      const detail = e.detail;
+      if (!detail) {
+        fetchOrderStatus();
+        return;
+      }
+      const incomingId = detail.order_id || detail.order?.id || detail.metadata?.order_id;
+      if (!incomingId || incomingId === orderId) {
+        if (detail.order) {
+          setOrder((prev: any) => ({ ...prev, ...detail.order }));
+        } else if (detail.status) {
+          setOrder((prev: any) => ({ ...prev, order_status: detail.status, payment_status: detail.payment_status || prev?.payment_status }));
+        }
+        playChimeNotificationSound();
+        fetchOrderStatus();
+      }
     };
 
     window.addEventListener('menukit-realtime-update', handleRealtimeUpdate);
@@ -358,6 +377,125 @@ export function OrderStatusPage() {
       clearInterval(interval);
     };
   }, [id, orderId, order?.order_status]);
+
+  // Dedicated direct WebSocket connection for instant 0-delay tracking on customer mobile device
+  useEffect(() => {
+    if (!id || !orderId) return;
+
+    const isProd = import.meta.env.MODE === 'production';
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = isProd ? window.location.host : 'localhost:8000';
+    const baseUrl = APP_CONFIG.API_URL ? APP_CONFIG.API_URL.replace(/^http/, 'ws') : `${protocol}//${host}`;
+    
+    // Connect directly using orderId as primary channel
+    const wsUrl = `${baseUrl}/api/v1/public/shop/${id}/ws/customer/${orderId}`;
+
+    let socket: WebSocket | null = null;
+    let pingInterval: any = null;
+    let reconnectTimeout: any = null;
+    let isDisposed = false;
+
+    const connect = () => {
+      if (isDisposed) return;
+      if (socket && socket.readyState === WebSocket.OPEN) return;
+
+      try {
+        socket = new WebSocket(wsUrl);
+
+        socket.onopen = () => {
+          console.log('[Customer Live Tracker WS] Connected with 0 delay for order:', orderId);
+          if (pingInterval) clearInterval(pingInterval);
+          pingInterval = setInterval(() => {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+              try { socket.send('ping'); } catch {}
+            }
+          }, 25000);
+        };
+
+        socket.onmessage = (event) => {
+          if (typeof event.data !== 'string') return;
+          const trimmed = event.data.trim();
+          if (trimmed === 'ping' || trimmed === 'pong' || !trimmed.startsWith('{')) return;
+          try {
+            const data = JSON.parse(trimmed);
+            if (data.type === 'order_update' || data.event === 'order_update' || data.type === 'ORDER_STATUS' || data.type === 'NEW_ORDER') {
+              console.log('[Customer Live Tracker WS] Order update received:', data);
+              
+              const incomingId = data.order_id || data.order?.id || data.data?.id;
+              if (!incomingId || incomingId === orderId) {
+                // Immediate sub-second state update
+                if (data.order || data.data) {
+                  const fullOrder = data.order || data.data;
+                  setOrder((prev: any) => ({ ...prev, ...fullOrder }));
+                } else if (data.status) {
+                  setOrder((prev: any) => ({ 
+                    ...prev, 
+                    order_status: data.status, 
+                    payment_status: data.payment_status || prev?.payment_status,
+                    payment_expires_at: data.payment_expires_at !== undefined ? data.payment_expires_at : prev?.payment_expires_at
+                  }));
+                }
+                
+                playChimeNotificationSound();
+                toast.success(`Order status: ${(data.status || 'Updated').toUpperCase()}`, {
+                  icon: '🔔',
+                  duration: 4000
+                });
+                
+                // Also fetch fresh payload to guarantee consistency
+                fetchOrderStatus();
+              }
+            }
+          } catch (err) {
+            console.error('[Customer Live Tracker WS] Parse error:', err);
+          }
+        };
+
+        socket.onclose = () => {
+          if (pingInterval) clearInterval(pingInterval);
+          if (!isDisposed) {
+            clearTimeout(reconnectTimeout);
+            reconnectTimeout = setTimeout(connect, 1500);
+          }
+        };
+
+        socket.onerror = (err) => {
+          console.error('[Customer Live Tracker WS] Socket error:', err);
+          try { socket?.close(); } catch {}
+        };
+      } catch (e) {
+        if (!isDisposed) {
+          clearTimeout(reconnectTimeout);
+          reconnectTimeout = setTimeout(connect, 2000);
+        }
+      }
+    };
+
+    connect();
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' || navigator.onLine) {
+        if (!socket || socket.readyState === WebSocket.CLOSED || socket.readyState === WebSocket.CLOSING) {
+          connect();
+        }
+        fetchOrderStatus();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('online', handleVisibility);
+    window.addEventListener('focus', handleVisibility);
+
+    return () => {
+      isDisposed = true;
+      if (pingInterval) clearInterval(pingInterval);
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('online', handleVisibility);
+      window.removeEventListener('focus', handleVisibility);
+      if (socket) socket.close();
+    };
+  }, [id, orderId]);
 
   const [timeLeft, setTimeLeft] = useState<string>('');
 
@@ -434,7 +572,7 @@ export function OrderStatusPage() {
       case 'PENDING':
         return {
           title: 'Order Placed',
-          desc: 'Waiting for restaurant approval.',
+          desc: 'Waiting for shop approval.',
           icon: <Clock size={40} className="text-amber-500 animate-pulse" />,
           bgColor: 'bg-amber-50 dark:bg-amber-950/20',
           borderColor: 'border-amber-100 dark:border-amber-900/30'
@@ -452,9 +590,9 @@ export function OrderStatusPage() {
       case 'ACCEPTED':
       case 'COOKING':
         return {
-          title: 'Preparing Food',
-          desc: 'Chef is preparing your order.',
-          icon: <CookingPot size={40} className="text-blue-500 animate-bounce" />,
+          title: businessCategory.prepStatusTitle,
+          desc: businessCategory.prepStatusDesc,
+          icon: businessCategory.isFood ? <CookingPot size={40} className="text-blue-500 animate-bounce" /> : <PackageCheck size={40} className="text-amber-500 animate-bounce" />,
           bgColor: 'bg-blue-50 dark:bg-blue-950/20',
           borderColor: 'border-blue-100 dark:border-blue-900/30'
         };
@@ -471,7 +609,7 @@ export function OrderStatusPage() {
       case 'DELIVERED':
         return {
           title: 'Order Completed',
-          desc: 'Your food is ready / delivered! Enjoy!',
+          desc: businessCategory.orderCompletedDesc,
           icon: <CheckCircle2 size={40} className="text-emerald-500 animate-pulse" />,
           bgColor: 'bg-emerald-50 dark:bg-emerald-950/20',
           borderColor: 'border-emerald-100 dark:border-emerald-900/30'
@@ -479,7 +617,7 @@ export function OrderStatusPage() {
       case 'REJECTED':
         return {
           title: 'Order Rejected',
-          desc: 'The restaurant was unable to accept this order.',
+          desc: 'The shop was unable to accept this order.',
           icon: <XCircle size={40} className="text-rose-500" />,
           bgColor: 'bg-rose-50 dark:bg-rose-950/20',
           borderColor: 'border-rose-100 dark:border-rose-900/30'
@@ -498,24 +636,51 @@ export function OrderStatusPage() {
 
 
   const statusInfo = getStatusDisplay();
-  const isUnpaid = order?.payment_status === 'pending';
-  const isCancelled = order?.order_status?.toUpperCase() === 'REJECTED' || order?.order_status?.toUpperCase() === 'CANCELLED';
+  const isUnpaid = String(order?.payment_status || '').toLowerCase() === 'pending';
+  const isAllItemsCancelled = (order?.items || []).length > 0 && (order?.items || []).every((it: any) => it.is_cancelled);
+  const isCancelled = order?.order_status?.toUpperCase() === 'REJECTED' || order?.order_status?.toUpperCase() === 'CANCELLED' || isAllItemsCancelled;
+  const isActuallyCancelled = isCancelled || order?.payment_status === 'refunded';
   const isDineIn = order?.order_type === 'dine_in';
   const normOrderStatus = (order?.order_status || '').toUpperCase();
+  const isCompleted = normOrderStatus === 'COMPLETED' || normOrderStatus === 'DELIVERED';
   const isPendingVendor = normOrderStatus === 'PENDING_VENDOR' || normOrderStatus === 'PENDING';
 
-  // Rule: For dine-in, payment is disabled until the merchant accepts the order.
-  // For takeaway and delivery, upfront payment is permitted / mandatory.
-  const isPaymentDisabledForDineIn = isDineIn && isPendingVendor;
-  const canPayNow = isUnpaid && !isCancelled && !isPaymentDisabledForDineIn;
+  // Rule: Payment is disabled until the merchant accepts the order.
+  const isPaymentDisabledUntilAccepted = isPendingVendor;
+  const canPayNow = isUnpaid && !isCancelled && !isPaymentDisabledUntilAccepted;
+  const activeItems = (order?.items || []).filter((it: any) => !it.is_cancelled);
+  const activeItemsSubtotal = activeItems.reduce((acc: number, it: any) => acc + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+
+  const cgstRate = Number(shop?.settings?.cgst_rate || 0);
+  const sgstRate = Number(shop?.settings?.sgst_rate || 0);
+  const totalTaxRate = cgstRate + sgstRate;
+  let calculatedTaxAmount = 0;
+  let computedFoodTotal = activeItemsSubtotal;
+  if (shop?.settings?.gst_enabled && totalTaxRate > 0 && !shop?.settings?.inclusive_tax) {
+    calculatedTaxAmount = Math.round((activeItemsSubtotal * (totalTaxRate / 100)) * 100) / 100;
+    computedFoodTotal = Math.round((activeItemsSubtotal + calculatedTaxAmount) * 100) / 100;
+  }
+
+  const backendTotal = Number(order?.total_amount || 0);
+  const effectiveOrderTotal = (backendTotal > 0) ? backendTotal : computedFoodTotal;
+
+  const netPayableBase = effectiveOrderTotal;
 
   const currencySymbol = shop?.settings?.currency || '₹';
-  const grandTotalFormatted = (
-    Number(order?.total_amount || 0) + 
-    Number(order?.total_amount || 0) * 0.02 + 
-    Number(order?.total_amount || 0) * 0.03 + 
-    (Number(order?.total_amount || 0) * 0.03) * 0.18
-  ).toFixed(2);
+
+  const isMasterOnline = (shop?.settings as any)?.online_payments_enabled !== false;
+  let isChannelOnline = true;
+  if (order?.order_type === 'dine_in') isChannelOnline = (shop?.settings as any)?.online_payments_dinein_enabled !== false;
+  else if (order?.order_type === 'takeaway') isChannelOnline = (shop?.settings as any)?.online_payments_takeaway_enabled !== false;
+  else if (order?.order_type === 'delivery') isChannelOnline = (shop?.settings as any)?.online_payments_delivery_enabled !== false;
+
+  const isOnlineFeeApplicable = Boolean(order?.payment_method === 'online' && isMasterOnline && isChannelOnline);
+  const platformFee = isOnlineFeeApplicable ? Number((netPayableBase * 0.02).toFixed(2)) : 0;
+  const pgFee = isOnlineFeeApplicable ? Number((netPayableBase * 0.03).toFixed(2)) : 0;
+  const gstOnFee = isOnlineFeeApplicable ? Number((pgFee * 0.18).toFixed(2)) : 0;
+  const totalPgFee = isOnlineFeeApplicable ? Number((pgFee + gstOnFee).toFixed(2)) : 0;
+  const grandTotal = isOnlineFeeApplicable ? Number((netPayableBase + platformFee + pgFee + gstOnFee).toFixed(2)) : netPayableBase;
+  const grandTotalFormatted = grandTotal.toFixed(2);
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans pb-12 antialiased">
@@ -612,21 +777,39 @@ export function OrderStatusPage() {
         <motion.div 
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className={`p-6 rounded-3xl border ${statusInfo.bgColor} ${statusInfo.borderColor} flex items-center gap-5 relative overflow-hidden`}
+          className={`p-5 sm:p-6 rounded-3xl border ${statusInfo.bgColor} ${statusInfo.borderColor} flex items-center justify-between gap-3 relative overflow-hidden`}
         >
           {/* Ambient Background Glow */}
           <div className="absolute -right-10 -bottom-10 w-32 h-32 rounded-full opacity-10 blur-2xl bg-current pointer-events-none" />
           
-          <div className="w-16 h-16 rounded-2xl bg-white dark:bg-slate-900 flex items-center justify-center shadow-md relative z-10">
-            {statusInfo.icon}
+          <div className="flex items-center gap-4 min-w-0 relative z-10">
+            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-white dark:bg-slate-900 flex items-center justify-center shadow-md relative z-10 shrink-0">
+              {statusInfo.icon}
+            </div>
+            <div className="min-w-0">
+              <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded bg-slate-200/50 dark:bg-slate-800/80 text-slate-650 dark:text-slate-300 inline-block">
+                Live Tracker
+              </span>
+              <h2 className="font-black text-lg sm:text-xl text-slate-800 dark:text-white mt-1 leading-snug">{statusInfo.title}</h2>
+              <p className="text-slate-500 dark:text-slate-400 text-xs sm:text-sm mt-0.5 leading-tight">{statusInfo.desc}</p>
+            </div>
           </div>
-          <div className="relative z-10">
-            <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded bg-slate-200/50 dark:bg-slate-800/80 text-slate-650 dark:text-slate-300">
-              Live Tracker
-            </span>
-            <h2 className="font-black text-xl text-slate-800 dark:text-white mt-1.5">{statusInfo.title}</h2>
-            <p className="text-slate-500 dark:text-slate-400 text-sm mt-0.5 leading-tight">{statusInfo.desc}</p>
-          </div>
+
+          {isDineIn && !isPendingVendor && !isActuallyCancelled && !isCompleted && (
+            <button
+              type="button"
+              onClick={() => {
+                const tableParam = order.table_number ? `?table=${encodeURIComponent(order.table_number)}` : '';
+                navigate(`/shop/${id}${tableParam}`);
+              }}
+              className="relative z-10 shrink-0 px-3 py-2 rounded-xl text-white font-extrabold text-[11px] uppercase tracking-wider shadow-md hover:brightness-110 active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
+              style={{ backgroundColor: primaryColor }}
+              title="Add more items to this order"
+            >
+              <Plus size={13} />
+              <span>Add More</span>
+            </button>
+          )}
         </motion.div>
 
         {/* Serrated Thermal Print Receipt Card */}
@@ -693,7 +876,7 @@ export function OrderStatusPage() {
             </div>
             {order.table_number && (
               <div className="col-span-2">
-                <span className="text-[9px] text-slate-450 block uppercase tracking-wider">Table Number</span>
+                <span className="text-[9px] text-slate-450 block uppercase tracking-wider">{businessCategory.tableOrStallLabel}</span>
                 <span className="font-extrabold text-slate-850 dark:text-slate-200">{order.table_number}</span>
               </div>
             )}
@@ -709,22 +892,42 @@ export function OrderStatusPage() {
 
           {/* Items Summary */}
           <div className="pt-1 space-y-3 border-b border-dashed border-slate-350 pb-4">
-            <p className="text-[9px] font-mono font-bold text-slate-450 uppercase tracking-widest">Ordered Items</p>
-            {(order.items || []).map((it: any) => (
-              <div key={it.id} className="flex justify-between text-xs font-mono">
-                <span className={`flex-1 pr-4 ${it.is_cancelled ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-350'}`}>
-                  {it.name} <strong className="text-slate-900 dark:text-white px-1 bg-slate-200/50 dark:bg-slate-800 rounded">x{it.quantity}</strong>
-                  {it.is_cancelled && (
-                    <span className="ml-1.5 text-[9px] font-bold text-rose-500 uppercase not-italic no-underline inline-block">
-                      (Cancelled)
-                    </span>
-                  )}
-                </span>
-                <span className={`font-black ${it.is_cancelled ? 'text-slate-400 line-through' : 'text-slate-900 dark:text-white'}`}>
-                  {shop?.settings?.currency || '₹'}{(it.price * it.quantity).toFixed(2)}
-                </span>
-              </div>
-            ))}
+            <div className="flex justify-between items-center">
+              <p className="text-[9px] font-mono font-bold text-slate-450 uppercase tracking-widest">Ordered Items</p>
+              {isDineIn && !isPendingVendor && !isActuallyCancelled && !isCompleted && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const tableParam = order.table_number ? `?table=${encodeURIComponent(order.table_number)}` : '';
+                    navigate(`/shop/${id}${tableParam}`);
+                  }}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 text-orange-600 dark:text-orange-400 font-extrabold text-[10px] uppercase tracking-wider transition-all cursor-pointer active:scale-95 border border-orange-500/20"
+                >
+                  <Plus size={11} />
+                  <span>Add More</span>
+                </button>
+              )}
+            </div>
+            {(order.items || []).map((it: any) => {
+              const isReplaced = it.is_cancelled && String(it.cancellation_reason || '').startsWith('Replaced with');
+              return (
+                <div key={it.id} className="flex justify-between text-xs font-mono">
+                  <span className={`flex-1 pr-4 ${it.is_cancelled ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-350'}`}>
+                    {it.name} <strong className="text-slate-900 dark:text-white px-1 bg-slate-200/50 dark:bg-slate-800 rounded">x{it.quantity}</strong>
+                    {it.is_cancelled && (
+                      <span className={`ml-1.5 text-[9px] font-bold uppercase not-italic no-underline inline-block ${
+                        isReplaced ? 'text-amber-600 dark:text-amber-400' : 'text-rose-500'
+                      }`}>
+                        ({isReplaced ? 'Replaced' : 'Cancelled'})
+                      </span>
+                    )}
+                  </span>
+                  <span className={`font-black ${it.is_cancelled ? 'text-slate-400 line-through' : 'text-slate-900 dark:text-white'}`}>
+                    {shop?.settings?.currency || '₹'}{(it.price * it.quantity).toFixed(2)}
+                  </span>
+                </div>
+              );
+            })}
           </div>
 
           {/* Order Bill Breakdown */}
@@ -754,37 +957,37 @@ export function OrderStatusPage() {
               return null;
             })()}
             
-            {order.payment_method === 'online' && (() => {
-              const itemsSub = (order.items || []).filter((it: any) => !it.is_cancelled).reduce((acc: number, it: any) => acc + (Number(it.price) * Number(it.quantity)), 0);
-              const baseAmt = itemsSub > 0 ? itemsSub : Number(order.total_amount || 0);
-              const pFee = Number((baseAmt * 0.02).toFixed(2));
-              const pgFee = Number((baseAmt * 0.03).toFixed(2));
-              const gstFee = Number((pgFee * 0.18).toFixed(2));
-              const totalPgFee = Number((pgFee + gstFee).toFixed(2));
-              return (
-                <>
-                  <div className="flex justify-between text-slate-700 dark:text-slate-350">
-                    <span>Platform fee</span>
-                    <span className="font-black text-slate-900 dark:text-white">
-                      {shop?.settings?.currency || '₹'}{pFee.toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-slate-700 dark:text-slate-350">
-                    <span>Payment gateway fee</span>
-                    <span className="font-black text-slate-900 dark:text-white">
-                      {shop?.settings?.currency || '₹'}{totalPgFee.toFixed(2)}
-                    </span>
-                  </div>
-                </>
-              );
-            })()}
-
-            {Number(order.total_amount) < order.items.reduce((acc: number, it: any) => acc + (it.price * it.quantity), 0) && (
-              <div className="flex justify-between font-bold text-emerald-600 dark:text-emerald-400">
-                <span>Auto Discount</span>
-                <span>-{shop?.settings?.currency || '₹'}{(order.items.reduce((acc: number, it: any) => acc + (it.price * it.quantity), 0) - Number(order.total_amount)).toFixed(2)}</span>
-              </div>
+            {isOnlineFeeApplicable && (
+              <>
+                <div className="flex justify-between text-slate-700 dark:text-slate-350">
+                  <span>Platform fee</span>
+                  <span className="font-black text-slate-900 dark:text-white">
+                    {currencySymbol}{platformFee.toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-slate-700 dark:text-slate-350">
+                  <span>Payment gateway fee</span>
+                  <span className="font-black text-slate-900 dark:text-white">
+                    {currencySymbol}{totalPgFee.toFixed(2)}
+                  </span>
+                </div>
+              </>
             )}
+
+            {(() => {
+              const discountAmount = (backendTotal > 0 && computedFoodTotal > backendTotal)
+                ? Math.max(0, computedFoodTotal - backendTotal)
+                : 0;
+              if (discountAmount > 0.01) {
+                return (
+                  <div className="flex justify-between font-bold text-emerald-600 dark:text-emerald-400">
+                    <span>Discount</span>
+                    <span>-{shop?.settings?.currency || '₹'}{discountAmount.toFixed(2)}</span>
+                  </div>
+                );
+              }
+              return null;
+            })()}
 
             {/* GST Tax Breakdown */}
             {shop?.settings?.gst_enabled && (() => {
@@ -793,23 +996,23 @@ export function OrderStatusPage() {
               const totalTaxRate = cgstRate + sgstRate;
               if (totalTaxRate <= 0) return null;
 
-              const items = (order.items || []).filter((it: any) => !it.is_cancelled);
-              const itemsSubtotal = items.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
-              const baseFoodAmount = itemsSubtotal > 0 ? itemsSubtotal : Number(order.total_amount || 0);
+              const itemsSubtotal = (order.items || []).filter((it: any) => !it.is_cancelled).reduce((acc: number, it: any) => acc + (Number(it.price) * Number(it.quantity)), 0);
+              if (isActuallyCancelled || itemsSubtotal <= 0) return null;
 
-              let taxable = baseFoodAmount;
+              let taxable = itemsSubtotal;
               let cgst = 0;
               let sgst = 0;
               if (shop.settings.inclusive_tax) {
-                taxable = Math.round((baseFoodAmount / (1 + totalTaxRate / 100)) * 100) / 100;
-                const totalTax = Math.round((baseFoodAmount - taxable) * 100) / 100;
+                taxable = Math.round((itemsSubtotal / (1 + totalTaxRate / 100)) * 100) / 100;
+                const totalTax = Math.round((itemsSubtotal - taxable) * 100) / 100;
                 cgst = Math.round((totalTax * (cgstRate / totalTaxRate)) * 100) / 100;
                 sgst = Math.round((totalTax - cgst) * 100) / 100;
               } else {
-                // Exclusive mode: items subtotal is taxable turnover
-                taxable = baseFoodAmount;
-                cgst = Math.round((taxable * (cgstRate / 100)) * 100) / 100;
-                sgst = Math.round((taxable * (sgstRate / 100)) * 100) / 100;
+                // Exclusive mode: itemsSubtotal is the taxable turnover
+                taxable = itemsSubtotal;
+                const totalTax = Math.round((taxable * (totalTaxRate / 100)) * 100) / 100;
+                cgst = Math.round((totalTax * (cgstRate / totalTaxRate)) * 100) / 100;
+                sgst = Math.round((totalTax - cgst) * 100) / 100;
               }
               return (
                 <div className="pt-2 border-t border-dashed border-slate-200 dark:border-slate-800 space-y-1">
@@ -842,7 +1045,9 @@ export function OrderStatusPage() {
             <div className="text-right">
               <span className="text-[9px] text-slate-450 block uppercase tracking-wider">Payment Status</span>
               <span className={`inline-block px-2.5 py-0.5 rounded-sm text-[8px] font-black uppercase ${
-                order.payment_status === 'paid' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-amber-100 text-amber-850 border border-amber-200'
+                order.payment_status === 'paid' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 
+                order.payment_status === 'refunded' ? 'bg-purple-100 text-purple-800 border border-purple-200' :
+                'bg-amber-100 text-amber-850 border border-amber-200'
               }`}>
                 {order.payment_status}
               </span>
@@ -853,36 +1058,7 @@ export function OrderStatusPage() {
           <div className="flex justify-between items-center py-2">
             <span className="font-mono font-black text-slate-850 dark:text-white text-sm uppercase">Total Payable</span>
             <span className="font-black text-2xl tracking-tight text-orange-600">
-              {(() => {
-                const isGstEnabled = Boolean(shop?.settings?.gst_enabled);
-                const cgstRate = Number(shop?.settings?.cgst_rate || 0);
-                const sgstRate = Number(shop?.settings?.sgst_rate || 0);
-                const totalTaxRate = cgstRate + sgstRate;
-                const isExclusive = isGstEnabled && !shop?.settings?.inclusive_tax;
-
-                const items = (order.items || []).filter((it: any) => !it.is_cancelled);
-                const itemsSubtotal = items.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
-                let baseOrderAmount = itemsSubtotal > 0 ? itemsSubtotal : Number(order.total_amount || 0);
-
-                if (isExclusive && totalTaxRate > 0) {
-                  const tax = Math.round((itemsSubtotal * (totalTaxRate / 100)) * 100) / 100;
-                  baseOrderAmount = Math.round((itemsSubtotal + tax) * 100) / 100;
-                }
-
-                if (order.order_type === 'delivery' && Number(order.total_amount) > itemsSubtotal) {
-                  baseOrderAmount += (Number(order.total_amount) - itemsSubtotal);
-                }
-
-                let finalPayable = baseOrderAmount;
-                if (order.payment_method === 'online') {
-                  const pFee = Number((baseOrderAmount * 0.02).toFixed(2));
-                  const pgFee = Number((baseAmt => baseAmt * 0.03)(baseOrderAmount).toFixed(2));
-                  const gstFee = Number((pgFee * 0.18).toFixed(2));
-                  finalPayable = Number((baseOrderAmount + pFee + pgFee + gstFee).toFixed(2));
-                }
-
-                return `${shop?.settings?.currency || '₹'}${finalPayable.toFixed(2)}`;
-              })()}
+              {isActuallyCancelled ? `${currencySymbol}0.00` : `${currencySymbol}${grandTotalFormatted}`}
             </span>
           </div>
 
@@ -966,16 +1142,14 @@ export function OrderStatusPage() {
             <div>
               <p className="font-bold text-blue-900 dark:text-blue-200">Awaiting Merchant Acceptance</p>
               <p className="text-[11px] text-blue-700 dark:text-blue-400 mt-0.5">
-                {isDineIn
-                  ? 'The restaurant is reviewing your order. You can complete payment once your order is accepted.'
-                  : 'The restaurant is reviewing your order. Please complete your payment below to proceed.'}
+                The restaurant is reviewing your order. Payment options will be activated once your order is accepted.
               </p>
             </div>
           </div>
         )}
 
-        {/* Payment Locked Notice for Dine-In pending acceptance */}
-        {isUnpaid && !isCancelled && isPaymentDisabledForDineIn && (
+        {/* Payment Locked Notice for pending acceptance */}
+        {isUnpaid && !isCancelled && isPaymentDisabledUntilAccepted && (
           <div className="p-4 sm:p-5 rounded-3xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 flex items-center gap-3.5">
             <div className="w-10 h-10 rounded-2xl bg-slate-200/80 dark:bg-slate-800 flex items-center justify-center text-slate-500 shrink-0">
               <Lock size={18} />
@@ -985,7 +1159,7 @@ export function OrderStatusPage() {
                 Payment Available After Acceptance
               </h3>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5 leading-snug">
-                Since you are dining in, payment options will be activated once the restaurant accepts your order.
+                Payment options will be unlocked automatically as soon as the merchant accepts your order.
               </p>
             </div>
           </div>
@@ -1025,7 +1199,13 @@ export function OrderStatusPage() {
             </div>
 
             {/* Online payment via Razorpay / Cards / UPI / NetBanking */}
-            {shop?.settings?.online_payments_enabled !== false && (
+            {(
+              shop?.settings?.online_payments_enabled !== false && (
+                order.order_type === 'dine_in' ? shop?.settings?.online_payments_dinein_enabled !== false :
+                order.order_type === 'takeaway' ? shop?.settings?.online_payments_takeaway_enabled !== false :
+                order.order_type === 'delivery' ? shop?.settings?.online_payments_delivery_enabled !== false : true
+              )
+            ) && (
               <div className="space-y-1.5">
                 <motion.button
                   whileHover={{ scale: 1.01 }}
@@ -1088,18 +1268,75 @@ export function OrderStatusPage() {
           </div>
         )}
 
+        {/* Cancelled Items Refund Notice (Bottom Banner) */}
+        {(() => {
+          // Pure cancelled items (exclude replaced items)
+          const pureCancelledItems = (order.items || []).filter(
+            (it: any) => it.is_cancelled && !String(it.cancellation_reason || '').startsWith('Replaced with')
+          );
+          const pureCancelledTotal = pureCancelledItems.reduce(
+            (acc: number, it: any) => acc + (Number(it.price || 0) * Number(it.quantity || 1)), 0
+          );
+          const isPaid = ['paid', 'refunded', 'partially_refunded'].includes(String(order?.payment_status || '').toLowerCase());
+
+          if (pureCancelledTotal <= 0.01) return null;
+
+          return (
+            <div className="p-4 rounded-2xl bg-rose-50/90 dark:bg-rose-950/30 border border-rose-200/90 dark:border-rose-900/50 text-rose-900 dark:text-rose-200 text-xs font-medium flex items-start gap-3 shadow-xs">
+              <div className="w-8 h-8 rounded-xl bg-rose-100 dark:bg-rose-900/60 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0 mt-0.5">
+                <Info size={18} />
+              </div>
+              <div className="space-y-0.5 text-left">
+                <p className="font-extrabold text-[11px] uppercase tracking-wider text-rose-700 dark:text-rose-400">
+                  Refund Notice
+                </p>
+                <p className="text-[11px] leading-relaxed text-slate-700 dark:text-slate-300">
+                  {isPaid
+                    ? `The amount for cancelled items (${shop?.settings?.currency || '₹'}${pureCancelledTotal.toFixed(2)}) will be refunded to your account within 5–7 working days.`
+                    : `The amount for cancelled items (${shop?.settings?.currency || '₹'}${pureCancelledTotal.toFixed(2)}) has been deducted from your payable total.`
+                  }
+                </p>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Item Replaced - Difference Due / Pending Banner */}
+        {isUnpaid && !isCancelled && (order.items || []).some((it: any) => String(it.cancellation_reason || '').startsWith('Replaced with')) && (
+          <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs font-medium flex items-start gap-3 shadow-xs">
+            <div className="w-8 h-8 rounded-xl bg-amber-100 dark:bg-amber-900/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
+              <CreditCard size={18} />
+            </div>
+            <div className="space-y-0.5 text-left">
+              <p className="font-extrabold text-[11px] uppercase tracking-wider text-amber-800 dark:text-amber-300">
+                Item Replaced — Payment Difference Due
+              </p>
+              <p className="text-[11px] leading-relaxed text-slate-700 dark:text-slate-300">
+                An item was replaced with a higher-priced item. Please pay the remaining balance using the button below.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Bottom Spacing to offset fixed bottom dock */}
         <div className="h-20 print:hidden" />
       </main>
 
       {/* Floating Premium Bottom Actions Dock */}
-      <div className="fixed bottom-4 left-4 right-4 sm:bottom-6 sm:left-1/2 sm:-translate-x-1/2 sm:w-[380px] z-40 print:hidden">
-        <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl rounded-[20px] shadow-[0_10px_35px_rgba(0,0,0,0.12)] border border-slate-100 dark:border-slate-800 p-1.5 flex gap-2">
-          {canPayNow && shop?.settings?.online_payments_enabled !== false ? (
+      <div className="fixed bottom-4 left-4 right-4 sm:bottom-6 sm:left-1/2 sm:-translate-x-1/2 sm:w-[420px] z-40 print:hidden">
+        <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl rounded-[20px] shadow-[0_10px_35px_rgba(0,0,0,0.12)] border border-slate-100 dark:border-slate-800 p-1.5 flex items-center gap-1.5">
+
+          {canPayNow && (
+            shop?.settings?.online_payments_enabled !== false && (
+              order.order_type === 'dine_in' ? shop?.settings?.online_payments_dinein_enabled !== false :
+              order.order_type === 'takeaway' ? shop?.settings?.online_payments_takeaway_enabled !== false :
+              order.order_type === 'delivery' ? shop?.settings?.online_payments_delivery_enabled !== false : true
+            )
+          ) ? (
             <button
               onClick={handlePayOnline}
               disabled={isRedirecting}
-              className="flex-1 py-2.5 text-white rounded-xl font-black text-[11px] uppercase tracking-wider active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md bg-gradient-to-r from-orange-500 to-amber-500 hover:brightness-110 disabled:opacity-50"
+              className="flex-1 py-2.5 text-white rounded-xl font-black text-[10px] uppercase tracking-wider active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md bg-gradient-to-r from-orange-500 to-amber-500 hover:brightness-110 disabled:opacity-50"
             >
               {isRedirecting ? (
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
@@ -1110,7 +1347,7 @@ export function OrderStatusPage() {
                 </>
               )}
             </button>
-          ) : isPaymentDisabledForDineIn ? (
+          ) : isPaymentDisabledUntilAccepted ? (
             <div className="flex-1 py-2 text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 rounded-lg font-bold text-[10px] uppercase tracking-wider flex items-center justify-center gap-1.5 text-center">
               <Clock size={12} className="text-blue-500 shrink-0 animate-spin" />
               <span>Awaiting Acceptance</span>
@@ -1126,7 +1363,7 @@ export function OrderStatusPage() {
           )}
           <button
             onClick={() => setIsReceiptSheetOpen(true)}
-            className="flex-1 py-2 text-white rounded-lg font-black text-[10px] uppercase tracking-wider active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
+            className="py-2.5 px-3.5 text-white rounded-xl font-black text-[10px] uppercase tracking-wider active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm shrink-0"
             style={{ backgroundColor: primaryColor }}
           >
             <Receipt size={13} />

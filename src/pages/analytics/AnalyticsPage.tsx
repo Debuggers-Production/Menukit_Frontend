@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
 import { 
-  QrCode, Eye, Search, CalendarDays, Filter, Users, Lock, ChevronRight,
+  QrCode, Eye, Search, CalendarDays, Filter, Users, Lock, ChevronRight, ChevronLeft,
   TrendingUp, TrendingDown, DollarSign, Receipt, ShoppingBag, Trophy, 
   Sparkles, Download, ExternalLink, ArrowUpRight, Wallet, FileText, Calendar, CheckCircle2, CreditCard, Banknote
 } from 'lucide-react';
@@ -12,14 +13,18 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { useHeaderStore } from '@/store/useHeaderStore';
 import { HeaderActions } from '@/components/HeaderActions';
 import { DatePicker } from '@/components/ui/DatePicker';
+import { Modal } from '@/components/ui/Modal';
 import { useShopStore } from '@/store/shopStore';
+import { getBusinessCategory } from '@/config/businessCategories';
 import { membershipService, RepeatedCustomer } from '@/services/memberships';
+import { InfiniteScrollTrigger } from '@/components/ui/InfiniteScrollTrigger';
 
 import { Button } from '@/components/ui/Button';
 
 export function AnalyticsPage() {
   const navigate = useNavigate();
   const { shop } = useShopStore();
+  const businessCategory = getBusinessCategory(shop?.category);
   const currencySymbol = shop?.currency_symbol || '₹';
 
   const [activeTab, setActiveTab] = useState<'revenue' | 'scans' | 'gst'>('revenue');
@@ -28,6 +33,13 @@ export function AnalyticsPage() {
   const [gstData, setGstData] = useState<any>(null);
   const [isGstLoading, setIsGstLoading] = useState(false);
   const [gstSearch, setGstSearch] = useState('');
+  const [debouncedGstSearch, setDebouncedGstSearch] = useState('');
+  const [gstPage, setGstPage] = useState(1);
+  const [gstInvoices, setGstInvoices] = useState<any[]>([]);
+  const [gstHasMore, setGstHasMore] = useState(false);
+  const [isLoadingMoreGst, setIsLoadingMoreGst] = useState(false);
+  const GST_PAGE_SIZE = 20;
+
   const [repeatedCustomers, setRepeatedCustomers] = useState<RepeatedCustomer[]>([]);
   const [subscriptionInfo, setSubscriptionInfo] = useState<{is_active: boolean, is_all_access: boolean, active_modules: string[], is_expired?: boolean} | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -43,6 +55,7 @@ export function AnalyticsPage() {
 
   // Payment Mode Filter State: 'all' | 'online' | 'offline'
   const [paymentModeFilter, setPaymentModeFilter] = useState<'all' | 'online' | 'offline'>('all');
+  const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
 
   const [invoiceSearch, setInvoiceSearch] = useState('');
   
@@ -52,6 +65,14 @@ export function AnalyticsPage() {
   const [categorySearch, setCategorySearch] = useState('');
   const [termSearch, setTermSearch] = useState('');
 
+  // Debounce GST search to trigger backend query
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedGstSearch(gstSearch);
+    }, 350);
+    return () => clearTimeout(handler);
+  }, [gstSearch]);
+
   const getRevenueApiUrl = () => {
     if (dateFilter === 'custom' && customStart && customEnd) {
       return `/analytics/revenue?start_date=${customStart}&end_date=${customEnd}`;
@@ -59,94 +80,122 @@ export function AnalyticsPage() {
     return `/analytics/revenue?days=${typeof dateFilter === 'number' ? dateFilter : 30}`;
   };
 
-  const getGstApiUrl = () => {
+  const getGstApiUrl = (page = 1, limit = GST_PAGE_SIZE, search = debouncedGstSearch) => {
+    const params = new URLSearchParams();
     if (dateFilter === 'custom' && customStart && customEnd) {
-      return `/analytics/gst-report?start_date=${customStart}&end_date=${customEnd}`;
+      params.append('start_date', customStart);
+      params.append('end_date', customEnd);
+    } else {
+      params.append('days', String(typeof dateFilter === 'number' ? dateFilter : 30));
     }
-    return `/analytics/gst-report?days=${typeof dateFilter === 'number' ? dateFilter : 30}`;
+    if (search.trim()) {
+      params.append('search', search.trim());
+    }
+    params.append('page', String(page));
+    params.append('limit', String(limit));
+    return `/analytics/gst-report?${params.toString()}`;
   };
 
-  const handleExportGstCsv = () => {
-    if (!gstData || !gstData.invoices || gstData.invoices.length === 0) {
-      toast.error("No tax invoices found for this timeframe.");
-      return;
+  const handleExportGstCsv = async () => {
+    try {
+      toast.loading("Exporting complete GSTR report...", { id: 'csv-export' });
+      const exportUrl = getGstApiUrl(1, 10000, debouncedGstSearch);
+      const res = await api.get(exportUrl);
+      const fullData = res.data;
+      if (!fullData || !fullData.invoices || fullData.invoices.length === 0) {
+        toast.error("No tax invoices found to export.", { id: 'csv-export' });
+        return;
+      }
+      const headers = [
+        "Invoice Number",
+        "Order ID",
+        "Invoice Date",
+        "Customer Name",
+        "Customer Mobile",
+        "Payment Mode",
+        "Payment Status",
+        "Taxable Turnover (INR)",
+        "CGST Rate (%)",
+        "CGST Amount (INR)",
+        "SGST Rate (%)",
+        "SGST Amount (INR)",
+        "Total GST (INR)",
+        "Gross Total (INR)"
+      ];
+
+      const rows = fullData.invoices.map((inv: any) => [
+        `"${inv.invoice_no || inv.bill_number || ''}"`,
+        `"${inv.order_id || ''}"`,
+        `"${inv.date || (inv.created_at ? new Date(inv.created_at).toLocaleString() : '')}"`,
+        `"${(inv.customer_name || 'Walk-in').replace(/"/g, '""')}"`,
+        `"${inv.customer_phone || ''}"`,
+        `"${inv.payment_method || ''}"`,
+        `"${inv.payment_status || ''}"`,
+        Number(inv.taxable_amount ?? inv.taxable_value ?? 0).toFixed(2),
+        Number(inv.cgst_rate || 0),
+        Number(inv.cgst_amount || 0).toFixed(2),
+        Number(inv.sgst_rate || 0),
+        Number(inv.sgst_amount || 0).toFixed(2),
+        Number(inv.total_tax_amount ?? inv.total_tax ?? 0).toFixed(2),
+        Number(inv.gross_amount ?? inv.gross_total ?? 0).toFixed(2)
+      ]);
+
+      const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `GSTR_Sales_Register_${typeof dateFilter === 'number' ? `${dateFilter}_days` : 'custom'}_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success("GSTR CSV exported successfully!", { id: 'csv-export' });
+    } catch (e) {
+      toast.error("Failed to export GSTR CSV", { id: 'csv-export' });
     }
-    const headers = [
-      "Invoice Number",
-      "Order ID",
-      "Invoice Date",
-      "Customer Name",
-      "Customer Mobile",
-      "Payment Mode",
-      "Payment Status",
-      "Taxable Turnover (INR)",
-      "CGST Rate (%)",
-      "CGST Amount (INR)",
-      "SGST Rate (%)",
-      "SGST Amount (INR)",
-      "Total GST (INR)",
-      "Gross Total (INR)"
-    ];
-
-    const rows = gstData.invoices.map((inv: any) => [
-      `"${inv.bill_number || ''}"`,
-      `"${inv.order_id || ''}"`,
-      `"${new Date(inv.created_at).toLocaleString()}"`,
-      `"${(inv.customer_name || 'Walk-in').replace(/"/g, '""')}"`,
-      `"${inv.customer_phone || ''}"`,
-      `"${inv.payment_method || ''}"`,
-      `"${inv.payment_status || ''}"`,
-      Number(inv.taxable_value || 0).toFixed(2),
-      Number(inv.cgst_rate || 0),
-      Number(inv.cgst_amount || 0).toFixed(2),
-      Number(inv.sgst_rate || 0),
-      Number(inv.sgst_amount || 0).toFixed(2),
-      Number(inv.total_tax || 0).toFixed(2),
-      Number(inv.gross_total || 0).toFixed(2)
-    ]);
-
-    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `GSTR_Sales_Register_${typeof dateFilter === 'number' ? `${dateFilter}_days` : 'custom'}_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    toast.success("GSTR CSV exported successfully!");
   };
-
-  const filteredGstInvoices = useMemo(() => {
-    if (!gstData?.invoices) return [];
-    if (!gstSearch.trim()) return gstData.invoices;
-    const query = gstSearch.toLowerCase().trim();
-    return gstData.invoices.filter((inv: any) =>
-      inv.bill_number?.toLowerCase().includes(query) ||
-      inv.order_id?.toLowerCase().includes(query) ||
-      inv.customer_name?.toLowerCase().includes(query) ||
-      inv.customer_phone?.includes(query)
-    );
-  }, [gstData?.invoices, gstSearch]);
 
   const { setTitle } = useHeaderStore();
 
   useEffect(() => {
-    setTitle('Product Analytics & Sales', 'Real-time order revenue, item popularity ranking, payment gateway charges, and invoice records.');
+    setTitle('Product Analytics & Sales', 'Track revenue, popularity ranking, and tax invoices.');
   }, [setTitle]);
 
-  // Fetch GST report whenever tab is 'gst' or date filter changes
+  // Fetch GST report whenever tab is 'gst', date filter, or debounced search changes
   useEffect(() => {
     if (activeTab === 'gst') {
+      if (dateFilter === 'custom' && (!customStart || !customEnd)) return;
       setIsGstLoading(true);
-      api.get(getGstApiUrl())
-        .then(res => setGstData(res.data))
+      setGstPage(1);
+      api.get(getGstApiUrl(1, GST_PAGE_SIZE, debouncedGstSearch))
+        .then(res => {
+          setGstData(res.data);
+          setGstInvoices(res.data?.invoices || []);
+          setGstHasMore(Boolean(res.data?.has_more));
+        })
         .catch(err => {
           console.error("Failed to fetch GST report", err);
           toast.error("Failed to load GST tax reports");
         })
         .finally(() => setIsGstLoading(false));
     }
-  }, [activeTab, dateFilter, customStart, customEnd]);
+  }, [activeTab, dateFilter, customStart, customEnd, debouncedGstSearch]);
+
+  const handleLoadMoreGst = useCallback(async () => {
+    if (!gstHasMore || isLoadingMoreGst || isGstLoading) return;
+    setIsLoadingMoreGst(true);
+    const nextPage = gstPage + 1;
+    try {
+      const res = await api.get(getGstApiUrl(nextPage, GST_PAGE_SIZE, debouncedGstSearch));
+      const newInvoices = res.data?.invoices || [];
+      setGstInvoices(prev => [...prev, ...newInvoices]);
+      setGstPage(nextPage);
+      setGstHasMore(Boolean(res.data?.has_more));
+    } catch (err) {
+      console.error("Failed to load more GST invoices", err);
+    } finally {
+      setIsLoadingMoreGst(false);
+    }
+  }, [gstHasMore, isLoadingMoreGst, isGstLoading, gstPage, debouncedGstSearch, dateFilter, customStart, customEnd]);
 
   // Dedicated fetch for Customer Search Data
   useEffect(() => {
@@ -380,8 +429,8 @@ export function AnalyticsPage() {
         </div>
       )}
 
-      {/* Date Range Selector with Custom Date Option */}
-      <div className="relative z-30 flex flex-col gap-3 bg-white dark:bg-slate-900 p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
+      {/* Date Range & Payment Mode Selector - Desktop View */}
+      <div className="hidden sm:flex relative z-30 flex-col gap-3 bg-white dark:bg-slate-900 p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
           <div className="flex items-center gap-2">
             <CalendarDays size={18} className="text-primary shrink-0" />
@@ -502,6 +551,183 @@ export function AnalyticsPage() {
         </div>
       </div>
 
+      {/* Mobile Active Filter Bar */}
+      <div className="sm:hidden flex items-center justify-between bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
+        <div className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300 min-w-0">
+          <CalendarDays size={14} className="text-primary shrink-0" />
+          <span className="truncate">
+            {dateFilter === 'custom' 
+              ? `${customStart || 'Start'} → ${customEnd || 'End'}` 
+              : `${dateFilter} Days`}
+            {paymentModeFilter !== 'all' && ` • ${paymentModeFilter === 'online' ? 'Online' : 'Cash'}`}
+          </span>
+        </div>
+        <button
+          onClick={() => setIsMobileFilterOpen(true)}
+          className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline px-2.5 py-1 rounded-lg bg-primary/10 shrink-0 cursor-pointer"
+        >
+          <Filter size={12} />
+          <span>Filters</span>
+        </button>
+      </div>
+
+      {/* Mobile Floating Filter Action Button (FAB - Icon Only with Active Indicator Dot) */}
+      {!isMobileFilterOpen && typeof document !== 'undefined' && createPortal(
+        <button
+          onClick={() => setIsMobileFilterOpen(true)}
+          className="fixed bottom-24 right-5 z-50 sm:hidden w-14 h-14 rounded-full bg-primary hover:bg-primary-600 active:scale-95 shadow-2xl flex items-center justify-center text-white transition-all cursor-pointer"
+          aria-label="Open Filters"
+        >
+          <Filter size={22} />
+          {(dateFilter === 'custom' || dateFilter !== 30 || paymentModeFilter !== 'all') && (
+            <span className="absolute top-1 right-1 flex h-3.5 w-3.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500 border-2 border-white dark:border-slate-900" />
+            </span>
+          )}
+        </button>,
+        document.body
+      )}
+
+      {/* Mobile Filters Modal */}
+      <Modal
+        isOpen={isMobileFilterOpen}
+        onClose={() => setIsMobileFilterOpen(false)}
+        title="Analytics Filters"
+        description="Filter report timeframe and payment modes"
+        footer={
+          <div className="flex items-center gap-2 w-full">
+            <Button
+              variant="outline"
+              className="flex-1 font-bold border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200"
+              onClick={() => {
+                setDateFilter(30);
+                setCustomStart('');
+                setCustomEnd('');
+                setPaymentModeFilter('all');
+                toast.success('Filters reset to default');
+                setIsMobileFilterOpen(false);
+              }}
+            >
+              Clear Filter
+            </Button>
+            <Button
+              className="flex-1 font-bold"
+              onClick={() => setIsMobileFilterOpen(false)}
+            >
+              Apply Filters
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-4 p-1">
+          {/* Timeframe selector */}
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+              <CalendarDays size={15} className="text-primary" /> Timeframe
+            </label>
+            <div className="grid grid-cols-2 gap-1.5">
+              {[
+                { days: 7, label: '7 Days' },
+                { days: 30, label: '30 Days' },
+                { days: 90, label: '90 Days' },
+              ].map(t => (
+                <button
+                  key={t.days}
+                  onClick={() => setDateFilter(t.days)}
+                  className={`h-10 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center cursor-pointer ${
+                    dateFilter === t.days 
+                      ? 'bg-primary text-white shadow-xs' 
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+              <button
+                onClick={() => setDateFilter('custom')}
+                className={`h-10 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  dateFilter === 'custom' 
+                    ? 'bg-primary text-white shadow-xs' 
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                <Calendar size={13} />
+                <span>Custom</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Custom Date Pickers */}
+          {dateFilter === 'custom' && (
+            <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl space-y-2.5 border border-slate-200/80 dark:border-slate-800 animate-fade-in">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-slate-500 text-xs w-12 shrink-0">From:</span>
+                <DatePicker
+                  value={customStart}
+                  maxDate={customEnd || undefined}
+                  onChange={(d) => {
+                    setCustomStart(d);
+                    if (customEnd && d > customEnd) setCustomEnd(d);
+                  }}
+                  placeholder="Start Date"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-slate-500 text-xs w-12 shrink-0">To:</span>
+                <DatePicker
+                  value={customEnd}
+                  minDate={customStart || undefined}
+                  onChange={(d) => setCustomEnd(d)}
+                  placeholder="End Date"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Payment Mode Selector */}
+          <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+              <Filter size={15} className="text-primary" /> Payment Mode
+            </label>
+            <div className="grid grid-cols-3 gap-1.5">
+              <button
+                onClick={() => setPaymentModeFilter('all')}
+                className={`h-10 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center cursor-pointer ${
+                  paymentModeFilter === 'all'
+                    ? 'bg-slate-900 text-white shadow-xs dark:bg-slate-100 dark:text-slate-900'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                All
+              </button>
+              <button
+                onClick={() => setPaymentModeFilter('online')}
+                className={`h-10 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                  paymentModeFilter === 'online'
+                    ? 'bg-purple-600 text-white shadow-xs'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                <CreditCard size={13} />
+                <span>Online</span>
+              </button>
+              <button
+                onClick={() => setPaymentModeFilter('offline')}
+                className={`h-10 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                  paymentModeFilter === 'offline'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                <Banknote size={13} />
+                <span>Cash</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </Modal>
+
       {/* TAB 1: REVENUE & ORDER ANALYTICS */}
       {activeTab === 'revenue' && (
         <div className="space-y-5 sm:space-y-6 animate-fade-in">
@@ -563,7 +789,7 @@ export function AnalyticsPage() {
               <CardContent className="p-4 sm:p-5">
                 <div className="flex justify-between items-start gap-2">
                   <div className="min-w-0 flex-1">
-                    <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider mb-0.5">Top Revenue Food</p>
+                    <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider mb-0.5">Top Revenue {businessCategory.isFood ? 'Food' : 'Product'}</p>
                     <h3 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate">
                       {revenueData?.highest_revenue_food?.name || 'No Sales Yet'}
                     </h3>
@@ -658,7 +884,7 @@ export function AnalyticsPage() {
               <CardHeader className="flex flex-col gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 shrink-0">
                 <div className="flex flex-row items-center justify-between">
                   <CardTitle className="text-sm font-bold flex items-center gap-2">
-                    <Trophy size={16} className="text-amber-500 shrink-0" /> Top Ordered Dishes
+                    <Trophy size={16} className="text-amber-500 shrink-0" /> Top Ordered {businessCategory.isFood ? 'Dishes' : 'Products'}
                   </CardTitle>
                   <span className="text-[11px] font-bold text-slate-400">Total Units</span>
                 </div>
@@ -666,7 +892,7 @@ export function AnalyticsPage() {
                   <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     type="text"
-                    placeholder="Search dishes..."
+                    placeholder={businessCategory.isFood ? "Search dishes..." : "Search items..."}
                     value={dishSearch}
                     onChange={(e) => setDishSearch(e.target.value)}
                     className="w-full h-7 pl-7 pr-3 text-[11px] rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-1 focus:ring-amber-500/50"
@@ -710,7 +936,7 @@ export function AnalyticsPage() {
               <CardHeader className="flex flex-col gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 shrink-0">
                 <div className="flex flex-row items-center justify-between">
                   <CardTitle className="text-sm font-bold flex items-center gap-2">
-                    <Banknote size={16} className="text-emerald-500 shrink-0" /> Top Revenue Food Items
+                    <Banknote size={16} className="text-emerald-500 shrink-0" /> Top Revenue {businessCategory.isFood ? 'Food Items' : 'Products'}
                   </CardTitle>
                   <span className="text-[11px] font-bold text-slate-400">Total Revenue</span>
                 </div>
@@ -994,7 +1220,7 @@ export function AnalyticsPage() {
       {activeTab === 'gst' && (
         <div className="space-y-5 sm:space-y-6 animate-fade-in">
           {/* Header Action Bar for GST */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-gradient-to-r from-orange-50 via-amber-50 to-white dark:from-slate-850 dark:to-slate-900 p-4 sm:p-5 rounded-2xl border border-orange-200/70 dark:border-slate-800 shadow-xs">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3.5 bg-gradient-to-r from-orange-50 via-amber-50 to-white dark:from-slate-850 dark:to-slate-900 p-4 sm:p-5 rounded-2xl border border-orange-200/70 dark:border-slate-800 shadow-xs">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <div className="p-2 rounded-xl bg-orange-500/10 text-orange-600 dark:text-orange-400 shrink-0">
@@ -1014,63 +1240,9 @@ export function AnalyticsPage() {
             <Button
               onClick={handleExportGstCsv}
               disabled={isGstLoading || !gstData?.invoices?.length}
-              className="bg-primary hover:bg-primary/90 text-white font-extrabold text-xs uppercase tracking-wider px-4 py-2.5 rounded-xl shadow-md flex items-center gap-2 cursor-pointer shrink-0 active:scale-95 transition-all disabled:opacity-50"
+              className="w-full sm:w-auto bg-primary hover:bg-primary/90 text-white font-extrabold text-xs uppercase tracking-wider px-5 py-2.5 rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer shrink-0 active:scale-95 transition-all disabled:opacity-50"
             >
               <Download size={14} /> Export GSTR CSV
-            </Button>
-          </div>
-
-          {/* Compliance Profile Banner */}
-          <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 flex-1 text-xs">
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">GSTIN Identifier</p>
-                <p className="text-sm font-extrabold text-slate-850 dark:text-slate-150 mt-0.5">
-                  {gstData?.compliance?.gstin ? (
-                    <span className="font-mono font-black text-slate-900 dark:text-white">{gstData.compliance.gstin}</span>
-                  ) : (
-                    <span className="text-amber-500 font-semibold italic">Not Configured</span>
-                  )}
-                </p>
-              </div>
-
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Legal Entity Name</p>
-                <p className="text-sm font-extrabold text-slate-850 dark:text-slate-150 mt-0.5 truncate">
-                  {gstData?.compliance?.legal_name || shop?.name || '—'}
-                </p>
-              </div>
-
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">FSSAI License</p>
-                <p className="text-sm font-extrabold text-slate-850 dark:text-slate-150 mt-0.5">
-                  {gstData?.compliance?.fssai_license ? (
-                    <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{gstData.compliance.fssai_license}</span>
-                  ) : (
-                    <span className="text-slate-400 font-medium">None</span>
-                  )}
-                </p>
-              </div>
-
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tax Calculation Mode</p>
-                <span className={`inline-block mt-0.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                  gstData?.compliance?.inclusive_tax 
-                    ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300' 
-                    : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300'
-                }`}>
-                  {gstData?.compliance?.inclusive_tax ? 'Inclusive in Menu' : 'Exclusive (Added)'}
-                </span>
-              </div>
-            </div>
-
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate('/settings')}
-              className="text-xs font-bold border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 shrink-0 cursor-pointer"
-            >
-              Configure Compliances →
             </Button>
           </div>
 
@@ -1092,7 +1264,7 @@ export function AnalyticsPage() {
               <CardContent className="p-4 sm:p-5">
                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Total GST Collected</p>
                 <h3 className="text-xl sm:text-2xl font-black text-orange-600 dark:text-orange-400 font-heading">
-                  {currencySymbol}{Number(gstData?.total_gst || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {currencySymbol}{Number(gstData?.total_gst_collected || gstData?.total_gst || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </h3>
                 <p className="text-[10px] text-slate-400 mt-1 font-medium">Total tax liability</p>
               </CardContent>
@@ -1103,7 +1275,7 @@ export function AnalyticsPage() {
               <CardContent className="p-4 sm:p-5">
                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">CGST (Central)</p>
                 <h3 className="text-xl sm:text-2xl font-black text-blue-600 dark:text-blue-400 font-heading">
-                  {currencySymbol}{Number(gstData?.total_cgst || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {currencySymbol}{Number(gstData?.total_cgst_collected || gstData?.total_cgst || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </h3>
                 <p className="text-[10px] text-slate-400 mt-1 font-medium">{gstData?.compliance?.cgst_rate || 2.5}% rate</p>
               </CardContent>
@@ -1114,7 +1286,7 @@ export function AnalyticsPage() {
               <CardContent className="p-4 sm:p-5">
                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">SGST (State)</p>
                 <h3 className="text-xl sm:text-2xl font-black text-indigo-600 dark:text-indigo-400 font-heading">
-                  {currencySymbol}{Number(gstData?.total_sgst || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {currencySymbol}{Number(gstData?.total_sgst_collected || gstData?.total_sgst || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </h3>
                 <p className="text-[10px] text-slate-400 mt-1 font-medium">{gstData?.compliance?.sgst_rate || 2.5}% rate</p>
               </CardContent>
@@ -1125,7 +1297,7 @@ export function AnalyticsPage() {
               <CardContent className="p-4 sm:p-5">
                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Tax Invoices</p>
                 <h3 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white font-heading">
-                  {gstData?.invoices_count || 0}
+                  {gstData?.total_invoices_count ?? gstData?.invoices_count ?? 0}
                 </h3>
                 <p className="text-[10px] text-slate-400 mt-1 font-medium">B2C bills generated</p>
               </CardContent>
@@ -1138,6 +1310,11 @@ export function AnalyticsPage() {
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                 <CardTitle className="text-sm sm:text-base font-bold flex items-center gap-2">
                   <FileText size={18} className="text-primary" /> Tax Invoices Register
+                  {gstData?.total_invoices_count !== undefined && (
+                    <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                      {gstData.total_invoices_count}
+                    </span>
+                  )}
                 </CardTitle>
 
                 {/* Search Bar for Invoices */}
@@ -1158,76 +1335,97 @@ export function AnalyticsPage() {
               {isGstLoading ? (
                 <div className="p-12 text-center space-y-2">
                   <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
-                  <p className="text-xs text-slate-400 font-medium">Calculating GST tax register...</p>
+                  <p className="text-xs text-slate-400 font-medium">Loading tax invoices register...</p>
                 </div>
-              ) : filteredGstInvoices.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse text-xs">
-                    <thead>
-                      <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-                        <th className="p-3 pl-4">Invoice / Date</th>
-                        <th className="p-3">Customer</th>
-                        <th className="p-3">Payment</th>
-                        <th className="p-3 text-right">Taxable Turnover</th>
-                        <th className="p-3 text-right">CGST</th>
-                        <th className="p-3 text-right">SGST</th>
-                        <th className="p-3 text-right">Total GST</th>
-                        <th className="p-3 pr-4 text-right">Gross Total</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {filteredGstInvoices.map((inv: any, idx: number) => (
-                        <tr key={idx} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/30 transition-colors font-medium">
-                          <td className="p-3 pl-4">
-                            <span className="font-mono font-bold text-slate-900 dark:text-white block">
-                              {inv.bill_number}
-                            </span>
-                            <span className="text-[10px] text-slate-400">
-                              {new Date(inv.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}
-                            </span>
-                          </td>
-                          <td className="p-3">
-                            <span className="text-slate-800 dark:text-slate-200 font-bold block">
-                              {inv.customer_name || 'Walk-in'}
-                            </span>
-                            {inv.customer_phone && (
-                              <span className="text-[10px] text-slate-400 font-mono">
-                                {inv.customer_phone}
-                              </span>
-                            )}
-                          </td>
-                          <td className="p-3">
-                            <span className="capitalize font-bold text-slate-700 dark:text-slate-300 block">
-                              {inv.payment_method}
-                            </span>
-                            <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${
-                              inv.payment_status === 'paid'
-                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
-                                : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
-                            }`}>
-                              {inv.payment_status}
-                            </span>
-                          </td>
-                          <td className="p-3 text-right font-mono font-bold text-slate-800 dark:text-slate-200">
-                            {currencySymbol}{Number(inv.taxable_value || 0).toFixed(2)}
-                          </td>
-                          <td className="p-3 text-right font-mono text-blue-600 dark:text-blue-400">
-                            {currencySymbol}{Number(inv.cgst_amount || 0).toFixed(2)}
-                          </td>
-                          <td className="p-3 text-right font-mono text-indigo-600 dark:text-indigo-400">
-                            {currencySymbol}{Number(inv.sgst_amount || 0).toFixed(2)}
-                          </td>
-                          <td className="p-3 text-right font-mono font-bold text-orange-600 dark:text-orange-400">
-                            {currencySymbol}{Number(inv.total_tax || 0).toFixed(2)}
-                          </td>
-                          <td className="p-3 pr-4 text-right font-mono font-black text-slate-900 dark:text-white">
-                            {currencySymbol}{Number(inv.gross_total || 0).toFixed(2)}
-                          </td>
+              ) : gstInvoices.length > 0 ? (
+                <>
+                  <div className="overflow-auto max-h-[460px] custom-scrollbar-x relative border-b border-slate-100 dark:border-slate-800">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead className="sticky top-0 z-10 bg-slate-100/95 dark:bg-slate-850/95 backdrop-blur-xs shadow-xs">
+                        <tr className="border-b border-slate-200/80 dark:border-slate-800 text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">
+                          <th className="p-3 pl-4">Invoice / Date</th>
+                          <th className="p-3">Customer</th>
+                          <th className="p-3">Payment</th>
+                          <th className="p-3 text-right">Taxable Turnover</th>
+                          <th className="p-3 text-right">CGST</th>
+                          <th className="p-3 text-right">SGST</th>
+                          <th className="p-3 text-right">Total GST</th>
+                          <th className="p-3 pr-4 text-right">Gross Total</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {gstInvoices.map((inv: any, idx: number) => (
+                          <tr key={inv.order_id || idx} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/30 transition-colors font-medium">
+                            <td className="p-3 pl-4">
+                              <span className="font-mono font-bold text-slate-900 dark:text-white block">
+                                {inv.invoice_no || inv.bill_number}
+                              </span>
+                              <span className="text-[10px] text-slate-400">
+                                {inv.date || (inv.created_at ? new Date(inv.created_at).toLocaleString() : '-')}
+                              </span>
+                            </td>
+                            <td className="p-3">
+                              <span className="text-slate-800 dark:text-slate-200 font-bold block">
+                                {inv.customer_name || 'Walk-in'}
+                              </span>
+                              {inv.customer_phone && (
+                                <span className="text-[10px] text-slate-400 font-mono">
+                                  {inv.customer_phone}
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-3">
+                              <span className="capitalize font-bold text-slate-700 dark:text-slate-300 block">
+                                {inv.payment_method}
+                              </span>
+                              <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${
+                                (inv.payment_status || '').toLowerCase() === 'paid'
+                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                  : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                              }`}>
+                                {inv.payment_status}
+                              </span>
+                            </td>
+                            <td className="p-3 text-right font-mono font-bold text-slate-800 dark:text-slate-200">
+                              {currencySymbol}{Number(inv.taxable_amount ?? inv.taxable_value ?? 0).toFixed(2)}
+                            </td>
+                            <td className="p-3 text-right font-mono text-blue-600 dark:text-blue-400">
+                              {currencySymbol}{Number(inv.cgst_amount || 0).toFixed(2)}
+                            </td>
+                            <td className="p-3 text-right font-mono text-indigo-600 dark:text-indigo-400">
+                              {currencySymbol}{Number(inv.sgst_amount || 0).toFixed(2)}
+                            </td>
+                            <td className="p-3 text-right font-mono font-bold text-orange-600 dark:text-orange-400">
+                              {currencySymbol}{Number(inv.total_tax_amount ?? inv.total_tax ?? 0).toFixed(2)}
+                            </td>
+                            <td className="p-3 pr-4 text-right font-mono font-black text-slate-900 dark:text-white">
+                              {currencySymbol}{Number(inv.gross_amount ?? inv.gross_total ?? 0).toFixed(2)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+
+                    {/* Infinite Scroll Trigger inside scrollable body */}
+                    <div className="py-2.5 flex flex-col items-center justify-center">
+                      <InfiniteScrollTrigger
+                        onIntersect={handleLoadMoreGst}
+                        isLoading={isLoadingMoreGst}
+                        hasMore={gstHasMore}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Summary Counter Footer */}
+                  <div className="p-3 bg-slate-50/70 dark:bg-slate-900/50 flex items-center justify-between text-xs px-4">
+                    <span className="text-[11px] font-bold text-slate-500">
+                      Total Invoices: {gstData?.total_invoices_count || gstInvoices.length}
+                    </span>
+                    <p className="text-slate-400 text-[11px] font-medium">
+                      Showing {gstInvoices.length} of {gstData?.total_invoices_count || gstInvoices.length} invoices
+                    </p>
+                  </div>
+                </>
               ) : (
                 <div className="text-center py-12 text-slate-400">
                   <Receipt size={32} className="mx-auto mb-2 opacity-40" />

@@ -84,7 +84,7 @@ export function SettlementsPage() {
   const { setTitle } = useHeaderStore();
 
   useEffect(() => {
-    setTitle('Settlements & Payouts', 'View online payment settlements, pending payout timelines, and date-wise revenue breakdowns.');
+    setTitle('Settlements & Payouts', 'Track settlements and payouts.');
   }, [setTitle]);
 
   // Debounce search query input (350ms)
@@ -163,51 +163,6 @@ export function SettlementsPage() {
 
   return (
     <div className="space-y-4 max-w-6xl mx-auto animate-fade-in pb-24 lg:pb-12">
-      {/* 7 WORKING DAYS SETTLEMENT POLICY BANNER */}
-      <Card className="border-blue-200/80 dark:border-blue-900/40 bg-gradient-to-r from-blue-50/80 via-indigo-50/40 to-slate-50 dark:from-blue-950/30 dark:via-indigo-950/20 dark:to-slate-900 shadow-xs overflow-hidden">
-        <CardContent className="p-3 sm:p-3.5">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div className="flex items-start sm:items-center gap-3">
-              <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs shadow-blue-500/20">
-                <Clock size={16} className="animate-pulse" />
-              </div>
-              <div className="space-y-0.5">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-extrabold text-xs text-slate-900 dark:text-white">
-                    7 Working Days Settlement Policy
-                  </h3>
-                  <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">
-                    Standard Payout
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-snug max-w-2xl">
-                  Online payments received for Takeaway, Dine In & Delivery orders are settled within <strong>7 working days</strong> to your registered payout account.
-                </p>
-                {summary?.bank_account_last4 ? (
-                  <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 mt-2">
-                    <ShieldCheck size={13} /> Registered Bank Account: <span className="font-mono bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800 text-[10px]">•••• {summary.bank_account_last4}</span>
-                  </div>
-                ) : (
-                  <p className="text-[10px] font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1 pt-0.5">
-                    <AlertCircle size={13} /> No payout bank account configured. <button onClick={() => navigate('/settings')} className="underline hover:text-amber-700">Add Account in Settings</button>
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <Button
-              onClick={() => navigate('/settings')}
-              variant="outline"
-              size="sm"
-              className="rounded-xl font-bold text-xs h-8 px-3 shrink-0 bg-white dark:bg-slate-900 shadow-xs"
-            >
-              <Building2 size={13} className="mr-1 text-blue-600" />
-              Configure Payout
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* KPI METRIC CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         {/* Total Pending Settlement */}

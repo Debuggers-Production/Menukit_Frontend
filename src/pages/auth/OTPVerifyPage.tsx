@@ -13,6 +13,7 @@ export function OTPVerifyPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isResending, setIsResending] = useState(false);
   const [countdown, setCountdown] = useState(60);
+  const [resendCount, setResendCount] = useState(0);
   
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const navigate = useNavigate();
@@ -74,8 +75,11 @@ export function OTPVerifyPage() {
     inputRefs.current[focusIndex]?.focus();
   };
 
+  const isSubmittingRef = useRef(false);
+
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (isSubmittingRef.current || isLoading) return;
     
     const code = otp.join('');
     if (code.length !== 6) {
@@ -83,15 +87,23 @@ export function OTPVerifyPage() {
       return;
     }
 
+    isSubmittingRef.current = true;
     setIsLoading(true);
     try {
       await login(email, code);
-      
+      const currentUser = useAuthStore.getState().user;
+
+      toast.dismiss();
+      toast.success('Login successful!');
+
+      if (!currentUser?.phone_verified) {
+        navigate('/verify-phone', { replace: true });
+        return;
+      }
+
       const shopsRes = await api.get('/shops/my-shops');
       const { owned, employed } = shopsRes.data;
       const totalShops = owned.length + employed.length;
-
-      toast.success('Login successful!');
 
       if (totalShops > 1 || totalShops === 0) {
          navigate('/select-shop', { replace: true });
@@ -102,6 +114,7 @@ export function OTPVerifyPage() {
          navigate('/dashboard', { replace: true });
       }
     } catch (error: any) {
+      isSubmittingRef.current = false;
       toast.error(error.response?.data?.detail || 'Invalid OTP code. Please try again.');
     } finally {
       setIsLoading(false);
@@ -110,18 +123,20 @@ export function OTPVerifyPage() {
 
   // Auto-submit when all 6 digits are entered
   useEffect(() => {
-    if (otp.every(digit => digit !== '') && !isLoading) {
+    if (otp.every(digit => digit !== '') && !isLoading && !isSubmittingRef.current) {
       handleSubmit();
     }
   }, [otp]);
 
   const handleResend = async () => {
-    if (countdown > 0) return;
+    if (countdown > 0 || isResending || resendCount >= 3) return;
     
     setIsResending(true);
     try {
       await api.post('/auth/request-otp', { email });
-      toast.success('New code sent to your email!');
+      const nextCount = resendCount + 1;
+      setResendCount(nextCount);
+      toast.success(`New code sent to your email! (${3 - nextCount} resends left)`);
       setCountdown(60);
       setOtp(['', '', '', '', '', '']);
       inputRefs.current[0]?.focus();
@@ -185,15 +200,17 @@ export function OTPVerifyPage() {
             <button
               type="button"
               onClick={handleResend}
-              disabled={countdown > 0 || isResending}
-              className="inline-flex items-center text-sm font-medium text-primary hover:text-primary-600 disabled:text-slate-400 transition-colors"
+              disabled={countdown > 0 || isResending || resendCount >= 3}
+              className="inline-flex items-center text-sm font-medium text-primary hover:text-primary-600 disabled:text-slate-400 disabled:cursor-not-allowed transition-colors"
             >
               {isResending ? (
                 <RefreshCw size={14} className="mr-2 animate-spin" />
               ) : null}
-              {countdown > 0 
+              {resendCount >= 3
+                ? 'Resend limit reached (3/3)'
+                : countdown > 0 
                 ? `Resend code in ${countdown}s` 
-                : 'Resend code'}
+                : `Resend code (${3 - resendCount} left)`}
             </button>
           </div>
         </CardContent>

@@ -9,7 +9,7 @@ export function NotificationsPage() {
   const { setTitle } = useHeaderStore();
 
   useEffect(() => {
-    setTitle('Notifications', "Stay updated with your shop's latest activities.");
+    setTitle('Notifications', 'Shop alerts and updates.');
   }, [setTitle]);
 
   const formatTime = (isoString: string) => {

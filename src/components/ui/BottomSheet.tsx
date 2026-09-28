@@ -51,7 +51,6 @@ export function BottomSheet({ isOpen, onClose, title, children, footer, classNam
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={onClose}
             className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm"
           />
 
@@ -70,13 +69,11 @@ export function BottomSheet({ isOpen, onClose, title, children, footer, classNam
               className
             )}
           >
-            {/* Drag Handle Bar - clickable to close too */}
+            {/* Drag Handle Bar */}
             <div 
-              onClick={onClose}
-              className="w-full py-4 flex items-center justify-center cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors shrink-0 group"
-              title="Drag or click to close"
+              className="w-full py-4 flex items-center justify-center shrink-0"
             >
-              <div className="w-12 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full group-hover:bg-slate-300 dark:group-hover:bg-slate-600 transition-colors" />
+              <div className="w-12 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full" />
             </div>
 
             {/* Header */}

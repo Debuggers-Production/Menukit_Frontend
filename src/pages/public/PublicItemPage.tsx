@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { ChevronLeft, Star, Loader2, Send, Gift, ShoppingCart, Plus, Minus, Trash2, AlertCircle, Crown } from 'lucide-react';
+import { ChevronLeft, Star, Loader2, Send, Gift, ShoppingCart, Plus, Minus, Trash2, AlertCircle, Crown, Clock } from 'lucide-react';
 import { triggerHaptic, HAPTIC_PATTERNS } from '@/utils/haptic';
 import { publicCache } from '@/utils/publicCache';
 import { api } from '@/services/api';
 import { Shop, MenuItem, ReviewSummary, Discount } from '@/types';
+import { isFoodBusiness } from '@/config/businessCategories';
+import { checkShopOpenStatus } from '@/utils/shopTiming';
 import { Lightbox } from '@/components/ui/Lightbox';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { DiscountUnlockPopup } from '@/components/public/DiscountUnlockPopup';
@@ -31,6 +33,7 @@ export function PublicItemPage() {
   const [item, setItem] = useState<MenuItem | null>(() => (itemId ? publicCache.get(`item_${itemId}`) : null));
   const [discounts, setDiscounts] = useState<Discount[]>(() => (id ? publicCache.get(`discounts_${id}`) || [] : []));
   const [isLoading, setIsLoading] = useState(() => !(itemId && publicCache.get(`item_${itemId}`)));
+  const shopOpenStatus = useMemo(() => checkShopOpenStatus(shop), [shop]);
 
   // Interaction state
   const [selectedVariantIdx, setSelectedVariantIdx] = useState(0);
@@ -481,7 +484,7 @@ export function PublicItemPage() {
           )}
           <div className="flex items-start justify-between gap-4 mb-2">
             <h2 className="text-2xl font-bold font-heading leading-tight">{item.name}</h2>
-            {item.food_types && item.food_types.filter(t => t !== 'drink' && t !== 'none').map((type) => (
+            {isFoodBusiness(shop?.category) && item.food_types && item.food_types.filter(t => t !== 'drink' && t !== 'none').map((type) => (
               <div key={type}
                 className={`w-5 h-5 rounded-sm border-2 flex items-center justify-center shrink-0 ${type === 'veg' ? 'border-green-600' : type === 'non-veg' ? 'border-red-600' : type === 'dessert' ? 'border-pink-500' : 'border-yellow-600'}`}
                 title={type.charAt(0).toUpperCase() + type.slice(1)}
@@ -842,6 +845,11 @@ export function PublicItemPage() {
                 <AlertCircle size={18} />
                 Out of Stock
               </button>
+            ) : !shopOpenStatus.isOpen ? (
+              <div className="w-full py-3 px-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-center text-xs sm:text-sm font-semibold flex items-center justify-center gap-2">
+                <Clock size={16} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                <span>Restaurant Closed ({shopOpenStatus.openingFormatted ? `Opens at ${shopOpenStatus.openingFormatted}` : 'Orders Paused'})</span>
+              </div>
             ) : existingCartItem ? (
               <>
                 {/* Cart Item Quantity Selector */}

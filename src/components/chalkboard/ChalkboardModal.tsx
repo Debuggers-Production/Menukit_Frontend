@@ -113,11 +113,6 @@ export const ChalkboardModal: React.FC<ChalkboardModalProps> = ({
       className={`fixed inset-0 z-[9999] flex items-center justify-center p-2 sm:p-6 transition-all duration-300 ${
         animStep >= 1 ? 'bg-black/75 backdrop-blur-md opacity-100' : 'bg-transparent opacity-0'
       }`}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) {
-          onClose();
-        }
-      }}
       role="dialog"
       aria-modal="true"
       aria-label="Restaurant Chalkboard Special"

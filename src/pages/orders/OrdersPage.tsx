@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
-import { RefreshCw, ShoppingBag, Clock, XCircle, ChevronDown, Check, CheckCircle2, List, User, MapPin, Phone, Share2, Copy, ExternalLink, Navigation, Lock, Search, Plus, Filter, X, Calendar, Printer, UtensilsCrossed, Flame, RotateCcw, Eye } from 'lucide-react';
+import { RefreshCw, ShoppingBag, Clock, XCircle, ChevronDown, Check, CheckCircle2, List, User, MapPin, Phone, Share2, Copy, ExternalLink, Navigation, Lock, Search, Plus, Filter, X, Calendar, Printer, UtensilsCrossed, Flame, RotateCcw, Eye, FileText } from 'lucide-react';
 
 import { api } from '@/services/api';
 import { useHeaderStore } from '@/store/useHeaderStore';
@@ -16,13 +16,16 @@ import { InfiniteScrollTrigger } from '@/components/ui/InfiniteScrollTrigger';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { DatePicker } from '@/components/ui/DatePicker';
 import { Input } from '@/components/ui/Input';
+import { SearchableSelect } from '@/components/ui/SearchableSelect';
 import toast from 'react-hot-toast';
 import { CreateOrderModal } from './CreateOrderModal';
 import { ThermalBillModal } from '@/components/orders/ThermalBillModal';
 import { ThermalKotModal } from '@/components/orders/ThermalKotModal';
 import { usePrinterStore } from '@/store/usePrinterStore';
 import { printOrderToStations, printBillToPrinter, printBillToAllPrinters, isNewlyAddedItem } from '@/utils/thermalPrinter';
+import { printOrderA4Invoice } from '@/utils/orderInvoice';
 import { useIsMobile } from '@/hooks/useMediaQuery';
+import { getBusinessCategory } from '@/config/businessCategories';
 
 const getTodayDateStr = () => {
   const now = new Date();
@@ -142,6 +145,57 @@ function generateGoogleMapsUrl(address: string) {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
 }
 
+function getOrderDistanceKm(order: any, shopLat?: number | null, shopLng?: number | null): number | null {
+  if (!order?.delivery_address || !shopLat || !shopLng) return null;
+  const match = order.delivery_address.match(/\[loc=([-?\d.]+),([-?\d.]+)\]/) || 
+                order.delivery_address.match(/Lat:\s*([-?\d.]+),\s*Lon:\s*([-?\d.]+)/i);
+  if (!match) return null;
+  const custLat = parseFloat(match[1]);
+  const custLng = parseFloat(match[2]);
+  if (isNaN(custLat) || isNaN(custLng)) return null;
+
+  const R = 6371; // km
+  const dLat = (custLat - Number(shopLat)) * (Math.PI / 180);
+  const dLon = (custLng - Number(shopLng)) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(Number(shopLat) * (Math.PI / 180)) * Math.cos(custLat * (Math.PI / 180)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function formatDistanceWithUnit(distKm: number | null, currency?: string): string | null {
+  if (distKm === null || isNaN(distKm)) return null;
+  const isImperial = ['USD', '$', 'GBP', '£'].includes(currency || '');
+  if (isImperial) {
+    const miles = distKm * 0.621371;
+    return `${miles.toFixed(1)} mi`;
+  }
+  return `${distKm.toFixed(1)} km`;
+}
+
+function getOrderDeliveryFee(order: any, shopSettings?: any, shopLat?: number | null, shopLng?: number | null): number {
+  if (order?.order_type !== 'delivery') return 0;
+  
+  const distKm = getOrderDistanceKm(order, shopLat, shopLng);
+  const baseCharge = Number(shopSettings?.base_delivery_charge || 0);
+  const baseDist = Number(shopSettings?.base_delivery_distance || 0);
+  const stepKm = Number(shopSettings?.extra_delivery_distance_step || 1);
+  const extraRate = Number(shopSettings?.extra_delivery_charge_per_step || 0);
+
+  if (distKm !== null && distKm > 0 && shopSettings?.delivery_enabled) {
+    if (distKm <= baseDist || baseDist <= 0) {
+      return baseCharge;
+    }
+    const extraDist = distKm - baseDist;
+    const steps = Math.ceil(extraDist / stepKm);
+    return baseCharge + (steps * extraRate);
+  }
+  
+  return baseCharge;
+}
+
 function generateOrderBillText(order: any) {
   const { date, time } = formatDateTime(order.created_at);
   const orderId = order.daily_order_number || order.id.slice(0, 8).toUpperCase();
@@ -220,10 +274,14 @@ function PayDropdown({ orderId, paymentStatus, paymentMethod, orderStatus, onSel
   const btnRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  const isCancelled = ['rejected', 'cancelled', 'CANCELLED'].includes(orderStatus);
-  const options = isCancelled
-    ? PAY_OPTIONS.filter(o => ['pending', 'refunded'].includes(o.value))
-    : PAY_OPTIONS;
+  const isPaidOnline = paymentStatus === 'paid' && paymentMethod === 'online';
+  const options = PAY_OPTIONS.filter(o => {
+    // Only orders paid online via payment gateway can be refunded
+    if (o.value === 'refunded') {
+      return isPaidOnline;
+    }
+    return true;
+  });
   const current = paymentStyle(paymentStatus);
 
   const openDropdown = (e: React.MouseEvent) => {
@@ -254,11 +312,19 @@ function PayDropdown({ orderId, paymentStatus, paymentMethod, orderStatus, onSel
   const handleSelect = (opt: typeof PAY_OPTIONS[number]) => {
     setOpen(false);
     if (opt.value === paymentStatus) return;
-    const isRefundable = opt.value === 'refunded' && paymentMethod === 'online';
-    const msg = isRefundable
-      ? 'This will process an automatic online refund to the customer. Continue?'
-      : `Change payment status to "${opt.label}"?`;
-    if (confirm(msg)) onSelect(orderId, opt.value);
+    if (opt.value === 'refunded') {
+      if (!isPaidOnline) {
+        toast.error('Refund can only be initiated for orders paid online via payment gateway.');
+        return;
+      }
+      if (confirm('This will process an automatic online refund to the customer via payment gateway. Continue?')) {
+        onSelect(orderId, opt.value);
+      }
+      return;
+    }
+    if (confirm(`Change payment status to "${opt.label}"?`)) {
+      onSelect(orderId, opt.value);
+    }
   };
 
   return (
@@ -308,24 +374,23 @@ function PayDropdown({ orderId, paymentStatus, paymentMethod, orderStatus, onSel
 }
 
 function getOrderStatusOptions(orderType?: string, paymentMethod?: string, paymentStatus?: string, orderStatus?: string) {
+  const normStatus = (orderStatus || '').toUpperCase();
+  const isPaid = (paymentStatus || '').toLowerCase() === 'paid' || normStatus === 'PAID';
+  const isAwaitingComplete = isPaid || normStatus === 'PREPARING' || normStatus === 'ACCEPTED' || normStatus === 'READY';
   const isCash = paymentMethod === 'cash' || paymentMethod === 'cash_on_delivery' || paymentMethod === 'counter';
-  const isPaid = (paymentStatus || '').toLowerCase() === 'paid' || (orderStatus || '').toUpperCase() === 'PAID';
 
-  if (isPaid) {
-    // Once paid, merchant cannot and should not "Accept & Request Payment"
+  if (isAwaitingComplete) {
+    // Once in Awaiting Complete (preparing/ready/paid), global order cancel is disabled
     return [
       { value: 'PREPARING', label: 'Preparing', cls: 'text-blue-700 bg-blue-50 border-blue-200', dot: 'bg-blue-500' },
       { value: 'READY', label: 'Ready', cls: 'text-cyan-700 bg-cyan-50 border-cyan-200', dot: 'bg-cyan-500' },
       { value: 'COMPLETED', label: 'Complete', cls: 'text-emerald-700 bg-emerald-50 border-emerald-200', dot: 'bg-emerald-500' },
-      { value: 'CANCELLED', label: 'Cancel', cls: 'text-rose-700 bg-rose-50 border-rose-200', dot: 'bg-rose-500' },
     ];
   }
 
   if (isCash) {
     return [
       { value: 'PREPARING', label: 'Accept Order', cls: 'text-orange-700 bg-orange-50 border-orange-200', dot: 'bg-orange-500' },
-      { value: 'READY', label: 'Ready', cls: 'text-cyan-700 bg-cyan-50 border-cyan-200', dot: 'bg-cyan-500' },
-      { value: 'COMPLETED', label: 'Complete', cls: 'text-emerald-700 bg-emerald-50 border-emerald-200', dot: 'bg-emerald-500' },
       { value: 'CANCELLED', label: 'Cancel', cls: 'text-rose-700 bg-rose-50 border-rose-200', dot: 'bg-rose-500' },
     ];
   }
@@ -474,6 +539,15 @@ function OrderStatusDropdown({ orderId, orderStatus, paymentStatus, paymentMetho
 
 let cachedOrders: any[] = [];
 
+const DEFAULT_ITEM_CANCELLATION_REASONS = [
+  { id: 'Customer cancelled request', name: 'Customer cancelled request' },
+  { id: 'Item out of stock / ingredient unavailable', name: 'Item out of stock / ingredient unavailable' },
+  { id: 'Preparation delay / Long wait time', name: 'Preparation delay / Long wait time' },
+  { id: 'Accidental punch / Billing error', name: 'Accidental punch / Billing error' },
+  { id: 'Customer changed item preference', name: 'Customer changed item preference' },
+  { id: 'Kitchen / food quality issue', name: 'Kitchen / food quality issue' },
+  { id: 'custom', name: 'Other / Custom Reason...' },
+];
 
 /* ── Main Page ───────────────────────────────────────────────────────────── */
 export function OrdersPage() {
@@ -505,7 +579,8 @@ export function OrdersPage() {
   const [thermalKotMode, setThermalKotMode] = useState<'full' | 'new_only' | 'cancelled'>('full');
   const [replacingItemOrder, setReplacingItemOrder] = useState<{ order: any; item: any } | null>(null);
   const [cancellingItemOrder, setCancellingItemOrder] = useState<{ orderId: string; itemId: string; itemName: string; item?: any } | null>(null);
-  const [cancelItemReason, setCancelItemReason] = useState<string>('');
+  const [selectedCancelItemReason, setSelectedCancelItemReason] = useState<string>(DEFAULT_ITEM_CANCELLATION_REASONS[0].id);
+  const [customCancelItemReason, setCustomCancelItemReason] = useState<string>('');
   const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
   const [cancelOrderReason, setCancelOrderReason] = useState<string>('');
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
@@ -514,6 +589,7 @@ export function OrdersPage() {
   const [targetOrderForAdd, setTargetOrderForAdd] = useState<any | null>(null);
   const { setTitle } = useHeaderStore();
   const { shop, menuItems, setMenuItems } = useShopStore();
+  const businessCategory = getBusinessCategory(shop?.category);
   const { 
     paperWidth: defaultPaperWidth, 
     autoPrintOnAccept, 
@@ -547,7 +623,10 @@ export function OrdersPage() {
         stations,
         defaultPaperWidth,
         mode,
-        options
+        {
+          ...options,
+          silent,
+        }
       );
       if (ok) {
         markOrderKotPrinted(targetOrder.id);
@@ -555,10 +634,17 @@ export function OrdersPage() {
         else if (mode === 'cancelled') toast.success(`Void KOT sent to station for Order #${targetOrder.daily_order_number || targetOrder.id.slice(0, 8).toUpperCase()}`);
         else toast.success(`Auto-printed KOT for Order #${targetOrder.daily_order_number || targetOrder.id.slice(0, 8).toUpperCase()}`);
       } else {
-        if (toastId) toast.error('Printer unavailable or print failed', { id: toastId });
+        // If printer is offline/unreachable during background auto-print, mark as attempted to STOP continuous loop
+        if (silent) {
+          markOrderKotPrinted(targetOrder.id);
+        }
+        if (toastId) toast.error('Printer unavailable or offline', { id: toastId });
       }
     } catch (err: any) {
       console.error('Print KOT failed:', err);
+      if (silent) {
+        markOrderKotPrinted(targetOrder.id);
+      }
       if (toastId) toast.error(err?.message || 'Failed to print KOT', { id: toastId });
     }
   }, [shop, menuItems, stations, defaultPaperWidth, markOrderKotPrinted]);
@@ -579,7 +665,7 @@ export function OrdersPage() {
   }, [menuItems, setMenuItems]);
 
   useEffect(() => {
-    setTitle('Orders Queue', 'Manage your incoming live orders, dine-in tickets, and deliveries.');
+    setTitle('Orders Queue', 'Manage live orders, tickets, and deliveries.');
   }, [setTitle]);
 
   const fetchStatusCounts = useCallback(async () => {
@@ -854,7 +940,9 @@ export function OrdersPage() {
     const { orderId, itemId } = cancellingItemOrder;
     setTogglingCancelItemId(itemId);
     try {
-      const finalReason = cancelItemReason.trim() || 'Item Cancelled';
+      const finalReason = selectedCancelItemReason === 'custom'
+        ? (customCancelItemReason.trim() || 'Item Cancelled')
+        : (selectedCancelItemReason || 'Item Cancelled');
       const payload = { reason: finalReason };
       const res = await api.put(`/orders/${orderId}/items/${itemId}/toggle-cancel`, payload);
       const updatedOrder = res.data;
@@ -872,11 +960,11 @@ export function OrdersPage() {
       if (itemsModalOrder && itemsModalOrder.id === orderId) {
         setItemsModalOrder(updatedOrder);
       }
-      fetchStatusCounts();
+      const isPaidOnline = String(updatedOrder.payment_status || '').toLowerCase() === 'paid' && String(updatedOrder.payment_method || '').toLowerCase() === 'online';
       if (isOrderCancelled) {
-        toast.success('All items cancelled. Order moved to Cancelled.');
+        toast.success(isPaidOnline ? 'All items cancelled. Order cancelled & product total refunded (charges excluded).' : 'All items cancelled. Order moved to Cancelled.');
       } else {
-        toast.success('Item cancelled');
+        toast.success(isPaidOnline ? 'Item cancelled & product price refunded to customer.' : 'Item cancelled');
       }
 
       const cancelledItem = (updatedOrder.items || []).find((it: any) => it.id === itemId) || {
@@ -889,7 +977,8 @@ export function OrdersPage() {
       };
 
       setCancellingItemOrder(null);
-      setCancelItemReason('');
+      setSelectedCancelItemReason(DEFAULT_ITEM_CANCELLATION_REASONS[0].id);
+      setCustomCancelItemReason('');
 
       // Directly send VOID KOT to the cancelled item's station printer only
       await handleDirectPrintKot(updatedOrder, 'cancelled', true, {
@@ -988,17 +1077,17 @@ export function OrdersPage() {
       )}
 
       {/* Tabs — sticky top with backdrop blur matching Menus page */}
-      <div className="sticky top-[-16px] sm:top-[-24px] lg:top-[-32px] z-20 bg-background/95 backdrop-blur-md pb-3 pt-3.5 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 border-b border-border mb-6 space-y-2.5">
-        <div className="flex custom-scrollbar-x gap-2 py-1 whitespace-nowrap pb-2">
+      <div className="sticky top-[-16px] sm:top-[-24px] lg:top-[-32px] z-20 bg-background/95 backdrop-blur-md pb-2.5 pt-2.5 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 border-b border-border mb-4 space-y-2">
+        {/* Row 1: Status Filters - Sleek Horizontal Scrollable Tabs */}
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar scrollbar-hide py-0.5 whitespace-nowrap">
           {[
-            { id: 'all',       label: 'All Orders',       count: statusCounts.all ?? 0, activeBg: 'bg-slate-800 text-white shadow-md shadow-slate-800/20' },
-            { id: 'new',       label: 'New Orders',       count: statusCounts.new ?? 0, activeBg: 'bg-amber-500 text-white shadow-md shadow-amber-500/20' },
-            { id: 'awaiting_payment', label: 'Awaiting Payment', count: statusCounts.awaiting_payment ?? 0, activeBg: 'bg-blue-500 text-white shadow-md shadow-blue-500/20' },
-            { id: 'preparing', label: 'Awaiting Complete', count: statusCounts.preparing ?? 0, activeBg: 'bg-cyan-500 text-white shadow-md shadow-cyan-500/20' },
-            { id: 'completed', label: 'Completed',        count: statusCounts.completed ?? 0, activeBg: 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20' },
-            { id: 'cancelled', label: 'Cancelled',        count: statusCounts.cancelled ?? 0, activeBg: 'bg-rose-500 text-white shadow-md shadow-rose-500/20' },
+            { id: 'all', label: 'All Orders', count: statusCounts.all ?? 0, activeBg: 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 shadow-sm' },
+            { id: 'new', label: 'New Orders', count: statusCounts.new ?? 0, activeBg: 'bg-amber-500 text-white shadow-sm' },
+            { id: 'awaiting_payment', label: 'Awaiting Payment', count: statusCounts.awaiting_payment ?? 0, activeBg: 'bg-blue-500 text-white shadow-sm' },
+            { id: 'preparing', label: 'Awaiting Complete', count: statusCounts.preparing ?? 0, activeBg: 'bg-cyan-500 text-white shadow-sm' },
+            { id: 'completed', label: 'Completed', count: statusCounts.completed ?? 0, activeBg: 'bg-emerald-500 text-white shadow-sm' },
+            { id: 'cancelled', label: 'Cancelled', count: statusCounts.cancelled ?? 0, activeBg: 'bg-rose-500 text-white shadow-sm' },
           ].map(tab => {
-
             const isSelected = filterStatus === tab.id;
             return (
               <button
@@ -1009,16 +1098,16 @@ export function OrdersPage() {
                     setFilterStatus(tab.id);
                   }
                 }}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer border ${
                   isSelected
-                    ? tab.activeBg
-                    : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+                    ? `${tab.activeBg} border-transparent`
+                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
                 }`}
               >
                 <span>{tab.label}</span>
-                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
                   isSelected
-                    ? 'bg-white/20 text-white'
+                    ? 'bg-white/20 text-white dark:bg-black/20 dark:text-slate-900'
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
                 }`}>
                   {tab.count}
@@ -1028,15 +1117,14 @@ export function OrdersPage() {
           })}
         </div>
 
-        {/* Order Type Secondary Filters */}
-        <div className="flex custom-scrollbar-x gap-2 mt-1 py-1 whitespace-nowrap pb-1.5">
+        {/* Row 2: Order Type Secondary Filters + Quick Date Shortcuts */}
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar scrollbar-hide py-0.5 whitespace-nowrap text-xs">
           {[
             { id: 'all', label: 'All Types', activeBg: 'bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900' },
-            { id: 'dine_in', label: 'Dine-in', activeBg: 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20 border-transparent' },
-            { id: 'takeaway', label: 'Takeaway', activeBg: 'bg-amber-500 text-white shadow-md shadow-amber-500/20 border-transparent' },
-            { id: 'delivery', label: 'Online / Delivery', activeBg: 'bg-fuchsia-600 text-white shadow-md shadow-fuchsia-600/20 border-transparent' },
+            { id: 'dine_in', label: 'Dine-in', activeBg: 'bg-indigo-600 text-white shadow-xs border-transparent' },
+            { id: 'takeaway', label: 'Takeaway', activeBg: 'bg-amber-500 text-white shadow-xs border-transparent' },
+            { id: 'delivery', label: 'Online / Delivery', activeBg: 'bg-fuchsia-600 text-white shadow-xs border-transparent' },
           ].map(typeTab => {
-
             const isSelected = filterType === typeTab.id;
             return (
               <button
@@ -1047,9 +1135,9 @@ export function OrdersPage() {
                     setFilterType(typeTab.id);
                   }
                 }}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all shrink-0 cursor-pointer border ${
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all shrink-0 cursor-pointer border ${
                   isSelected
-                    ? typeTab.activeBg
+                    ? `${typeTab.activeBg} border-transparent`
                     : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
                 }`}
               >
@@ -1057,61 +1145,12 @@ export function OrdersPage() {
               </button>
             );
           })}
-        </div>
 
-        {/* Search & Date Filter Controls */}
-        <div className="flex flex-col sm:flex-row gap-2 mt-2.5 items-stretch sm:items-center">
-          {/* API Search Input */}
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
-            <input
-              type="text"
-              placeholder="Search customer, phone, table, address, or order ID..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-8 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-amber-500 font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400 shadow-xs"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
-                title="Clear Search"
-              >
-                <X size={13} />
-              </button>
-            )}
-          </div>
+          <span className="h-3.5 w-px bg-slate-200 dark:bg-slate-700 mx-1 shrink-0" />
 
-          {/* Custom DatePicker + Clear */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            <div className="w-40 sm:w-48 relative">
-              <DatePicker
-                value={selectedDate}
-                onChange={(date) => setSelectedDate(date)}
-                placeholder="Filter by Date"
-                className="text-xs"
-              />
-            </div>
-            {selectedDate && (
-              <button
-                type="button"
-                onClick={() => setSelectedDate('')}
-                className="px-2.5 py-2 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 rounded-xl text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer shrink-0"
-                title="Clear Date (View All Time)"
-              >
-                <X size={13} />
-                <span className="hidden sm:inline">All Time</span>
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Quick Date Shortcut Pills */}
-        <div className="flex items-center gap-1.5 pt-1 custom-scrollbar-x pb-1">
-          <span className="text-[10.5px] font-bold text-slate-400 mr-1 flex items-center gap-1 shrink-0">
-
-            <Filter size={11} /> Date:
+          {/* Quick Date Presets */}
+          <span className="text-[10.5px] font-bold text-slate-400 flex items-center gap-1 shrink-0">
+            <Filter size={10} /> Date:
           </span>
           <button
             type="button"
@@ -1146,6 +1185,54 @@ export function OrdersPage() {
           >
             All Time
           </button>
+        </div>
+
+        {/* Row 3: Search & Date Filter Controls (1 compact row on both mobile & desktop) */}
+        <div className="flex items-center gap-2 pt-0.5">
+          {/* API Search Input */}
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={13} />
+            <input
+              type="text"
+              placeholder="Search customer, phone, table, order ID..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-8 pr-7 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-amber-500 font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400 shadow-xs h-9"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                title="Clear Search"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+
+          {/* Custom DatePicker + Clear */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <div className="w-32 sm:w-40 relative">
+              <DatePicker
+                value={selectedDate}
+                onChange={(date) => setSelectedDate(date)}
+                placeholder="Date"
+                className="text-xs"
+              />
+            </div>
+            {selectedDate && (
+              <button
+                type="button"
+                onClick={() => setSelectedDate('')}
+                className="h-9 px-2.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 rounded-xl text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer shrink-0"
+                title="Clear Filter"
+              >
+                <X size={12} />
+                <span className="hidden sm:inline">Clear</span>
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1189,7 +1276,7 @@ export function OrdersPage() {
               const isCompleted = !allItemsCancelled && (normStatus === 'COMPLETED' || normStatus === 'DELIVERED');
               const isCancelled = allItemsCancelled || normStatus === 'CANCELLED' || normStatus === 'REJECTED';
               
-              const isCancellable = isPendingVendor || isPaymentPending || isPaid || isPreparing;
+              const isCancellable = isPendingVendor || isPaymentPending;
               
               const { date, time } = formatDateTime(order.created_at);
               
@@ -1299,6 +1386,20 @@ export function OrdersPage() {
                             </span>
                           </div>
                         )}
+                        {order.order_type === 'delivery' && (() => {
+                          const distKm = getOrderDistanceKm(order, shop?.latitude, shop?.longitude);
+                          const formattedDist = formatDistanceWithUnit(distKm, shop?.settings?.currency);
+                          return (
+                            <div className="flex justify-between items-center pt-1 border-t border-border/30">
+                              <span className="text-muted-foreground font-medium flex items-center gap-1">
+                                <Navigation size={11} className="text-amber-500" /> Distance
+                              </span>
+                              <span className="font-bold text-amber-700 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md font-mono text-[11px]">
+                                {formattedDist ? `${formattedDist} away` : 'GPS attached'}
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
 
@@ -1314,12 +1415,21 @@ export function OrdersPage() {
                             <ShoppingBag size={12} className="text-amber-500" /> Items
                           </span>
                           <div className="flex items-center gap-1.5">
-                            {order.items?.some((it: any) => it.is_cancelled) && (
-                              <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 bg-rose-100 dark:bg-rose-950/60 px-1.5 py-0.5 rounded">
-                                {order.items.filter((it: any) => it.is_cancelled).length} Cancelled
+                            {order.items?.some((it: any) => it.is_cancelled && String(it.cancellation_reason || '').startsWith('Replaced with')) && (
+                              <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/60 px-1.5 py-0.5 rounded">
+                                {order.items.filter((it: any) => it.is_cancelled && String(it.cancellation_reason || '').startsWith('Replaced with')).length} Replaced
                               </span>
                             )}
-                            {order.items?.some((it: any) => it.is_completed && !it.is_cancelled) && (
+                            {order.items?.some((it: any) => it.is_cancelled && !String(it.cancellation_reason || '').startsWith('Replaced with')) && (
+                              <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 bg-rose-100 dark:bg-rose-950/60 px-1.5 py-0.5 rounded">
+                                {order.items.filter((it: any) => it.is_cancelled && !String(it.cancellation_reason || '').startsWith('Replaced with')).length} Cancelled
+                              </span>
+                            )}
+                            {['COMPLETED', 'DELIVERED'].includes(String(order.order_status || '').toUpperCase()) ? (
+                              <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded">
+                                {order.items.filter((it: any) => !it.is_cancelled).length}/{order.items.filter((it: any) => !it.is_cancelled).length} Given
+                              </span>
+                            ) : order.items?.some((it: any) => it.is_completed && !it.is_cancelled) && (
                               <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded">
                                 {order.items.filter((it: any) => it.is_completed && !it.is_cancelled).length}/{order.items.filter((it: any) => !it.is_cancelled).length} Given
                               </span>
@@ -1332,14 +1442,26 @@ export function OrdersPage() {
 
                         <ul className="text-xs space-y-1.5">
                           {previewItems.map((item: any, i: number) => {
-                            const isDone = Boolean(item.is_completed);
+                            const isOrderCompleted = ['COMPLETED', 'DELIVERED'].includes(String(order.order_status || '').toUpperCase());
+                            const isDone = Boolean(item.is_completed) || isOrderCompleted;
                             const isCancelled = Boolean(item.is_cancelled);
+                            const isReplaced = isCancelled && String(item.cancellation_reason || '').startsWith('Replaced with');
                             const hasMixed = order.items?.some((it: any) => it.is_completed && !it.is_cancelled) && order.items?.some((it: any) => !it.is_completed && !it.is_cancelled);
-                            const isNewUnserved = !isDone && !isCancelled && (hasMixed || isNewlyAddedItem(item, order));
+                            const isNewUnserved = !isDone && !isCancelled && !isOrderCompleted && (hasMixed || isNewlyAddedItem(item, order));
                             return (
-                              <li key={i} className={`flex justify-between items-center ${isCancelled ? 'line-through text-rose-400/80 dark:text-rose-500/80 opacity-70' : isDone ? 'line-through text-slate-400 dark:text-slate-500 opacity-60' : 'text-foreground'}`}>
+                              <li key={i} className={`flex justify-between items-center ${
+                                isReplaced 
+                                  ? 'line-through text-amber-700/80 dark:text-amber-400/80 opacity-75' 
+                                  : isCancelled 
+                                  ? 'line-through text-rose-400/80 dark:text-rose-500/80 opacity-70' 
+                                  : isDone 
+                                  ? 'line-through text-slate-400 dark:text-slate-500 opacity-60' 
+                                  : 'text-foreground'
+                              }`}>
                                 <span className="truncate pr-2 font-medium group-hover:text-primary transition-colors flex items-center gap-1.5">
-                                  {isCancelled ? (
+                                  {isReplaced ? (
+                                    <RotateCcw size={12} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                                  ) : isCancelled ? (
                                     <XCircle size={12} className="text-rose-500 shrink-0" />
                                   ) : isDone ? (
                                     <CheckCircle2 size={12} className="text-emerald-500 shrink-0" />
@@ -1348,9 +1470,15 @@ export function OrdersPage() {
                                   )}
                                   <span>{item.name}</span>
                                   {isCancelled && (
-                                    <span className="text-[8.5px] font-black tracking-wider bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 px-1 py-0.2 rounded shrink-0">
-                                      CANCELLED
-                                    </span>
+                                    isReplaced ? (
+                                      <span className="text-[8.5px] font-black tracking-wider bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 px-1 py-0.2 rounded shrink-0">
+                                        REPLACED
+                                      </span>
+                                    ) : (
+                                      <span className="text-[8.5px] font-black tracking-wider bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 px-1 py-0.2 rounded shrink-0">
+                                        CANCELLED
+                                      </span>
+                                    )
                                   )}
                                   {isNewUnserved && (
                                     <span className="text-[9px] font-black tracking-wider bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 px-1.5 py-0.2 rounded shrink-0">
@@ -1358,7 +1486,9 @@ export function OrdersPage() {
                                     </span>
                                   )}
                                 </span>
-                                <span className={`font-bold shrink-0 text-[11px] ${isCancelled ? 'text-rose-400' : 'text-foreground'}`}>x{item.quantity}</span>
+                                <span className={`font-bold shrink-0 text-[11px] ${
+                                  isReplaced ? 'text-amber-600 dark:text-amber-400' : isCancelled ? 'text-rose-400' : 'text-foreground'
+                                }`}>x{item.quantity}</span>
                               </li>
                             );
                           })}
@@ -1383,10 +1513,10 @@ export function OrdersPage() {
                     </div>
                   )}
 
-                  {/* Bottom Bar: Payment, Total, and Cleanly Structured Actions */}
-                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 pt-3.5 border-t border-border/60">
-                    {/* Financial Summary */}
-                    <div className="flex items-center justify-between sm:justify-start gap-4 shrink-0">
+                  {/* Bottom Bar: Clean 2-Tier Financial & Action Controls Layout */}
+                  <div className="pt-3 border-t border-border/60 space-y-2.5">
+                    {/* Tier 1: Full-Width Financial Summary Card */}
+                    <div className="flex items-center justify-between gap-3 flex-wrap bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-800 rounded-xl px-3.5 py-2">
                       <div className="space-y-0.5">
                         <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Payment</span>
                         <div className="flex items-center gap-1.5">
@@ -1402,8 +1532,6 @@ export function OrdersPage() {
                         </div>
                       </div>
 
-                      <div className="h-8 w-px bg-border/60" />
-
                       {(() => {
                         const isGstEnabled = Boolean(shop?.settings?.gst_enabled);
                         const cgstRate = Number(shop?.settings?.cgst_rate || 0);
@@ -1413,37 +1541,48 @@ export function OrdersPage() {
 
                         const items = (order.items || []).filter((it: any) => !it.is_cancelled);
                         const itemsSubtotal = items.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
-                        const isDelivery = order.order_type === 'delivery';
-                        const deliveryFee = (isDelivery && Number(order.total_amount) > itemsSubtotal) ? (Number(order.total_amount) - itemsSubtotal) : 0;
 
-                        let finalTotal = itemsSubtotal + deliveryFee;
                         let taxAmount = 0;
-
                         if (isGstEnabled && totalTaxRate > 0) {
                           if (isExclusiveTax) {
                             taxAmount = Math.round((itemsSubtotal * (totalTaxRate / 100)) * 100) / 100;
-                            finalTotal = Math.round((itemsSubtotal + deliveryFee + taxAmount) * 100) / 100;
                           } else {
-                            const taxable = itemsSubtotal / (1 + totalTaxRate / 100);
+                            const taxable = Math.round((itemsSubtotal / (1 + totalTaxRate / 100)) * 100) / 100;
                             taxAmount = Math.round((itemsSubtotal - taxable) * 100) / 100;
-                            finalTotal = itemsSubtotal + deliveryFee;
                           }
                         }
 
+                        const deliveryFee = order.order_type === 'delivery'
+                          ? getOrderDeliveryFee(order, shop?.settings, shop?.latitude, shop?.longitude)
+                          : 0;
+
+                        const foodTotal = isExclusiveTax 
+                          ? Math.round((itemsSubtotal + taxAmount) * 100) / 100 
+                          : itemsSubtotal;
+
+                        const computedTotal = foodTotal + deliveryFee;
+                        const rawTotal = Number(order.total_amount || 0);
+                        const finalTotal = rawTotal > 0 ? rawTotal : computedTotal;
+
                         return (
-                          <div className="space-y-0.5">
+                          <div className="space-y-0.5 text-right">
                             <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Total Amount</span>
-                            <div className="flex items-baseline gap-1.5 flex-wrap">
-                              <span className="font-black text-lg text-foreground font-mono tracking-tight">
-                                ₹{finalTotal.toFixed(2)}
+                            <div className="flex items-baseline gap-1.5 justify-end flex-wrap">
+                              <span className="font-black text-base sm:text-lg text-foreground font-mono tracking-tight">
+                                {shop?.settings?.currency || '₹'}{finalTotal.toFixed(2)}
                               </span>
+                              {order.order_type === 'delivery' && deliveryFee > 0 && (
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded tracking-tight bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/30">
+                                  +{shop?.settings?.currency || '₹'}{deliveryFee.toFixed(2)} Delivery Fee
+                                </span>
+                              )}
                               {isGstEnabled && totalTaxRate > 0 && (
                                 <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded tracking-tight ${
                                   isExclusiveTax
                                     ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30'
-                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                                    : 'bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
                                 }`}>
-                                  {isExclusiveTax ? `+₹${taxAmount.toFixed(2)} GST (${totalTaxRate}%)` : `incl. ₹${taxAmount.toFixed(2)} GST`}
+                                  {isExclusiveTax ? `+${shop?.settings?.currency || '₹'}${taxAmount.toFixed(2)} GST (${totalTaxRate}%)` : `incl. ${shop?.settings?.currency || '₹'}${taxAmount.toFixed(2)} GST`}
                                 </span>
                               )}
                             </div>
@@ -1452,125 +1591,153 @@ export function OrdersPage() {
                       })()}
                     </div>
 
-                    {/* Action Controls (Takes full space on mobile, compact on desktop) */}
-                    <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 w-full lg:w-auto lg:justify-end">
-                      {/* Kitchen KOT Controls */}
-                      {status !== 'COMPLETED' && status !== 'CANCELLED' && !isPendingVendor && (
-                        printedOrders[order.id] ? (
-                          <div className="w-full sm:w-auto inline-flex items-center justify-between rounded-xl border border-emerald-300/80 dark:border-emerald-800/80 bg-emerald-50/80 dark:bg-emerald-950/40 overflow-hidden shadow-2xs h-9">
-                            <span className="flex-1 sm:flex-none justify-center px-3 py-1 text-xs font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5 border-r border-emerald-200 dark:border-emerald-800/80">
-                              <CheckCircle2 size={13} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
-                              <span>KOT Printed</span>
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleDirectPrintKot(order, 'full')}
-                              className="flex-1 sm:flex-none justify-center px-3 py-1 text-xs font-semibold text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors flex items-center gap-1 cursor-pointer"
-                              title="Reprint KOT"
+                    {/* Tier 2: Operational Action Controls (Evenly Distributed Grid) */}
+                    {(() => {
+                      const hasCancelBtn = isCancellable && order.payment_status !== 'paid';
+
+                      return (
+                        <div className="grid grid-cols-2 gap-2 w-full pt-0.5">
+                          {/* KOT / POT Production Ticket Controls */}
+                          {status !== 'COMPLETED' && status !== 'CANCELLED' && !isPendingVendor && (
+                            printedOrders[order.id] ? (
+                              <div className="inline-flex items-center justify-between rounded-xl border border-emerald-300/80 dark:border-emerald-800/80 bg-emerald-50/80 dark:bg-emerald-950/40 overflow-hidden shadow-2xs h-9 w-full col-span-1">
+                                <span className="px-2.5 sm:px-3 py-1 text-xs font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5 border-r border-emerald-200 dark:border-emerald-800/80 truncate">
+                                  <CheckCircle2 size={13} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                  <span className="truncate">{businessCategory.kotShort} Printed</span>
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDirectPrintKot(order, 'full')}
+                                  className="px-2.5 sm:px-3 py-1 text-xs font-semibold text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors flex items-center gap-1 cursor-pointer shrink-0"
+                                  title={`Reprint ${businessCategory.kotShort}`}
+                                >
+                                  <RotateCcw size={12} />
+                                  <span>Reprint</span>
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="inline-flex items-center rounded-xl border border-amber-500/40 bg-amber-500/10 overflow-hidden shadow-2xs h-9 w-full col-span-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDirectPrintKot(order, 'full')}
+                                  className="w-full h-full px-3 py-1 text-xs font-bold text-amber-800 dark:text-amber-300 hover:bg-amber-500/20 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                                  title={`Print ${businessCategory.kotShort} directly to printer`}
+                                >
+                                  {businessCategory.isFood ? (
+                                    <UtensilsCrossed size={13} className="text-amber-500 shrink-0" />
+                                  ) : (
+                                    <ShoppingBag size={13} className="text-amber-500 shrink-0" />
+                                  )}
+                                  <span>Print {businessCategory.kotShort}</span>
+                                </button>
+                              </div>
+                            )
+                          )}
+
+                          {/* Add Items Button */}
+                          {status !== 'COMPLETED' && status !== 'CANCELLED' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setTargetOrderForAdd(order)}
+                              leftIcon={<Plus size={13} />}
+                              className={`border-primary/40 text-primary hover:bg-primary/10 text-xs font-bold h-9 px-3.5 justify-center w-full whitespace-nowrap ${isPendingVendor ? 'col-span-2' : 'col-span-1'}`}
                             >
-                              <RotateCcw size={12} />
-                              <span>Reprint</span>
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="w-full sm:w-auto inline-flex items-center rounded-xl border border-amber-500/40 bg-amber-500/10 overflow-hidden shadow-2xs h-9">
-                            <button
-                              type="button"
-                              onClick={() => handleDirectPrintKot(order, 'full')}
-                              className="w-full sm:w-auto justify-center px-4 py-1 text-xs font-bold text-amber-800 dark:text-amber-300 hover:bg-amber-500/20 transition-colors flex items-center gap-1.5 cursor-pointer"
-                              title="Print KOT directly to kitchen printer"
+                              Add Items
+                            </Button>
+                          )}
+
+                          {/* Bill & Tax Invoice Print Buttons (For completed orders) */}
+                          {status === 'COMPLETED' && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setThermalPrintOrder(order);
+                                }}
+                                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-1 text-xs font-bold rounded-xl shadow-xs h-9 bg-emerald-600 hover:bg-emerald-700 text-white transition-colors cursor-pointer w-full whitespace-nowrap col-span-1"
+                                title="Open thermal bill receipt & print to cashier printers"
+                              >
+                                <Printer size={13} />
+                                <span>Print Bill</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const tId = toast.loading('Preparing Tax Invoice...');
+                                  printOrderA4Invoice(order, shop).then((res) => {
+                                    if (res) {
+                                      toast.success('Tax Invoice ready!', { id: tId });
+                                    } else {
+                                      toast.error('Could not open print window', { id: tId });
+                                    }
+                                  });
+                                }}
+                                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-1 text-xs font-bold rounded-xl shadow-xs h-9 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer w-full whitespace-nowrap col-span-1"
+                                title="Print standard A4 / PDF Tax Invoice"
+                              >
+                                <FileText size={13} className="text-primary" />
+                                <span>Print Invoice</span>
+                              </button>
+                            </>
+                          )}
+
+                          {/* Cancel Button */}
+                          {hasCancelBtn && (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className="bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 border border-rose-200/60 dark:border-rose-900/40 text-xs font-bold h-9 px-3.5 justify-center w-full whitespace-nowrap col-span-1"
+                              onClick={() => setCancellingOrderId(order.id)}
+                              disabled={updatingOrderId === order.id}
+                              leftIcon={<XCircle size={13} />}
                             >
-                              <UtensilsCrossed size={13} className="text-amber-500 shrink-0" />
-                              <span>Print KOT</span>
-                            </button>
-                          </div>
-                        )
-                      )}
+                              Cancel
+                            </Button>
+                          )}
 
-                      {/* Operational Order Actions (Add Items, Complete, Accept, Cancel, Print Bill) */}
-                      <div className="flex items-center gap-2 w-full sm:w-auto">
-                        {/* Add Items Button */}
-                        {status !== 'COMPLETED' && status !== 'CANCELLED' && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setTargetOrderForAdd(order)}
-                            leftIcon={<Plus size={13} />}
-                            className="flex-1 sm:flex-none border-primary/40 text-primary hover:bg-primary/10 text-xs font-bold h-9 justify-center"
-                          >
-                            Add Items
-                          </Button>
-                        )}
+                          {/* Primary Order Progress Action: Accept Order */}
+                          {isPendingVendor && (
+                            <Button
+                              size="sm"
+                              className={`text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white h-9 shadow-xs px-4 justify-center w-full whitespace-nowrap ${hasCancelBtn ? 'col-span-1' : 'col-span-2'}`}
+                              onClick={() => {
+                                const isCash = order.payment_method === 'cash' || order.payment_method === 'cash_on_delivery' || order.payment_method === 'counter';
+                                const nextStatus = isCash ? 'PREPARING' : 'PAYMENT_PENDING';
+                                handleUpdateStatus(order.id, nextStatus);
+                              }}
+                              isLoading={updatingOrderId === order.id}
+                            >
+                              {order.payment_method === 'cash' || order.payment_method === 'cash_on_delivery' || order.payment_method === 'counter'
+                                ? 'Accept Order'
+                                : 'Accept & Request Payment'}
+                            </Button>
+                          )}
 
-                        {/* Bill Print Button (For completed orders) */}
-                        {status === 'COMPLETED' && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setThermalPrintOrder(order);
-                            }}
-                            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3.5 py-1 text-xs font-bold rounded-xl shadow-xs h-9 bg-emerald-600 hover:bg-emerald-700 text-white transition-colors cursor-pointer"
-                            title="Open bill receipt and print to all registered cashier printers"
-                          >
-                            <Printer size={13} />
-                            <span>Print Bill</span>
-                          </button>
-                        )}
+                          {/* Awaiting Customer Payment notice in merchant action area */}
+                          {isPaymentPending && (
+                            <div className={`flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-orange-50 border border-orange-200 text-orange-800 text-xs font-bold h-9 w-full whitespace-nowrap ${hasCancelBtn ? 'col-span-1' : 'col-span-2'}`}>
+                              <Clock size={13} className="animate-spin text-orange-600" />
+                              <span>Awaiting Payment...</span>
+                            </div>
+                          )}
 
-                        {/* Cancel Button */}
-                        {isCancellable && order.payment_status !== 'paid' && (
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            className="flex-1 sm:flex-none bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 border border-rose-200/60 dark:border-rose-900/40 text-xs font-bold h-9 px-3 justify-center"
-                            onClick={() => setCancellingOrderId(order.id)}
-                            disabled={updatingOrderId === order.id}
-                            leftIcon={<XCircle size={13} />}
-                          >
-                            Cancel
-                          </Button>
-                        )}
-
-                        {/* Primary Order Progress Action: Accept Order */}
-                        {isPendingVendor && (
-                          <Button
-                            size="sm"
-                            className="flex-1 sm:flex-none text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white h-9 shadow-xs px-4 justify-center"
-                            onClick={() => {
-                              const isCash = order.payment_method === 'cash' || order.payment_method === 'cash_on_delivery' || order.payment_method === 'counter';
-                              const nextStatus = isCash ? 'PREPARING' : 'PAYMENT_PENDING';
-                              handleUpdateStatus(order.id, nextStatus);
-                            }}
-                            isLoading={updatingOrderId === order.id}
-                          >
-                            {order.payment_method === 'cash' || order.payment_method === 'cash_on_delivery' || order.payment_method === 'counter'
-                              ? 'Accept Order'
-                              : 'Accept & Request Payment'}
-                          </Button>
-                        )}
-
-                        {/* Awaiting Customer Payment notice in merchant action area */}
-                        {isPaymentPending && (
-                          <div className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-orange-50 border border-orange-200 text-orange-800 text-xs font-bold h-9">
-                            <Clock size={13} className="animate-spin text-orange-600" />
-                            <span>Awaiting Payment...</span>
-                          </div>
-                        )}
-
-                        {/* Complete Order */}
-                        {(isPaid || isPreparing || isReady) && (
-                          <Button
-                            size="sm"
-                            className="flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold h-9 shadow-xs px-4 justify-center"
-                            onClick={() => handleUpdateStatus(order.id, 'COMPLETED')}
-                            isLoading={updatingOrderId === order.id}
-                            leftIcon={<Check size={14} />}
-                          >
-                            Complete Order
-                          </Button>
-                        )}
-                      </div>
-                    </div>
+                          {/* Complete Order */}
+                          {(isPaid || isPreparing || isReady) && (
+                            <Button
+                              size="sm"
+                              className={`bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold h-9 shadow-xs px-4 justify-center w-full whitespace-nowrap ${hasCancelBtn ? 'col-span-1' : 'col-span-2'}`}
+                              onClick={() => handleUpdateStatus(order.id, 'COMPLETED')}
+                              isLoading={updatingOrderId === order.id}
+                              leftIcon={<Check size={14} />}
+                            >
+                              Complete Order
+                            </Button>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                 </CardContent>
@@ -1628,14 +1795,35 @@ export function OrdersPage() {
               <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xl space-y-2 border border-slate-100 dark:border-slate-800">
                 <div className="flex items-center justify-between mb-1">
                   <div className="flex items-center gap-2">
-                    <MapPin size={16} className="text-primary" />
-                    <span className="text-xs text-slate-400 font-bold uppercase">Full Delivery Address</span>
+                    <MapPin size={16} className="text-primary shrink-0" />
+                    <div>
+                      <span className="text-xs text-slate-400 font-bold uppercase">Full Delivery Address</span>
+                      {(() => {
+                        const distKm = getOrderDistanceKm(customerModalOrder, shop?.latitude, shop?.longitude);
+                        const formattedDist = formatDistanceWithUnit(distKm, shop?.settings?.currency);
+                        const fee = getOrderDeliveryFee(customerModalOrder, shop?.settings, shop?.latitude, shop?.longitude);
+                        return (
+                          <div className="flex items-center gap-2 mt-0.5">
+                            {formattedDist && (
+                              <span className="text-[11px] font-bold text-amber-700 dark:text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded font-mono">
+                                {formattedDist} away
+                              </span>
+                            )}
+                            {fee > 0 && (
+                              <span className="text-[11px] font-bold text-blue-700 dark:text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded font-mono">
+                                Delivery Fee: {shop?.settings?.currency || '₹'}{fee.toFixed(2)}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
                   </div>
                   <a
                     href={generateGoogleMapsUrl(customerModalOrder.delivery_address)}
                     target="_blank"
                     rel="noreferrer"
-                    className="flex items-center gap-1 text-[11px] font-black text-primary hover:underline bg-primary/10 px-2 py-0.5 rounded-md"
+                    className="flex items-center gap-1 text-[11px] font-black text-primary hover:underline bg-primary/10 px-2 py-0.5 rounded-md shrink-0"
                   >
                     <Navigation size={12} /> Open Map
                   </a>
@@ -1647,7 +1835,7 @@ export function OrdersPage() {
             )}
 
             {/* Quick Share & Copy Actions */}
-            <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-150 dark:border-slate-800">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-slate-150 dark:border-slate-800">
               <Button
                 size="sm"
                 className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs"
@@ -1655,6 +1843,22 @@ export function OrdersPage() {
                 leftIcon={<Printer size={14} />}
               >
                 Print Bill
+              </Button>
+
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1 font-bold text-xs border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200"
+                onClick={() => {
+                  const tId = toast.loading('Preparing Tax Invoice...');
+                  printOrderA4Invoice(customerModalOrder, shop).then((res) => {
+                    if (res) toast.success('Tax Invoice ready!', { id: tId });
+                    else toast.error('Could not open print window', { id: tId });
+                  });
+                }}
+                leftIcon={<FileText size={14} className="text-primary" />}
+              >
+                Print Invoice
               </Button>
 
               <Button
@@ -1734,26 +1938,47 @@ export function OrdersPage() {
               <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xl space-y-2 border border-slate-100 dark:border-slate-800">
                 <div className="flex items-center justify-between mb-1">
                   <div className="flex items-center gap-2">
-                    <MapPin size={16} className="text-primary" />
-                    <span className="text-xs text-slate-400 font-bold uppercase">Full Delivery Address</span>
+                    <MapPin size={16} className="text-primary shrink-0" />
+                    <div>
+                      <span className="text-xs text-slate-400 font-bold uppercase">Full Delivery Address</span>
+                      {(() => {
+                        const distKm = getOrderDistanceKm(customerModalOrder, shop?.latitude, shop?.longitude);
+                        const formattedDist = formatDistanceWithUnit(distKm, shop?.settings?.currency);
+                        const fee = getOrderDeliveryFee(customerModalOrder, shop?.settings, shop?.latitude, shop?.longitude);
+                        return (
+                          <div className="flex items-center gap-2 mt-0.5">
+                            {formattedDist && (
+                              <span className="text-[11px] font-bold text-amber-700 dark:text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded font-mono">
+                                {formattedDist} away
+                              </span>
+                            )}
+                            {fee > 0 && (
+                              <span className="text-[11px] font-bold text-blue-700 dark:text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded font-mono">
+                                Delivery Fee: {shop?.settings?.currency || '₹'}{fee.toFixed(2)}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
                   </div>
                   <a
                     href={generateGoogleMapsUrl(customerModalOrder.delivery_address)}
                     target="_blank"
                     rel="noreferrer"
-                    className="flex items-center gap-1 text-[11px] font-black text-primary hover:underline bg-primary/10 px-2 py-0.5 rounded-md"
+                    className="flex items-center gap-1 text-[11px] font-black text-primary hover:underline bg-primary/10 px-2 py-0.5 rounded-md shrink-0"
                   >
                     <Navigation size={12} /> Open Map
                   </a>
                 </div>
                 <p className="text-slate-700 dark:text-slate-200 font-medium leading-relaxed bg-white dark:bg-slate-950 p-2.5 rounded-lg border border-slate-150 dark:border-slate-800">
-                  {customerModalOrder.delivery_address}
+                  {customerModalOrder.delivery_address.replace(/\s*\[loc=.*?\]/, '')}
                 </p>
               </div>
             )}
 
             {/* Quick Share & Copy Actions */}
-            <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-150 dark:border-slate-800">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-slate-150 dark:border-slate-800">
               <Button
                 size="sm"
                 className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs"
@@ -1761,6 +1986,22 @@ export function OrdersPage() {
                 leftIcon={<Printer size={14} />}
               >
                 Print Bill
+              </Button>
+
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1 font-bold text-xs border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200"
+                onClick={() => {
+                  const tId = toast.loading('Preparing Tax Invoice...');
+                  printOrderA4Invoice(customerModalOrder, shop).then((res) => {
+                    if (res) toast.success('Tax Invoice ready!', { id: tId });
+                    else toast.error('Could not open print window', { id: tId });
+                  });
+                }}
+                leftIcon={<FileText size={14} className="text-primary" />}
+              >
+                Print Invoice
               </Button>
 
               <Button
@@ -1814,12 +2055,25 @@ export function OrdersPage() {
                   <span className="font-extrabold text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider">Total Amount</span>
                   <span className="text-xs text-slate-400 font-medium">({itemsModalOrder.items?.length ?? 0} items)</span>
                 </div>
-                <div className="flex items-baseline gap-2 shrink-0 ml-auto sm:ml-0">
-                  <span className="hidden sm:inline font-extrabold text-xs text-slate-400 uppercase tracking-wider">Total</span>
-                  <span className="text-primary font-black text-xl sm:text-2xl font-mono">
-                    ₹{Number(itemsModalOrder.total_amount).toFixed(2)}
-                  </span>
-                </div>
+                {(() => {
+                  const modalActiveItems = (itemsModalOrder.items || []).filter((it: any) => !it.is_cancelled);
+                  const modalItemsSubtotal = modalActiveItems.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+                  const modalIsGstEnabled = Boolean(shop?.settings?.gst_enabled);
+                  const modalTotalTaxRate = Number(shop?.settings?.cgst_rate || 0) + Number(shop?.settings?.sgst_rate || 0);
+                  const modalIsExclusive = modalIsGstEnabled && !shop?.settings?.inclusive_tax;
+                  const modalTaxAmount = (modalIsExclusive && modalTotalTaxRate > 0)
+                    ? Math.round((modalItemsSubtotal * (modalTotalTaxRate / 100)) * 100) / 100
+                    : 0;
+                  const modalFinalTotal = modalIsExclusive ? (modalItemsSubtotal + modalTaxAmount) : Number(itemsModalOrder.total_amount ?? modalItemsSubtotal);
+                  return (
+                    <div className="flex items-baseline gap-2 shrink-0 ml-auto sm:ml-0">
+                      <span className="hidden sm:inline font-extrabold text-xs text-slate-400 uppercase tracking-wider">Total</span>
+                      <span className="text-primary font-black text-xl sm:text-2xl font-mono">
+                        ₹{modalFinalTotal.toFixed(2)}
+                      </span>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Row 2 on mobile: 50% Action buttons / Left side on desktop */}
@@ -1857,7 +2111,7 @@ export function OrdersPage() {
                 {itemsModalOrder.order_status !== 'COMPLETED' && itemsModalOrder.order_status !== 'CANCELLED' ? (
                   <Button
                     size="sm"
-                    className="flex-1 sm:flex-initial bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs h-10 sm:h-9 justify-center whitespace-nowrap shadow-xs"
+                    className="flex-1 sm:flex-initial bg-primary hover:bg-primary/90 text-white font-bold text-xs h-10 sm:h-9 justify-center whitespace-nowrap shadow-xs"
                     onClick={() => {
                       const ord = itemsModalOrder;
                       setItemsModalOrder(null);
@@ -1868,14 +2122,31 @@ export function OrdersPage() {
                     Add Items
                   </Button>
                 ) : itemsModalOrder.order_status === 'COMPLETED' ? (
-                  <Button
-                    size="sm"
-                    className="flex-1 sm:flex-initial bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-10 sm:h-9 justify-center whitespace-nowrap shadow-xs"
-                    onClick={() => setThermalPrintOrder(itemsModalOrder)}
-                    leftIcon={<Printer size={13} className="shrink-0" />}
-                  >
-                    Print Bill
-                  </Button>
+                  <>
+                    <Button
+                      size="sm"
+                      className="flex-1 sm:flex-initial bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-10 sm:h-9 justify-center whitespace-nowrap shadow-xs"
+                      onClick={() => setThermalPrintOrder(itemsModalOrder)}
+                      leftIcon={<Printer size={13} className="shrink-0" />}
+                    >
+                      Print Bill
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 sm:flex-initial font-bold text-xs h-10 sm:h-9 justify-center whitespace-nowrap shadow-xs border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200"
+                      onClick={() => {
+                        const tId = toast.loading('Preparing Tax Invoice...');
+                        printOrderA4Invoice(itemsModalOrder, shop).then((res) => {
+                          if (res) toast.success('Tax Invoice ready!', { id: tId });
+                          else toast.error('Could not open print window', { id: tId });
+                        });
+                      }}
+                      leftIcon={<FileText size={13} className="shrink-0 text-primary" />}
+                    >
+                      Print Invoice
+                    </Button>
+                  </>
                 ) : null}
               </div>
             </div>
@@ -1891,12 +2162,20 @@ export function OrdersPage() {
                   {orderStatusStyle(itemsModalOrder.order_status).label}
                 </span>
                 <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
-                  {itemsModalOrder.items.filter((i: any) => i.is_completed && !i.is_cancelled).length} of {itemsModalOrder.items.filter((i: any) => !i.is_cancelled).length} Items Served
+                  {['COMPLETED', 'DELIVERED'].includes(String(itemsModalOrder.order_status || '').toUpperCase())
+                    ? itemsModalOrder.items.filter((i: any) => !i.is_cancelled).length
+                    : itemsModalOrder.items.filter((i: any) => i.is_completed && !i.is_cancelled).length} of {itemsModalOrder.items.filter((i: any) => !i.is_cancelled).length} Items Served
                 </span>
-                {itemsModalOrder.items.some((i: any) => i.is_cancelled) && (
+                {itemsModalOrder.items.some((i: any) => i.is_cancelled && String(i.cancellation_reason || '').startsWith('Replaced with')) && (
+                  <span className="text-xs font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-2.5 py-0.5 rounded-lg border border-amber-200 dark:border-amber-800 flex items-center gap-1">
+                    <RotateCcw size={12} />
+                    <span>{itemsModalOrder.items.filter((i: any) => i.is_cancelled && String(i.cancellation_reason || '').startsWith('Replaced with')).length} Replaced</span>
+                  </span>
+                )}
+                {itemsModalOrder.items.some((i: any) => i.is_cancelled && !String(i.cancellation_reason || '').startsWith('Replaced with')) && (
                   <span className="text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 px-2.5 py-0.5 rounded-lg border border-rose-200 dark:border-rose-800 flex items-center gap-1">
                     <XCircle size={12} />
-                    <span>{itemsModalOrder.items.filter((i: any) => i.is_cancelled).length} Cancelled</span>
+                    <span>{itemsModalOrder.items.filter((i: any) => i.is_cancelled && !String(i.cancellation_reason || '').startsWith('Replaced with')).length} Cancelled</span>
                   </span>
                 )}
               </div>
@@ -1943,14 +2222,18 @@ export function OrdersPage() {
                   } catch { /* ignore */ }
                 }
 
-                const isItemDone = Boolean(it.is_completed);
+                const isOrderCompleted = ['COMPLETED', 'DELIVERED'].includes(String(itemsModalOrder.order_status || '').toUpperCase());
+                const isItemDone = Boolean(it.is_completed) || isOrderCompleted;
                 const isItemCancelled = Boolean(it.is_cancelled);
+                const isItemReplaced = isItemCancelled && String(it.cancellation_reason || '').startsWith('Replaced with');
 
                 return (
                   <div
                     key={it.id ?? idx}
                     className={`rounded-2xl p-4 border transition-all ${
-                      isItemCancelled
+                      isItemReplaced
+                        ? 'bg-amber-50/20 dark:bg-amber-950/15 border-amber-200/60 dark:border-amber-800/40 opacity-85'
+                        : isItemCancelled
                         ? 'bg-rose-50/20 dark:bg-rose-950/15 border-rose-200/60 dark:border-rose-800/40 opacity-80'
                         : isItemDone
                         ? 'bg-emerald-50/30 dark:bg-emerald-950/20 border-emerald-200/60 dark:border-emerald-800/40'
@@ -1961,7 +2244,9 @@ export function OrdersPage() {
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex items-center gap-2.5 flex-wrap min-w-0">
                         <span className={`font-bold text-base ${
-                          isItemCancelled 
+                          isItemReplaced
+                            ? 'line-through text-amber-700/80 dark:text-amber-400/80'
+                            : isItemCancelled 
                             ? 'line-through text-rose-500/80 dark:text-rose-400/80' 
                             : isItemDone 
                             ? 'text-slate-500 dark:text-slate-400' 
@@ -1971,7 +2256,9 @@ export function OrdersPage() {
                         </span>
 
                         <span className={`text-xs font-black px-2.5 py-0.5 rounded-lg ${
-                          isItemCancelled 
+                          isItemReplaced
+                            ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300'
+                            : isItemCancelled 
                             ? 'bg-rose-100 dark:bg-rose-900/40 text-rose-600' 
                             : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono'
                         }`}>
@@ -1979,9 +2266,15 @@ export function OrdersPage() {
                         </span>
 
                         {isItemCancelled && (
-                          <span className="text-[10px] font-black tracking-wider bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 px-2 py-0.5 rounded-md flex items-center gap-1">
-                            <XCircle size={11} /> CANCELLED
-                          </span>
+                          isItemReplaced ? (
+                            <span className="text-[10px] font-black tracking-wider bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 px-2 py-0.5 rounded-md flex items-center gap-1">
+                              <RotateCcw size={11} /> REPLACED
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-black tracking-wider bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 px-2 py-0.5 rounded-md flex items-center gap-1">
+                              <XCircle size={11} /> CANCELLED
+                            </span>
+                          )
                         )}
                         {isItemDone && !isItemCancelled && (
                           <span className="text-[10px] font-black tracking-wider bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 rounded-md flex items-center gap-1">
@@ -2025,16 +2318,32 @@ export function OrdersPage() {
                     {/* Bottom Action Row */}
                     <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-end gap-2">
                       {isItemCancelled ? (
-                        <button
-                          type="button"
-                          onClick={() => handleRestoreItem(itemsModalOrder.id, it.id)}
-                          disabled={togglingCancelItemId === it.id}
-                          className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs active:scale-[0.98]"
-                          title="Restore this item"
-                        >
-                          <RefreshCw size={12} className={togglingCancelItemId === it.id ? 'animate-spin' : ''} />
-                          <span>Restore Item</span>
-                        </button>
+                        isItemReplaced ? (
+                          <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-3 py-1 rounded-lg border border-amber-200/80 dark:border-amber-900/40">
+                            <RotateCcw size={12} />
+                            <span>Replaced • Non-restorable</span>
+                          </div>
+                        ) : ['paid', 'refunded', 'partially_refunded'].includes(String(itemsModalOrder?.payment_status || '').toLowerCase()) ? (
+                          <div className="flex items-center gap-1 text-[11px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-2.5 py-1 rounded-lg border border-rose-200/60 dark:border-rose-900/40">
+                            <span>Refunded • Non-recoverable</span>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleRestoreItem(itemsModalOrder.id, it.id)}
+                            disabled={togglingCancelItemId === it.id}
+                            className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs active:scale-[0.98]"
+                            title="Restore this item"
+                          >
+                            <RefreshCw size={12} className={togglingCancelItemId === it.id ? 'animate-spin' : ''} />
+                            <span>Restore Item</span>
+                          </button>
+                        )
+                      ) : isOrderCompleted ? (
+                        <div className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 px-3 py-1.5 rounded-xl border border-emerald-200/80 dark:border-emerald-800/50">
+                          <CheckCircle2 size={13} className="text-emerald-600 dark:text-emerald-400" />
+                          <span>Served (Completed)</span>
+                        </div>
                       ) : (
                         <>
                           <button
@@ -2103,15 +2412,28 @@ export function OrdersPage() {
           itemsModalOrder ? (
             <div className="space-y-3 w-full">
               {/* Row 1: Total Amount Bar */}
-              <div className="flex items-center justify-between px-1">
-                <div className="flex items-center gap-1.5">
-                  <span className="font-extrabold text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider">Total Amount</span>
-                  <span className="text-xs text-slate-400 font-medium">({itemsModalOrder.items?.length ?? 0} items)</span>
-                </div>
-                <span className="text-primary font-black text-xl font-mono">
-                  ₹{Number(itemsModalOrder.total_amount).toFixed(2)}
-                </span>
-              </div>
+              {(() => {
+                const modalActiveItems = (itemsModalOrder.items || []).filter((it: any) => !it.is_cancelled);
+                const modalItemsSubtotal = modalActiveItems.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+                const modalIsGstEnabled = Boolean(shop?.settings?.gst_enabled);
+                const modalTotalTaxRate = Number(shop?.settings?.cgst_rate || 0) + Number(shop?.settings?.sgst_rate || 0);
+                const modalIsExclusive = modalIsGstEnabled && !shop?.settings?.inclusive_tax;
+                const modalTaxAmount = (modalIsExclusive && modalTotalTaxRate > 0)
+                  ? Math.round((modalItemsSubtotal * (modalTotalTaxRate / 100)) * 100) / 100
+                  : 0;
+                const modalFinalTotal = modalIsExclusive ? (modalItemsSubtotal + modalTaxAmount) : Number(itemsModalOrder.total_amount ?? modalItemsSubtotal);
+                return (
+                  <div className="flex items-center justify-between px-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-extrabold text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider">Total Amount</span>
+                      <span className="text-xs text-slate-400 font-medium">({modalActiveItems.length} items)</span>
+                    </div>
+                    <span className="text-primary font-black text-xl font-mono">
+                      ₹{modalFinalTotal.toFixed(2)}
+                    </span>
+                  </div>
+                );
+              })()}
 
               {/* Row 2: Full Width Actions */}
               <div className="flex items-center gap-2 w-full">
@@ -2142,7 +2464,7 @@ export function OrdersPage() {
                 {itemsModalOrder.order_status !== 'COMPLETED' && itemsModalOrder.order_status !== 'CANCELLED' ? (
                   <Button
                     size="sm"
-                    className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs h-10 justify-center whitespace-nowrap shadow-xs"
+                    className="flex-1 bg-primary hover:bg-primary/90 text-white font-bold text-xs h-10 justify-center whitespace-nowrap shadow-xs"
                     onClick={() => {
                       const ord = itemsModalOrder;
                       setItemsModalOrder(null);
@@ -2153,14 +2475,31 @@ export function OrdersPage() {
                     Add Items
                   </Button>
                 ) : itemsModalOrder.order_status === 'COMPLETED' ? (
-                  <Button
-                    size="sm"
-                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-10 justify-center whitespace-nowrap shadow-xs"
-                    onClick={() => setThermalPrintOrder(itemsModalOrder)}
-                    leftIcon={<Printer size={13} className="shrink-0" />}
-                  >
-                    Print Bill
-                  </Button>
+                  <>
+                    <Button
+                      size="sm"
+                      className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-10 justify-center whitespace-nowrap shadow-xs"
+                      onClick={() => setThermalPrintOrder(itemsModalOrder)}
+                      leftIcon={<Printer size={13} className="shrink-0" />}
+                    >
+                      Print Bill
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 font-bold text-xs h-10 justify-center whitespace-nowrap shadow-xs border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200"
+                      onClick={() => {
+                        const tId = toast.loading('Preparing Tax Invoice...');
+                        printOrderA4Invoice(itemsModalOrder, shop).then((res) => {
+                          if (res) toast.success('Tax Invoice ready!', { id: tId });
+                          else toast.error('Could not open print window', { id: tId });
+                        });
+                      }}
+                      leftIcon={<FileText size={13} className="shrink-0 text-primary" />}
+                    >
+                      Print Invoice
+                    </Button>
+                  </>
                 ) : null}
               </div>
             </div>
@@ -2217,14 +2556,18 @@ export function OrdersPage() {
                   } catch { /* ignore */ }
                 }
 
-                const isItemDone = Boolean(it.is_completed);
+                const isOrderCompleted = ['COMPLETED', 'DELIVERED'].includes(String(itemsModalOrder.order_status || '').toUpperCase());
+                const isItemDone = Boolean(it.is_completed) || isOrderCompleted;
                 const isItemCancelled = Boolean(it.is_cancelled);
+                const isItemReplaced = isItemCancelled && String(it.cancellation_reason || '').startsWith('Replaced with');
 
                 return (
                   <div
                     key={it.id ?? idx}
                     className={`flex flex-col gap-2 rounded-2xl p-3.5 border transition-all ${
-                      isItemCancelled
+                      isItemReplaced
+                        ? 'bg-amber-50/20 dark:bg-amber-950/15 border-amber-200/60 dark:border-amber-800/40 opacity-85'
+                        : isItemCancelled
                         ? 'bg-rose-50/20 dark:bg-rose-950/15 border-rose-200/60 dark:border-rose-800/40 opacity-80'
                         : isItemDone
                         ? 'bg-emerald-50/30 dark:bg-emerald-950/20 border-emerald-200/60 dark:border-emerald-800/40'
@@ -2235,16 +2578,36 @@ export function OrdersPage() {
                     <div className="flex items-start justify-between gap-2">
                       <div className="space-y-0.5 flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className={`font-bold text-xs sm:text-sm ${isItemCancelled ? 'line-through text-rose-500/80 dark:text-rose-400/80' : isItemDone ? 'line-through text-slate-400 dark:text-slate-500' : 'text-slate-800 dark:text-slate-100'}`}>
+                          <span className={`font-bold text-xs sm:text-sm ${
+                            isItemReplaced
+                              ? 'line-through text-amber-700/80 dark:text-amber-400/80'
+                              : isItemCancelled 
+                              ? 'line-through text-rose-500/80 dark:text-rose-400/80' 
+                              : isItemDone 
+                              ? 'text-slate-500 dark:text-slate-400' 
+                              : 'text-slate-800 dark:text-slate-100'
+                          }`}>
                             {it.name}
                           </span>
-                          <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-md ${isItemCancelled ? 'bg-rose-100 dark:bg-rose-900/40 text-rose-600' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono'}`}>
+                          <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-md ${
+                            isItemReplaced
+                              ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300'
+                              : isItemCancelled 
+                              ? 'bg-rose-100 dark:bg-rose-900/40 text-rose-600' 
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono'
+                          }`}>
                             ×{it.quantity}
                           </span>
                           {isItemCancelled && (
-                            <span className="text-[9px] font-black tracking-wider bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 px-1 py-0.2 rounded">
-                              CANCELLED
-                            </span>
+                            isItemReplaced ? (
+                              <span className="text-[9px] font-black tracking-wider bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 px-1 py-0.2 rounded">
+                                REPLACED
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-black tracking-wider bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 px-1 py-0.2 rounded">
+                                CANCELLED
+                              </span>
+                            )
                           )}
                           {isItemDone && !isItemCancelled && (
                             <span className="text-[9px] font-black tracking-wider bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 px-1 py-0.2 rounded">
@@ -2273,15 +2636,30 @@ export function OrdersPage() {
 
                     <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800/60">
                       {isItemCancelled ? (
-                        <button
-                          type="button"
-                          onClick={() => handleRestoreItem(itemsModalOrder.id, it.id)}
-                          disabled={togglingCancelItemId === it.id}
-                          className="px-3 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 active:scale-[0.98]"
-                        >
-                          <RefreshCw size={11} className={togglingCancelItemId === it.id ? 'animate-spin' : ''} />
-                          <span>Restore</span>
-                        </button>
+                        isItemReplaced ? (
+                          <div className="flex items-center gap-1 text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded border border-amber-200/80 dark:border-amber-900/40">
+                            <span>Replaced • Non-restorable</span>
+                          </div>
+                        ) : ['paid', 'refunded', 'partially_refunded'].includes(String(itemsModalOrder?.payment_status || '').toLowerCase()) ? (
+                          <div className="flex items-center gap-1 text-[10px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-2 py-0.5 rounded border border-rose-200/60 dark:border-rose-900/40">
+                            <span>Refunded</span>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleRestoreItem(itemsModalOrder.id, it.id)}
+                            disabled={togglingCancelItemId === it.id}
+                            className="px-3 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 active:scale-[0.98]"
+                          >
+                            <RefreshCw size={11} className={togglingCancelItemId === it.id ? 'animate-spin' : ''} />
+                            <span>Restore</span>
+                          </button>
+                        )
+                      ) : isOrderCompleted ? (
+                        <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-1 rounded-lg border border-emerald-200/80 dark:border-emerald-800/50">
+                          <CheckCircle2 size={12} className="text-emerald-600 dark:text-emerald-400" />
+                          <span>Served</span>
+                        </div>
                       ) : (
                         <>
                           <button
@@ -2417,29 +2795,48 @@ export function OrdersPage() {
       {/* Item Cancellation Modal */}
       <Modal
         isOpen={!!cancellingItemOrder}
-        onClose={() => { setCancellingItemOrder(null); setCancelItemReason(''); }}
+        onClose={() => { 
+          setCancellingItemOrder(null); 
+          setSelectedCancelItemReason(DEFAULT_ITEM_CANCELLATION_REASONS[0].id);
+          setCustomCancelItemReason(''); 
+        }}
         title={`Cancel Item: ${cancellingItemOrder?.itemName || 'Item'}`}
       >
         <div className="space-y-4 pt-2">
           <p className="text-sm text-slate-600 dark:text-slate-400">
-            Provide a reason for cancelling this item. The item amount will be deducted from the bill and a Void KOT can be printed for the kitchen.
+            Select a reason for cancelling this item. The item amount will be deducted from the bill and a Void KOT can be printed for the kitchen.
           </p>
           <div className="space-y-2">
             <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
               Cancellation Reason
             </label>
-            <Input
-              placeholder="e.g. Customer cancelled, Out of stock, Spilled..."
-              value={cancelItemReason}
-              onChange={(e) => setCancelItemReason(e.target.value)}
-              autoFocus
+            <SearchableSelect
+              options={DEFAULT_ITEM_CANCELLATION_REASONS}
+              value={selectedCancelItemReason}
+              onChange={(val) => setSelectedCancelItemReason(val)}
+              placeholder="Select cancellation reason..."
+              showSearch={false}
+              className="h-10 rounded-xl text-xs"
             />
+            {selectedCancelItemReason === 'custom' && (
+              <Input
+                placeholder="Enter custom cancellation reason..."
+                value={customCancelItemReason}
+                onChange={(e) => setCustomCancelItemReason(e.target.value)}
+                className="text-xs h-10 mt-2"
+                autoFocus
+              />
+            )}
           </div>
           <div className="flex gap-3 pt-2">
             <Button
               variant="outline"
               className="flex-1"
-              onClick={() => { setCancellingItemOrder(null); setCancelItemReason(''); }}
+              onClick={() => { 
+                setCancellingItemOrder(null); 
+                setSelectedCancelItemReason(DEFAULT_ITEM_CANCELLATION_REASONS[0].id);
+                setCustomCancelItemReason(''); 
+              }}
             >
               Go Back
             </Button>

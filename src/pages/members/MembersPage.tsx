@@ -28,7 +28,7 @@ export function MembersPage() {
   const { setTitle: setHeaderTitle } = useHeaderStore();
 
   useEffect(() => {
-    setHeaderTitle('Members & Verified Customers', 'Manage your exclusive member base and view analytics.');
+    setHeaderTitle('Members & Verified Customers', 'Customer loyalty & profiles.');
   }, [setHeaderTitle]);
 
   useEffect(() => {
@@ -543,7 +543,7 @@ export function MembersPage() {
                     <th className="py-3 px-4">Mobile Number</th>
                     <th className="py-3 px-4">Joined On</th>
                     <th className="py-3 px-4">Time</th>
-                    {activeTab === 'repeated' && <th className="py-3 px-4 text-center">Visits</th>}
+                    <th className="py-3 px-4 text-center">Visits</th>
                     <th className="py-3 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -592,11 +592,11 @@ export function MembersPage() {
                           </span>
                         </div>
                       </td>
-                      {activeTab === 'repeated' && (
-                        <td className="py-3 px-4 text-center font-extrabold text-indigo-600 dark:text-indigo-400">
-                          {m.visit_count ?? 0}
-                        </td>
-                      )}
+                      <td className="py-3 px-4 text-center font-extrabold">
+                        <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full text-[11px] font-black bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/60 min-w-[24px]">
+                          {m.visit_count ?? 1}
+                        </span>
+                      </td>
                       <td className="py-3 px-4 text-right">
                         {activeTab === 'new' ? (
                           <Button

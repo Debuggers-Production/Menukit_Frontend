@@ -1,20 +1,24 @@
 import { LinkifiedText } from '../../components/LinkifiedText';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { ShoppingBag, Plus, Minus, Info, ChevronLeft, ChevronRight, CheckCircle, Key, MapPin, Navigation, Map, Armchair, Gift, Sparkles, Percent, Banknote, Truck, Tag } from 'lucide-react';
+import { ShoppingBag, Plus, Minus, Info, ChevronLeft, ChevronRight, CheckCircle, Key, MapPin, Navigation, Map, Armchair, Gift, Sparkles, Percent, Banknote, Truck, Tag, Clock, AlertTriangle, UtensilsCrossed, Gamepad2, History, Trophy, ChefHat } from 'lucide-react';
 import { useCartStore, useShopCart } from '@/store/cartStore';
 import { api } from '@/services/api';
 import { Shop, Discount } from '@/types';
+import { getBusinessCategory } from '@/config/businessCategories';
+import { checkShopOpenStatus } from '@/utils/shopTiming';
 import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Modal } from '@/components/ui/Modal';
 import { BottomSheet } from '@/components/ui/BottomSheet';
+import { SearchableSelect } from '@/components/ui/SearchableSelect';
 import { DiscountUnlockPopup } from '@/components/public/DiscountUnlockPopup';
 import confetti from 'canvas-confetti';
 import toast from 'react-hot-toast';
 import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { useActiveOrders } from '@/hooks/useActiveOrders';
 
 import { triggerHaptic, HAPTIC_PATTERNS } from '@/utils/haptic';
 import { loadGoogleFont } from '@/utils/fontLoader';
@@ -49,9 +53,11 @@ export function PublicCartPage() {
   const { items, updateQuantity, removeFromCart, clearCart, manualDiscountId, setManualDiscount, orderType, setOrderType, isOrderTypeSet, syncWithLatestMenu } = useShopCart(id);
   
   const [shop, setShop] = useState<Shop | null>(null);
+  const businessCategory = getBusinessCategory(shop?.category);
   const currencySymbol = shop?.settings?.currency || '₹';
   const [availableDiscounts, setAvailableDiscounts] = useState<Discount[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const shopOpenStatus = useMemo(() => checkShopOpenStatus(shop), [shop]);
   const [memberStatus] = useState<'unlocked' | 'verified-member' | null>(() => {
     if (!id) return null;
     return (sessionStorage.getItem(`member_status_${id}`)) as any;
@@ -63,18 +69,59 @@ export function PublicCartPage() {
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [tableNumber, setTableNumber] = useState('');
+  const [occupiedTables, setOccupiedTables] = useState<any[]>([]);
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'online' | 'upi'>('online');
 
+  // Fetch occupied tables for dine-in
+  useEffect(() => {
+    if (shop?.id && orderType === 'dine_in') {
+      const savedPhone = localStorage.getItem('customer_phone') || '';
+      const ph = customerPhone.trim() ? customerPhone.trim() : savedPhone;
+      api.get(`/public/shop/${shop.id}/occupied-tables`, { params: { phone: ph } })
+        .then(res => {
+          const list = res.data || [];
+          setOccupiedTables(list);
+          const myActive = list.find((ot: any) => ot.is_my_table);
+          if (myActive && myActive.table_number) {
+            setTableNumber(myActive.table_number);
+          } else if (tableNumber) {
+            const isOccupiedByOther = list.some((ot: any) => {
+              if (ot.is_my_table) return false;
+              const otNorm = String(ot.table_number || '').trim().toLowerCase();
+              const tblNorm = tableNumber.trim().toLowerCase();
+              return otNorm === tblNorm || otNorm.replace('table-', '') === tblNorm.replace('table-', '');
+            });
+            if (isOccupiedByOther) {
+              setTableNumber('');
+            }
+          }
+        })
+        .catch(() => setOccupiedTables([]));
+    }
+  }, [shop?.id, orderType, customerPhone, tableNumber]);
+
   // Keep paymentMethod synchronized when shop online payments setting or orderType changes
   useEffect(() => {
-    const isOnline = (shop?.settings as any)?.online_payments_enabled !== false;
+    const isMasterOnline = (shop?.settings as any)?.online_payments_enabled !== false;
+    let isChannelOnline = true;
+    if (orderType === 'dine_in') isChannelOnline = (shop?.settings as any)?.online_payments_dinein_enabled !== false;
+    else if (orderType === 'takeaway') isChannelOnline = (shop?.settings as any)?.online_payments_takeaway_enabled !== false;
+    else if (orderType === 'delivery') isChannelOnline = (shop?.settings as any)?.online_payments_delivery_enabled !== false;
+
+    const isOnline = isMasterOnline && isChannelOnline;
     if (isOnline) {
       setPaymentMethod('online');
     } else {
       setPaymentMethod('cash');
     }
-  }, [shop?.settings?.online_payments_enabled, orderType]);
+  }, [
+    (shop?.settings as any)?.online_payments_enabled,
+    (shop?.settings as any)?.online_payments_dinein_enabled,
+    (shop?.settings as any)?.online_payments_takeaway_enabled,
+    (shop?.settings as any)?.online_payments_delivery_enabled,
+    orderType
+  ]);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [showVerifyPopup, setShowVerifyPopup] = useState(false);
   const [pendingCheckoutAfterVerify, setPendingCheckoutAfterVerify] = useState(false);
@@ -368,6 +415,11 @@ export function PublicCartPage() {
   };
 
   const handlePlaceOrder = async () => {
+    if (!shopOpenStatus.isOpen) {
+      toast.error(`Cannot place order: ${shop?.name || 'Restaurant'} is currently closed. ${shopOpenStatus.message}`);
+      return;
+    }
+
     const currentToken = localStorage.getItem('customer_token');
     if (!currentToken) {
       toast.error("Please verify your mobile number first.");
@@ -380,9 +432,32 @@ export function PublicCartPage() {
       return;
     }
 
+    if (orderType === 'dine_in') {
+      if (!tableNumber) {
+        toast.error(`Please select a ${businessCategory.tableOrStallLabel || 'table number'}`);
+        return;
+      }
+      const isOccupiedByOther = occupiedTables.some((ot: any) => {
+        if (ot.is_my_table) return false;
+        const otNorm = String(ot.table_number || '').trim().toLowerCase();
+        const tblNorm = tableNumber.trim().toLowerCase();
+        return otNorm === tblNorm || otNorm.replace('table-', '') === tblNorm.replace('table-', '');
+      });
+      if (isOccupiedByOther) {
+        toast.error(`${tableNumber} is currently occupied by another customer. Please choose a different table.`);
+        return;
+      }
+    }
+
     if (orderType === 'delivery') {
       if (shop?.settings && !shop.settings.delivery_enabled) {
-        toast.error("Home delivery is disabled for this restaurant. Please choose Takeaway or Dine-in.");
+        toast.error(`Home delivery is disabled for this shop. Please choose ${businessCategory.orderTypeTakeawayTitle} or ${businessCategory.orderTypeDineInTitle}.`);
+        return;
+      }
+
+      const maxDist = Number((shop?.settings as any)?.max_delivery_distance || 0);
+      if (maxDist > 0 && deliveryDistanceKm > maxDist) {
+        toast.error(`Out of delivery range. The restaurant only delivers within ${maxDist} km (your location is ${deliveryDistanceKm.toFixed(1)} km away).`);
         return;
       }
 
@@ -410,7 +485,13 @@ export function PublicCartPage() {
       if (payload?.sub) finalPhone = payload.sub;
     } catch (e){}
 
-    const isOnlineDisabled = (shop?.settings as any)?.online_payments_enabled === false;
+    const isMasterOnline = (shop?.settings as any)?.online_payments_enabled !== false;
+    let isChannelOnline = true;
+    if (orderType === 'dine_in') isChannelOnline = (shop?.settings as any)?.online_payments_dinein_enabled !== false;
+    else if (orderType === 'takeaway') isChannelOnline = (shop?.settings as any)?.online_payments_takeaway_enabled !== false;
+    else if (orderType === 'delivery') isChannelOnline = (shop?.settings as any)?.online_payments_delivery_enabled !== false;
+
+    const isOnlineDisabled = !(isMasterOnline && isChannelOnline);
     const apiPaymentMethod = isOnlineDisabled ? 'cash' : 'online';
 
     setIsPlacingOrder(true);
@@ -430,23 +511,42 @@ export function PublicCartPage() {
         delivery_address: orderType === 'delivery' ? finalAddress : null,
         payment_method: apiPaymentMethod,
         total_amount: finalTotal,
-        items: items.map(it => ({
-          menu_item_id: it.menuItem.id,
-          name: it.menuItem.name,
-          quantity: it.quantity,
-          price: (() => {
-            const isDelivery = orderType === 'delivery';
-            if (it.menuItem.variants && it.menuItem.variants.length > 0) {
-              const v = it.menuItem.variants[it.selectedVariantIdx];
-              return Number((isDelivery && v.online_price) ? v.online_price : v.price);
-            }
-            return Number((isDelivery && it.menuItem.online_price) ? it.menuItem.online_price : it.menuItem.price);
-          })(),
-          variant_info: it.menuItem.variants && it.menuItem.variants.length > 0
-            ? { name: it.menuItem.variants[it.selectedVariantIdx].name }
-            : null,
-          addons_info: it.selectedAddons.map(idx => ({ name: it.menuItem.addons![idx].name, price: it.menuItem.addons![idx].price }))
-        }))
+        items: items.map(it => {
+          const isDelivery = orderType === 'delivery';
+          let itemPrice = 0;
+          if (it.menuItem.variants && it.menuItem.variants.length > 0) {
+            const v = it.menuItem.variants[it.selectedVariantIdx];
+            const p = (isDelivery && v.online_price) ? Number(v.online_price) : Number(v.price);
+            const op = isDelivery 
+              ? (v.online_offer_price ? Number(v.online_offer_price) : (v.online_price ? Number(v.online_price) : (v.offer_price ? Number(v.offer_price) : p)))
+              : (v.offer_price ? Number(v.offer_price) : p);
+            itemPrice = op < p ? op : p;
+          } else {
+            const p = (isDelivery && it.menuItem.online_price) ? Number(it.menuItem.online_price) : Number(it.menuItem.price);
+            const op = isDelivery 
+              ? (it.menuItem.online_offer_price ? Number(it.menuItem.online_offer_price) : (it.menuItem.online_price ? Number(it.menuItem.online_price) : (it.menuItem.offer_price ? Number(it.menuItem.offer_price) : p)))
+              : (it.menuItem.offer_price ? Number(it.menuItem.offer_price) : p);
+            itemPrice = op < p ? op : p;
+          }
+
+          let addonsPrice = 0;
+          if (it.menuItem.addons) {
+            it.selectedAddons.forEach(idx => {
+              addonsPrice += Number(it.menuItem.addons![idx].price);
+            });
+          }
+
+          return {
+            menu_item_id: it.menuItem.id,
+            name: it.menuItem.name,
+            quantity: it.quantity,
+            price: Number((itemPrice + addonsPrice).toFixed(2)),
+            variant_info: it.menuItem.variants && it.menuItem.variants.length > 0
+              ? { name: it.menuItem.variants[it.selectedVariantIdx].name }
+              : null,
+            addons_info: it.selectedAddons.map(idx => ({ name: it.menuItem.addons![idx].name, price: it.menuItem.addons![idx].price }))
+          };
+        })
       };
 
       const res = await api.post(`/public/shop/${id}/orders`, payload);
@@ -472,6 +572,16 @@ export function PublicCartPage() {
   };
 
   const primaryColor = shop?.theme?.primary_color || '#ea580c';
+  const { currentOrder, totalActiveCount } = useActiveOrders(id);
+  const [contestBtnTextIndex, setContestBtnTextIndex] = useState(0);
+  const contestTexts = useMemo(() => ['WIN FREE', 'PLAY CONTEST', 'JOIN SPIN', 'WIN CASH'], []);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setContestBtnTextIndex((prev) => (prev + 1) % contestTexts.length);
+    }, 2800);
+    return () => clearInterval(timer);
+  }, [contestTexts.length]);
 
   const calculateDistanceKm = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
     const R = 6371; // Earth radius in km
@@ -670,9 +780,9 @@ export function PublicCartPage() {
       } else {
         // Tax is added exclusively on top of food subtotal
         taxableAmount = foodSubtotalAfterDiscounts;
-        cgstAmount = parseFloat((foodSubtotalAfterDiscounts * (cgstRate / 100)).toFixed(2));
-        sgstAmount = parseFloat((foodSubtotalAfterDiscounts * (sgstRate / 100)).toFixed(2));
-        totalTaxAmount = parseFloat((cgstAmount + sgstAmount).toFixed(2));
+        totalTaxAmount = parseFloat((foodSubtotalAfterDiscounts * (totalTaxRate / 100)).toFixed(2));
+        cgstAmount = parseFloat((totalTaxAmount * (cgstRate / totalTaxRate)).toFixed(2));
+        sgstAmount = parseFloat((totalTaxAmount - cgstAmount).toFixed(2));
       }
     }
 
@@ -680,10 +790,16 @@ export function PublicCartPage() {
       ? foodSubtotalAfterDiscounts + totalTaxAmount
       : foodSubtotalAfterDiscounts;
 
-    const finalTotal = Math.max(0, parseFloat((foodTotalWithTax + deliveryFee).toFixed(2)));
+    const finalTotal = foodTotalWithTax + (orderType === 'delivery' ? deliveryFee : 0);
 
-    // Online payment fees (Razorpay — delivery/takeaway) — NOT for dine_in/cash/UPI
-    const isOnlineFeeApplicable = paymentMethod === 'online';
+    // Online payment fees (Razorpay) — dynamically applied based on user/merchant channel setting
+    const isMasterOnline = (shop?.settings as any)?.online_payments_enabled !== false;
+    let isChannelOnline = true;
+    if (orderType === 'dine_in') isChannelOnline = (shop?.settings as any)?.online_payments_dinein_enabled !== false;
+    else if (orderType === 'takeaway') isChannelOnline = (shop?.settings as any)?.online_payments_takeaway_enabled !== false;
+    else if (orderType === 'delivery') isChannelOnline = (shop?.settings as any)?.online_payments_delivery_enabled !== false;
+
+    const isOnlineFeeApplicable = paymentMethod === 'online' && isMasterOnline && isChannelOnline;
     const platformFee = isOnlineFeeApplicable ? parseFloat((finalTotal * 0.02).toFixed(2)) : 0;
     const pgFee = isOnlineFeeApplicable ? parseFloat((finalTotal * 0.03).toFixed(2)) : 0;
     const gstOnFee = isOnlineFeeApplicable ? parseFloat((pgFee * 0.18).toFixed(2)) : 0;
@@ -710,7 +826,7 @@ export function PublicCartPage() {
       gstOnFee,
       grandTotal,
     };
-  }, [items, availableDiscounts, manualDiscountId, memberStatus, deliveryFee, paymentMethod, shop?.settings]);
+  }, [items, availableDiscounts, manualDiscountId, memberStatus, deliveryFee, paymentMethod, orderType, shop?.settings]);
 
   const [showAllItemsModal, setShowAllItemsModal] = useState(false);
   const [showAllOffersModal, setShowAllOffersModal] = useState(false);
@@ -965,6 +1081,24 @@ export function PublicCartPage() {
           </div>
         ) : (
           <div className="space-y-6">
+            {/* Restaurant Closed Status Banner */}
+            {!shopOpenStatus.isOpen && (
+              <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 flex items-center gap-3.5 shadow-xs animate-in fade-in">
+                <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <Clock size={20} />
+                </div>
+                <div className="flex-1 text-left">
+                  <div className="flex items-center gap-2">
+                    <span className="font-extrabold text-sm text-amber-800 dark:text-amber-300">Restaurant is Currently Closed</span>
+                    <span className="text-[10px] px-2 py-0.5 bg-amber-200/80 dark:bg-amber-900/80 rounded-full font-bold">Orders Paused</span>
+                  </div>
+                  <p className="text-xs text-amber-700 dark:text-amber-300/90 mt-0.5 font-medium">
+                    {shop?.name || 'Restaurant'} is not accepting orders at this time. {shopOpenStatus.message}
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Rotating dining table container */}
             <div className="flex flex-col items-center relative w-full overflow-visible px-8">
               
@@ -1415,14 +1549,25 @@ export function PublicCartPage() {
                 
                 {/* Delivery Charge */}
                 {orderType === 'delivery' && (
-                  <div className="space-y-0.5">
+                  <div className="space-y-1">
                     <div className="flex justify-between text-xs font-semibold text-slate-700">
                       <span className="underline underline-offset-2 decoration-slate-300 decoration-dashed">
                         Delivery partner fee {deliveryDistanceKm > 0 ? `for ${deliveryDistanceKm.toFixed(1)} km` : ''}
                       </span>
                       <span className="text-slate-900 font-bold">{currencySymbol}{deliveryFee.toFixed(2)}</span>
                     </div>
-                    <p className="text-[10px] text-slate-400 font-medium">Goes to them for their time and effort</p>
+                    {(() => {
+                      const maxDist = Number((shop?.settings as any)?.max_delivery_distance || 0);
+                      if (maxDist > 0 && deliveryDistanceKm > maxDist) {
+                        return (
+                          <div className="p-2.5 mt-2 bg-rose-50 border border-rose-200 rounded-xl text-[11px] text-rose-700 font-bold flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0" />
+                            <span>Out of Delivery Range: Max radius is {maxDist} km (you are {deliveryDistanceKm.toFixed(1)} km away).</span>
+                          </div>
+                        );
+                      }
+                      return <p className="text-[10px] text-slate-400 font-medium">Goes to them for their time and effort</p>;
+                    })()}
                   </div>
                 )}
 
@@ -1456,7 +1601,7 @@ export function PublicCartPage() {
 
                     {manualDiscountAmount > 0 && (
                       <div className="flex justify-between text-xs font-bold text-emerald-600">
-                        <span>Restaurant Coupon</span>
+                        <span>Shop Discount</span>
                         <span>-{currencySymbol}{manualDiscountAmount.toFixed(2)}</span>
                       </div>
                     )}
@@ -1537,27 +1682,37 @@ export function PublicCartPage() {
                 <p className="text-[9px] text-slate-400 mt-0.5">incl. fees</p>
               )}
             </div>
-            <button
-              onClick={() => {
-                const anyEnabled = shop?.settings?.dinein_enabled || shop?.settings?.takeaway_enabled || shop?.settings?.delivery_enabled;
-                if (!anyEnabled) {
-                  toast.error("Ordering is currently disabled for this shop.");
-                  return;
-                }
-                const currentToken = localStorage.getItem('customer_token');
-                if (!currentToken) {
-                  // Must verify mobile first, then open checkout
-                  setPendingCheckoutAfterVerify(true);
-                  setShowVerifyPopup(true);
-                } else {
-                  setIsCheckoutOpen(true);
-                }
-              }}
-              className="flex-[2] py-2.5 rounded-xl text-white font-bold text-[15px] shadow-lg hover:opacity-90 transition-all flex items-center justify-center gap-2 active:scale-[0.98]"
-              style={{ backgroundColor: primaryColor, boxShadow: `0 4px 20px ${primaryColor}40` }}
-            >
-              Checkout Order
-            </button>
+            {!shopOpenStatus.isOpen ? (
+              <button
+                disabled
+                className="flex-[2] py-2.5 px-3 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-not-allowed shadow-none"
+              >
+                <Clock size={16} className="shrink-0 text-amber-600 dark:text-amber-400" />
+                <span>Closed ({shopOpenStatus.openingFormatted ? `Opens at ${shopOpenStatus.openingFormatted}` : 'Orders Paused'})</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  const anyEnabled = shop?.settings?.dinein_enabled || shop?.settings?.takeaway_enabled || shop?.settings?.delivery_enabled;
+                  if (!anyEnabled) {
+                    toast.error("Ordering is currently disabled for this shop.");
+                    return;
+                  }
+                  const currentToken = localStorage.getItem('customer_token');
+                  if (!currentToken) {
+                    // Must verify mobile first, then open checkout
+                    setPendingCheckoutAfterVerify(true);
+                    setShowVerifyPopup(true);
+                  } else {
+                    setIsCheckoutOpen(true);
+                  }
+                }}
+                className="flex-[2] py-2.5 rounded-xl text-white font-bold text-[15px] shadow-lg hover:opacity-90 transition-all flex items-center justify-center gap-2 active:scale-[0.98]"
+                style={{ backgroundColor: primaryColor, boxShadow: `0 4px 20px ${primaryColor}40` }}
+              >
+                Checkout Order
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -1580,7 +1735,12 @@ export function PublicCartPage() {
                 }
                 if (orderType === 'delivery') {
                   if (shop?.settings && !shop.settings.delivery_enabled) {
-                    toast.error("Delivery is not enabled for this restaurant.");
+                    toast.error("Delivery is not enabled for this shop.");
+                    return;
+                  }
+                  const maxDist = Number((shop?.settings as any)?.max_delivery_distance || 0);
+                  if (maxDist > 0 && deliveryDistanceKm > maxDist) {
+                    toast.error(`Out of delivery range. The restaurant only delivers within ${maxDist} km (your distance: ${deliveryDistanceKm.toFixed(1)} km).`);
                     return;
                   }
                   const savedLat = localStorage.getItem('customer_lat');
@@ -1643,12 +1803,12 @@ export function PublicCartPage() {
               <div>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Fulfillment Mode</p>
                 <p className="text-sm font-extrabold text-slate-800 dark:text-slate-100 capitalize">
-                  {orderType === 'delivery' ? 'Delivery to Home' : orderType === 'takeaway' ? 'Takeaway / Store Pickup' : 'Dine-In'}
+                  {orderType === 'delivery' ? businessCategory.orderTypeDeliveryTitle : orderType === 'takeaway' ? businessCategory.orderTypeTakeawayTitle : businessCategory.orderTypeDineInTitle}
                 </p>
               </div>
             </div>
             <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/20 uppercase tracking-wider">
-              {orderType.replace('_', ' ')}
+              {orderType === 'delivery' ? businessCategory.orderTypeDeliveryTitle : orderType === 'takeaway' ? businessCategory.orderTypeTakeawayTitle : businessCategory.orderTypeDineInTitle}
             </span>
           </div>
 
@@ -1706,18 +1866,80 @@ export function PublicCartPage() {
                 )}
               </div>
 
-              {orderType === 'dine_in' && (
-                <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Table Number (Optional)</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Table 5"
-                    value={tableNumber}
-                    onChange={(e) => setTableNumber(e.target.value)}
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-slate-300 transition-all font-medium text-slate-800 placeholder-slate-400 text-sm"
-                  />
-                </div>
-              )}
+              {orderType === 'dine_in' && (() => {
+                const totalTables = Number((shop?.settings as any)?.dinein_tables_count || 10);
+                const tablesList = Array.from({ length: totalTables }, (_, i) => `Table-${i + 1}`);
+
+                const myActiveTable = occupiedTables.find((ot: any) => ot.is_my_table);
+
+                // If customer ALREADY has an active order on a table, do NOT show the table choosing dropdown!
+                if (myActiveTable) {
+                  return (
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
+                        {businessCategory.tableOrStallLabel || 'Table Number'}
+                      </label>
+                      <div className="p-3.5 bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/30 rounded-2xl space-y-2 shadow-xs">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 font-black text-amber-900 dark:text-amber-200 text-sm">
+                            <UtensilsCrossed size={16} className="text-primary shrink-0" />
+                            <span>{myActiveTable.table_number || tableNumber}</span>
+                          </div>
+                          <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/30">
+                            Active Bill • Order #{myActiveTable.daily_order_number}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-amber-800 dark:text-amber-300 leading-snug">
+                          These items will automatically be added to your ongoing bill for <strong>{myActiveTable.table_number || tableNumber}</strong>. You can enjoy your meal and pay all items together at the end!
+                        </p>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // If no active table order exists yet, show our custom SearchableSelect dropdown with UtensilsCrossed icon
+                const tableOptions = tablesList.map((tbl) => {
+                  const occ = occupiedTables.find((ot: any) => {
+                    const otNorm = String(ot.table_number || '').trim().toLowerCase();
+                    const tblNorm = tbl.toLowerCase();
+                    return otNorm === tblNorm || otNorm.replace('table-', '') === tblNorm.replace('table-', '');
+                  });
+
+                  const isOccupiedByOther = Boolean(occ && !occ.is_my_table);
+
+                  return {
+                    id: tbl,
+                    name: tbl,
+                    icon: <UtensilsCrossed size={14} className={isOccupiedByOther ? 'text-slate-400' : 'text-primary'} />,
+                    disabled: isOccupiedByOther,
+                    subtext: isOccupiedByOther ? 'Occupied' : 'Available',
+                  };
+                });
+
+                return (
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
+                        {businessCategory.tableOrStallLabel || 'Select Table Number'}
+                      </label>
+                      {tableNumber && (
+                        <span className="text-[10px] font-black text-amber-700 bg-amber-100 px-2 py-0.5 rounded-md border border-amber-200">
+                          {tableNumber} Selected
+                        </span>
+                      )}
+                    </div>
+
+                    <SearchableSelect
+                      options={tableOptions}
+                      value={tableNumber}
+                      onChange={(val) => setTableNumber(val)}
+                      placeholder={`-- Choose ${businessCategory.tableOrStallLabel || 'Table Number'} --`}
+                      showSearch={tablesList.length > 8}
+                      className="w-full h-11 bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-xl font-bold text-slate-800 dark:text-white"
+                    />
+                  </div>
+                );
+              })()}
 
               {orderType === 'delivery' && (
                 <div className="space-y-2.5">
@@ -1734,7 +1956,7 @@ export function PublicCartPage() {
                   {shop?.settings && !shop.settings.delivery_enabled ? (
                     <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center gap-2">
                       <span className="text-sm">🚫</span>
-                      <span>Delivery is currently unavailable for this restaurant.</span>
+                      <span>Delivery is currently unavailable for this shop.</span>
                     </div>
                   ) : (
                     <div className="p-2.5 rounded-xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/40 text-blue-900 dark:text-blue-300 text-xs space-y-1">
@@ -1854,7 +2076,7 @@ export function PublicCartPage() {
                       )}
                       {manualDiscountAmount > 0 && (
                         <div className="flex justify-between font-bold text-emerald-600 dark:text-emerald-400">
-                          <span>Restaurant Coupon</span>
+                          <span>Shop Coupon</span>
                           <span>-{currencySymbol}{manualDiscountAmount.toFixed(2)}</span>
                         </div>
                       )}
@@ -1897,49 +2119,58 @@ export function PublicCartPage() {
               <div>
                 <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Payment Option</label>
                 <div className="space-y-2">
-                  {(shop?.settings as any)?.online_payments_enabled !== false ? (
-                    <label
-                      className="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all"
-                      style={{ borderColor: primaryColor, backgroundColor: `${primaryColor}08` }}
-                    >
-                      <input
-                        type="radio"
-                        name="payment"
-                        checked={true}
-                        readOnly
-                        className="w-4 h-4"
-                        style={{ accentColor: primaryColor }}
-                      />
-                      <div className="flex flex-col flex-1">
-                        <span className="text-sm font-semibold text-slate-850">Pay Online</span>
-                        <span className="text-[10px] text-slate-400">UPI, Cards, Netbanking. Fast & secure.</span>
-                      </div>
-                    </label>
-                  ) : (
-                    <label className="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all border-emerald-200 bg-emerald-50/40">
-                      <input
-                        type="radio"
-                        name="payment"
-                        checked={paymentMethod === 'cash'}
-                        onChange={() => setPaymentMethod('cash')}
-                        className="w-4 h-4 accent-emerald-600"
-                      />
-                      <div className="flex flex-col flex-1">
-                        <span className="text-sm font-semibold text-slate-850">
-                          {orderType === 'dine_in'
-                            ? 'Pay at Counter / Cash'
-                            : orderType === 'delivery'
-                            ? 'Pay on Delivery (Cash / UPI on Spot)'
-                            : 'Pay on Pickup (Cash / UPI at Shop)'}
-                        </span>
-                        <span className="text-[10px] text-slate-500">
-                          {orderType === 'dine_in'
-                            ? 'Pay physically at the restaurant counter.'
-                            : 'Pay directly when your food arrives or when you pick up.'}
-                        </span>
-                      </div>
-                    </label>
-                  )}
+                  {(() => {
+                    const isMasterOnline = (shop?.settings as any)?.online_payments_enabled !== false;
+                    let isChannelOnline = true;
+                    if (orderType === 'dine_in') isChannelOnline = (shop?.settings as any)?.online_payments_dinein_enabled !== false;
+                    else if (orderType === 'takeaway') isChannelOnline = (shop?.settings as any)?.online_payments_takeaway_enabled !== false;
+                    else if (orderType === 'delivery') isChannelOnline = (shop?.settings as any)?.online_payments_delivery_enabled !== false;
+                    const isOnlineAllowed = isMasterOnline && isChannelOnline;
+
+                    return isOnlineAllowed ? (
+                      <label
+                        className="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all"
+                        style={{ borderColor: primaryColor, backgroundColor: `${primaryColor}08` }}
+                      >
+                        <input
+                          type="radio"
+                          name="payment"
+                          checked={true}
+                          readOnly
+                          className="w-4 h-4"
+                          style={{ accentColor: primaryColor }}
+                        />
+                        <div className="flex flex-col flex-1">
+                          <span className="text-sm font-semibold text-slate-850">Pay Online</span>
+                          <span className="text-[10px] text-slate-400">UPI, Cards, Netbanking. Fast & secure.</span>
+                        </div>
+                      </label>
+                    ) : (
+                      <label className="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all border-emerald-200 bg-emerald-50/40">
+                        <input
+                          type="radio"
+                          name="payment"
+                          checked={paymentMethod === 'cash'}
+                          onChange={() => setPaymentMethod('cash')}
+                          className="w-4 h-4 accent-emerald-600"
+                        />
+                        <div className="flex flex-col flex-1">
+                          <span className="text-sm font-semibold text-slate-850">
+                            {orderType === 'dine_in'
+                              ? 'Pay at Counter / Cash'
+                              : orderType === 'delivery'
+                              ? 'Pay on Delivery (Cash / UPI on Spot)'
+                              : 'Pay on Pickup (Cash / UPI at Shop)'}
+                          </span>
+                          <span className="text-[10px] text-slate-500">
+                            {orderType === 'dine_in'
+                              ? 'Pay physically at the shop / counter.'
+                              : 'Pay directly upon delivery or when you pick up.'}
+                          </span>
+                        </div>
+                      </label>
+                    );
+                  })()}
                 </div>
                 
                 {/* Payment Delay Note */}
@@ -2056,6 +2287,109 @@ export function PublicCartPage() {
           }}
         />
       )}
+      {/* 🧱 Premium Floating Bottom Asymmetric Sized Navigation Dock Frame (Visible when cart is empty) */}
+      {items.length === 0 && (
+        <div className="fixed bottom-4 left-4 right-4 sm:bottom-6 sm:left-1/2 sm:-translate-x-1/2 sm:w-[480px] z-40 transition-transform duration-300">
+          <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl rounded-[32px] shadow-[0_12px_45px_rgba(0,0,0,0.15)] border border-slate-100 dark:border-slate-800 p-2">
+            <div className="grid grid-cols-6 gap-1 items-center text-center">
+
+              {/* Menu Button */}
+              <button 
+                onClick={() => { triggerHaptic(HAPTIC_PATTERNS.tap); navigate(`/shop/${id}`); }} 
+                className="col-span-1 flex flex-col items-center justify-center gap-1 cursor-pointer"
+              >
+                <UtensilsCrossed size={19} className="text-slate-400 group-hover:text-slate-650" />
+                <span className="text-[10px] font-bold text-slate-400">Menu</span>
+              </button>
+
+              {/* Cart Button (Active) */}
+              <button 
+                onClick={() => { triggerHaptic(HAPTIC_PATTERNS.tap); }} 
+                className="col-span-1 flex flex-col items-center justify-center gap-1 relative cursor-pointer"
+              >
+                <ShoppingBag size={19} style={{ color: primaryColor }} />
+                <span className="text-[10px] font-bold" style={{ color: primaryColor }}>Cart</span>
+              </button>
+
+              {/* Games Button */}
+              <button 
+                onClick={() => { triggerHaptic(HAPTIC_PATTERNS.tap); navigate(`/shop/${id}?games=true`); }} 
+                className="col-span-1 flex flex-col items-center justify-center gap-1 cursor-pointer"
+              >
+                <Gamepad2 size={19} className="text-slate-400" />
+                <span className="text-[10px] font-bold text-slate-400">Games</span>
+              </button>
+
+              {/* Orders Button */}
+              <div className="col-span-1 flex flex-col items-center justify-center gap-1 relative">
+                <div className="relative">
+                  <button
+                    onClick={() => { triggerHaptic(HAPTIC_PATTERNS.tap); navigate(`/shop/${id}/orders`); }}
+                    className="flex items-center justify-center cursor-pointer"
+                  >
+                    <History size={19} className="text-slate-400" />
+                  </button>
+                  {totalActiveCount > 0 && currentOrder && (
+                    <button
+                      key={currentOrder.id}
+                      onClick={() => { triggerHaptic(HAPTIC_PATTERNS.tap); navigate(`/shop/${id}/order/${currentOrder.id}`); }}
+                      className={`absolute -top-4 left-1/2 -translate-x-1/2 whitespace-nowrap text-white text-[8px] font-black px-1.5 py-0.5 rounded-full shadow-md flex items-center gap-1 border border-white dark:border-slate-900 transition-all duration-300 cursor-pointer hover:brightness-110 active:scale-95 ${
+                        currentOrder.order_status === 'pending'
+                          ? 'bg-gradient-to-r from-amber-500 to-amber-600 animate-pulse'
+                          : 'bg-gradient-to-r from-blue-500 to-indigo-600 animate-bounce'
+                      }`}
+                    >
+                      <span>#{currentOrder.id.slice(0, 4).toUpperCase()}</span>
+                      {currentOrder.order_status === 'pending' ? <Clock size={10} className="animate-spin text-white" /> : <ChefHat size={10} className="text-white" />}
+                      <span>{currentOrder.order_status === 'pending' ? 'Waiting' : 'Preparing'}</span>
+                    </button>
+                  )}
+                </div>
+                <span className="text-[10px] font-bold text-slate-400">Orders</span>
+              </div>
+
+              {/* 🏆 Asymmetric Extra-Wide Contest Button */}
+              <button
+                onClick={() => { triggerHaptic(HAPTIC_PATTERNS.balloonClick); navigate(`/shop/${id}/contest`); }}
+                className="col-span-2 relative flex items-center justify-center gap-1.5 h-[46px] text-white font-black shadow-md transition-all active:scale-[0.97] hover:brightness-110 tracking-wider px-3 rounded-r-2xl rounded-l-none overflow-hidden cursor-pointer" 
+                style={{ 
+                  background: `linear-gradient(135deg, ${primaryColor} 0%, #ff8c00 100%)`,
+                  boxShadow: `0 4px 12px 0 ${primaryColor}30`
+                }}
+              >
+                <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-r-2xl">
+                  <div className="absolute left-1/2 top-1/2 w-2.5 h-1.5 bg-yellow-400 rounded-sm animate-[particle-pop_1.8s_infinite_ease-out]" style={{ '--tx': '45px', '--ty': '-12px', '--rot': '120deg' } as any} />
+                  <div className="absolute left-1/2 top-1/2 w-1.5 h-3.5 bg-rose-400 rounded-sm animate-[particle-pop_1.8s_infinite_ease-out_0.2s]" style={{ '--tx': '-40px', '--ty': '10px', '--rot': '180deg' } as any} />
+                  <div className="absolute left-1/2 top-1/2 w-3 h-1.5 bg-cyan-400 rounded-sm animate-[particle-pop_1.8s_infinite_ease-out_0.4s]" style={{ '--tx': '30px', '--ty': '15px', '--rot': '90deg' } as any} />
+                  <div className="absolute left-1/2 top-1/2 w-2 h-2 bg-emerald-400 rounded-full animate-[particle-pop_1.8s_infinite_ease-out_0.6s]" style={{ '--tx': '-25px', '--ty': '-16px', '--rot': '45deg' } as any} />
+                </div>
+
+                <Trophy size={15} className="text-white fill-white/10 shrink-0 relative z-10" />
+                <span 
+                  key={contestBtnTextIndex} 
+                  className="text-[10px] uppercase tracking-widest text-white relative z-10 animate-[btn-text-swap_0.4s_ease-out] block"
+                >
+                  {contestTexts[contestBtnTextIndex]}
+                </span>
+              </button>
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes btn-text-swap {
+          0% { transform: translateY(8px); opacity: 0; }
+          100% { transform: translateY(0); opacity: 1; }
+        }
+        @keyframes particle-pop {
+          0% { transform: translate(-50%, -50%) translate(0, 0) scale(1) rotate(0deg); opacity: 0; }
+          10% { opacity: 0.9; }
+          90% { opacity: 0.8; }
+          100% { transform: translate(calc(-50% + var(--tx, 0px)), calc(-50% + var(--ty, 0px))) scale(0) rotate(var(--rot, 0deg)); opacity: 0; }
+        }
+      `}</style>
     </div>
   );
 }

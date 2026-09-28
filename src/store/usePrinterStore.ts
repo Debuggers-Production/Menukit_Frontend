@@ -8,7 +8,7 @@ export interface PrinterStation {
   categoryIds: string[]; // ['all'] or array of category UUIDs
   autoPrintOnAccept: boolean;
   enabled: boolean;
-  connectionType?: 'browser' | 'network' | 'usb';
+  connectionType?: 'browser' | 'network' | 'usb' | 'bluetooth';
   ipAddress?: string;
   port?: number;
   soundBuzzer?: boolean;
@@ -18,7 +18,7 @@ export interface BillingPrinter {
   id: string;
   name: string;
   paperWidth: '80mm' | '58mm';
-  connectionType: 'browser' | 'network' | 'usb';
+  connectionType: 'browser' | 'network' | 'usb' | 'bluetooth';
   ipAddress: string;
   port: number;
   enabled: boolean;
@@ -29,7 +29,7 @@ export interface BillingPrinterConfig {
   id?: string;
   name: string;
   paperWidth: '80mm' | '58mm';
-  connectionType: 'browser' | 'network' | 'usb';
+  connectionType: 'browser' | 'network' | 'usb' | 'bluetooth';
   ipAddress: string;
   port: number;
   enabled: boolean;

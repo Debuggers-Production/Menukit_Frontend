@@ -20,7 +20,7 @@ export function CustomizeThemePage() {
   const { setTitle: setHeaderTitle } = useHeaderStore();
 
   useEffect(() => {
-    setHeaderTitle('Customize Theme', 'Configure layout engines, border properties, typography, and brand palettes.');
+    setHeaderTitle('Customize Theme', 'Digital menu design & brand theme.');
     api.get('/subscription/current').then(res => setSubStatus(res.data)).catch(console.error);
     
     if (!shop) {

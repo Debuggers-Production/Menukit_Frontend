@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Gift, Phone, ShieldCheck, User, ChevronDown, X, Crown, Sparkles } from 'lucide-react';
+import { Gift, Phone, ShieldCheck, User, ChevronDown, Crown, Sparkles } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { triggerHaptic, HAPTIC_PATTERNS } from '@/utils/haptic';
 import { customerService } from '../../services/customers';
@@ -250,7 +250,11 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
           localStorage.setItem('customer_address', res.delivery_address);
         }
         localStorage.setItem('customer_mobile', `${countryCode}${mobileNumber}`);
+        localStorage.setItem('customer_phone', `${countryCode}${mobileNumber}`);
         sessionStorage.setItem(`member_status_${shopId}`, res.is_strict_member ? 'verified-member' : 'unlocked');
+        window.dispatchEvent(new CustomEvent('menukit-customer-changed', { detail: { token: res.access_token, mobile: `${countryCode}${mobileNumber}` } }));
+        window.dispatchEvent(new Event('menukit-realtime-update'));
+
         if (!res.is_global_customer) {
           setStep('name');
         } else {
@@ -300,8 +304,8 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
 
   const handleOtpSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (otpCode.length !== 6) {
-      setError('OTP must be 6 digits');
+    if (!otpCode.trim()) {
+      setError('Please enter the OTP');
       return;
     }
 
@@ -316,11 +320,11 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
         sessionStorage.setItem('customer_is_existing', 'true');
       }
       localStorage.removeItem('pending_otp_verification');
-      localStorage.removeItem('pending_otp_verification');
       if (res.access_token) {
         localStorage.setItem('customer_token', res.access_token);
       }
       localStorage.setItem('customer_mobile', `${countryCode}${mobileNumber}`);
+      localStorage.setItem('customer_phone', `${countryCode}${mobileNumber}`);
       if (res.customer_name) {
         localStorage.setItem('customer_name', res.customer_name);
       }
@@ -328,6 +332,9 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
         localStorage.setItem('customer_address', res.delivery_address);
       }
       sessionStorage.setItem(`member_status_${shopId}`, res.is_strict_member ? 'verified-member' : 'unlocked');
+      window.dispatchEvent(new CustomEvent('menukit-customer-changed', { detail: { token: res.access_token, mobile: `${countryCode}${mobileNumber}` } }));
+      window.dispatchEvent(new Event('menukit-realtime-update'));
+
       if (!res.is_global_customer) {
         setStep('name');
       } else {
@@ -356,6 +363,7 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
       // In a real flow, OTP code might be re-sent or stored in session. We pass "123456" or just the otpCode
       const res = await customerService.register(name, `${countryCode}${mobileNumber}`, shopId, otpCode);
       localStorage.setItem('customer_mobile', `${countryCode}${mobileNumber}`);
+      localStorage.setItem('customer_phone', `${countryCode}${mobileNumber}`);
       localStorage.setItem('customer_name', name);
       if (res.delivery_address) {
         localStorage.setItem('customer_address', res.delivery_address);
@@ -365,6 +373,9 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
       }
       sessionStorage.setItem(`member_status_${shopId}`, 'unlocked');
       setIsStrictMember(false); // newly registered users are not strict members
+      window.dispatchEvent(new CustomEvent('menukit-customer-changed', { detail: { token: res.access_token, mobile: `${countryCode}${mobileNumber}` } }));
+      window.dispatchEvent(new Event('menukit-realtime-update'));
+
       triggerConfetti();
       setIsVerified(true);
       setStep('success');
@@ -376,10 +387,32 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
   };
 
   const handleChangeMobileNumber = () => {
+    // 1. Wipe previous customer session & credentials completely
+    localStorage.removeItem('customer_token');
+    localStorage.removeItem('customer_mobile');
+    localStorage.removeItem('customer_phone');
+    localStorage.removeItem('customer_name');
+    localStorage.removeItem('customer_address');
+    localStorage.removeItem('customer_is_existing');
+    localStorage.removeItem('pending_otp_verification');
+    if (shopId) {
+      sessionStorage.removeItem(`member_status_${shopId}`);
+    }
+    sessionStorage.removeItem('customer_is_existing');
+
+    // 2. Reset form and flow state
     setMobileNumber('');
     setOtpCode('');
+    setName('');
     setError('');
+    setIsExistingCustomer(false);
+    setIsVerified(false);
+    setIsStrictMember(false);
     setStep('mobile');
+
+    // 3. Broadcast customer reset across active listeners
+    window.dispatchEvent(new CustomEvent('menukit-customer-changed', { detail: { token: null, mobile: null } }));
+    window.dispatchEvent(new Event('menukit-realtime-update'));
   };
 
   return (
@@ -412,17 +445,6 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
               {step === 'otp' ? "Enter OTP Now" : "Continue"}
             </button>
           </div>
-        )}
-
-        {/* Close X Button - hidden on mobile number entry & OTP steps to prevent abandoning */}
-        {step !== 'mobile' && step !== 'otp' && (
-          <button
-            onClick={handleClose}
-            className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-all z-10 cursor-pointer"
-            aria-label="Close"
-          >
-            <X size={20} />
-          </button>
         )}
 
         <AnimatePresence mode="wait">
@@ -642,10 +664,9 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
                   <input
                     type="text"
                     value={otpCode}
-                    onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, ''))}
+                    onChange={(e) => setOtpCode(e.target.value.trim())}
                     className="block w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent transition-all outline-none text-center text-2xl tracking-widest font-mono"
-                    placeholder="••••••"
-                    maxLength={6}
+                    placeholder="Enter OTP"
                     autoFocus
                     required
                   />
@@ -655,7 +676,7 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
                 <div className="space-y-3">
                   <button 
                     type="submit"
-                    disabled={loading || isResending || otpCode.length !== 6}
+                    disabled={loading || isResending || !otpCode.trim()}
                     className="w-full py-3 bg-gray-900 text-white rounded-xl font-semibold hover:bg-black transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                   >
                     {loading ? 'Verifying...' : 'Verify & Unlock'}

@@ -218,7 +218,7 @@ export const CampaignsPage: React.FC = () => {
   const { setTitle: setHeaderTitle } = useHeaderStore();
 
   useEffect(() => {
-    setHeaderTitle('Campaigns', 'Engage customers directly with rich WhatsApp broadcast campaigns.');
+    setHeaderTitle('Campaigns', 'WhatsApp broadcast campaigns.');
   }, [setHeaderTitle]);
 
   // Load available messaging credits

@@ -144,7 +144,7 @@ export function ContestsPage() {
   const { setTitle: setHeaderTitle } = useHeaderStore();
 
   useEffect(() => {
-    setHeaderTitle('Contests Manager', 'Create customer drawing or Kavithai contests with minimum targets.');
+    setHeaderTitle('Contests Manager', 'Customer drawing & contest campaigns.');
   }, [setHeaderTitle]);
 
   // Search & Pagination State

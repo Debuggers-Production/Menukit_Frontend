@@ -3,7 +3,7 @@ import { useAuthStore } from '@/store/authStore';
 import { LogoLoader } from '@/components/ui/LogoLoader';
 
 export function ProtectedRoute() {
-  const { isAuthenticated, isLoading } = useAuthStore();
+  const { isAuthenticated, isLoading, user } = useAuthStore();
   const location = useLocation();
 
   if (isLoading) {
@@ -16,6 +16,11 @@ export function ProtectedRoute() {
 
   if (!isAuthenticated) {
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  // Mandatory Mobile Phone Verification Enforcement
+  if (user && !user.phone_verified && location.pathname !== '/verify-phone') {
+    return <Navigate to="/verify-phone" state={{ from: location }} replace />;
   }
 
   return <Outlet />;

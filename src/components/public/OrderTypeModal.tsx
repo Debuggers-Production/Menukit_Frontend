@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { ShoppingBag, Truck, Store, Check, UtensilsCrossed, MapPin, AlertCircle, Loader2, Navigation } from 'lucide-react';
+import { ShoppingBag, Truck, Store, Check, UtensilsCrossed, MapPin, AlertCircle, Loader2, Navigation, Sparkles } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { Shop } from '@/types';
+import { getBusinessCategory } from '@/config/businessCategories';
 import toast from 'react-hot-toast';
 
 interface OrderTypeModalProps {
@@ -40,6 +41,7 @@ export const OrderTypeModal: React.FC<OrderTypeModalProps> = ({
   availableTypes = { dine_in: true, takeaway: true, delivery: true },
   shop,
 }) => {
+  const businessCategory = getBusinessCategory(shop?.category);
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(() => {
@@ -195,7 +197,7 @@ export const OrderTypeModal: React.FC<OrderTypeModalProps> = ({
         )}
 
         <div className="grid grid-cols-1 gap-3 mt-5">
-          {/* Dine-In Option */}
+          {/* In-Store / Dine-In Option */}
           <button
             type="button"
             disabled={!availableTypes.dine_in}
@@ -216,11 +218,11 @@ export const OrderTypeModal: React.FC<OrderTypeModalProps> = ({
                   ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
                   : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 group-hover:bg-emerald-100'
               }`}>
-                <UtensilsCrossed size={22} />
+                {businessCategory.isFood ? <UtensilsCrossed size={22} /> : <Store size={22} />}
               </div>
               <div>
                 <div className="font-semibold text-sm text-slate-900 dark:text-white flex items-center gap-2">
-                  Dine-In
+                  {businessCategory.orderTypeDineInTitle}
                   {!availableTypes.dine_in && (
                     <span className="text-[9px] font-bold uppercase tracking-widest bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-sm">
                       Unavailable
@@ -228,7 +230,7 @@ export const OrderTypeModal: React.FC<OrderTypeModalProps> = ({
                   )}
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Order and eat at the restaurant table.
+                  {businessCategory.orderTypeDineInSubtitle}
                 </p>
               </div>
             </div>
@@ -240,7 +242,7 @@ export const OrderTypeModal: React.FC<OrderTypeModalProps> = ({
             )}
           </button>
 
-          {/* Takeaway Option */}
+          {/* Store Pickup / Takeaway Option */}
           <button
             type="button"
             disabled={!availableTypes.takeaway}
@@ -265,7 +267,7 @@ export const OrderTypeModal: React.FC<OrderTypeModalProps> = ({
               </div>
               <div>
                 <div className="font-semibold text-sm text-slate-900 dark:text-white flex items-center gap-2">
-                  Takeaway / Store Pickup
+                  {businessCategory.orderTypeTakeawayTitle}
                   {!availableTypes.takeaway && (
                     <span className="text-[9px] font-bold uppercase tracking-widest bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-sm">
                       Unavailable
@@ -273,7 +275,7 @@ export const OrderTypeModal: React.FC<OrderTypeModalProps> = ({
                   )}
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Pick up your order directly at the restaurant.
+                  {businessCategory.orderTypeTakeawaySubtitle}
                 </p>
               </div>
             </div>
@@ -314,7 +316,7 @@ export const OrderTypeModal: React.FC<OrderTypeModalProps> = ({
               </div>
               <div className="flex-1 min-w-0">
                 <div className="font-semibold text-sm text-slate-900 dark:text-white flex items-center gap-2 flex-wrap">
-                  Delivery to Doorstep
+                  {businessCategory.orderTypeDeliveryTitle}
                   {isDeliveryDisabledByShop ? (
                     <span className="text-[9px] font-bold uppercase tracking-widest bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-sm">
                       Unavailable
@@ -328,7 +330,7 @@ export const OrderTypeModal: React.FC<OrderTypeModalProps> = ({
                 
                 {isDeliveryDisabledByShop ? (
                   <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                    Delivery not enabled for this restaurant.
+                    Delivery not enabled for this shop.
                   </p>
                 ) : isLocating ? (
                   <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5 flex items-center gap-1 font-medium">
@@ -346,7 +348,7 @@ export const OrderTypeModal: React.FC<OrderTypeModalProps> = ({
                   </p>
                 ) : (
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    Tap to verify GPS location & delivery coverage.
+                    {businessCategory.orderTypeDeliverySubtitle}
                   </p>
                 )}
               </div>
