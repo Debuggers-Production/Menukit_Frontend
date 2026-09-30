@@ -7,6 +7,7 @@ import { SearchableSelect } from '@/components/ui/SearchableSelect';
 import { useShopStore } from '@/store/shopStore';
 import { MenuItem } from '@/types';
 import { api } from '@/services/api';
+import { calculateOrderPricing, calculateReplacement } from '@/utils/pricing';
 import toast from 'react-hot-toast';
 
 interface ItemReplacementModalProps {
@@ -75,10 +76,27 @@ export function ItemReplacementModal({
 
   if (!itemToReplace || !order) return null;
 
+  const isPaid = String(order.payment_status || '').toLowerCase() === 'paid';
+  const isPaidOnline = isPaid && String(order.payment_method || '').toLowerCase() === 'online';
+
   const oldTotal = Number(itemToReplace.price || 0) * Number(itemToReplace.quantity || 1);
   const newUnitPrice = Number(selectedMenuItem?.price || 0);
   const newTotal = newUnitPrice * quantity;
-  const priceDiff = newTotal - oldTotal;
+
+  // Build full new order subtotal
+  const activeItemsWithoutOld = (order.items || []).filter((it: any) => !it.is_cancelled && it.id !== itemToReplace.id);
+  const activeSubtotalWithoutOld = activeItemsWithoutOld.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+  const newOrderSubtotal = activeSubtotalWithoutOld + newTotal;
+  const previousOrderSubtotal = Number(order.total_amount || 0);
+
+  const origPaidAmount = isPaidOnline
+    ? calculateOrderPricing(previousOrderSubtotal, true).totalPayable
+    : previousOrderSubtotal;
+
+  const replacementCalc = calculateReplacement(origPaidAmount, newOrderSubtotal, previousOrderSubtotal, isPaidOnline);
+  const priceDiff = replacementCalc.difference;
+  const refundAmount = replacementCalc.refundAmount;
+  const additionalPayment = replacementCalc.additionalPayment;
 
   const handleSubmit = async () => {
     if (!selectedMenuItem) {
@@ -108,11 +126,11 @@ export function ItemReplacementModal({
       const res = await api.post(`/orders/${order.id}/items/${itemToReplace.id}/replace`, payload);
       const updatedOrder = res.data;
       
-      const isPaid = String(order.payment_status || '').toLowerCase() === 'paid';
       if (isPaid && priceDiff > 0) {
-        toast.success(`Replaced with ${selectedMenuItem.name}. Difference of ₹${priceDiff.toFixed(2)} due from customer.`, { id: toastId, duration: 5000 });
+        toast.success(`Replaced with ${selectedMenuItem.name}. Difference of ₹${additionalPayment.toFixed(2)} due from customer.`, { id: toastId, duration: 5000 });
       } else if (isPaid && priceDiff < 0) {
-        toast.success(`Replaced with ${selectedMenuItem.name}. Refund of ₹${Math.abs(priceDiff).toFixed(2)} initiated to customer.`, { id: toastId, duration: 5000 });
+        const methodNote = isPaidOnline ? 'initiated via Razorpay' : 'to be refunded at counter';
+        toast.success(`Replaced with ${selectedMenuItem.name}. Refund of ₹${refundAmount.toFixed(2)} ${methodNote}.`, { id: toastId, duration: 5000 });
       } else {
         toast.success(`Item replaced with ${selectedMenuItem.name}`, { id: toastId });
       }
@@ -280,17 +298,19 @@ export function ItemReplacementModal({
             {/* Price Difference Indicator */}
             <div className="pt-2 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-between text-xs">
               <div className="text-slate-500">
-                <span>Old: ₹{oldTotal.toFixed(2)}</span>
-                <span className="mx-1.5">→</span>
-                <span>New: ₹{newTotal.toFixed(2)}</span>
+                <span>Item: ₹{oldTotal.toFixed(2)} → ₹{newTotal.toFixed(2)}</span>
               </div>
               <div className="font-bold font-mono">
                 {priceDiff === 0 ? (
                   <span className="text-slate-500">No price change</span>
                 ) : priceDiff > 0 ? (
-                  <span className="text-amber-600 dark:text-amber-400">+₹{priceDiff.toFixed(2)} (Bill Increases)</span>
+                  <span className="text-amber-600 dark:text-amber-400">
+                    +₹{additionalPayment.toFixed(2)} ({isPaid ? 'Customer Must Pay' : 'Bill Increases'})
+                  </span>
                 ) : (
-                  <span className="text-emerald-600 dark:text-emerald-400">-₹{Math.abs(priceDiff).toFixed(2)} (Bill Decreases)</span>
+                  <span className="text-emerald-600 dark:text-emerald-400">
+                    -₹{refundAmount.toFixed(2)} ({isPaid ? (isPaidOnline ? 'Razorpay Refund' : 'Counter Refund') : 'Bill Decreases'})
+                  </span>
                 )}
               </div>
             </div>

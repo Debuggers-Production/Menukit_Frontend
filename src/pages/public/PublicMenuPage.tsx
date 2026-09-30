@@ -941,6 +941,20 @@ export function PublicMenuPage() {
     if (id) {
       fetchCategories();
     }
+
+    const handleSettingsUpdated = () => {
+      if (id) {
+        publicCache.clear();
+        fetchCategories();
+      }
+    };
+
+    window.addEventListener('menukit-shop-settings-updated', handleSettingsUpdated);
+    window.addEventListener('focus', handleSettingsUpdated);
+    return () => {
+      window.removeEventListener('menukit-shop-settings-updated', handleSettingsUpdated);
+      window.removeEventListener('focus', handleSettingsUpdated);
+    };
   }, [id]);
 
   useEffect(() => {
@@ -974,8 +988,9 @@ export function PublicMenuPage() {
     if (append) setIsLoadingMoreDiscounts(true);
 
     try {
-      const custId = getCustomerIdentifier();
-      const discountRes = await api.get(`/public/shop/${id}/discounts?limit=${DISCOUNTS_LIMIT}&offset=${currentOffset}&customer_id=${custId}`);
+      const custPhone = localStorage.getItem('customer_mobile') || localStorage.getItem('customer_phone') || '';
+      const custId = custPhone.trim() || getCustomerIdentifier();
+      const discountRes = await api.get(`/public/shop/${id}/discounts?limit=${DISCOUNTS_LIMIT}&offset=${currentOffset}&customer_id=${encodeURIComponent(custId)}`);
       const data = discountRes.data || [];
       
       if (data.length < DISCOUNTS_LIMIT) {
@@ -1027,8 +1042,15 @@ export function PublicMenuPage() {
     const handleFocus = () => {
       if (id) fetchDiscounts(0, false);
     };
+    const handleStorage = () => {
+      if (id) fetchDiscounts(0, false);
+    };
     window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('storage', handleStorage);
+    };
   }, [id, memberStatus]);
 
   const handleLoadMoreDiscounts = () => {
@@ -1112,7 +1134,9 @@ export function PublicMenuPage() {
           if (disc) {
             if (disc.applies_to === 'all') matchesDiscount = true;
             else if (disc.applies_to === 'category' && disc.target_ids?.includes(item.category_id)) matchesDiscount = true;
-            else if (disc.applies_to === 'items' && disc.target_ids?.includes(item.id)) matchesDiscount = true;
+            else if (disc.applies_to === 'items' && disc.target_ids) {
+              matchesDiscount = disc.target_ids.includes(item.id) || disc.target_ids.some(tid => tid.startsWith(`${item.id}::`));
+            }
             else matchesDiscount = false;
           }
         }
@@ -1915,7 +1939,12 @@ export function PublicMenuPage() {
 
                       <div className="flex items-center justify-between gap-2 min-w-0">
                         <div className="flex gap-1.5 min-w-0 shrink">
-                          {disc.visibility_type === 'members_only_hidden' || disc.visibility_type === 'members_only_visible' ? (
+                          {disc.is_already_used ? (
+                            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md shadow-xs flex items-center gap-1 bg-amber-100 text-amber-900 border border-amber-300/80 min-w-0">
+                              <CheckCircle2 size={11} className="shrink-0 text-amber-700" />
+                              <span className="truncate">Already Used</span>
+                            </span>
+                          ) : disc.visibility_type === 'members_only_hidden' || disc.visibility_type === 'members_only_visible' ? (
                             <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md shadow-sm flex items-center gap-1 bg-purple-100 text-purple-700 min-w-0">
                               <Crown size={10} className="shrink-0" />
                               <span className="truncate">Members Only</span>
@@ -1934,11 +1963,13 @@ export function PublicMenuPage() {
                             </span>
                           )}
                         </div>
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 group-hover:text-slate-600 transition-colors flex items-center gap-1 shrink-0 whitespace-nowrap">
-                          {((disc.visibility_type === 'unlock_required' && !memberStatus) || 
-                            ((disc.visibility_type === 'members_only_visible' || disc.visibility_type === 'members_only_hidden') && memberStatus !== 'verified-member')) 
-                            ? 'Tap to unlock' 
-                            : 'Tap to use'}
+                        <span className={`text-[10px] font-bold uppercase tracking-wider transition-colors flex items-center gap-1 shrink-0 whitespace-nowrap ${disc.is_already_used ? 'text-amber-700 font-extrabold' : 'text-slate-400 group-hover:text-slate-600'}`}>
+                          {disc.is_already_used
+                            ? 'Already Used'
+                            : ((disc.visibility_type === 'unlock_required' && !memberStatus) || 
+                              ((disc.visibility_type === 'members_only_visible' || disc.visibility_type === 'members_only_hidden') && memberStatus !== 'verified-member')) 
+                              ? 'Tap to unlock' 
+                              : 'Tap to use'}
                         </span>
                       </div>
                     </div>
@@ -2218,7 +2249,15 @@ export function PublicMenuPage() {
                                   if (d.discount_type === 'bogo' || d.discount_type === 'combo' || d.discount_type === 'free_item') return false;
                                   if (d.applies_to === 'all') return true;
                                   if (d.applies_to === 'category' && d.target_ids?.includes(item.category_id)) return true;
-                                  if (d.applies_to === 'items' && d.target_ids?.includes(item.id)) return true;
+                                  if (d.applies_to === 'items' && d.target_ids) {
+                                    if (d.target_ids.includes(item.id)) return true;
+                                    if (item.variants && item.variants.length > 0) {
+                                      const vName = item.variants[0]?.name?.trim()?.toLowerCase();
+                                      if (vName && d.target_ids.some(tid => tid.startsWith(`${item.id}::`) && tid.split('::')[1]?.trim()?.toLowerCase() === vName)) {
+                                        return true;
+                                      }
+                                    }
+                                  }
                                   return false;
                                 });
                                 if (disc) {
@@ -2871,6 +2910,41 @@ export function PublicMenuPage() {
             })()}
 
             {(() => {
+              if (selectedDiscountForModal.is_already_used) {
+                const uniqueCode = getUniqueCustomerDiscountCode(selectedDiscountForModal);
+                return (
+                  <div className="pt-2 space-y-3">
+                    <div className="bg-amber-50/90 border border-amber-200/90 rounded-2xl p-4 flex items-start gap-3.5 shadow-xs">
+                      <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-700 flex items-center justify-center shrink-0 border border-amber-500/20">
+                        <CheckCircle2 className="w-5 h-5 text-amber-600" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-black uppercase tracking-wider text-amber-900">Already Redeemed</span>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 text-amber-900">Used</span>
+                        </div>
+                        <p className="text-xs text-amber-800/90 mt-1 leading-snug">
+                          You have already used this discount on a previous order. Each promotional offer can only be used once per customer.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 flex items-center justify-between gap-3 opacity-75">
+                      <div className="min-w-0">
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block">Unique Discount Code</span>
+                        <span className="font-mono font-black text-base sm:text-lg text-slate-500 tracking-wider select-all truncate block line-through">
+                          {uniqueCode}
+                        </span>
+                      </div>
+                      <div className="px-3 py-1.5 bg-slate-200 text-slate-600 text-xs font-bold rounded-xl flex items-center gap-1 shrink-0">
+                        <CheckCircle2 size={13} className="text-slate-500" />
+                        <span>Already Used</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
               const isOfferUnlockRequired = selectedDiscountForModal.visibility_type === 'unlock_required' && !memberStatus;
               const isOfferMemberRequired = (selectedDiscountForModal.visibility_type === 'members_only_visible' || selectedDiscountForModal.visibility_type === 'members_only_hidden') && memberStatus !== 'verified-member';
 
@@ -3149,7 +3223,14 @@ export function PublicMenuPage() {
                   </div>
                 </div>
                 <div className="flex-1 p-3 flex flex-col justify-center relative bg-white overflow-hidden min-w-0">
-                  <p className="font-extrabold text-slate-800 text-sm leading-tight truncate">{disc.title}</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-extrabold text-slate-800 text-sm leading-tight truncate">{disc.title}</p>
+                    {disc.is_already_used && (
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 shrink-0">
+                        Used
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             ))

@@ -14,8 +14,20 @@ import { contestService } from '@/services/contestService';
 import { motion } from 'framer-motion';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { triggerHaptic, HAPTIC_PATTERNS } from '@/utils/haptic';
+import { calculateOrderPricing } from '@/utils/pricing';
 
 const ORDERS_LIMIT = 8;
+
+export function roundStrictTwoDecimals(val: number): number {
+  if (isNaN(val)) return 0;
+  const shifted = Math.abs(val) * 1000;
+  const thirdDigit = Math.floor(shifted + 1e-9) % 10;
+  if (thirdDigit > 5) {
+    return Math.sign(val) * (Math.ceil(Math.abs(val) * 100 - 1e-9) / 100);
+  } else {
+    return Math.sign(val) * (Math.floor(Math.abs(val) * 100 + 1e-9) / 100);
+  }
+}
 
 export function PublicOrdersPage() {
   const { id } = useParams();
@@ -720,17 +732,32 @@ export function PublicOrdersPage() {
 
                       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 pt-1">
                         {(() => {
-                          const activeItems = (order.items || []).filter((it: any) => !it.is_cancelled);
+                          const allItems = order.items || [];
+                          const allItemsSubtotal = allItems.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+                          const activeItems = allItems.filter((it: any) => !it.is_cancelled);
                           const activeItemsSubtotal = activeItems.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
                           const rawTotal = Number(order.total_amount || 0);
                           const cgstRate = Number(shop?.settings?.cgst_rate || 0);
                           const sgstRate = Number(shop?.settings?.sgst_rate || 0);
                           const totalTaxRate = cgstRate + sgstRate;
-                          let computedTotal = activeItemsSubtotal;
-                          if (shop?.settings?.gst_enabled && totalTaxRate > 0 && !shop?.settings?.inclusive_tax) {
-                            computedTotal = Math.round((activeItemsSubtotal + (activeItemsSubtotal * totalTaxRate / 100)) * 100) / 100;
+                          
+                          const targetSubtotal = isCancelled && activeItemsSubtotal === 0 ? allItemsSubtotal : activeItemsSubtotal;
+                          let computedBase = rawTotal > 0 ? rawTotal : targetSubtotal;
+                          if (shop?.settings?.gst_enabled && totalTaxRate > 0 && !shop?.settings?.inclusive_tax && rawTotal === 0) {
+                            computedBase = Math.round((targetSubtotal + (targetSubtotal * totalTaxRate / 100)) * 100) / 100;
                           }
-                          const finalDisplayTotal = rawTotal > 0 ? rawTotal : (isCancelled ? 0 : computedTotal);
+
+                          // Calculate actual grand total (including online payment convenience & gateway fees if paid online)
+                          const isMasterOnline = (shop?.settings as any)?.online_payments_enabled !== false;
+                          let isChannelOnline = true;
+                          if (order.order_type === 'dine_in') isChannelOnline = (shop?.settings as any)?.online_payments_dinein_enabled !== false;
+                          else if (order.order_type === 'takeaway') isChannelOnline = (shop?.settings as any)?.online_payments_takeaway_enabled !== false;
+                          else if (order.order_type === 'delivery') isChannelOnline = (shop?.settings as any)?.online_payments_delivery_enabled !== false;
+
+                          const isOnlineFeeApplicable = Boolean(order.payment_method === 'online' && isMasterOnline && isChannelOnline);
+                          const pricing = calculateOrderPricing(computedBase, isOnlineFeeApplicable);
+                          const finalDisplayTotal = pricing.totalPayable;
+
                           return (
                             <div className="flex items-center justify-between sm:block">
                               <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none block">Total Bill</span>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, Plus, Minus, ShoppingBag, ArrowRight, ArrowLeft, User, Phone, Check, X, ChevronDown, LayoutGrid, RotateCcw, UtensilsCrossed } from 'lucide-react';
+import { Search, Plus, Minus, ShoppingBag, ArrowRight, ArrowLeft, User, Phone, Check, X, ChevronDown, LayoutGrid, RotateCcw, UtensilsCrossed, AlertCircle } from 'lucide-react';
 
 
 
@@ -13,6 +13,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { SearchableSelect } from '@/components/ui/SearchableSelect';
+import { calculateOrderPricing, calculateReplacement } from '@/utils/pricing';
 import toast from 'react-hot-toast';
 
 interface CreateOrderModalProps {
@@ -69,6 +70,9 @@ export function CreateOrderModal({
   // Cart state
   const [cart, setCart] = useState<Record<string, CartItem>>({});
 
+  // Discounts state
+  const [availableDiscounts, setAvailableDiscounts] = useState<any[]>([]);
+
   // Item Customization state (Variants & Add-ons)
   const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
   const [selectedVariantIdx, setSelectedVariantIdx] = useState<number>(0);
@@ -78,6 +82,12 @@ export function CreateOrderModal({
   // Customer details for Step 2
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [customerUsedDiscountIds, setCustomerUsedDiscountIds] = useState<string[]>([]);
+  const [discountRevertedNotice, setDiscountRevertedNotice] = useState<{
+    isOpen: boolean;
+    count: number;
+    titles: string[];
+  }>({ isOpen: false, count: 0, titles: [] });
   const [customerLookupState, setCustomerLookupState] = useState<{
     loading: boolean;
     found: boolean | null;
@@ -116,6 +126,7 @@ export function CreateOrderModal({
     const digits = customerPhone.replace(/\D/g, '');
     if (digits.length < 10) {
       setCustomerLookupState({ loading: false, found: null });
+      setCustomerUsedDiscountIds([]);
       return;
     }
 
@@ -126,6 +137,10 @@ export function CreateOrderModal({
       try {
         const res = await api.get('/orders/customer-lookup', { params: { phone: digits } });
         if (!isMounted) return;
+        
+        const usedIds: string[] = res.data?.used_discount_ids || [];
+        setCustomerUsedDiscountIds(usedIds);
+
         if (res.data?.exists) {
           setCustomerLookupState({ loading: false, found: true, name: res.data.name });
           if (res.data.name && (!customerName || customerName.trim() === 'Walk-in Customer')) {
@@ -136,6 +151,42 @@ export function CreateOrderModal({
           }
         } else {
           setCustomerLookupState({ loading: false, found: false });
+        }
+
+        // Check if any cart items currently have discounts that this customer has already used
+        if (usedIds.length > 0 && Object.keys(cart).length > 0) {
+          const revertedTitles = new Set<string>();
+          let hasChanges = false;
+          const updatedCart = { ...cart };
+
+          Object.keys(updatedCart).forEach(key => {
+            const item = updatedCart[key];
+            const previousUnitPrice = item.unitPrice;
+            const newUnitPrice = computeUnitPrice(item.menuItem, item.selectedVariantIdx, item.selectedAddons, usedIds);
+
+            if (newUnitPrice !== previousUnitPrice) {
+              hasChanges = true;
+              const prevDisc = getItemDiscount(item.menuItem, previousUnitPrice, []);
+              if (prevDisc && usedIds.includes(String(prevDisc.discount.id))) {
+                revertedTitles.add(prevDisc.discount.title);
+              }
+              updatedCart[key] = {
+                ...item,
+                unitPrice: newUnitPrice
+              };
+            }
+          });
+
+          if (hasChanges) {
+            setCart(updatedCart);
+            const titleList = Array.from(revertedTitles);
+            setDiscountRevertedNotice({
+              isOpen: true,
+              count: titleList.length,
+              titles: titleList
+            });
+            toast.error("Customer already used this discount. Reverted to standard price.");
+          }
         }
       } catch {
         if (isMounted) setCustomerLookupState({ loading: false, found: null });
@@ -149,7 +200,7 @@ export function CreateOrderModal({
   }, [customerPhone]);
 
 
-  // Fetch categories on open
+  // Fetch categories and active discounts on open
   useEffect(() => {
     if (isOpen) {
       setStep(1);
@@ -173,6 +224,10 @@ export function CreateOrderModal({
       api.get('/categories')
         .then(catRes => setCategories(catRes.data || []))
         .catch(err => console.error(err));
+
+      api.get('/discounts')
+        .then(discRes => setAvailableDiscounts(discRes.data || []))
+        .catch(err => console.error('Failed to load discounts', err));
 
       if (shop?.id) {
         api.get(`/public/shop/${shop.id}/occupied-tables`)
@@ -221,15 +276,62 @@ export function CreateOrderModal({
     });
   }, [safeMenuItems, activeCategory, foodFilter]);
 
+  // Auto Discount helper
+  const getItemDiscount = (item: MenuItem, basePrice: number, variantIdx?: number, usedDiscountIds: string[] = customerUsedDiscountIds) => {
+    if (!availableDiscounts || availableDiscounts.length === 0) return null;
+    const currentVariantName = (item.variants && variantIdx !== undefined && item.variants[variantIdx]) 
+      ? item.variants[variantIdx].name.trim().toLowerCase() 
+      : (item.variants && item.variants.length > 0 && item.variants[0]) ? item.variants[0].name.trim().toLowerCase() : null;
+
+    const disc = availableDiscounts.find((d: any) => {
+      if (d.is_active === false) return false;
+      if (usedDiscountIds.includes(String(d.id))) return false;
+      if (d.discount_type === 'bogo' || d.discount_type === 'combo' || d.discount_type === 'free_item') return false;
+      if (d.applies_to === 'all') return true;
+      if (d.applies_to === 'category' && d.target_ids?.includes(item.category_id)) return true;
+      if (d.applies_to === 'items' && d.target_ids) {
+        if (d.target_ids.includes(item.id)) return true;
+        if (currentVariantName && d.target_ids.some((tid: string) => {
+          if (tid.startsWith(`${item.id}::`)) {
+            const targetVar = tid.split('::')[1]?.trim()?.toLowerCase();
+            return targetVar === currentVariantName;
+          }
+          return false;
+        })) return true;
+      }
+      return false;
+    });
+    if (!disc) return null;
+    const v = Number(disc.discount_value);
+    const discountedPrice = disc.discount_type === 'percentage'
+      ? Math.max(0, basePrice * (1 - v / 100))
+      : Math.max(0, basePrice - v);
+    const discountAmount = Math.max(0, basePrice - discountedPrice);
+    if (discountAmount <= 0) return null;
+    return {
+      discount: disc,
+      discountedPrice,
+      discountAmount,
+      savingPercent: basePrice > 0 ? Math.round((discountAmount / basePrice) * 100) : 0,
+    };
+  };
+
   // Unit Price Calculation Helper
-  const computeUnitPrice = (item: MenuItem, variantIdx: number, addonIndices: number[]) => {
-    let basePrice = 0;
+  const computeUnitPrice = (item: MenuItem, variantIdx: number, addonIndices: number[], usedDiscountIds: string[] = customerUsedDiscountIds) => {
+    let rawBasePrice = 0;
     if (item.variants && item.variants.length > 0) {
       const v = item.variants[variantIdx] || item.variants[0];
-      basePrice = Number(v.offer_price || v.price || item.offer_price || item.price || 0);
+      const p = Number(v.price || 0);
+      const op = Number(v.offer_price || 0);
+      rawBasePrice = (op > 0 && op < p) ? op : (op > 0 ? op : p);
     } else {
-      basePrice = Number(item.offer_price || item.price || 0);
+      const p = Number(item.price || 0);
+      const op = Number(item.offer_price || 0);
+      rawBasePrice = (op > 0 && op < p) ? op : (op > 0 ? op : p);
     }
+
+    const discountInfo = getItemDiscount(item, rawBasePrice, variantIdx, usedDiscountIds);
+    const basePrice = discountInfo ? discountInfo.discountedPrice : rawBasePrice;
 
     let addonsTotal = 0;
     if (item.addons && addonIndices.length > 0) {
@@ -239,7 +341,7 @@ export function CreateOrderModal({
         }
       });
     }
-    return basePrice + addonsTotal;
+    return Number((basePrice + addonsTotal).toFixed(2));
   };
 
   const isItemCustomizable = (item: MenuItem) => {
@@ -303,7 +405,7 @@ export function CreateOrderModal({
   // Cart operations for simple non-customizable items
   const handleSimpleQuantity = (item: MenuItem, delta: number) => {
     const cartItemId = item.id;
-    const unitPrice = Number(item.offer_price || item.price);
+    const unitPrice = computeUnitPrice(item, 0, []);
     setCart(prev => {
       if (replacingItem) {
         const currentQty = prev[cartItemId]?.quantity || 0;
@@ -429,6 +531,12 @@ export function CreateOrderModal({
   }, [isGstEnabled, isExclusiveTax, totalCartAmount, cgstRate, sgstRate, totalTaxRate]);
 
   // Replacement mode calculations
+  const currencySymbol = shop?.currency || '₹';
+  const isPaidOnline = replacingItem 
+    ? (String(replacingItem.order?.payment_status || '').toLowerCase() === 'paid' && 
+       String(replacingItem.order?.payment_method || '').toLowerCase() === 'online')
+    : false;
+
   const selectedReplacement = replacingItem ? Object.values(cart)[0] : null;
   const oldReplacementTotal = replacingItem 
     ? Number(replacingItem.item?.price || 0) * Number(replacingItem.item?.quantity || 1) 
@@ -436,7 +544,24 @@ export function CreateOrderModal({
   const newReplacementTotal = selectedReplacement 
     ? selectedReplacement.unitPrice * selectedReplacement.quantity 
     : 0;
-  const replacementPriceDiff = newReplacementTotal - oldReplacementTotal;
+
+  // Use the order's actual total_amount for base comparison
+  const oldOrderBase = replacingItem?.order?.total_amount 
+    ? Number(replacingItem.order.total_amount) 
+    : oldReplacementTotal;
+  
+  const otherItemsTotal = (replacingItem?.order?.items || [])
+    .filter((it: any) => !it.is_cancelled && it.id !== replacingItem?.item?.id)
+    .reduce((acc: number, it: any) => acc + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+  
+  const newOrderBase = otherItemsTotal + newReplacementTotal;
+
+  const origPaidAmount = isPaidOnline 
+    ? calculateOrderPricing(oldOrderBase, true).totalPayable 
+    : oldOrderBase;
+
+  const repCalc = calculateReplacement(origPaidAmount, newOrderBase, oldOrderBase, isPaidOnline);
+  const replacementPriceDiff = repCalc.difference;
 
   const handleConfirmReplacementSubmit = async () => {
     if (!replacingItem || !selectedReplacement) return;
@@ -599,6 +724,18 @@ export function CreateOrderModal({
         };
       });
 
+      const appliedDiscIds: string[] = [];
+      const appliedDiscCodes: string[] = [];
+      Object.values(cart).forEach(it => {
+        const dInfo = getItemDiscount(it.menuItem, it.unitPrice, customerUsedDiscountIds);
+        if (dInfo && !customerUsedDiscountIds.includes(String(dInfo.discount.id))) {
+          if (!appliedDiscIds.includes(String(dInfo.discount.id))) {
+            appliedDiscIds.push(String(dInfo.discount.id));
+            appliedDiscCodes.push(dInfo.discount.code || dInfo.discount.title);
+          }
+        }
+      });
+
       const payload = {
         customer_name: customerName.trim() || 'Walk-in',
         customer_phone: customerPhone.trim() || '',
@@ -608,6 +745,8 @@ export function CreateOrderModal({
         payment_method: paymentMethod,
         payment_status: paymentStatus,
         total_amount: gstCalculation.finalTotal,
+        applied_discount_ids: appliedDiscIds,
+        applied_discount_codes: appliedDiscCodes,
         items: itemsPayload,
       };
 
@@ -812,7 +951,10 @@ export function CreateOrderModal({
                 {filteredItems.map((item) => {
                   const customizable = isItemCustomizable(item);
                   const totalItemQty = getItemTotalQuantity(item.id);
-                  const displayPrice = item.offer_price || item.price;
+                  const rawBasePrice = Number(item.offer_price || item.price || 0);
+                  const discountInfo = getItemDiscount(item, rawBasePrice);
+                  const displayPrice = discountInfo ? discountInfo.discountedPrice : rawBasePrice;
+                  const strikethroughPrice = discountInfo ? rawBasePrice : (item.offer_price ? Number(item.price) : null);
 
                   return (
                     <div
@@ -875,9 +1017,14 @@ export function CreateOrderModal({
                           <span className="font-extrabold text-sm sm:text-base text-foreground font-mono">
                             ₹{Number(displayPrice).toFixed(2)}
                           </span>
-                          {item.offer_price && (
+                          {strikethroughPrice && (
                             <span className="text-xs text-muted-foreground line-through font-medium font-mono">
-                              ₹{Number(item.price).toFixed(2)}
+                              ₹{Number(strikethroughPrice).toFixed(2)}
+                            </span>
+                          )}
+                          {discountInfo && (
+                            <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                              {discountInfo.discount.title || `${discountInfo.savingPercent}% OFF`}
                             </span>
                           )}
                           {customizable && (
@@ -1262,16 +1409,16 @@ export function CreateOrderModal({
                   </div>
                   <div className="flex items-baseline gap-2 mt-0.5">
                     <span className="text-base sm:text-lg font-black text-foreground font-mono">
-                      ₹{newReplacementTotal.toFixed(2)}
+                      {currencySymbol}{newReplacementTotal.toFixed(2)}
                     </span>
                     {replacementPriceDiff > 0 && (
                       <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-950/60 px-2 py-0.5 rounded-md">
-                        +₹{replacementPriceDiff.toFixed(2)} to collect
+                        +{currencySymbol}{replacementPriceDiff.toFixed(2)} to collect
                       </span>
                     )}
                     {replacementPriceDiff < 0 && (
                       <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/60 px-2 py-0.5 rounded-md">
-                        -₹{Math.abs(replacementPriceDiff).toFixed(2)} refund
+                        -{currencySymbol}{Math.abs(replacementPriceDiff).toFixed(2)} refund
                       </span>
                     )}
                     {replacementPriceDiff === 0 && (
@@ -1650,7 +1797,7 @@ export function CreateOrderModal({
                 <span className="text-[10px] font-bold text-rose-500 uppercase tracking-wider block">Old Item (Remove)</span>
                 <div className="font-bold text-sm text-foreground truncate">{replacingItem.item?.name}</div>
                 <div className="text-xs text-muted-foreground font-mono">
-                  ×{replacingItem.item?.quantity} • ₹{oldReplacementTotal.toFixed(2)}
+                  ×{replacingItem.item?.quantity} • {currencySymbol}{oldReplacementTotal.toFixed(2)}
                 </div>
               </div>
 
@@ -1667,20 +1814,26 @@ export function CreateOrderModal({
                   </div>
                 )}
                 <div className="text-xs text-emerald-600 font-bold font-mono">
-                  ×{selectedReplacement?.quantity} • ₹{newReplacementTotal.toFixed(2)}
+                  ×{selectedReplacement?.quantity} • {currencySymbol}{newReplacementTotal.toFixed(2)}
                 </div>
               </div>
             </div>
 
-            {/* Price Difference Indicator */}
+            {/* Price Difference / Refundable Amount Indicator */}
             <div className="p-3 rounded-xl bg-background border border-border flex items-center justify-between text-xs">
-              <span className="font-semibold text-muted-foreground">Price Difference:</span>
+              <span className="font-semibold text-muted-foreground">
+                {replacementPriceDiff < 0 
+                  ? 'Refundable Amount:' 
+                  : replacementPriceDiff > 0 
+                  ? 'Additional Amount Due:' 
+                  : 'Price Difference:'}
+              </span>
               <span className={`font-mono font-black text-sm ${replacementPriceDiff > 0 ? 'text-amber-600' : replacementPriceDiff < 0 ? 'text-emerald-600' : 'text-foreground'}`}>
                 {replacementPriceDiff > 0 
-                  ? `+₹${replacementPriceDiff.toFixed(2)} (To collect)` 
+                  ? `+${currencySymbol}${replacementPriceDiff.toFixed(2)} (${isPaidOnline ? 'Customer payment required' : 'Collect at counter'})` 
                   : replacementPriceDiff < 0 
-                  ? `-₹${Math.abs(replacementPriceDiff).toFixed(2)} (Refund / Deduct)` 
-                  : '₹0.00 (Same price — no refund needed)'}
+                  ? `${currencySymbol}${Math.abs(replacementPriceDiff).toFixed(2)} (${isPaidOnline ? 'Auto-Refund online' : 'Refund at counter'})` 
+                  : `${currencySymbol}0.00 (Same price — no refund needed)`}
               </span>
             </div>
 
@@ -1730,6 +1883,35 @@ export function CreateOrderModal({
           </div>
         </Modal>
       )}
+
+      {/* Discount Already Used Alert Modal */}
+      <Modal
+        isOpen={discountRevertedNotice.isOpen}
+        onClose={() => setDiscountRevertedNotice({ isOpen: false, count: 0, titles: [] })}
+        title="Discount Already Used by Customer"
+        className="max-w-md"
+      >
+        <div className="p-4 text-center space-y-4">
+          <div className="w-14 h-14 mx-auto rounded-full bg-amber-100 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 flex items-center justify-center text-amber-600 dark:text-amber-400">
+            <AlertCircle size={28} />
+          </div>
+          <div>
+            <h4 className="font-extrabold text-lg text-slate-900 dark:text-white">Discount Automatically Removed</h4>
+            <p className="text-sm text-slate-600 dark:text-slate-300 mt-2 leading-relaxed">
+              Customer with phone <strong className="text-slate-900 dark:text-white font-mono">{customerPhone}</strong> has already used this discount offer{discountRevertedNotice.titles.length > 0 ? ` (${discountRevertedNotice.titles.join(', ')})` : ''} on a previous order.
+            </p>
+            <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 rounded-xl p-3 text-xs text-amber-800 dark:text-amber-300 mt-3 font-medium">
+              💡 The cart items have been automatically reverted to their original standard price without the discount.
+            </div>
+          </div>
+          <Button
+            onClick={() => setDiscountRevertedNotice({ isOpen: false, count: 0, titles: [] })}
+            className="w-full py-2.5 rounded-xl font-bold"
+          >
+            Acknowledge & Continue
+          </Button>
+        </div>
+      </Modal>
     </div>,
     document.body
   );

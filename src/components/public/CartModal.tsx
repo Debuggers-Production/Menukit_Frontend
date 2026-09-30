@@ -139,6 +139,33 @@ export function CartModal({ isOpen, onClose, shop, availableDiscounts, memberSta
     };
   }, [items, availableDiscounts, manualDiscountId, memberStatus]);
 
+  // Auto-apply matching discount if not manually selected
+  useEffect(() => {
+    if (items.length === 0 || availableDiscounts.length === 0) return;
+    if (manualDiscountId) {
+      const activeDisc = availableDiscounts.find(d => d.id === manualDiscountId);
+      if (activeDisc) return;
+    }
+
+    // Pick the best discount
+    const bestDisc = availableDiscounts.find(disc => {
+      if ((disc.visibility_type === 'members_only_hidden' || disc.visibility_type === 'members_only_visible') && memberStatus !== 'verified-member') return false;
+      if (disc.visibility_type === 'unlock_required' && memberStatus === null) return false;
+      if (disc.visibility_type === ('hidden' as any)) return false;
+      if (!['percentage', 'flat', 'fixed'].includes(disc.discount_type)) return false;
+      if (disc.applies_to === 'all') return true;
+      return items.some(item => {
+        if (disc.applies_to === 'category' && disc.target_ids?.includes(item.menuItem.category_id)) return true;
+        if (disc.applies_to === 'items' && disc.target_ids?.includes(item.menuItem.id)) return true;
+        return false;
+      });
+    });
+
+    if (bestDisc) {
+      setManualDiscount(bestDisc.id);
+    }
+  }, [items, availableDiscounts, manualDiscountId, memberStatus, setManualDiscount]);
+
   if (!isOpen) return null;
 
   return (

@@ -104,11 +104,25 @@ const STATUS_CONFIG: Record<DiscountStatus, { label: string; color: string; icon
 };
 
 function formatDateTime(iso: string | null) {
- if (!iso) return '—';
- return new Date(iso).toLocaleString([], {
- year: 'numeric', month: 'short', day: 'numeric',
- hour: '2-digit', minute: '2-digit',
- });
+  if (!iso) return '—';
+  try {
+    let s = iso;
+    if (!s.endsWith('Z') && !s.includes('+') && !s.includes('-', 10)) {
+      s = s + 'Z';
+    }
+    const d = new Date(s);
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+  } catch {
+    return iso;
+  }
 }
 
 // ─── Default form ────────────────────────────────────────────────────────────
@@ -292,7 +306,10 @@ export function DiscountsPage() {
         const fetchedItems: MenuItem[] = res.data || [];
 
         setMenuItems(prev => {
-          const selected = prev.filter(item => formData.target_ids.includes(item.id) || (formData.reward_target_ids && formData.reward_target_ids.includes(item.id)));
+          const selected = prev.filter(item => 
+            isItemFullyOrPartiallySelected(item, formData.target_ids) || 
+            (formData.reward_target_ids && isItemFullyOrPartiallySelected(item, formData.reward_target_ids))
+          );
           const result = [...fetchedItems];
           for (const item of selected) {
             if (!result.some(r => r.id === item.id)) {
@@ -324,7 +341,10 @@ export function DiscountsPage() {
         const fetchedItems: MenuItem[] = res.data || [];
 
         setMenuItems(prev => {
-          const selected = prev.filter(item => formData.target_ids.includes(item.id) || (formData.reward_target_ids && formData.reward_target_ids.includes(item.id)));
+          const selected = prev.filter(item => 
+            isItemFullyOrPartiallySelected(item, formData.target_ids) || 
+            (formData.reward_target_ids && isItemFullyOrPartiallySelected(item, formData.reward_target_ids))
+          );
           const result = [...fetchedItems];
           for (const item of selected) {
             if (!result.some(r => r.id === item.id)) {
@@ -508,6 +528,30 @@ export function DiscountsPage() {
  }
  };
 
+  const isItemFullyOrPartiallySelected = (item: MenuItem, targetList: string[]) => {
+    if (!targetList || targetList.length === 0) return false;
+    if (targetList.includes(item.id)) return true;
+    if (item.variants && item.variants.length > 0) {
+      return item.variants.some(v => targetList.includes(`${item.id}::${v.name}`));
+    }
+    return false;
+  };
+
+  const isItemFullySelected = (item: MenuItem, targetList: string[]) => {
+    if (!targetList || targetList.length === 0) return false;
+    if (targetList.includes(item.id)) return true;
+    if (item.variants && item.variants.length > 0) {
+      return item.variants.every(v => targetList.includes(`${item.id}::${v.name}`));
+    }
+    return false;
+  };
+
+  const isVariantSelected = (item: MenuItem, variantName: string, targetList: string[]) => {
+    if (!targetList || targetList.length === 0) return false;
+    if (targetList.includes(item.id)) return true;
+    return targetList.includes(`${item.id}::${variantName}`);
+  };
+
   const toggleTargetId = (id: string) => {
     setFormData(prev => ({
       ...prev,
@@ -515,6 +559,86 @@ export function DiscountsPage() {
         ? prev.target_ids.filter(t => t !== id)
         : [...prev.target_ids, id],
     }));
+  };
+
+  const toggleItemTarget = (item: MenuItem) => {
+    setFormData(prev => {
+      const currentList = prev.target_ids || [];
+      const isAnySelected = isItemFullyOrPartiallySelected(item, currentList);
+      if (isAnySelected) {
+        const nextList = currentList.filter(id => id !== item.id && !id.startsWith(`${item.id}::`));
+        return { ...prev, target_ids: nextList };
+      } else {
+        return { ...prev, target_ids: [...currentList, item.id] };
+      }
+    });
+  };
+
+  const toggleVariantTarget = (item: MenuItem, variantName: string) => {
+    setFormData(prev => {
+      let currentList = [...(prev.target_ids || [])];
+      const hasAllItem = currentList.includes(item.id);
+      const vKey = `${item.id}::${variantName}`;
+      const allVariants = item.variants || [];
+
+      if (hasAllItem) {
+        currentList = currentList.filter(id => id !== item.id);
+        allVariants.forEach(v => {
+          if (v.name !== variantName) {
+            currentList.push(`${item.id}::${v.name}`);
+          }
+        });
+      } else if (currentList.includes(vKey)) {
+        currentList = currentList.filter(id => id !== vKey);
+      } else {
+        currentList.push(vKey);
+        if (allVariants.length > 0 && allVariants.every(v => currentList.includes(`${item.id}::${v.name}`))) {
+          currentList = currentList.filter(id => !id.startsWith(`${item.id}::`));
+          currentList.push(item.id);
+        }
+      }
+      return { ...prev, target_ids: currentList };
+    });
+  };
+
+  const toggleRewardItemTarget = (item: MenuItem) => {
+    setFormData(prev => {
+      const currentList = prev.reward_target_ids || [];
+      const isAnySelected = isItemFullyOrPartiallySelected(item, currentList);
+      if (isAnySelected) {
+        const nextList = currentList.filter(id => id !== item.id && !id.startsWith(`${item.id}::`));
+        return { ...prev, reward_target_ids: nextList };
+      } else {
+        return { ...prev, reward_target_ids: [...currentList, item.id] };
+      }
+    });
+  };
+
+  const toggleRewardVariantTarget = (item: MenuItem, variantName: string) => {
+    setFormData(prev => {
+      let currentList = [...(prev.reward_target_ids || [])];
+      const hasAllItem = currentList.includes(item.id);
+      const vKey = `${item.id}::${variantName}`;
+      const allVariants = item.variants || [];
+
+      if (hasAllItem) {
+        currentList = currentList.filter(id => id !== item.id);
+        allVariants.forEach(v => {
+          if (v.name !== variantName) {
+            currentList.push(`${item.id}::${v.name}`);
+          }
+        });
+      } else if (currentList.includes(vKey)) {
+        currentList = currentList.filter(id => id !== vKey);
+      } else {
+        currentList.push(vKey);
+        if (allVariants.length > 0 && allVariants.every(v => currentList.includes(`${item.id}::${v.name}`))) {
+          currentList = currentList.filter(id => !id.startsWith(`${item.id}::`));
+          currentList.push(item.id);
+        }
+      }
+      return { ...prev, reward_target_ids: currentList };
+    });
   };
 
   const handleCheckCode = async (e?: React.FormEvent) => {
@@ -1276,31 +1400,92 @@ export function DiscountsPage() {
           </button>
         )}
       </div>
-      <div className={`flex flex-col gap-1 max-h-48 overflow-y-auto pr-1 transition-opacity ${isSearchingItems ? 'opacity-60' : ''}`}>
+      <div className={`flex flex-col gap-1.5 max-h-56 overflow-y-auto pr-1 transition-opacity ${isSearchingItems ? 'opacity-60' : ''}`}>
         {menuItems.length === 0 ? (
           <p className="text-xs text-muted-foreground py-2 text-center">
             {isSearchingItems ? 'Searching items...' : 'No items found'}
           </p>
         ) : (
           menuItems
-            .filter(i => formData.target_ids.includes(i.id) || !itemSearchQuery.trim() || i.name.toLowerCase().includes(itemSearchQuery.toLowerCase()))
-            .map(item => (
-              <label
-                key={item.id}
-                className={`flex items-center gap-2.5 p-2 rounded-lg cursor-pointer hover:bg-muted dark:hover:bg-slate-700 transition-colors ${
-                  formData.target_ids.includes(item.id) ? 'bg-primary/5' : ''
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  checked={formData.target_ids.includes(item.id)}
-                  onChange={() => toggleTargetId(item.id)}
-                  className="w-4 h-4 rounded accent-primary"
-                />
-                <span className="text-sm text-foreground line-clamp-1">{item.name}</span>
-                <span className="ml-auto text-xs text-muted-foreground">{currencySymbol}{item.price}</span>
-              </label>
-            ))
+            .filter(i => 
+              isItemFullyOrPartiallySelected(i, formData.target_ids) || 
+              !itemSearchQuery.trim() || 
+              i.name.toLowerCase().includes(itemSearchQuery.toLowerCase()) ||
+              (i.variants && i.variants.some(v => v.name.toLowerCase().includes(itemSearchQuery.toLowerCase())))
+            )
+            .map(item => {
+              const hasVariants = Boolean(item.variants && item.variants.length > 0);
+              const isFully = isItemFullySelected(item, formData.target_ids);
+              const isPartially = !isFully && isItemFullyOrPartiallySelected(item, formData.target_ids);
+
+              return (
+                <div
+                  key={item.id}
+                  className={cn(
+                    "p-2 rounded-lg border transition-all",
+                    (isFully || isPartially) 
+                      ? "bg-primary/5 border-primary/20 dark:bg-primary/10" 
+                      : "border-border/40 hover:bg-muted/60 dark:hover:bg-slate-800/60"
+                  )}
+                >
+                  <div
+                    onClick={() => toggleItemTarget(item)}
+                    className="flex items-center gap-2.5 cursor-pointer select-none"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isFully}
+                      ref={el => {
+                        if (el) el.indeterminate = isPartially;
+                      }}
+                      onChange={() => {}} // Handled by onClick on parent container
+                      className="w-4 h-4 rounded accent-primary cursor-pointer"
+                    />
+                    <span className="text-sm font-medium text-foreground line-clamp-1">{item.name}</span>
+                    {hasVariants && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-medium">
+                        {item.variants!.length} variants
+                      </span>
+                    )}
+                    <span className="ml-auto text-xs text-muted-foreground font-mono">{currencySymbol}{item.price}</span>
+                  </div>
+
+                  {/* Selective Variant Checkboxes */}
+                  {hasVariants && (
+                    <div className="flex flex-wrap gap-1.5 pl-6 pt-2 pb-0.5">
+                      {item.variants!.map(v => {
+                        const isVSelected = isVariantSelected(item, v.name, formData.target_ids);
+                        return (
+                          <button
+                            type="button"
+                            key={v.name}
+                            onClick={e => {
+                              e.stopPropagation();
+                              toggleVariantTarget(item, v.name);
+                            }}
+                            className={cn(
+                              "text-xs px-2.5 py-1 rounded-md border transition-all flex items-center gap-1.5 cursor-pointer",
+                              isVSelected
+                                ? "bg-primary/15 border-primary text-primary font-semibold shadow-xs"
+                                : "bg-background border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                            )}
+                          >
+                            <div className={cn(
+                              "w-3 h-3 rounded-xs border flex items-center justify-center transition-colors",
+                              isVSelected ? "bg-primary border-primary text-white" : "border-muted-foreground/50"
+                            )}>
+                              {isVSelected && <CheckCircle2 size={10} className="stroke-[3]" />}
+                            </div>
+                            <span>{v.name}</span>
+                            <span className="text-[11px] opacity-80 font-mono">{currencySymbol}{v.price}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })
         )}
       </div>
     </div>
@@ -1474,37 +1659,92 @@ export function DiscountsPage() {
                           )}
                         </div>
 
-                        <div className={`flex flex-col gap-1 max-h-48 overflow-y-auto pr-1 transition-opacity ${isSearchingRewardItems ? 'opacity-60' : ''}`}>
+                        <div className={`flex flex-col gap-1.5 max-h-56 overflow-y-auto pr-1 transition-opacity ${isSearchingRewardItems ? 'opacity-60' : ''}`}>
                           {menuItems.length === 0 ? (
                             <p className="text-xs text-muted-foreground py-2 text-center">
                               {isSearchingRewardItems ? 'Searching items...' : 'No items found'}
                             </p>
                           ) : (
                             menuItems
-                              .filter(i => formData.reward_target_ids.includes(i.id) || !rewardItemSearchQuery.trim() || i.name.toLowerCase().includes(rewardItemSearchQuery.toLowerCase()))
-                              .map(item => (
-                                <label
-                                  key={`reward-${item.id}`}
-                                  className={cn(
-                                    "flex items-center gap-2.5 p-2 rounded-lg cursor-pointer hover:bg-muted dark:hover:bg-slate-700 transition-colors",
-                                    formData.reward_target_ids.includes(item.id) ? "bg-indigo-50 dark:bg-indigo-950/40 font-semibold" : ""
-                                  )}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={formData.reward_target_ids.includes(item.id)}
-                                    onChange={() => {
-                                      const newTargets = formData.reward_target_ids.includes(item.id)
-                                        ? formData.reward_target_ids.filter(id => id !== item.id)
-                                        : [...formData.reward_target_ids, item.id];
-                                      setFormData({ ...formData, reward_target_ids: newTargets });
-                                    }}
-                                    className="w-4 h-4 rounded accent-indigo-600"
-                                  />
-                                  <span className="text-sm text-foreground line-clamp-1">{item.name}</span>
-                                  <span className="ml-auto text-xs text-muted-foreground font-mono">{currencySymbol}{item.price}</span>
-                                </label>
-                              ))
+                              .filter(i => 
+                                isItemFullyOrPartiallySelected(i, formData.reward_target_ids) || 
+                                !rewardItemSearchQuery.trim() || 
+                                i.name.toLowerCase().includes(rewardItemSearchQuery.toLowerCase()) ||
+                                (i.variants && i.variants.some(v => v.name.toLowerCase().includes(rewardItemSearchQuery.toLowerCase())))
+                              )
+                              .map(item => {
+                                const hasVariants = Boolean(item.variants && item.variants.length > 0);
+                                const isFully = isItemFullySelected(item, formData.reward_target_ids);
+                                const isPartially = !isFully && isItemFullyOrPartiallySelected(item, formData.reward_target_ids);
+
+                                return (
+                                  <div
+                                    key={`reward-${item.id}`}
+                                    className={cn(
+                                      "p-2 rounded-lg border transition-all",
+                                      (isFully || isPartially)
+                                        ? "bg-indigo-50/70 border-indigo-200 dark:bg-indigo-950/40 dark:border-indigo-800/40"
+                                        : "border-border/40 hover:bg-muted/60 dark:hover:bg-slate-800/60"
+                                    )}
+                                  >
+                                    <div
+                                      onClick={() => toggleRewardItemTarget(item)}
+                                      className="flex items-center gap-2.5 cursor-pointer select-none"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={isFully}
+                                        ref={el => {
+                                          if (el) el.indeterminate = isPartially;
+                                        }}
+                                        onChange={() => {}}
+                                        className="w-4 h-4 rounded accent-indigo-600 cursor-pointer"
+                                      />
+                                      <span className="text-sm font-medium text-foreground line-clamp-1">{item.name}</span>
+                                      {hasVariants && (
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100/60 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 font-medium">
+                                          {item.variants!.length} variants
+                                        </span>
+                                      )}
+                                      <span className="ml-auto text-xs text-muted-foreground font-mono">{currencySymbol}{item.price}</span>
+                                    </div>
+
+                                    {/* Selective Variant Checkboxes */}
+                                    {hasVariants && (
+                                      <div className="flex flex-wrap gap-1.5 pl-6 pt-2 pb-0.5">
+                                        {item.variants!.map(v => {
+                                          const isVSelected = isVariantSelected(item, v.name, formData.reward_target_ids);
+                                          return (
+                                            <button
+                                              type="button"
+                                              key={`reward-var-${v.name}`}
+                                              onClick={e => {
+                                                e.stopPropagation();
+                                                toggleRewardVariantTarget(item, v.name);
+                                              }}
+                                              className={cn(
+                                                "text-xs px-2.5 py-1 rounded-md border transition-all flex items-center gap-1.5 cursor-pointer",
+                                                isVSelected
+                                                  ? "bg-indigo-100 dark:bg-indigo-900/60 border-indigo-500 text-indigo-700 dark:text-indigo-200 font-semibold shadow-xs"
+                                                  : "bg-background border-border text-muted-foreground hover:border-indigo-400 hover:text-foreground"
+                                              )}
+                                            >
+                                              <div className={cn(
+                                                "w-3 h-3 rounded-xs border flex items-center justify-center transition-colors",
+                                                isVSelected ? "bg-indigo-600 border-indigo-600 text-white" : "border-muted-foreground/50"
+                                              )}>
+                                                {isVSelected && <CheckCircle2 size={10} className="stroke-[3]" />}
+                                              </div>
+                                              <span>{v.name}</span>
+                                              <span className="text-[11px] opacity-80 font-mono">{currencySymbol}{v.price}</span>
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })
                           )}
                         </div>
                       </div>
@@ -2022,7 +2262,7 @@ export function DiscountsPage() {
                       </div>
                       <div className="text-right">
                         <span className="text-[10px] font-bold text-rose-600 block">REDEEMED</span>
-                        <span className="text-[10px] text-muted-foreground">{r.redeemed_at}</span>
+                        <span className="text-[10px] text-muted-foreground">{formatDateTime(r.redeemed_at)}</span>
                       </div>
                     </div>
                   ))

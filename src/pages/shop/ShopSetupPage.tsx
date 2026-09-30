@@ -395,14 +395,90 @@ export function ShopSetupPage() {
         publicCache.clear();
         toast.success('Shop profile updated successfully!');
         setShop(res.data);
-        // Refresh auth user so all stores stay consistent
         useAuthStore.getState().fetchUser();
         setViewMode('summary');
       } else {
+        // If creating an additional branch/shop, check for addon payment
+        if (ownedShops.length > 0) {
+          try {
+            const orderRes = await api.post('/shops/additional-shop-order');
+            const orderData = orderRes.data;
+
+            if (orderData.required) {
+              if (orderData.mock_mode) {
+                payload.razorpay_order_id = orderData.order_id;
+                payload.razorpay_payment_id = `pay_mock_${Date.now()}`;
+                payload.razorpay_signature = 'sig_mock_verified';
+              } else {
+                const loadRzp = (): Promise<boolean> => {
+                  return new Promise((resolve) => {
+                    if ((window as any).Razorpay) {
+                      resolve(true);
+                      return;
+                    }
+                    const script = document.createElement('script');
+                    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+                    script.onload = () => resolve(true);
+                    script.onerror = () => resolve(false);
+                    document.body.appendChild(script);
+                  });
+                };
+
+                const isLoaded = await loadRzp();
+                if (!isLoaded) {
+                  toast.error('Razorpay SDK failed to load. Please check your connection.');
+                  setIsLoading(false);
+                  return;
+                }
+
+                const paymentPromise = new Promise<{ order_id: string; payment_id: string; signature: string }>((resolve, reject) => {
+                  const options = {
+                    key: orderData.key_id,
+                    amount: Math.round(orderData.amount * 100),
+                    currency: orderData.currency || 'INR',
+                    name: 'Menukit QR',
+                    description: `Additional Shop Add-on (₹${orderData.amount}/mo)`,
+                    order_id: orderData.order_id,
+                    prefill: {
+                      name: user?.email?.split('@')[0] || 'Merchant',
+                      email: user?.email || '',
+                      contact: user?.phone || '',
+                    },
+                    theme: { color: '#f97316' },
+                    handler: (response: any) => {
+                      resolve({
+                        order_id: response.razorpay_order_id,
+                        payment_id: response.razorpay_payment_id,
+                        signature: response.razorpay_signature,
+                      });
+                    },
+                    modal: {
+                      ondismiss: () => reject(new Error('Payment window closed')),
+                    },
+                  };
+
+                  const rzp = new (window as any).Razorpay(options);
+                  rzp.open();
+                });
+
+                const paymentResult = await paymentPromise;
+                payload.razorpay_order_id = paymentResult.order_id;
+                payload.razorpay_payment_id = paymentResult.payment_id;
+                payload.razorpay_signature = paymentResult.signature;
+              }
+            }
+          } catch (err: any) {
+            console.error('Payment initiation error', err);
+            toast.error(err.message || 'Payment processing failed');
+            setIsLoading(false);
+            return;
+          }
+        }
+
         res = await api.post('/shops', payload);
         publicCache.clear();
         localStorage.setItem('current_shop_id', res.data.id);
-        toast.success('Shop created successfully!');
+        toast.success(ownedShops.length > 0 ? '🎉 New branch created successfully!' : '🎉 Shop created successfully!');
         setShop(res.data);
         useAuthStore.getState().fetchUser();
         window.location.href = '/dashboard';

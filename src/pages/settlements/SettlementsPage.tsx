@@ -59,6 +59,37 @@ interface SettlementSummary {
   settlements: SettlementItem[];
 }
 
+function formatSettlementDateTime(dateStr: string) {
+  if (!dateStr) return { date: '-', time: '' };
+  const d = new Date(dateStr.endsWith('Z') || dateStr.includes('+') ? dateStr : `${dateStr}Z`);
+  if (isNaN(d.getTime())) {
+    const fallback = new Date(dateStr);
+    if (!isNaN(fallback.getTime())) {
+      return {
+        date: fallback.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+        time: fallback.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
+      };
+    }
+    return { date: dateStr, time: '' };
+  }
+  return {
+    date: d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+    time: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
+  };
+}
+
+function formatSettlementDate(dateStr?: string) {
+  if (!dateStr) return '-';
+  const d = new Date(dateStr.endsWith('Z') || dateStr.includes('+') ? dateStr : `${dateStr}Z`);
+  if (isNaN(d.getTime())) {
+    const fallback = new Date(dateStr);
+    if (!isNaN(fallback.getTime())) {
+      return fallback.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    }
+    return dateStr;
+  }
+}
+
 const PAGE_SIZE = 20;
 
 export function SettlementsPage() {
@@ -450,60 +481,64 @@ export function SettlementsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 font-medium">
-                  {settlementsList.map((item, index) => (
-                    <tr key={`${item.order_id}-${index}`} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
-                      <td className="py-3 px-4 text-slate-700 dark:text-slate-300 font-mono text-[11px]">
-                        {item.created_at}
-                      </td>
-                      <td className="py-3 px-4">
-                        <span className="font-mono font-bold text-slate-900 dark:text-slate-100">{item.invoice_no}</span>
-                        <span className="text-[10px] text-slate-400 block font-mono">Ref: {item.payment_reference}</span>
-                      </td>
-                      <td className="py-3 px-4">
-                        <span className="font-bold text-slate-800 dark:text-slate-200">{item.customer_name}</span>
-                        {item.customer_phone && (
-                          <span className="text-[10px] text-slate-400 block font-mono">{item.customer_phone}</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4">
-                        <span className="capitalize px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 font-bold text-[10px] text-slate-600 dark:text-slate-300">
-                          {item.payment_method}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono font-bold text-slate-700 dark:text-slate-300">
-                        {currency}{item.gross_amount.toFixed(2)}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono text-slate-400">
-                        {item.platform_fee > 0 ? `-${currency}${item.platform_fee.toFixed(2)}` : `${currency}0.00`}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono font-extrabold text-emerald-600 dark:text-emerald-400">
-                        {currency}{item.net_settlement_amount.toFixed(2)}
-                      </td>
+                  {settlementsList.map((item, index) => {
+                    const dt = formatSettlementDateTime(item.created_at);
+                    return (
+                      <tr key={`${item.order_id}-${index}`} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
+                        <td className="py-3 px-4 text-slate-700 dark:text-slate-300 font-mono text-[11px]">
+                          <div className="font-semibold text-slate-900 dark:text-slate-100">{dt.date}</div>
+                          {dt.time && <div className="text-[10px] text-slate-400">{dt.time}</div>}
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="font-mono font-bold text-slate-900 dark:text-slate-100">{item.invoice_no}</span>
+                          <span className="text-[10px] text-slate-400 block font-mono">Ref: {item.payment_reference}</span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="font-bold text-slate-800 dark:text-slate-200">{item.customer_name}</span>
+                          {item.customer_phone && (
+                            <span className="text-[10px] text-slate-400 block font-mono">{item.customer_phone}</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="capitalize px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 font-bold text-[10px] text-slate-600 dark:text-slate-300">
+                            {item.payment_method}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono font-bold text-slate-700 dark:text-slate-300">
+                          {currency}{item.gross_amount.toFixed(2)}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono text-slate-400">
+                          {item.platform_fee > 0 ? `-${currency}${item.platform_fee.toFixed(2)}` : `${currency}0.00`}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono font-extrabold text-emerald-600 dark:text-emerald-400">
+                          {currency}{item.net_settlement_amount.toFixed(2)}
+                        </td>
 
-                      <td className="py-3 px-4">
-                        {item.settlement_status === 'settled' ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                            <CheckCircle2 size={11} /> Settled
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
-                            <Clock size={11} className="animate-pulse" /> Pending
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        {item.settlement_status === 'settled' && item.actual_settled_date ? (
-                          <span className="font-mono text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
-                            {item.actual_settled_date}
-                          </span>
-                        ) : (
-                          <span className="font-mono text-[11px] font-bold text-slate-500 dark:text-slate-400">
-                            Est: {item.estimated_payout_date}
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                        <td className="py-3 px-4">
+                          {item.settlement_status === 'settled' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                              <CheckCircle2 size={11} /> Settled
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                              <Clock size={11} className="animate-pulse" /> Pending
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          {item.settlement_status === 'settled' && item.actual_settled_date ? (
+                            <span className="font-mono text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
+                              {formatSettlementDate(item.actual_settled_date)}
+                            </span>
+                          ) : (
+                            <span className="font-mono text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                              Est: {formatSettlementDate(item.estimated_payout_date)}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
 

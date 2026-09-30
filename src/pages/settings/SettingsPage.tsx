@@ -40,6 +40,7 @@ import { usePWAInstall } from '@/hooks/usePWAInstall';
 import { APP_VERSION } from '@/config/version';
 import { WhatsNewModal } from '@/components/WhatsNewModal';
 import { CountryCodeSelect } from '@/components/ui/CountryCodeSelect';
+import { publicCache } from '@/utils/publicCache';
 import menukitLogo from '@/assets/menukit-logo.svg';
 
 const COUNTRY_CODES = [
@@ -826,6 +827,8 @@ export function SettingsPage() {
       };
       
       const res = await api.put('/shops/me/settings', payload);
+      publicCache.clear();
+      window.dispatchEvent(new CustomEvent('menukit-shop-settings-updated', { detail: res.data }));
       if (shop) {
         setShop({ ...shop, settings: res.data });
       } else {
@@ -855,7 +858,9 @@ export function SettingsPage() {
         show_menus_in_discovery: false,
       };
       setSettingsData(updated);
-      await api.put('/shops/me/settings', updated);
+      const res = await api.put('/shops/me/settings', updated);
+      publicCache.clear();
+      window.dispatchEvent(new CustomEvent('menukit-shop-settings-updated', { detail: res.data }));
       if (shop) {
         setShop({ ...shop, settings: { ...shop.settings, ...updated } });
       }
@@ -2261,7 +2266,7 @@ export function SettingsPage() {
                       <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Enable GST Billing:</span>
                       <Switch
                         checked={settingsData.gst_enabled}
-                        onCheckedChange={(checked) => setSettingsData(prev => ({ ...prev, gst_enabled: checked }))}
+                        onChange={(checked) => setSettingsData(prev => ({ ...prev, gst_enabled: checked }))}
                       />
                     </div>
                   </div>

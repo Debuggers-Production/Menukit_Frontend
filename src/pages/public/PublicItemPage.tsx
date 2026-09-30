@@ -530,7 +530,20 @@ export function PublicItemPage() {
                     if (d.discount_type === 'bogo' || d.discount_type === 'combo' || d.discount_type === 'free_item') return false;
                     if (d.applies_to === 'all') return true;
                     if (d.applies_to === 'category' && d.target_ids?.includes(item.category_id)) return true;
-                    if (d.applies_to === 'items' && d.target_ids?.includes(item.id)) return true;
+                    if (d.applies_to === 'items' && d.target_ids) {
+                      if (d.target_ids.includes(item.id)) return true;
+                      if (item.variants && item.variants.length > 0 && selectedVariantIdx !== undefined && selectedVariantIdx >= 0) {
+                        const vName = item.variants[selectedVariantIdx]?.name?.trim()?.toLowerCase();
+                        if (vName) {
+                          return d.target_ids.some(tid => {
+                            if (tid.startsWith(`${item.id}::`)) {
+                              return tid.split('::')[1]?.trim()?.toLowerCase() === vName;
+                            }
+                            return false;
+                          });
+                        }
+                      }
+                    }
                     return false;
                   });
                   if (disc) {

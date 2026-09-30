@@ -1,7 +1,7 @@
 import { LinkifiedText } from '../../components/LinkifiedText';
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { ShoppingBag, Plus, Minus, Info, ChevronLeft, ChevronRight, CheckCircle, Key, MapPin, Navigation, Map, Armchair, Gift, Sparkles, Percent, Banknote, Truck, Tag, Clock, AlertTriangle, UtensilsCrossed, Gamepad2, History, Trophy, ChefHat } from 'lucide-react';
+import { ShoppingBag, Plus, Minus, Info, ChevronLeft, ChevronRight, CheckCircle, XCircle, Key, MapPin, Navigation, Map, Armchair, Gift, Sparkles, Percent, Banknote, Truck, Tag, Clock, AlertTriangle, UtensilsCrossed, Gamepad2, History, Trophy, ChefHat } from 'lucide-react';
 import { useCartStore, useShopCart } from '@/store/cartStore';
 import { api } from '@/services/api';
 import { Shop, Discount } from '@/types';
@@ -22,6 +22,7 @@ import { useActiveOrders } from '@/hooks/useActiveOrders';
 
 import { triggerHaptic, HAPTIC_PATTERNS } from '@/utils/haptic';
 import { loadGoogleFont } from '@/utils/fontLoader';
+import { calculateOrderPricing } from '@/utils/pricing';
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -45,6 +46,17 @@ function MapEventsHandler({ onClick, center }: { onClick: (lat: number, lng: num
   }, [center, map]);
 
   return null;
+}
+
+export function roundStrictTwoDecimals(val: number): number {
+  if (isNaN(val)) return 0;
+  const shifted = Math.abs(val) * 1000;
+  const thirdDigit = Math.floor(shifted + 1e-9) % 10;
+  if (thirdDigit > 5) {
+    return Math.sign(val) * (Math.ceil(Math.abs(val) * 100 - 1e-9) / 100);
+  } else {
+    return Math.sign(val) * (Math.floor(Math.abs(val) * 100 + 1e-9) / 100);
+  }
 }
 
 export function PublicCartPage() {
@@ -138,24 +150,96 @@ export function PublicCartPage() {
   const [isVerifyingCode, setIsVerifyingCode] = useState(false);
   const [discountCodeError, setDiscountCodeError] = useState('');
 
-  const isDiscountApplicable = (disc: Discount) => {
-    if (disc.applies_to === 'all') return true;
-    if (items.length === 0) return false;
-    return items.some(item => {
-      if (disc.applies_to === 'category' && disc.target_ids?.includes(item.menuItem.category_id)) return true;
-      if (disc.applies_to === 'items' && disc.target_ids?.includes(item.menuItem.id)) return true;
+  const calculateDiscountSavings = useCallback((disc: Discount): number => {
+    if (items.length === 0 || disc.is_already_used) return 0;
+    
+    const checkItemMatches = (menuItem: any, selectedVariantIdx?: number) => {
+      if (disc.applies_to === 'all') return true;
+      if (disc.applies_to === 'category' && disc.target_ids?.includes(menuItem.category_id)) return true;
+      if (disc.applies_to === 'items' && disc.target_ids) {
+        if (disc.target_ids.includes(menuItem.id)) return true;
+        if (menuItem.variants && menuItem.variants.length > 0 && selectedVariantIdx !== undefined && selectedVariantIdx >= 0) {
+          const vName = menuItem.variants[selectedVariantIdx]?.name?.trim()?.toLowerCase();
+          if (vName) {
+            return disc.target_ids.some(tid => {
+              if (tid.startsWith(`${menuItem.id}::`)) {
+                const targetVar = tid.split('::')[1]?.trim()?.toLowerCase();
+                return targetVar === vName;
+              }
+              return false;
+            });
+          }
+        }
+      }
       return false;
-    });
-  };
+    };
 
+    // Check if discount is applicable to any cart item
+    const isApplicable = items.some(item => checkItemMatches(item.menuItem, item.selectedVariantIdx));
+    if (!isApplicable) return 0;
+
+    const isDelivery = orderType === 'delivery';
+    let applicableSubtotal = 0;
+
+    items.forEach(item => {
+      const { menuItem, selectedVariantIdx, selectedAddons, quantity } = item;
+      const itemMatches = checkItemMatches(menuItem, selectedVariantIdx);
+      if (itemMatches) {
+        let basePrice = 0;
+        if (menuItem.variants && menuItem.variants.length > 0) {
+          const v = menuItem.variants[selectedVariantIdx];
+          const p = (isDelivery && v.online_price) ? Number(v.online_price) : Number(v.price);
+          const op = isDelivery 
+            ? (v.online_offer_price ? Number(v.online_offer_price) : (v.online_price ? Number(v.online_price) : (v.offer_price ? Number(v.offer_price) : p)))
+            : (v.offer_price ? Number(v.offer_price) : p);
+          basePrice = op < p ? op : p;
+        } else {
+          const p = (isDelivery && menuItem.online_price) ? Number(menuItem.online_price) : Number(menuItem.price);
+          const op = isDelivery 
+            ? (menuItem.online_offer_price ? Number(menuItem.online_offer_price) : (menuItem.online_price ? Number(menuItem.online_price) : (menuItem.offer_price ? Number(menuItem.offer_price) : p)))
+            : (menuItem.offer_price ? Number(menuItem.offer_price) : p);
+          basePrice = op < p ? op : p;
+        }
+        let addonsPrice = 0;
+        if (menuItem.addons) {
+          selectedAddons.forEach(idx => {
+            addonsPrice += Number(menuItem.addons![idx].price);
+          });
+        }
+        applicableSubtotal += (basePrice + addonsPrice) * quantity;
+      }
+    });
+
+    if (disc.min_order_value && applicableSubtotal < Number(disc.min_order_value)) return 0;
+
+    let savings = 0;
+    const v = Number(disc.discount_value);
+    if (disc.discount_type === 'percentage') {
+      savings = applicableSubtotal * (v / 100);
+    } else if (disc.discount_type === 'flat' || disc.discount_type === 'fixed') {
+      savings = Math.min(applicableSubtotal, v);
+    }
+
+    if (disc.max_discount_amount && Number(disc.max_discount_amount) > 0) {
+      savings = Math.min(savings, Number(disc.max_discount_amount));
+    }
+    return savings;
+  }, [items, orderType]);
+
+  const isDiscountApplicable = useCallback((disc: Discount) => {
+    if (disc.is_already_used) return false;
+    return calculateDiscountSavings(disc) > 0 || (disc.applies_to === 'all' && items.length > 0);
+  }, [calculateDiscountSavings, items.length]);
+
+  // Auto-clear manual discount if it was already used or is no longer available
   useEffect(() => {
-    if (manualDiscountId) {
+    if (manualDiscountId && manualDiscountId !== 'none' && availableDiscounts.length > 0) {
       const activeDisc = availableDiscounts.find(d => d.id === manualDiscountId);
-      if (activeDisc && !isDiscountApplicable(activeDisc)) {
-        setManualDiscount(null);
+      if (!activeDisc || activeDisc.is_already_used || activeDisc.is_active === false) {
+        setManualDiscount('none');
       }
     }
-  }, [items, manualDiscountId, availableDiscounts, setManualDiscount]);
+  }, [availableDiscounts, manualDiscountId, setManualDiscount]);
 
   const handleVerifyDiscountCode = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -170,6 +254,12 @@ export function PublicCartPage() {
       });
       const verifiedDisc: Discount = res.data;
       
+      if (verifiedDisc.is_already_used) {
+        setSelectedBalloonDiscount(verifiedDisc);
+        setIsVerifyingCode(false);
+        return;
+      }
+
       if (!isDiscountApplicable(verifiedDisc)) {
         setDiscountCodeError('This discount code is not applicable to any items in your cart');
         triggerHaptic(HAPTIC_PATTERNS.error);
@@ -187,7 +277,9 @@ export function PublicCartPage() {
       confetti({ particleCount: 60, spread: 60, origin: { y: 0.7 } });
       toast.success(`Discount code "${verifiedDisc.code || verifiedDisc.title}" applied!`);
     } catch (err: any) {
-      setDiscountCodeError(err.response?.data?.detail || 'Invalid or expired discount code');
+      const msg = err.response?.data?.detail || 'Invalid or expired discount code';
+      setDiscountCodeError(msg);
+      toast.error(msg);
       triggerHaptic(HAPTIC_PATTERNS.error);
     } finally {
       setIsVerifyingCode(false);
@@ -196,7 +288,7 @@ export function PublicCartPage() {
   
   const handleBalloonClick = (disc: Discount) => {
     triggerHaptic(HAPTIC_PATTERNS.balloonClick);
-    if (manualDiscountId === disc.id) {
+    if (manualDiscountId === disc.id || disc.is_already_used) {
       setSelectedBalloonDiscount(disc);
       return;
     }
@@ -337,9 +429,11 @@ export function PublicCartPage() {
         }
 
         // Always fetch fresh shop and discounts in parallel to speed up loading
+        const savedPhone = localStorage.getItem('customer_phone') || '';
+        const custPhoneParam = (customerPhone.trim() || savedPhone) ? `?customer_id=${encodeURIComponent(customerPhone.trim() || savedPhone)}` : '';
         const [shopRes, discountRes, itemsRes] = await Promise.all([
           api.get(`/public/shop/${id}`),
-          api.get(`/public/shop/${id}/discounts`),
+          api.get(`/public/shop/${id}/discounts${custPhoneParam}`),
           api.get(`/public/shop/${id}/items?limit=200`)
         ]);
 
@@ -511,6 +605,8 @@ export function PublicCartPage() {
         delivery_address: orderType === 'delivery' ? finalAddress : null,
         payment_method: apiPaymentMethod,
         total_amount: finalTotal,
+        applied_discount_ids: appliedDiscountsList.map(d => d.id),
+        applied_discount_codes: appliedDiscountsList.map(d => d.discount.code || d.discount.title),
         items: items.map(it => {
           const isDelivery = orderType === 'delivery';
           let itemPrice = 0;
@@ -624,6 +720,7 @@ export function PublicCartPage() {
     subtotal,
     automaticDiscountAmount,
     manualDiscountAmount,
+    appliedDiscountsList,
     isGstEnabled,
     isInclusive,
     taxableAmount,
@@ -637,6 +734,7 @@ export function PublicCartPage() {
     platformFee,
     pgFee,
     gstOnFee,
+    totalPgFee,
     grandTotal,
   } = useMemo(() => {
     let subtotal = 0;
@@ -651,110 +749,61 @@ export function PublicCartPage() {
       let effectivePrice = 0;
 
       if (menuItem.variants && menuItem.variants.length > 0) {
-        const v = menuItem.variants[selectedVariantIdx];
-        const p = (isDelivery && v.online_price) ? Number(v.online_price) : Number(v.price);
+        const v = menuItem.variants[selectedVariantIdx] || menuItem.variants[0];
+        const p = (isDelivery && v.online_price) ? Number(v.online_price) : Number(v.price || 0);
         const op = isDelivery 
           ? (v.online_offer_price ? Number(v.online_offer_price) : (v.online_price ? Number(v.online_price) : (v.offer_price ? Number(v.offer_price) : p)))
           : (v.offer_price ? Number(v.offer_price) : p);
         basePrice = p;
-        effectivePrice = op < p ? op : p;
+        effectivePrice = (op > 0 && op < p) ? op : p;
       } else {
-        const p = (isDelivery && menuItem.online_price) ? Number(menuItem.online_price) : Number(menuItem.price);
+        const p = (isDelivery && menuItem.online_price) ? Number(menuItem.online_price) : Number(menuItem.price || 0);
         const op = isDelivery 
           ? (menuItem.online_offer_price ? Number(menuItem.online_offer_price) : (menuItem.online_price ? Number(menuItem.online_price) : (menuItem.offer_price ? Number(menuItem.offer_price) : p)))
           : (menuItem.offer_price ? Number(menuItem.offer_price) : p);
         basePrice = p;
-        effectivePrice = op < p ? op : p;
+        effectivePrice = (op > 0 && op < p) ? op : p;
       }
       
       let addonsPrice = 0;
       if (menuItem.addons) {
         selectedAddons.forEach(idx => {
-          addonsPrice += Number(menuItem.addons![idx].price);
+          addonsPrice += Number(menuItem.addons![idx]?.price || 0);
         });
       }
 
       const itemSubtotal = (basePrice + addonsPrice) * quantity;
       subtotal += itemSubtotal;
 
-      // Calculate automatic discount
-      let finalPrice = effectivePrice;
-      if (!manualDiscountId && finalPrice === basePrice) {
-
-          const disc = availableDiscounts.find(d => {
-            if (d.id === manualDiscountId) return false;
-            if ((d.visibility_type === 'members_only_hidden' || d.visibility_type === 'members_only_visible') && memberStatus !== 'verified-member') return false;
-            if (d.visibility_type === 'unlock_required' && memberStatus === null) return false;
-            if (d.discount_type === 'bogo' || d.discount_type === 'combo') return false;
-            if (d.applies_to === 'all') return true;
-            if (d.applies_to === 'category' && d.target_ids?.includes(menuItem.category_id)) return true;
-            if (d.applies_to === 'items' && d.target_ids?.includes(menuItem.id)) return true;
-            return false;
-          });
-
-          if (disc) {
-            const v = Number(disc.discount_value);
-            if (disc.discount_type === 'percentage') {
-              finalPrice = basePrice * (1 - v / 100);
-            } else {
-              finalPrice = Math.max(0, basePrice - v);
-            }
-            appliedAutoDiscounts.add(disc.title);
-          }
-        }
-
-      autoDiscountTotal += (basePrice - finalPrice) * quantity;
+      if (basePrice > effectivePrice) {
+        autoDiscountTotal += (basePrice - effectivePrice) * quantity;
+        appliedAutoDiscounts.add(`${menuItem.name} Offer`);
+      }
     });
 
-    let manualDiscountAmount = 0;
-    if (manualDiscountId) {
-      const manualDisc = availableDiscounts.find(d => d.id === manualDiscountId);
-      if (manualDisc) {
-        let applicableSubtotal = 0;
-        
-        if (manualDisc.applies_to === 'all') {
-          applicableSubtotal = subtotal;
-        } else {
-          items.forEach(item => {
-            const { menuItem, selectedVariantIdx, selectedAddons, quantity } = item;
-            
-            let isApplicable = false;
-            if (manualDisc.applies_to === 'category' && manualDisc.target_ids?.includes(menuItem.category_id)) {
-              isApplicable = true;
-            } else if (manualDisc.applies_to === 'items' && manualDisc.target_ids?.includes(menuItem.id)) {
-              isApplicable = true;
-            }
-            
-            if (isApplicable) {
-              let basePrice = 0;
-              if (menuItem.variants && menuItem.variants.length > 0) {
-                const v = menuItem.variants[selectedVariantIdx];
-                basePrice = (isDelivery && v.online_price) ? Number(v.online_price) : Number(v.price);
-              } else {
-                basePrice = (isDelivery && menuItem.online_price) ? Number(menuItem.online_price) : Number(menuItem.price);
-              }
-              
-              let addonsPrice = 0;
-              if (menuItem.addons) {
-                selectedAddons.forEach(idx => {
-                  addonsPrice += Number(menuItem.addons![idx].price);
-                });
-              }
-              applicableSubtotal += (basePrice + addonsPrice) * quantity;
-            }
-          });
-        }
-        
-        if (applicableSubtotal > 0) {
-          const v = Number(manualDisc.discount_value);
-          if (manualDisc.discount_type === 'percentage') {
-            manualDiscountAmount = applicableSubtotal * (v / 100);
-          } else if (manualDisc.discount_type === 'flat') {
-            manualDiscountAmount = Math.min(v, applicableSubtotal);
+    const appliedDiscountsList: Array<{ id: string; title: string; savings: number; discount: Discount }> = [];
+
+    if (manualDiscountId && manualDiscountId !== 'none') {
+      const disc = availableDiscounts.find(d => d.id === manualDiscountId);
+      if (disc && disc.is_active !== false && !disc.is_already_used) {
+        const isMemberOk = !((disc.visibility_type === 'members_only_hidden' || disc.visibility_type === 'members_only_visible') && memberStatus !== 'verified-member');
+        const isUnlockOk = !(disc.visibility_type === 'unlock_required' && memberStatus === null);
+        const isTypeOk = ['percentage', 'flat', 'fixed'].includes(disc.discount_type);
+        if (isMemberOk && isUnlockOk && isTypeOk) {
+          const savings = calculateDiscountSavings(disc);
+          if (savings > 0) {
+            appliedDiscountsList.push({
+              id: disc.id,
+              title: disc.title,
+              savings: Number(savings.toFixed(2)),
+              discount: disc
+            });
           }
         }
       }
     }
+
+    const manualDiscountAmount = appliedDiscountsList.reduce((acc, d) => acc + d.savings, 0);
 
     const foodSubtotalAfterDiscounts = Math.max(0, subtotal - autoDiscountTotal - manualDiscountAmount);
 
@@ -800,17 +849,18 @@ export function PublicCartPage() {
     else if (orderType === 'delivery') isChannelOnline = (shop?.settings as any)?.online_payments_delivery_enabled !== false;
 
     const isOnlineFeeApplicable = paymentMethod === 'online' && isMasterOnline && isChannelOnline;
-    const platformFee = isOnlineFeeApplicable ? parseFloat((finalTotal * 0.02).toFixed(2)) : 0;
-    const pgFee = isOnlineFeeApplicable ? parseFloat((finalTotal * 0.03).toFixed(2)) : 0;
-    const gstOnFee = isOnlineFeeApplicable ? parseFloat((pgFee * 0.18).toFixed(2)) : 0;
-    const grandTotal = isOnlineFeeApplicable
-      ? parseFloat((finalTotal + platformFee + pgFee + gstOnFee).toFixed(2))
-      : finalTotal;
+    const pricing = calculateOrderPricing(finalTotal, isOnlineFeeApplicable);
+    const platformFee = pricing.platformFee;
+    const pgFee = pricing.gatewayFee;
+    const gstOnFee = pricing.gatewayGst;
+    const totalPgFee = pricing.totalPgFee;
+    const grandTotal = pricing.totalPayable;
 
     return {
       subtotal,
       automaticDiscountAmount: autoDiscountTotal,
       manualDiscountAmount,
+      appliedDiscountsList,
       isGstEnabled,
       isInclusive,
       taxableAmount,
@@ -824,6 +874,7 @@ export function PublicCartPage() {
       platformFee,
       pgFee,
       gstOnFee,
+      totalPgFee,
       grandTotal,
     };
   }, [items, availableDiscounts, manualDiscountId, memberStatus, deliveryFee, paymentMethod, orderType, shop?.settings]);
@@ -834,11 +885,21 @@ export function PublicCartPage() {
   const renderItem = (item: any) => {
     const { menuItem, selectedVariantIdx, selectedAddons, quantity } = item;
     
+    const isDelivery = orderType === 'delivery';
     let basePrice = 0;
     if (menuItem.variants && menuItem.variants.length > 0) {
-      basePrice = Number(menuItem.variants[selectedVariantIdx].price);
+      const v = menuItem.variants[selectedVariantIdx] || menuItem.variants[0];
+      const p = (isDelivery && v.online_price) ? Number(v.online_price) : Number(v.price || 0);
+      const op = isDelivery 
+        ? (v.online_offer_price ? Number(v.online_offer_price) : (v.online_price ? Number(v.online_price) : (v.offer_price ? Number(v.offer_price) : p)))
+        : (v.offer_price ? Number(v.offer_price) : p);
+      basePrice = (op > 0 && op < p) ? op : (op > 0 ? op : p);
     } else {
-      basePrice = Number(menuItem.price);
+      const p = (isDelivery && menuItem.online_price) ? Number(menuItem.online_price) : Number(menuItem.price || 0);
+      const op = isDelivery 
+        ? (menuItem.online_offer_price ? Number(menuItem.online_offer_price) : (menuItem.online_price ? Number(menuItem.online_price) : (menuItem.offer_price ? Number(menuItem.offer_price) : p)))
+        : (menuItem.offer_price ? Number(menuItem.offer_price) : p);
+      basePrice = (op > 0 && op < p) ? op : (op > 0 ? op : p);
     }
     
     let addonsPrice = 0;
@@ -913,39 +974,50 @@ export function PublicCartPage() {
   };
 
   const renderOffer = (disc: Discount) => {
+    const isUsed = disc.is_already_used === true;
     return (
       <button
         key={disc.id}
         onClick={() => {
-          if (manualDiscountId !== disc.id && !isDiscountApplicable(disc)) {
-            toast.error('This discount is not applicable to any items in your cart');
-            triggerHaptic(HAPTIC_PATTERNS.error);
-            return;
-          }
-          setManualDiscount(manualDiscountId === disc.id ? null : disc.id);
+          setSelectedBalloonDiscount(disc);
         }}
-        className={`w-full p-4 ${borderRadiusClass} border-2 flex items-center justify-between transition-all ${
-          manualDiscountId === disc.id 
-            ? 'border-transparent' 
-            : 'border-slate-100 hover:border-slate-200'
+        className={`w-full p-4 ${borderRadiusClass} border-2 flex items-center justify-between transition-all cursor-pointer ${
+          isUsed
+            ? 'opacity-75 bg-slate-50 border-slate-200 hover:border-slate-300'
+            : manualDiscountId === disc.id 
+              ? 'border-transparent' 
+              : 'border-slate-100 hover:border-slate-200'
         }`}
-        style={manualDiscountId === disc.id ? { borderColor: primaryColor, backgroundColor: `${primaryColor}08` } : {}}
+        style={!isUsed && manualDiscountId === disc.id ? { borderColor: primaryColor, backgroundColor: `${primaryColor}08` } : {}}
       >
         <div className="flex items-center gap-4">
           <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
             <span className="font-black text-slate-400">%</span>
           </div>
           <div className="text-left">
-            <div className="font-bold text-slate-800 leading-tight">{disc.title}</div>
-            <div className="text-xs font-medium text-slate-500 mt-1"><LinkifiedText text={disc.description || 'Tap to apply this offer'} /></div>
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-slate-800 leading-tight">{disc.title}</span>
+              {isUsed && (
+                <span className="text-[10px] font-extrabold text-amber-700 bg-amber-100 dark:bg-amber-950/40 dark:text-amber-400 px-2 py-0.5 rounded-full border border-amber-300 dark:border-amber-800">
+                  Already Used
+                </span>
+              )}
+            </div>
+            <div className="text-xs font-medium text-slate-500 mt-1">
+              {isUsed ? 'This discount has already been used on a previous order' : <LinkifiedText text={disc.description || 'Tap to apply this offer'} />}
+            </div>
           </div>
         </div>
-        <div 
-          className={`w-6 h-6 rounded-full border-[3px] flex items-center justify-center shrink-0 ${manualDiscountId === disc.id ? '' : 'border-slate-200'}`}
-          style={manualDiscountId === disc.id ? { borderColor: primaryColor } : {}}
-        >
-          {manualDiscountId === disc.id && <div className="w-3 h-3 rounded-full" style={{ backgroundColor: primaryColor }} />}
-        </div>
+        {!isUsed ? (
+          <div 
+            className={`w-6 h-6 rounded-full border-[3px] flex items-center justify-center shrink-0 ${manualDiscountId === disc.id ? '' : 'border-slate-200'}`}
+            style={manualDiscountId === disc.id ? { borderColor: primaryColor } : {}}
+          >
+            {manualDiscountId === disc.id && <div className="w-3 h-3 rounded-full" style={{ backgroundColor: primaryColor }} />}
+          </div>
+        ) : (
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Used</span>
+        )}
       </button>
     );
   };
@@ -1354,80 +1426,83 @@ export function PublicCartPage() {
             })()}
 
             {/* Promo / Discount Code Box */}
-            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-              <div className="flex items-center justify-between mb-2.5">
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 space-y-3">
+              <div className="flex items-center justify-between">
                 <h3 className="font-black text-slate-800 text-sm flex items-center gap-2">
                   <Tag size={16} style={{ color: primaryColor }} />
                   Have a Discount Code?
                 </h3>
-                {manualDiscountId && availableDiscounts.find(d => d.id === manualDiscountId) && (
+                {appliedDiscountsList && appliedDiscountsList.length > 0 && (
                   <span className="text-[11px] font-extrabold text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                    Code Applied
+                    {appliedDiscountsList.length > 1 ? `${appliedDiscountsList.length} Offers Applied` : 'Code Applied'}
                   </span>
                 )}
               </div>
 
-              {manualDiscountId && availableDiscounts.find(d => d.id === manualDiscountId) ? (() => {
-                const appliedDisc = availableDiscounts.find(d => d.id === manualDiscountId)!;
-                return (
-                  <div className="flex items-center justify-between p-3 bg-emerald-50/80 border border-emerald-200 rounded-xl">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-8 h-8 rounded-lg bg-emerald-500 text-white flex items-center justify-center shrink-0 font-bold text-xs shadow-xs">
-                        ✓
+              {/* List all applied discount codes / offers */}
+              {appliedDiscountsList && appliedDiscountsList.length > 0 && (
+                <div className="space-y-2">
+                  {appliedDiscountsList.map((item) => (
+                    <div key={item.id} className="flex items-center justify-between p-2.5 bg-emerald-50/80 border border-emerald-200 rounded-xl">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-7 h-7 rounded-lg bg-emerald-500 text-white flex items-center justify-center shrink-0 font-bold text-xs shadow-xs">
+                          ✓
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-mono font-bold text-emerald-950 text-xs sm:text-sm tracking-wide truncate">
+                            {item.discount.code || item.discount.title}
+                          </p>
+                          <p className="text-[11px] text-emerald-700 font-medium">
+                            {item.discount.discount_type === 'percentage'
+                              ? `${Number(item.discount.discount_value)}% discount (-${currencySymbol}${item.savings.toFixed(2)})`
+                              : `${currencySymbol}${Number(item.discount.discount_value)} flat discount (-${currencySymbol}${item.savings.toFixed(2)})`}
+                          </p>
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <p className="font-mono font-bold text-emerald-950 text-xs sm:text-sm tracking-wide truncate">
-                          {appliedDisc.code || appliedDisc.title}
-                        </p>
-                        <p className="text-[11px] text-emerald-700 font-medium">
-                          {appliedDisc.discount_type === 'percentage'
-                            ? `${Number(appliedDisc.discount_value)}% discount applied`
-                            : `₹${Number(appliedDisc.discount_value)} flat discount applied`}
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setManualDiscount(null);
-                        setDiscountCodeInput('');
-                        toast.success('Discount code removed');
-                      }}
-                      className="text-xs font-bold text-rose-600 hover:text-rose-700 px-2.5 py-1.5 rounded-lg hover:bg-rose-50 transition-colors shrink-0"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                );
-              })() : (
-                <form onSubmit={handleVerifyDiscountCode} className="space-y-2">
-                  <div className="flex gap-2">
-                    <div className="relative flex-1">
-                      <input
-                        type="text"
-                        value={discountCodeInput}
-                        onChange={(e) => {
-                          setDiscountCodeInput(e.target.value.toUpperCase());
-                          setDiscountCodeError('');
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setManualDiscount('none');
+                          setDiscountCodeInput('');
+                          toast.success(`${item.discount.title} removed`);
                         }}
-                        placeholder="Enter code (e.g. NEWCOMER10)"
-                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm uppercase tracking-wider text-slate-800 placeholder:normal-case placeholder:font-sans placeholder:tracking-normal placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
-                      />
+                        className="text-xs font-bold text-rose-600 hover:text-rose-700 px-2 py-1 rounded-lg hover:bg-rose-50 transition-colors shrink-0"
+                      >
+                        Remove
+                      </button>
                     </div>
-                    <button
-                      type="submit"
-                      disabled={isVerifyingCode || !discountCodeInput.trim()}
-                      className="px-4 py-2.5 rounded-xl text-white font-extrabold text-xs tracking-wider uppercase disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-110 active:scale-95 transition-all shrink-0"
-                      style={{ backgroundColor: primaryColor }}
-                    >
-                      {isVerifyingCode ? 'Verifying...' : 'Verify'}
-                    </button>
-                  </div>
-                  {discountCodeError && (
-                    <p className="text-xs font-medium text-rose-500 pl-1">{discountCodeError}</p>
-                  )}
-                </form>
+                  ))}
+                </div>
               )}
+
+              {/* Form to enter promo code */}
+              <form onSubmit={handleVerifyDiscountCode} className="space-y-2 pt-1">
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      value={discountCodeInput}
+                      onChange={(e) => {
+                        setDiscountCodeInput(e.target.value.toUpperCase());
+                        setDiscountCodeError('');
+                      }}
+                      placeholder="Enter code (e.g. NEWCOMER10)"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm uppercase tracking-wider text-slate-800 placeholder:normal-case placeholder:font-sans placeholder:tracking-normal placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={isVerifyingCode || !discountCodeInput.trim()}
+                    className="px-4 py-2.5 rounded-xl text-white font-extrabold text-xs tracking-wider uppercase disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-110 active:scale-95 transition-all shrink-0"
+                    style={{ backgroundColor: primaryColor }}
+                  >
+                    {isVerifyingCode ? 'Verifying...' : 'Verify'}
+                  </button>
+                </div>
+                {discountCodeError && (
+                  <p className="text-xs font-medium text-rose-500 pl-1">{discountCodeError}</p>
+                )}
+              </form>
             </div>
 
             {/* Offers (Balloon Garden) */}
@@ -1449,7 +1524,7 @@ export function PublicCartPage() {
                       { bg: 'bg-orange-500', knot: 'border-b-orange-600', string: 'bg-orange-300', particle: '#f97316' }
                     ];
                     const color = colors[idx % colors.length];
-                    const isApplied = manualDiscountId === disc.id;
+                    const isApplied = (appliedDiscountsList || []).some(d => d.id === disc.id) || manualDiscountId === disc.id;
                     const isPopping = poppingId === disc.id;
 
                     return (
@@ -1581,7 +1656,7 @@ export function PublicCartPage() {
 
                     <div className="flex justify-between text-xs font-semibold text-slate-700">
                       <span className="underline underline-offset-2 decoration-slate-300 decoration-dashed">Payment gateway fee</span>
-                      <span className="text-slate-900 font-bold">{currencySymbol}{(pgFee + gstOnFee).toFixed(2)}</span>
+                      <span className="text-slate-900 font-bold">{currencySymbol}{totalPgFee.toFixed(2)}</span>
                     </div>
                   </>
                 )}
@@ -1599,12 +1674,15 @@ export function PublicCartPage() {
                       </div>
                     )}
 
-                    {manualDiscountAmount > 0 && (
-                      <div className="flex justify-between text-xs font-bold text-emerald-600">
-                        <span>Shop Discount</span>
-                        <span>-{currencySymbol}{manualDiscountAmount.toFixed(2)}</span>
+                    {appliedDiscountsList && appliedDiscountsList.length > 0 && appliedDiscountsList.map((d) => (
+                      <div key={d.id} className="flex justify-between text-xs font-bold text-emerald-600">
+                        <span className="flex items-center gap-1">
+                          <Sparkles size={13} className="text-emerald-500 shrink-0" />
+                          <span>{d.title}</span>
+                        </span>
+                        <span>-{currencySymbol}{d.savings.toFixed(2)}</span>
                       </div>
-                    )}
+                    ))}
                   </div>
                 )}
 
@@ -2061,7 +2139,7 @@ export function PublicCartPage() {
 
                       <div className="flex justify-between font-semibold text-slate-700 dark:text-slate-300">
                         <span className="underline underline-offset-2 decoration-slate-300 decoration-dashed">Payment gateway fee</span>
-                        <span className="text-slate-900 dark:text-white font-bold">{currencySymbol}{(pgFee + gstOnFee).toFixed(2)}</span>
+                        <span className="text-slate-900 dark:text-white font-bold">{currencySymbol}{totalPgFee.toFixed(2)}</span>
                       </div>
                     </>
                   )}
@@ -2214,52 +2292,79 @@ export function PublicCartPage() {
       <Modal
         isOpen={!!selectedBalloonDiscount}
         onClose={() => setSelectedBalloonDiscount(null)}
-        title="Special Offer Found!"
+        title={selectedBalloonDiscount?.is_already_used ? "Offer Details" : "Special Offer Found!"}
       >
         {selectedBalloonDiscount && (() => {
           const disc = selectedBalloonDiscount;
           const isApplied = manualDiscountId === disc.id;
+          const isUsed = !!disc.is_already_used;
           return (
             <div className="text-center p-3">
               <div className="flex justify-center mb-4">
-                {disc.discount_type === 'percentage' ? (
+                {isUsed ? (
+                  <div className="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center border-2 border-red-200">
+                    <XCircle size={36} className="text-red-500" />
+                  </div>
+                ) : disc.discount_type === 'percentage' ? (
                   <Percent size={40} className="text-emerald-500 animate-bounce" />
                 ) : (
                   <Banknote size={40} className="text-emerald-500 animate-bounce" />
                 )}
               </div>
               <h3 className="text-xl font-black text-slate-800">{disc.title}</h3>
+              {isUsed && (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-100/80 text-red-700 text-xs font-bold mt-2 border border-red-200">
+                  <XCircle size={14} />
+                  Already Used
+                </div>
+              )}
               <p className="text-sm font-medium text-slate-500 mt-2">
                 <LinkifiedText text={disc.description || 'Tap below to apply this exclusive dining discount to your current bill!'} showIcon />
               </p>
               
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 my-5 flex items-center justify-between shadow-inner">
-                <span className="text-xs font-bold text-slate-455">Discount Offer</span>
-                <span className="font-black text-lg text-emerald-600">
+              <div className={`border rounded-xl p-3 my-5 flex items-center justify-between shadow-inner ${
+                isUsed ? 'bg-slate-100/70 border-slate-200 opacity-75' : 'bg-slate-50 border-slate-200'
+              }`}>
+                <span className="text-xs font-bold text-slate-500">Discount Offer</span>
+                <span className={`font-black text-lg ${isUsed ? 'text-slate-500 line-through' : 'text-emerald-600'}`}>
                   {disc.discount_type === 'percentage' ? `${disc.discount_value}% OFF` : `Flat ₹${disc.discount_value} OFF`}
                 </span>
               </div>
 
-              <button
-                onClick={() => {
-                  if (!isApplied && !isDiscountApplicable(disc)) {
-                    toast.error('This discount is not applicable to any items in your cart');
-                    triggerHaptic(HAPTIC_PATTERNS.error);
-                    return;
-                  }
-                  setManualDiscount(isApplied ? null : disc.id);
-                  setSelectedBalloonDiscount(null);
-                  if (!isApplied) {
-                    toast.success(`Discount applied successfully!`);
-                  } else {
-                    toast.success('Discount removed.');
-                  }
-                }}
-                className="w-full py-3.5 rounded-xl text-white font-extrabold text-base shadow-lg hover:brightness-110 active:scale-[0.97] transition-all"
-                style={{ backgroundColor: primaryColor }}
-              >
-                {isApplied ? 'Remove Discount' : 'Apply Discount'}
-              </button>
+              {isUsed ? (
+                <div className="space-y-3">
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 text-center font-medium">
+                    This discount has already been redeemed for your account/mobile number.
+                  </div>
+                  <button
+                    disabled={true}
+                    className="w-full py-3.5 rounded-xl bg-slate-200 text-slate-500 font-extrabold text-base border border-slate-300 cursor-not-allowed"
+                  >
+                    Already Used
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => {
+                    if (!isApplied && !isDiscountApplicable(disc)) {
+                      toast.error('This discount is not applicable to any items in your cart');
+                      triggerHaptic(HAPTIC_PATTERNS.error);
+                      return;
+                    }
+                    setManualDiscount(isApplied ? 'none' : disc.id);
+                    setSelectedBalloonDiscount(null);
+                    if (!isApplied) {
+                      toast.success(`Discount applied successfully!`);
+                    } else {
+                      toast.success('Discount removed.');
+                    }
+                  }}
+                  className="w-full py-3.5 rounded-xl text-white font-extrabold text-base shadow-lg transition-all hover:brightness-110 active:scale-[0.97]"
+                  style={{ backgroundColor: primaryColor }}
+                >
+                  {isApplied ? 'Remove Discount' : 'Apply Discount'}
+                </button>
+              )}
             </div>
           );
         })()}

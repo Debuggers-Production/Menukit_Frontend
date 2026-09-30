@@ -10,6 +10,7 @@ import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { QRCodeCanvas } from 'qrcode.react';
+import { calculateOrderPricing } from '@/utils/pricing';
 
 export const playChimeNotificationSound = () => {
   try {
@@ -34,6 +35,17 @@ export const playChimeNotificationSound = () => {
     console.error("Failed to play notification sound", e);
   }
 };
+
+export function roundStrictTwoDecimals(val: number): number {
+  if (isNaN(val)) return 0;
+  const shifted = Math.abs(val) * 1000;
+  const thirdDigit = Math.floor(shifted + 1e-9) % 10;
+  if (thirdDigit > 5) {
+    return Math.sign(val) * (Math.ceil(Math.abs(val) * 100 - 1e-9) / 100);
+  } else {
+    return Math.sign(val) * (Math.floor(Math.abs(val) * 100 + 1e-9) / 100);
+  }
+}
 
 export function OrderStatusPage() {
   const { id, orderId } = useParams();
@@ -521,22 +533,30 @@ export function OrderStatusPage() {
     }
   }, [order?.order_status, order?.payment_expires_at]);
 
-  // If online and payment is pending, check payment status once on mount
+  // If returning from an external payment gateway redirect with signature params, verify payment
   useEffect(() => {
-    const verifyPayment = async () => {
-      if (orderId && id) {
+    const params = new URLSearchParams(window.location.search);
+    const razorpay_order_id = params.get('razorpay_order_id');
+    const razorpay_payment_id = params.get('razorpay_payment_id');
+    const razorpay_signature = params.get('razorpay_signature');
+
+    if (orderId && id && razorpay_order_id && razorpay_payment_id && razorpay_signature) {
+      const verifyPayment = async () => {
         try {
-          const verifyRes = await api.post(`/public/shop/${id}/orders/${orderId}/verify`);
+          const verifyRes = await api.post(`/public/shop/${id}/orders/${orderId}/verify`, {
+            razorpay_order_id,
+            razorpay_payment_id,
+            razorpay_signature,
+          });
           setOrder(verifyRes.data);
+          toast.success("Payment verified successfully!");
         } catch (e) {
           console.error("Verification failed", e);
         }
-      }
-    };
-    if (order && order.payment_method === 'online' && order.payment_status === 'pending') {
+      };
       verifyPayment();
     }
-  }, [orderId, id, order?.payment_method]);
+  }, [orderId, id]);
 
   const primaryColor = shop?.theme?.primary_color || '#ea580c';
 
@@ -648,6 +668,7 @@ export function OrderStatusPage() {
   // Rule: Payment is disabled until the merchant accepts the order.
   const isPaymentDisabledUntilAccepted = isPendingVendor;
   const canPayNow = isUnpaid && !isCancelled && !isPaymentDisabledUntilAccepted;
+  const allItemsSubtotal = (order?.items || []).reduce((acc: number, it: any) => acc + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
   const activeItems = (order?.items || []).filter((it: any) => !it.is_cancelled);
   const activeItemsSubtotal = activeItems.reduce((acc: number, it: any) => acc + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
 
@@ -655,14 +676,15 @@ export function OrderStatusPage() {
   const sgstRate = Number(shop?.settings?.sgst_rate || 0);
   const totalTaxRate = cgstRate + sgstRate;
   let calculatedTaxAmount = 0;
-  let computedFoodTotal = activeItemsSubtotal;
+  const targetSubtotal = isActuallyCancelled && activeItemsSubtotal === 0 ? allItemsSubtotal : activeItemsSubtotal;
+  let computedFoodTotal = targetSubtotal;
   if (shop?.settings?.gst_enabled && totalTaxRate > 0 && !shop?.settings?.inclusive_tax) {
-    calculatedTaxAmount = Math.round((activeItemsSubtotal * (totalTaxRate / 100)) * 100) / 100;
-    computedFoodTotal = Math.round((activeItemsSubtotal + calculatedTaxAmount) * 100) / 100;
+    calculatedTaxAmount = Math.round((targetSubtotal * (totalTaxRate / 100)) * 100) / 100;
+    computedFoodTotal = Math.round((targetSubtotal + calculatedTaxAmount) * 100) / 100;
   }
 
   const backendTotal = Number(order?.total_amount || 0);
-  const effectiveOrderTotal = (backendTotal > 0) ? backendTotal : computedFoodTotal;
+  const effectiveOrderTotal = (backendTotal > 0) ? backendTotal : (computedFoodTotal > 0 ? computedFoodTotal : allItemsSubtotal);
 
   const netPayableBase = effectiveOrderTotal;
 
@@ -675,11 +697,10 @@ export function OrderStatusPage() {
   else if (order?.order_type === 'delivery') isChannelOnline = (shop?.settings as any)?.online_payments_delivery_enabled !== false;
 
   const isOnlineFeeApplicable = Boolean(order?.payment_method === 'online' && isMasterOnline && isChannelOnline);
-  const platformFee = isOnlineFeeApplicable ? Number((netPayableBase * 0.02).toFixed(2)) : 0;
-  const pgFee = isOnlineFeeApplicable ? Number((netPayableBase * 0.03).toFixed(2)) : 0;
-  const gstOnFee = isOnlineFeeApplicable ? Number((pgFee * 0.18).toFixed(2)) : 0;
-  const totalPgFee = isOnlineFeeApplicable ? Number((pgFee + gstOnFee).toFixed(2)) : 0;
-  const grandTotal = isOnlineFeeApplicable ? Number((netPayableBase + platformFee + pgFee + gstOnFee).toFixed(2)) : netPayableBase;
+  const pricing = calculateOrderPricing(netPayableBase, isOnlineFeeApplicable);
+  const platformFee = pricing.platformFee;
+  const totalPgFee = pricing.totalPgFee;
+  const grandTotal = pricing.totalPayable;
   const grandTotalFormatted = grandTotal.toFixed(2);
 
   return (
@@ -935,12 +956,44 @@ export function OrderStatusPage() {
             <p className="text-[9px] font-bold text-slate-450 uppercase tracking-widest mb-3">Order Bill Breakdown</p>
             
             <div className="flex justify-between text-slate-700 dark:text-slate-350">
-              <span>Item total</span>
+              <span>{isActuallyCancelled ? 'Ordered Items Total' : 'Item total'}</span>
               <span className="font-black text-slate-900 dark:text-white">
-                {shop?.settings?.currency || '₹'}{((order.items || []).filter((it: any) => !it.is_cancelled).reduce((acc: number, it: any) => acc + (Number(it.price) * Number(it.quantity)), 0)).toFixed(2)}
+                {shop?.settings?.currency || '₹'}
+                {(
+                  isActuallyCancelled && activeItemsSubtotal === 0
+                    ? allItemsSubtotal
+                    : activeItemsSubtotal
+                ).toFixed(2)}
               </span>
             </div>
+
+            {isActuallyCancelled && (
+              <div className="flex justify-between text-rose-600 dark:text-rose-400 font-bold">
+                <span>Cancelled Order Adjustment</span>
+                <span>-{shop?.settings?.currency || '₹'}{(
+                  backendTotal > 0 
+                    ? backendTotal 
+                    : (computedFoodTotal > 0 ? computedFoodTotal : allItemsSubtotal)
+                ).toFixed(2)}</span>
+              </div>
+            )}
             
+            {(() => {
+              const hasReplacedOrCancelledItems = (order.items || []).some((it: any) => it.is_cancelled);
+              const discountAmount = (!isActuallyCancelled && !hasReplacedOrCancelledItems && backendTotal > 0 && computedFoodTotal > backendTotal)
+                ? Math.max(0, computedFoodTotal - backendTotal)
+                : 0;
+              if (discountAmount > 0.01) {
+                return (
+                  <div className="flex justify-between font-bold text-emerald-600 dark:text-emerald-400">
+                    <span>Discount</span>
+                    <span>-{shop?.settings?.currency || '₹'}{discountAmount.toFixed(2)}</span>
+                  </div>
+                );
+              }
+              return null;
+            })()}
+
             {order.order_type === 'delivery' && (() => {
               const itemsSubtotal = (order.items || []).filter((it: any) => !it.is_cancelled).reduce((acc: number, it: any) => acc + (Number(it.price) * Number(it.quantity)), 0);
               const diff = Number(order.total_amount) - itemsSubtotal;
@@ -973,21 +1026,6 @@ export function OrderStatusPage() {
                 </div>
               </>
             )}
-
-            {(() => {
-              const discountAmount = (backendTotal > 0 && computedFoodTotal > backendTotal)
-                ? Math.max(0, computedFoodTotal - backendTotal)
-                : 0;
-              if (discountAmount > 0.01) {
-                return (
-                  <div className="flex justify-between font-bold text-emerald-600 dark:text-emerald-400">
-                    <span>Discount</span>
-                    <span>-{shop?.settings?.currency || '₹'}{discountAmount.toFixed(2)}</span>
-                  </div>
-                );
-              }
-              return null;
-            })()}
 
             {/* GST Tax Breakdown */}
             {shop?.settings?.gst_enabled && (() => {
@@ -1268,16 +1306,26 @@ export function OrderStatusPage() {
           </div>
         )}
 
-        {/* Cancelled Items Refund Notice (Bottom Banner) */}
+        {/* Cancelled Items / Refund Notice (Bottom Banner) */}
         {(() => {
           // Pure cancelled items (exclude replaced items)
           const pureCancelledItems = (order.items || []).filter(
             (it: any) => it.is_cancelled && !String(it.cancellation_reason || '').startsWith('Replaced with')
           );
-          const pureCancelledTotal = pureCancelledItems.reduce(
+          const isFullyCancelled = order.order_status?.toUpperCase() === 'CANCELLED' || order.order_status?.toUpperCase() === 'REJECTED' || (order.items?.length > 0 && pureCancelledItems.length === order.items?.length);
+          const hasCancelledItems = pureCancelledItems.length > 0;
+
+          // If the order is NOT cancelled and does NOT contain any cancelled items, do not show refund notice!
+          if (!isFullyCancelled && !hasCancelledItems) return null;
+
+          const rawCancelledTotal = pureCancelledItems.reduce(
             (acc: number, it: any) => acc + (Number(it.price || 0) * Number(it.quantity || 1)), 0
           );
           const isPaid = ['paid', 'refunded', 'partially_refunded'].includes(String(order?.payment_status || '').toLowerCase());
+
+          const pureCancelledTotal = isFullyCancelled
+            ? (Number(order.total_amount || 0) > 0 ? Number(order.total_amount) : (rawCancelledTotal > 0 ? rawCancelledTotal : allItemsSubtotal))
+            : rawCancelledTotal;
 
           if (pureCancelledTotal <= 0.01) return null;
 
@@ -1292,8 +1340,8 @@ export function OrderStatusPage() {
                 </p>
                 <p className="text-[11px] leading-relaxed text-slate-700 dark:text-slate-300">
                   {isPaid
-                    ? `The amount for cancelled items (${shop?.settings?.currency || '₹'}${pureCancelledTotal.toFixed(2)}) will be refunded to your account within 5–7 working days.`
-                    : `The amount for cancelled items (${shop?.settings?.currency || '₹'}${pureCancelledTotal.toFixed(2)}) has been deducted from your payable total.`
+                    ? `The amount for cancelled ${isFullyCancelled ? 'order' : 'items'} (${shop?.settings?.currency || '₹'}${pureCancelledTotal.toFixed(2)}) will be refunded to your account within 5–7 working days.`
+                    : `The amount for cancelled ${isFullyCancelled ? 'order' : 'items'} (${shop?.settings?.currency || '₹'}${pureCancelledTotal.toFixed(2)}) has been deducted from your payable total.`
                   }
                 </p>
               </div>
@@ -1325,6 +1373,21 @@ export function OrderStatusPage() {
       {/* Floating Premium Bottom Actions Dock */}
       <div className="fixed bottom-4 left-4 right-4 sm:bottom-6 sm:left-1/2 sm:-translate-x-1/2 sm:w-[420px] z-40 print:hidden">
         <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl rounded-[20px] shadow-[0_10px_35px_rgba(0,0,0,0.12)] border border-slate-100 dark:border-slate-800 p-1.5 flex items-center gap-1.5">
+
+          {/* Bottom Dock Action Buttons - Dine-in only for adding items to current table order */}
+          {isDineIn && !isActuallyCancelled && !isCompleted && !isPendingVendor && (
+            <button
+              onClick={() => {
+                const tableParam = order.table_number ? `?table=${encodeURIComponent(order.table_number)}` : '';
+                navigate(`/shop/${id}${tableParam}`);
+              }}
+              className="flex-1 py-2.5 px-3 bg-orange-500/10 hover:bg-orange-500/20 text-orange-600 dark:text-orange-400 border border-orange-500/30 rounded-xl font-black text-[10px] uppercase tracking-wider active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
+              title="Add more items to this order"
+            >
+              <Plus size={14} />
+              <span>Order Another Item</span>
+            </button>
+          )}
 
           {canPayNow && (
             shop?.settings?.online_payments_enabled !== false && (

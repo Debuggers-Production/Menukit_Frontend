@@ -2,12 +2,19 @@ import React from 'react';
 
 interface SwitchProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange'> {
   checked: boolean;
-  onChange: (checked: boolean) => void;
+  onChange?: (checked: boolean) => void;
+  onCheckedChange?: (checked: boolean) => void;
   label?: React.ReactNode;
   description?: React.ReactNode;
 }
 
-export function Switch({ checked, onChange, label, description, className = '', ...props }: SwitchProps) {
+export function Switch({ checked, onChange, onCheckedChange, label, description, className = '', ...props }: SwitchProps) {
+  const handleChange = (newVal: boolean) => {
+    if (props.disabled) return;
+    if (onChange) onChange(newVal);
+    if (onCheckedChange) onCheckedChange(newVal);
+  };
+
   return (
     <label className={`flex items-center cursor-pointer ${className}`}>
       <div className={`relative flex-shrink-0 ${props.disabled ? 'opacity-50 cursor-not-allowed' : ''}`}>
@@ -15,7 +22,7 @@ export function Switch({ checked, onChange, label, description, className = '', 
           type="checkbox" 
           className="sr-only" 
           checked={checked}
-          onChange={(e) => !props.disabled && onChange(e.target.checked)}
+          onChange={(e) => handleChange(e.target.checked)}
           {...props} 
         />
         <div className={`block w-11 h-6 rounded-full transition-colors duration-200 ease-in-out ${checked ? 'bg-primary' : 'bg-slate-300 dark:bg-slate-700'}`}></div>

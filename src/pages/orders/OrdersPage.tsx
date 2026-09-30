@@ -250,6 +250,8 @@ const PAY_OPTIONS = [
   { value: 'paid', label: 'Paid', cls: 'text-emerald-700 bg-emerald-50 border-emerald-200', dot: 'bg-emerald-500' },
   { value: 'pending', label: 'Not Paid', cls: 'text-amber-700 bg-amber-50 border-amber-200', dot: 'bg-amber-400' },
   { value: 'refunded', label: 'Refunded', cls: 'text-purple-700 bg-purple-50 border-purple-200', dot: 'bg-purple-500' },
+  { value: 'refund_pending', label: 'Refund Pending', cls: 'text-amber-700 bg-amber-50 border-amber-300', dot: 'bg-amber-500' },
+  { value: 'refund_failed', label: 'Refund Failed', cls: 'text-rose-700 bg-rose-50 border-rose-300', dot: 'bg-rose-500' },
 ];
 
 function paymentStyle(status: string) {
@@ -274,19 +276,35 @@ function PayDropdown({ orderId, paymentStatus, paymentMethod, orderStatus, onSel
   const btnRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  const isPaidOnline = paymentStatus === 'paid' && paymentMethod === 'online';
-  const options = PAY_OPTIONS.filter(o => {
-    // Only orders paid online via payment gateway can be refunded
-    if (o.value === 'refunded') {
-      return isPaidOnline;
+  const normOrderStatus = (orderStatus || '').toUpperCase();
+  const isPaidOnline = ['paid', 'refund_pending', 'refund_failed'].includes((paymentStatus || '').toLowerCase()) && paymentMethod === 'online';
+
+  let options: typeof PAY_OPTIONS = [];
+  if (normOrderStatus === 'COMPLETED' || normOrderStatus === 'DELIVERED') {
+    // Completed orders: payment status is finalized and cannot be modified
+    options = [];
+  } else if (normOrderStatus === 'CANCELLED' || normOrderStatus === 'REJECTED') {
+    // Cancelled orders: only online payments can be refunded
+    if (isPaidOnline && paymentStatus !== 'refunded') {
+      options = PAY_OPTIONS.filter(o => o.value === 'refunded');
+    } else {
+      options = [];
     }
-    return true;
-  });
+  } else {
+    options = PAY_OPTIONS.filter(o => {
+      if (o.value === 'refunded') {
+        return isPaidOnline;
+      }
+      return true;
+    });
+  }
+
+  const isInteractive = !disabled && options.length > 0;
   const current = paymentStyle(paymentStatus);
 
   const openDropdown = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (disabled || !btnRef.current) return;
+    if (!isInteractive || !btnRef.current) return;
     const rect = btnRef.current.getBoundingClientRect();
     setPos({
       top: rect.bottom + window.scrollY + 6,
@@ -332,16 +350,19 @@ function PayDropdown({ orderId, paymentStatus, paymentMethod, orderStatus, onSel
       <button
         ref={btnRef}
         onClick={openDropdown}
-        disabled={disabled}
-        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-black border transition-all whitespace-nowrap shrink-0 ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'} ${current.cls}`}
+        disabled={!isInteractive}
+        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-black border transition-all whitespace-nowrap shrink-0 ${
+          !isInteractive ? 'cursor-default' : 'cursor-pointer hover:shadow-xs'
+        } ${current.cls}`}
       >
         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${current.dot}`} />
         <span className="whitespace-nowrap">{current.label}</span>
-        <ChevronDown size={11} className={`shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+        {isInteractive && (
+          <ChevronDown size={11} className={`shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+        )}
       </button>
 
-
-      {open && createPortal(
+      {open && isInteractive && createPortal(
         <div
           ref={panelRef}
           style={{ position: 'absolute', top: pos.top, right: pos.right, zIndex: 9999 }}
@@ -376,16 +397,28 @@ function PayDropdown({ orderId, paymentStatus, paymentMethod, orderStatus, onSel
 function getOrderStatusOptions(orderType?: string, paymentMethod?: string, paymentStatus?: string, orderStatus?: string) {
   const normStatus = (orderStatus || '').toUpperCase();
   const isPaid = (paymentStatus || '').toLowerCase() === 'paid' || normStatus === 'PAID';
-  const isAwaitingComplete = isPaid || normStatus === 'PREPARING' || normStatus === 'ACCEPTED' || normStatus === 'READY';
   const isCash = paymentMethod === 'cash' || paymentMethod === 'cash_on_delivery' || paymentMethod === 'counter';
 
+  // Completed or Cancelled orders cannot change status
+  if (['COMPLETED', 'DELIVERED', 'CANCELLED', 'REJECTED'].includes(normStatus)) {
+    return [];
+  }
+
+  const isAwaitingComplete = isPaid || normStatus === 'PREPARING' || normStatus === 'ACCEPTED' || normStatus === 'READY' || normStatus === 'OUT_FOR_DELIVERY';
+
   if (isAwaitingComplete) {
-    // Once in Awaiting Complete (preparing/ready/paid), global order cancel is disabled
-    return [
+    const opts = [
       { value: 'PREPARING', label: 'Preparing', cls: 'text-blue-700 bg-blue-50 border-blue-200', dot: 'bg-blue-500' },
       { value: 'READY', label: 'Ready', cls: 'text-cyan-700 bg-cyan-50 border-cyan-200', dot: 'bg-cyan-500' },
-      { value: 'COMPLETED', label: 'Complete', cls: 'text-emerald-700 bg-emerald-50 border-emerald-200', dot: 'bg-emerald-500' },
     ];
+    if (orderType === 'delivery') {
+      opts.push({ value: 'OUT_FOR_DELIVERY', label: 'Out for Delivery', cls: 'text-teal-700 bg-teal-50 border-teal-200', dot: 'bg-teal-500' });
+    }
+    // "Complete" is only available if the order is paid
+    if (isPaid) {
+      opts.push({ value: 'COMPLETED', label: 'Complete', cls: 'text-emerald-700 bg-emerald-50 border-emerald-200', dot: 'bg-emerald-500' });
+    }
+    return opts;
   }
 
   if (isCash) {
@@ -454,10 +487,11 @@ function OrderStatusDropdown({ orderId, orderStatus, paymentStatus, paymentMetho
 
   const current = orderStatusStyle(orderStatus, orderType);
   const options = getOrderStatusOptions(orderType, paymentMethod, paymentStatus, orderStatus);
+  const isInteractive = options.length > 0;
 
   const openDropdown = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!btnRef.current) return;
+    if (!isInteractive || !btnRef.current) return;
     const rect = btnRef.current.getBoundingClientRect();
     setPos({
       top: rect.bottom + window.scrollY + 6,
@@ -483,6 +517,14 @@ function OrderStatusDropdown({ orderId, orderStatus, paymentStatus, paymentMetho
   const handleSelect = (opt: { value: string; label: string; cls: string; dot: string }) => {
     setOpen(false);
     if (orderStatusStyle(orderStatus, orderType).value === opt.value) return;
+
+    if (opt.value === 'COMPLETED' || opt.value === 'DELIVERED') {
+      const isPaid = (paymentStatus || '').toLowerCase() === 'paid' || (orderStatus || '').toUpperCase() === 'PAID';
+      if (!isPaid) {
+        toast.error('Order must be marked as Paid before it can be marked as Completed.');
+        return;
+      }
+    }
     
     if (opt.value === 'CANCELLED') {
       onSelect(orderId, 'CANCELLED');
@@ -498,14 +540,19 @@ function OrderStatusDropdown({ orderId, orderStatus, paymentStatus, paymentMetho
       <button
         ref={btnRef}
         onClick={openDropdown}
-        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-black border transition-all whitespace-nowrap cursor-pointer shrink-0 ${current.cls}`}
+        disabled={!isInteractive}
+        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-black border transition-all whitespace-nowrap shrink-0 ${
+          !isInteractive ? 'cursor-default' : 'cursor-pointer hover:shadow-xs'
+        } ${current.cls}`}
       >
         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${current.dot}`} />
         <span className="whitespace-nowrap">{current.label}</span>
-        <ChevronDown size={11} className={`shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+        {isInteractive && (
+          <ChevronDown size={11} className={`shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+        )}
       </button>
 
-      {open && createPortal(
+      {open && isInteractive && createPortal(
         <div
           ref={panelRef}
           style={{ position: 'absolute', top: pos.top, right: pos.right, zIndex: 9999 }}
@@ -549,6 +596,18 @@ const DEFAULT_ITEM_CANCELLATION_REASONS = [
   { id: 'custom', name: 'Other / Custom Reason...' },
 ];
 
+const DEFAULT_ORDER_CANCELLATION_REASONS = [
+  { id: 'Item out of stock / Ingredients unavailable', name: 'Item out of stock / Ingredients unavailable' },
+  { id: 'Kitchen is closed / Closing hours', name: 'Kitchen is closed / Closing hours' },
+  { id: 'High order volume / Kitchen too busy', name: 'High order volume / Kitchen too busy' },
+  { id: 'Customer requested cancellation', name: 'Customer requested cancellation' },
+  { id: 'Duplicate order placed', name: 'Duplicate order placed' },
+  { id: 'Delivery address outside service area', name: 'Delivery address outside service area' },
+  { id: 'Customer phone unreachable / Invalid details', name: 'Customer phone unreachable / Invalid details' },
+  { id: 'Pricing or technical error', name: 'Pricing or technical error' },
+  { id: 'custom', name: 'Other / Custom Reason...' },
+];
+
 /* ── Main Page ───────────────────────────────────────────────────────────── */
 export function OrdersPage() {
   const navigate = useNavigate();
@@ -582,8 +641,10 @@ export function OrdersPage() {
   const [selectedCancelItemReason, setSelectedCancelItemReason] = useState<string>(DEFAULT_ITEM_CANCELLATION_REASONS[0].id);
   const [customCancelItemReason, setCustomCancelItemReason] = useState<string>('');
   const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
-  const [cancelOrderReason, setCancelOrderReason] = useState<string>('');
+  const [selectedCancelOrderReason, setSelectedCancelOrderReason] = useState<string>(DEFAULT_ORDER_CANCELLATION_REASONS[0].id);
+  const [cancelOrderReason, setCancelOrderReason] = useState<string>(DEFAULT_ORDER_CANCELLATION_REASONS[0].name);
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
+  const [refundingOrderId, setRefundingOrderId] = useState<string | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [targetOrderForAdd, setTargetOrderForAdd] = useState<any | null>(null);
@@ -852,6 +913,19 @@ export function OrdersPage() {
   };
 
   const handleUpdateStatus = async (orderId: string, newStatus: string, reason?: string) => {
+    const targetOrder = orders.find(o => o.id === orderId);
+    if (targetOrder) {
+      const curStatus = (targetOrder.order_status || '').toUpperCase();
+      if (['COMPLETED', 'DELIVERED', 'CANCELLED', 'REJECTED'].includes(curStatus)) {
+        toast.error(`Order is already ${curStatus.toLowerCase()} and cannot be modified.`);
+        return;
+      }
+      if ((newStatus === 'COMPLETED' || newStatus === 'DELIVERED') && (targetOrder.payment_status || '').toLowerCase() !== 'paid' && curStatus !== 'PAID') {
+        toast.error('Order must be marked as Paid before it can be marked as Completed.');
+        return;
+      }
+    }
+
     if (newStatus === 'CANCELLED' && !reason) {
       setCancellingOrderId(orderId);
       return;
@@ -864,7 +938,21 @@ export function OrdersPage() {
       const res = await api.put(`/orders/${orderId}/status`, payload);
       toast.success(`Order marked as ${newStatus}`);
       fetchStatusCounts();
-      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, order_status: res.data.order_status, cancellation_reason: res.data.cancellation_reason } : o));
+      setOrders(prev => {
+        if (filterStatus !== 'all') {
+          // If we are on a filtered tab, remove the order if it no longer matches the current tab
+          if (filterStatus === 'preparing' && (newStatus === 'COMPLETED' || newStatus === 'DELIVERED' || newStatus === 'CANCELLED')) {
+            return prev.filter(o => o.id !== orderId);
+          }
+          if (filterStatus === 'new' && newStatus !== 'PENDING_VENDOR' && newStatus !== 'PENDING') {
+            return prev.filter(o => o.id !== orderId);
+          }
+          if (filterStatus === 'awaiting_payment' && newStatus !== 'PAYMENT_PENDING') {
+            return prev.filter(o => o.id !== orderId);
+          }
+        }
+        return prev.map(o => o.id === orderId ? { ...o, order_status: res.data.order_status, cancellation_reason: res.data.cancellation_reason } : o);
+      });
 
       // Auto-Print KOT to registered printer stations on order acceptance / preparing / paid
       const isAccepting = newStatus === 'ACCEPTED' || newStatus === 'PREPARING' || newStatus === 'PAID';
@@ -999,18 +1087,18 @@ export function OrdersPage() {
 
 
   const submitCancelOrder = async () => {
-
-
     if (!cancellingOrderId) return;
-    if (!cancelOrderReason.trim()) {
+    const finalReason = cancelOrderReason.trim() || (selectedCancelOrderReason !== 'custom' ? selectedCancelOrderReason : '');
+    if (!finalReason) {
       toast.error("Please provide a cancellation reason");
       return;
     }
     setIsCancelling(true);
     try {
-      await handleUpdateStatus(cancellingOrderId, 'CANCELLED', cancelOrderReason);
+      await handleUpdateStatus(cancellingOrderId, 'CANCELLED', finalReason);
       setCancellingOrderId(null);
-      setCancelOrderReason('');
+      setCancelOrderReason(DEFAULT_ORDER_CANCELLATION_REASONS[0].name);
+      setSelectedCancelOrderReason(DEFAULT_ORDER_CANCELLATION_REASONS[0].id);
     } finally {
       setIsCancelling(false);
     }
@@ -1018,6 +1106,19 @@ export function OrdersPage() {
 
 
   const handleUpdatePaymentStatus = useCallback(async (orderId: string, newPayStatus: string) => {
+    const targetOrder = orders.find(o => o.id === orderId);
+    if (targetOrder) {
+      const curStatus = (targetOrder.order_status || '').toUpperCase();
+      if (curStatus === 'COMPLETED' || curStatus === 'DELIVERED') {
+        toast.error('Payment status cannot be changed for completed orders.');
+        return;
+      }
+      if ((curStatus === 'CANCELLED' || curStatus === 'REJECTED') && newPayStatus !== 'refunded') {
+        toast.error('Payment status cannot be changed for cancelled orders.');
+        return;
+      }
+    }
+
     try {
       const res = await api.put(`/orders/${orderId}/payment`, { payment_status: newPayStatus });
       toast.success(`Payment marked as ${newPayStatus}`);
@@ -1035,6 +1136,21 @@ export function OrdersPage() {
       toast.error(err.response?.data?.detail || 'Failed to update payment status');
     }
   }, [fetchStatusCounts, autoPrintOnAccept, isOrderKotPrinted, orders, handleDirectPrintKot]);
+
+  const handleRetryRefund = useCallback(async (orderId: string) => {
+    setRefundingOrderId(orderId);
+    try {
+      const res = await api.post(`/orders/${orderId}/refund`);
+      toast.success('Refund processed successfully via Razorpay!');
+      fetchStatusCounts();
+      setOrders(prev => prev.map(o => o.id === orderId ? res.data : o));
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || 'Refund failed. Please check Razorpay account / balance.');
+      fetchStatusCounts();
+    } finally {
+      setRefundingOrderId(null);
+    }
+  }, [fetchStatusCounts]);
 
   return (
     <div className="max-w-5xl mx-auto animate-fade-in pb-24 lg:pb-12 space-y-4">
@@ -1087,6 +1203,7 @@ export function OrdersPage() {
             { id: 'preparing', label: 'Awaiting Complete', count: statusCounts.preparing ?? 0, activeBg: 'bg-cyan-500 text-white shadow-sm' },
             { id: 'completed', label: 'Completed', count: statusCounts.completed ?? 0, activeBg: 'bg-emerald-500 text-white shadow-sm' },
             { id: 'cancelled', label: 'Cancelled', count: statusCounts.cancelled ?? 0, activeBg: 'bg-rose-500 text-white shadow-sm' },
+            { id: 'awaiting_refund', label: 'Awaiting Refund', count: statusCounts.awaiting_refund ?? 0, activeBg: 'bg-purple-600 text-white shadow-sm' },
           ].map(tab => {
             const isSelected = filterStatus === tab.id;
             return (
@@ -1256,10 +1373,22 @@ export function OrdersPage() {
         <div className="flex flex-col gap-4 max-w-3xl mx-auto">
           {orders
             .filter(order => {
-              if (filterStatus === 'all' || filterStatus === 'cancelled') return true;
               const allItemsCancelled = Boolean(order.items && order.items.length > 0 && order.items.every((it: any) => it.is_cancelled));
               const isCancelled = allItemsCancelled || order.order_status === 'CANCELLED' || order.order_status === 'REJECTED';
-              return !isCancelled;
+              if (filterStatus === 'all') return true;
+              if (filterStatus === 'cancelled') return isCancelled;
+              if (isCancelled) return false;
+              
+              const s = (order.order_status || '').toUpperCase();
+              if (filterStatus === 'new') return s === 'PENDING_VENDOR' || s === 'PENDING';
+              if (filterStatus === 'awaiting_payment') return s === 'PAYMENT_PENDING';
+              if (filterStatus === 'preparing') return ['PAID', 'ACCEPTED', 'PREPARING', 'READY'].includes(s);
+              if (filterStatus === 'completed') return s === 'COMPLETED' || s === 'DELIVERED';
+              if (filterStatus === 'awaiting_refund') {
+                const p = (order.payment_status || '').toLowerCase();
+                return ['refund_pending', 'refund_failed', 'awaiting_refund'].includes(p) || (isCancelled && ['paid', 'partially_refunded'].includes(p));
+              }
+              return true;
             })
             .map(order => {
               const allItemsCancelled = Boolean(order.items && order.items.length > 0 && order.items.every((it: any) => it.is_cancelled));
@@ -1270,8 +1399,8 @@ export function OrdersPage() {
               // Status booleans
               const isPendingVendor = !allItemsCancelled && (normStatus === 'PENDING_VENDOR' || normStatus === 'PENDING');
               const isPaymentPending = !allItemsCancelled && normStatus === 'PAYMENT_PENDING';
-              const isPaid = !allItemsCancelled && normStatus === 'PAID';
-              const isPreparing = !allItemsCancelled && (normStatus === 'PREPARING' || normStatus === 'ACCEPTED');
+              const isPaymentPaid = !allItemsCancelled && ((order.payment_status || '').toLowerCase() === 'paid' || normStatus === 'PAID');
+              const isPreparing = !allItemsCancelled && (normStatus === 'PREPARING' || normStatus === 'ACCEPTED' || normStatus === 'PAID');
               const isReady = !allItemsCancelled && normStatus === 'READY';
               const isCompleted = !allItemsCancelled && (normStatus === 'COMPLETED' || normStatus === 'DELIVERED');
               const isCancelled = allItemsCancelled || normStatus === 'CANCELLED' || normStatus === 'REJECTED';
@@ -1285,7 +1414,7 @@ export function OrdersPage() {
                 ? '#f59e0b'
                 : isPaymentPending
                   ? '#f97316'
-                  : (isPaid || isPreparing || isReady)
+                  : (isPreparing || isReady)
                     ? '#06b6d4'
                     : isCompleted
                       ? '#10b981'
@@ -1517,9 +1646,9 @@ export function OrdersPage() {
                   <div className="pt-3 border-t border-border/60 space-y-2.5">
                     {/* Tier 1: Full-Width Financial Summary Card */}
                     <div className="flex items-center justify-between gap-3 flex-wrap bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-800 rounded-xl px-3.5 py-2">
-                      <div className="space-y-0.5">
+                      <div className="space-y-1">
                         <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Payment</span>
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="font-bold capitalize text-xs text-foreground shrink-0">{order.payment_method}</span>
                           <PayDropdown
                             orderId={order.id}
@@ -1530,6 +1659,42 @@ export function OrdersPage() {
                             disabled={order.order_type === 'takeaway' && order.payment_method === 'online'}
                           />
                         </div>
+                        {order.payment_session_id && (
+                          <div className="flex items-center gap-1 text-[10px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded max-w-fit">
+                            <span className="font-bold text-[9px] text-slate-400">PAY ID:</span>
+                            <span className="truncate max-w-[130px]">{order.payment_session_id}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigator.clipboard.writeText(order.payment_session_id);
+                                toast.success('Payment ID copied!');
+                              }}
+                              className="text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer"
+                              title="Copy Razorpay Payment ID"
+                            >
+                              <Copy size={10} />
+                            </button>
+                          </div>
+                        )}
+                        {order.refund_id && (
+                          <div className="flex items-center gap-1 text-[10px] font-mono text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-1.5 py-0.5 rounded border border-purple-200 dark:border-purple-800 max-w-fit">
+                            <span className="font-bold text-[9px] text-purple-500">REFUND ID:</span>
+                            <span className="truncate max-w-[130px]">{order.refund_id}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigator.clipboard.writeText(order.refund_id);
+                                toast.success('Refund ID copied!');
+                              }}
+                              className="text-purple-400 hover:text-purple-700 dark:hover:text-white cursor-pointer"
+                              title="Copy Refund ID"
+                            >
+                              <Copy size={10} />
+                            </button>
+                          </div>
+                        )}
                       </div>
 
                       {(() => {
@@ -1539,8 +1704,13 @@ export function OrdersPage() {
                         const totalTaxRate = cgstRate + sgstRate;
                         const isExclusiveTax = isGstEnabled && !shop?.settings?.inclusive_tax;
 
-                        const items = (order.items || []).filter((it: any) => !it.is_cancelled);
-                        const itemsSubtotal = items.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+                        const allItems = order.items || [];
+                        const allItemsSubtotal = allItems.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+                        const activeItems = allItems.filter((it: any) => !it.is_cancelled);
+                        const isOrderCancelled = status === 'CANCELLED' || allItemsCancelled;
+                        const itemsSubtotal = (isOrderCancelled && activeItems.length === 0)
+                          ? allItemsSubtotal
+                          : activeItems.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
 
                         let taxAmount = 0;
                         if (isGstEnabled && totalTaxRate > 0) {
@@ -1562,7 +1732,7 @@ export function OrdersPage() {
 
                         const computedTotal = foodTotal + deliveryFee;
                         const rawTotal = Number(order.total_amount || 0);
-                        const finalTotal = rawTotal > 0 ? rawTotal : computedTotal;
+                        const finalTotal = rawTotal > 0 ? rawTotal : (computedTotal > 0 ? computedTotal : allItemsSubtotal);
 
                         return (
                           <div className="space-y-0.5 text-right">
@@ -1594,9 +1764,25 @@ export function OrdersPage() {
                     {/* Tier 2: Operational Action Controls (Evenly Distributed Grid) */}
                     {(() => {
                       const hasCancelBtn = isCancellable && order.payment_status !== 'paid';
+                      const isRefundNeeded = order.payment_method === 'online' && (
+                        ['refund_pending', 'refund_failed', 'awaiting_refund'].includes((order.payment_status || '').toLowerCase()) ||
+                        (status === 'CANCELLED' && ['paid', 'partially_refunded'].includes((order.payment_status || '').toLowerCase()))
+                      );
 
                       return (
                         <div className="grid grid-cols-2 gap-2 w-full pt-0.5">
+                          {/* Physical Refund Button if refund failed / pending or cancelled paid order */}
+                          {isRefundNeeded && (
+                            <Button
+                              size="sm"
+                              className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs h-9 px-3.5 justify-center w-full col-span-2 shadow-xs gap-1.5 cursor-pointer"
+                              onClick={() => handleRetryRefund(order.id)}
+                              isLoading={refundingOrderId === order.id}
+                            >
+                              <RotateCcw size={13} />
+                              <span>Process / Retry Refund ({shop?.settings?.currency || '₹'}{Number(order.total_amount).toFixed(2)})</span>
+                            </Button>
+                          )}
                           {/* KOT / POT Production Ticket Controls */}
                           {status !== 'COMPLETED' && status !== 'CANCELLED' && !isPendingVendor && (
                             printedOrders[order.id] ? (
@@ -1689,7 +1875,11 @@ export function OrdersPage() {
                               size="sm"
                               variant="secondary"
                               className="bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 border border-rose-200/60 dark:border-rose-900/40 text-xs font-bold h-9 px-3.5 justify-center w-full whitespace-nowrap col-span-1"
-                              onClick={() => setCancellingOrderId(order.id)}
+                              onClick={() => {
+                                setCancellingOrderId(order.id);
+                                setSelectedCancelOrderReason(DEFAULT_ORDER_CANCELLATION_REASONS[0].id);
+                                setCancelOrderReason(DEFAULT_ORDER_CANCELLATION_REASONS[0].name);
+                              }}
                               disabled={updatingOrderId === order.id}
                               leftIcon={<XCircle size={13} />}
                             >
@@ -1724,11 +1914,17 @@ export function OrdersPage() {
                           )}
 
                           {/* Complete Order */}
-                          {(isPaid || isPreparing || isReady) && (
+                          {(isPreparing || isReady) && (
                             <Button
                               size="sm"
                               className={`bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold h-9 shadow-xs px-4 justify-center w-full whitespace-nowrap ${hasCancelBtn ? 'col-span-1' : 'col-span-2'}`}
-                              onClick={() => handleUpdateStatus(order.id, 'COMPLETED')}
+                              onClick={() => {
+                                if (!isPaymentPaid) {
+                                  toast.error('Order must be marked as Paid before it can be marked as Complete.');
+                                  return;
+                                }
+                                handleUpdateStatus(order.id, 'COMPLETED');
+                              }}
                               isLoading={updatingOrderId === order.id}
                               leftIcon={<Check size={14} />}
                             >
@@ -2725,30 +2921,95 @@ export function OrdersPage() {
       {/* Cancellation Modal */}
       <Modal
         isOpen={!!cancellingOrderId}
-        onClose={() => { setCancellingOrderId(null); setCancelOrderReason(''); }}
+        onClose={() => { 
+          setCancellingOrderId(null); 
+          setCancelOrderReason(DEFAULT_ORDER_CANCELLATION_REASONS[0].name);
+          setSelectedCancelOrderReason(DEFAULT_ORDER_CANCELLATION_REASONS[0].id);
+        }}
         title="Cancel Order"
       >
         <div className="space-y-4 pt-2">
           <p className="text-sm text-slate-600 dark:text-slate-400">
-            Please provide a reason for cancelling this order. This will be shown to the customer.
+            Please select or provide a reason for cancelling this order. This will be shown to the customer.
           </p>
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-              Cancellation Reason
-            </label>
-            <textarea
-              className="w-full min-h-[100px] p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-rose-500 focus:border-rose-500 outline-none transition-all resize-none"
-              placeholder="e.g., Item out of stock, Restaurant closed..."
-              value={cancelOrderReason}
-              onChange={(e) => setCancelOrderReason(e.target.value)}
-              autoFocus
-            />
+
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                Preset Reason
+              </label>
+              <SearchableSelect
+                options={DEFAULT_ORDER_CANCELLATION_REASONS}
+                value={selectedCancelOrderReason}
+                onChange={(val) => {
+                  setSelectedCancelOrderReason(val);
+                  if (val !== 'custom') {
+                    setCancelOrderReason(val);
+                  } else {
+                    setCancelOrderReason('');
+                  }
+                }}
+                placeholder="Choose a preset cancellation reason..."
+                showSearch={false}
+                className="h-10 rounded-xl text-xs"
+              />
+            </div>
+
+            {/* Quick preset chips */}
+            <div className="flex flex-wrap gap-1.5">
+              {DEFAULT_ORDER_CANCELLATION_REASONS.filter(r => r.id !== 'custom').slice(0, 5).map((preset) => {
+                const isSelected = selectedCancelOrderReason === preset.id;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedCancelOrderReason(preset.id);
+                      setCancelOrderReason(preset.name);
+                    }}
+                    className={`text-[11px] px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer border ${
+                      isSelected
+                        ? 'bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800 shadow-2xs'
+                        : 'bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                    }`}
+                  >
+                    {preset.name.split('/')[0].trim()}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center justify-between">
+                <span>Reason Description</span>
+                <span className="text-[10px] text-slate-400 font-normal lowercase">(customizable)</span>
+              </label>
+              <textarea
+                className="w-full min-h-[95px] p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-rose-500 focus:border-rose-500 outline-none transition-all resize-none text-slate-800 dark:text-slate-100 placeholder-slate-400"
+                placeholder="e.g., Item out of stock, Restaurant closed..."
+                value={cancelOrderReason}
+                onChange={(e) => {
+                  setCancelOrderReason(e.target.value);
+                  const matched = DEFAULT_ORDER_CANCELLATION_REASONS.find(r => r.name === e.target.value);
+                  if (matched) {
+                    setSelectedCancelOrderReason(matched.id);
+                  } else {
+                    setSelectedCancelOrderReason('custom');
+                  }
+                }}
+              />
+            </div>
           </div>
+
           <div className="flex gap-3 pt-2">
             <Button
               variant="outline"
               className="flex-1"
-              onClick={() => { setCancellingOrderId(null); setCancelOrderReason(''); }}
+              onClick={() => { 
+                setCancellingOrderId(null); 
+                setCancelOrderReason(DEFAULT_ORDER_CANCELLATION_REASONS[0].name);
+                setSelectedCancelOrderReason(DEFAULT_ORDER_CANCELLATION_REASONS[0].id);
+              }}
             >
               Go Back
             </Button>
@@ -2759,7 +3020,6 @@ export function OrdersPage() {
             >
               Confirm Cancellation
             </Button>
-
           </div>
         </div>
       </Modal>
