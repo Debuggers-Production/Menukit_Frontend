@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo, useDeferredValue } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useDeferredValue, forwardRef, useImperativeHandle } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Search } from 'lucide-react';
 import { cn } from '@/utils/cn';
@@ -11,7 +11,7 @@ export interface Option {
   subtext?: string;
 }
 
-interface SearchableSelectProps {
+export interface SearchableSelectProps {
   options: Option[];
   value: string;
   onChange: (value: string) => void;
@@ -19,22 +19,34 @@ interface SearchableSelectProps {
   showSearch?: boolean;
   className?: string;
   minWidth?: number;
+  id?: string;
+  tabIndex?: number;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLDivElement>) => void;
 }
 
-export function SearchableSelect({
+export const SearchableSelect = forwardRef<HTMLDivElement, SearchableSelectProps>(function SearchableSelect({
   options,
   value,
   onChange,
   placeholder = "Select an option",
   showSearch = true,
   className,
-  minWidth
-}: SearchableSelectProps) {
+  minWidth,
+  id,
+  tabIndex = 0,
+  onKeyDown
+}, ref) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [highlightedIndex, setHighlightedIndex] = useState<number>(-1);
   const deferredSearch = useDeferredValue(search);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useImperativeHandle(ref, () => triggerRef.current as HTMLDivElement);
+
   const [pos, setPos] = useState<{
     top?: number;
     bottom?: number;
@@ -53,6 +65,15 @@ export function SearchableSelect({
   const selectedOption = useMemo(() => {
     return options.find(opt => opt.id?.toString() === value?.toString());
   }, [options, value]);
+
+  useEffect(() => {
+    if (isOpen) {
+      const idx = filteredOptions.findIndex(opt => opt.id?.toString() === value?.toString());
+      setHighlightedIndex(idx >= 0 ? idx : 0);
+    } else {
+      setHighlightedIndex(-1);
+    }
+  }, [isOpen, filteredOptions, value]);
 
   useEffect(() => {
     function updatePosition() {
@@ -120,14 +141,73 @@ export function SearchableSelect({
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('touchstart', handleClickOutside);
     };
-  }, [isOpen]);
+  }, [isOpen, minWidth]);
+
+  const handleTriggerKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (onKeyDown) {
+      onKeyDown(e);
+      if (e.defaultPrevented) return;
+    }
+
+    if (!isOpen) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (!showSearch && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+          const enabledOpts = options.filter(o => !o.disabled);
+          if (enabledOpts.length > 0) {
+            const currentIdx = enabledOpts.findIndex(o => o.id?.toString() === value?.toString());
+            let nextIdx = 0;
+            if (e.key === 'ArrowDown') {
+              nextIdx = currentIdx >= 0 ? (currentIdx + 1) % enabledOpts.length : 0;
+            } else {
+              nextIdx = currentIdx > 0 ? currentIdx - 1 : enabledOpts.length - 1;
+            }
+            onChange(enabledOpts[nextIdx].id);
+            return;
+          }
+        }
+        setIsOpen(true);
+      }
+    } else {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setIsOpen(false);
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setHighlightedIndex(prev => {
+          const next = prev + 1;
+          return next < filteredOptions.length ? next : 0;
+        });
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setHighlightedIndex(prev => {
+          const next = prev - 1;
+          return next >= 0 ? next : filteredOptions.length - 1;
+        });
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (highlightedIndex >= 0 && highlightedIndex < filteredOptions.length) {
+          const opt = filteredOptions[highlightedIndex];
+          if (!opt.disabled) {
+            onChange(opt.id);
+            setIsOpen(false);
+            setSearch('');
+          }
+        }
+      }
+    }
+  };
 
   return (
     <div ref={wrapperRef} className="relative w-full">
       <div 
+        id={id}
+        ref={triggerRef}
+        tabIndex={tabIndex}
         onClick={() => setIsOpen(!isOpen)}
+        onKeyDown={handleTriggerKeyDown}
         className={cn(
-          "flex items-center justify-between min-h-[40px] h-10 w-full rounded-xl border border-input bg-background px-3.5 py-2 text-sm font-medium shadow-sm cursor-pointer transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:border-ring",
+          "flex items-center justify-between min-h-[40px] h-10 w-full rounded-xl border border-input bg-background px-3.5 py-2 text-sm font-medium shadow-sm cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary",
           className
         )}
       >
@@ -154,12 +234,21 @@ export function SearchableSelect({
             <div className="flex items-center px-3 py-2 border-b border-border bg-muted/30 shrink-0">
               <Search size={14} className="text-muted-foreground mr-2 shrink-0" />
               <input
+                ref={searchInputRef}
                 type="text"
                 className="w-full bg-transparent text-sm focus:outline-none placeholder:text-muted-foreground"
                 placeholder="Search..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter') {
+                    handleTriggerKeyDown(e as any);
+                  } else if (e.key === 'Escape') {
+                    setIsOpen(false);
+                    triggerRef.current?.focus();
+                  }
+                }}
                 autoFocus
               />
             </div>
@@ -168,20 +257,24 @@ export function SearchableSelect({
             {filteredOptions.length === 0 ? (
               <div className="px-3 py-3 text-sm text-center text-muted-foreground">No results found</div>
             ) : (
-              filteredOptions.map((opt) => (
+              filteredOptions.map((opt, idx) => (
                 <div
                   key={opt.id}
                   className={`px-3 py-2.5 text-sm flex items-center justify-between gap-2 transition-colors ${
                     opt.disabled
                       ? 'opacity-50 cursor-not-allowed bg-muted/40 text-muted-foreground'
-                      : 'cursor-pointer hover:bg-accent hover:text-accent-foreground ' + (value?.toString() === opt.id.toString() ? 'bg-primary/10 text-primary font-semibold' : 'text-foreground')
+                      : 'cursor-pointer ' + 
+                        (idx === highlightedIndex ? 'bg-accent text-accent-foreground ' : '') +
+                        (value?.toString() === opt.id.toString() ? 'bg-primary/10 text-primary font-semibold' : 'text-foreground hover:bg-accent hover:text-accent-foreground')
                   }`}
                   onClick={() => {
                     if (opt.disabled) return;
                     onChange(opt.id);
                     setIsOpen(false);
                     setSearch('');
+                    triggerRef.current?.focus();
                   }}
+                  onMouseEnter={() => setHighlightedIndex(idx)}
                 >
                   <div className="flex items-center gap-2 truncate">
                     {opt.icon}
@@ -199,4 +292,4 @@ export function SearchableSelect({
       )}
     </div>
   );
-}
+});

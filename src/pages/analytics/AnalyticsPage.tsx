@@ -4,7 +4,8 @@ import { useNavigate } from 'react-router';
 import { 
   QrCode, Eye, Search, CalendarDays, Filter, Users, Lock, ChevronRight, ChevronLeft,
   TrendingUp, TrendingDown, DollarSign, Receipt, ShoppingBag, Trophy, 
-  Sparkles, Download, ExternalLink, ArrowUpRight, Wallet, FileText, Calendar, CheckCircle2, CreditCard, Banknote
+  Sparkles, Download, ExternalLink, ArrowUpRight, Wallet, FileText, Calendar, CheckCircle2, CreditCard, Banknote,
+  PieChart, Smartphone
 } from 'lucide-react';
 import { api } from '@/services/api';
 import toast from 'react-hot-toast';
@@ -830,6 +831,135 @@ export function AnalyticsPage() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Payment Modes & Collections Breakdown Card */}
+          <Card className="overflow-hidden border-slate-200/80 dark:border-slate-800">
+            <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-4">
+              <div>
+                <CardTitle className="text-sm sm:text-base font-bold flex items-center gap-2 text-slate-900 dark:text-white">
+                  <PieChart size={18} className="text-primary shrink-0" />
+                  <span>Collections by Payment Mode</span>
+                </CardTitle>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  Revenue collected across payment channels (including split payments)
+                </p>
+              </div>
+              <div className="text-right shrink-0">
+                <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block">Total Tracked</span>
+                <span className="text-sm font-black font-mono text-emerald-600 dark:text-emerald-400">
+                  {currencySymbol}{displayedGross.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-5 space-y-4">
+              {/* Visual Distribution Multi-Segment Bar */}
+              {revenueData?.payment_modes_breakdown?.some((m: any) => m.amount > 0) ? (
+                <>
+                  <div className="space-y-1.5">
+                    <div className="h-3 w-full rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden flex shadow-inner">
+                      {revenueData.payment_modes_breakdown.map((pm: any, idx: number) => {
+                        if (pm.percentage <= 0) return null;
+                        const colors: Record<string, string> = {
+                          cash: 'bg-emerald-500',
+                          upi: 'bg-purple-500',
+                          online: 'bg-amber-500',
+                          card: 'bg-blue-500',
+                          other: 'bg-slate-400',
+                        };
+                        const barColor = colors[pm.mode] || 'bg-primary';
+                        return (
+                          <div
+                            key={idx}
+                            style={{ width: `${pm.percentage}%` }}
+                            className={`${barColor} transition-all duration-500 hover:opacity-90 relative group cursor-pointer`}
+                            title={`${pm.label}: ${currencySymbol}${pm.amount.toFixed(2)} (${pm.percentage}%)`}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Mode Cards Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-3 pt-1">
+                    {revenueData.payment_modes_breakdown.map((pm: any, idx: number) => {
+                      const modeConfigs: Record<string, { bg: string, border: string, text: string, iconBg: string, icon: any }> = {
+                        cash: {
+                          bg: 'bg-emerald-50/60 dark:bg-emerald-950/20',
+                          border: 'border-emerald-200/70 dark:border-emerald-800/40',
+                          text: 'text-emerald-700 dark:text-emerald-400',
+                          iconBg: 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600',
+                          icon: Banknote,
+                        },
+                        upi: {
+                          bg: 'bg-purple-50/60 dark:bg-purple-950/20',
+                          border: 'border-purple-200/70 dark:border-purple-800/40',
+                          text: 'text-purple-700 dark:text-purple-400',
+                          iconBg: 'bg-purple-100 dark:bg-purple-900/40 text-purple-600',
+                          icon: Smartphone,
+                        },
+                        online: {
+                          bg: 'bg-amber-50/60 dark:bg-amber-950/20',
+                          border: 'border-amber-200/70 dark:border-amber-800/40',
+                          text: 'text-amber-700 dark:text-amber-400',
+                          iconBg: 'bg-amber-100 dark:bg-amber-900/40 text-amber-600',
+                          icon: CreditCard,
+                        },
+                        card: {
+                          bg: 'bg-blue-50/60 dark:bg-blue-950/20',
+                          border: 'border-blue-200/70 dark:border-blue-800/40',
+                          text: 'text-blue-700 dark:text-blue-400',
+                          iconBg: 'bg-blue-100 dark:bg-blue-900/40 text-blue-600',
+                          icon: CreditCard,
+                        },
+                        other: {
+                          bg: 'bg-slate-50 dark:bg-slate-900/40',
+                          border: 'border-slate-200/70 dark:border-slate-800/60',
+                          text: 'text-slate-700 dark:text-slate-300',
+                          iconBg: 'bg-slate-200 dark:bg-slate-800 text-slate-600',
+                          icon: Wallet,
+                        },
+                      };
+
+                      const cfg = modeConfigs[pm.mode] || modeConfigs.other;
+                      const IconComponent = cfg.icon;
+
+                      return (
+                        <div
+                          key={idx}
+                          className={`p-3 rounded-2xl border transition-all ${cfg.bg} ${cfg.border} flex flex-col justify-between`}
+                        >
+                          <div className="flex items-center justify-between gap-1.5 mb-2">
+                            <div className={`p-1.5 rounded-lg ${cfg.iconBg} shrink-0`}>
+                              <IconComponent size={14} />
+                            </div>
+                            <span className="text-[10px] font-black font-mono px-1.5 py-0.5 rounded-md bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700">
+                              {pm.percentage}%
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block truncate">
+                              {pm.label}
+                            </span>
+                            <h4 className={`text-sm sm:text-base font-black font-mono mt-0.5 ${cfg.text}`}>
+                              {currencySymbol}{pm.amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                            </h4>
+                            <p className="text-[10px] text-slate-400 font-medium mt-0.5">
+                              {pm.orders_count} {pm.orders_count === 1 ? 'transaction' : 'transactions'}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : (
+                <div className="py-8 text-center text-slate-400 text-xs">
+                  <Banknote size={28} className="mx-auto mb-2 opacity-40" />
+                  <p>No payment records in this period.</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Daily Revenue Chart & Breakdown */}
           <Card>

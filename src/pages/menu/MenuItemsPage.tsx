@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'react-hot-toast';
-import { Plus, Edit2, Trash2, Search, Filter, Image as ImageIcon, Star, Flame, LayoutGrid, List, Sparkles, Wand2, Loader2, MessageSquare, Check, RefreshCw, Code, ChevronLeft, ChevronRight, Store, Globe, Truck, CheckCircle2, XCircle } from 'lucide-react';
+import { Plus, Edit2, Trash2, Search, Filter, Image as ImageIcon, Star, Flame, LayoutGrid, List, Sparkles, Wand2, Loader2, MessageSquare, Check, RefreshCw, Code, ChevronLeft, ChevronRight, Store, Globe, Truck, Package, Tag, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
 import { api } from '@/services/api';
 import { useShopStore } from '@/store/shopStore';
 import { MenuItem, MenuItemVariant, MenuItemAddon } from '@/types';
@@ -39,7 +39,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 
 import { usePermissions } from '@/hooks/usePermissions';
-import { getBusinessCategory } from '@/config/businessCategories';
+import { getBusinessCategory, isFireworksBusiness } from '@/config/businessCategories';
 
 const SortableMenuItem = ({ children, item }: { children: React.ReactNode, item: MenuItem }) => {
  const {
@@ -70,6 +70,7 @@ const SortableMenuItem = ({ children, item }: { children: React.ReactNode, item:
 export function MenuItemsPage() {
  const { menuItems, setMenuItems, categories, setCategories, shop } = useShopStore();
   const businessCategory = getBusinessCategory(shop?.category);
+  const isCrackers = isFireworksBusiness(shop?.category) || !businessCategory.isFood;
  const safeMenuItems = Array.isArray(menuItems) ? menuItems : [];
  const { canWrite } = usePermissions('menu_items');
  const [isLoading, setIsLoading] = useState(() => safeMenuItems.length === 0);
@@ -111,27 +112,67 @@ export function MenuItemsPage() {
 
  // Infinite scroll sentinel
  const sentinelRef = useRef<HTMLDivElement>(null);
- 
- const defaultForm = {
- category_id: '',
- name: '',
- description: '',
- price: '',
- offer_price: '',
- online_price: '',
- online_offer_price: '',
- food_types: businessCategory.dietaryEnabled ? ['veg'] : ['none'],
- is_bestseller: false,
- is_highlighted: false,
- is_available: true,
- variants: [] as MenuItemVariant[],
- addons: [] as MenuItemAddon[],
- allow_ice_preference: false,
- available_days: [] as string[],
- available_time_presets: [] as string[],
- custom_time_from: '',
- custom_time_to: ''
- };
+  const checkDuplicateSerial = (serial?: string, editingId?: string) => {
+    if (!serial || !serial.trim()) return null;
+    const s = serial.trim().toLowerCase();
+    return safeMenuItems.find(m => m.id !== editingId && m.serial_number && m.serial_number.trim().toLowerCase() === s);
+  };
+
+  const generateNextSerialNumber = (items: MenuItem[], prefix?: string, digitsCount?: number) => {
+    const pref = prefix !== undefined ? prefix : (shop?.settings?.serial_number_prefix || '');
+    const digits = digitsCount || shop?.settings?.serial_number_digits || 3;
+    
+    const existingSet = new Set(items.filter(i => Boolean(i.serial_number)).map(i => i.serial_number!.trim().toLowerCase()));
+
+    let maxNum = 0;
+    items.forEach(item => {
+      if (!item.serial_number) return;
+      let sn = item.serial_number.trim();
+      if (pref && sn.toLowerCase().startsWith(pref.toLowerCase())) {
+        sn = sn.substring(pref.length);
+      }
+      const num = parseInt(sn.replace(/\D/g, ''), 10);
+      if (!isNaN(num) && num > maxNum) {
+        maxNum = num;
+      }
+    });
+
+    let nextNum = maxNum + 1;
+    let candidate = `${pref}${String(nextNum).padStart(digits, '0')}`;
+    while (existingSet.has(candidate.toLowerCase())) {
+      nextNum++;
+      candidate = `${pref}${String(nextNum).padStart(digits, '0')}`;
+    }
+    return candidate;
+  };
+
+  const defaultForm = {
+    category_id: '',
+    name: '',
+    description: '',
+    price: '',
+    offer_price: '',
+    online_price: '',
+    online_offer_price: '',
+    serial_number: '',
+    multiplier: 1,
+    wholesale_price: '',
+    wholesale_multiplier: 1,
+    other_price: '',
+    other_multiplier: 1,
+    is_public_visible: true,
+    food_types: businessCategory.dietaryEnabled ? ['veg'] : ['none'],
+    is_bestseller: false,
+    is_highlighted: false,
+    is_available: true,
+    variants: [] as MenuItemVariant[],
+    addons: [] as MenuItemAddon[],
+    allow_ice_preference: false,
+    available_days: [] as string[],
+    available_time_presets: [] as string[],
+    custom_time_from: '',
+    custom_time_to: ''
+  };
  const [formData, setFormData] = useState(defaultForm);
 
  const sensors = useSensors(
@@ -359,53 +400,87 @@ export function MenuItemsPage() {
  }
  }
  };
+  const filteredItems = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    const items = [...safeMenuItems];
+    if (!q) {
+      return items.sort((a, b) => {
+        if (a.is_highlighted && !b.is_highlighted) return -1;
+        if (!a.is_highlighted && b.is_highlighted) return 1;
+        return (a.display_order || 0) - (b.display_order || 0);
+      });
+    }
 
- const filteredItems = [...safeMenuItems].sort((a, b) => {
- if (a.is_highlighted && !b.is_highlighted) return -1;
- if (!a.is_highlighted && b.is_highlighted) return 1;
- return (a.display_order || 0) - (b.display_order || 0);
- });
+    return items.sort((a, b) => {
+      const getScore = (item: MenuItem) => {
+        const sn = item.serial_number ? item.serial_number.trim().toLowerCase() : '';
+        const name = item.name.trim().toLowerCase();
+        if (sn === q) return 1;              // 1. Exact Serial Number Match (TOP)
+        if (sn.startsWith(q)) return 2;      // 2. Serial Number Prefix Match
+        if (sn.includes(q)) return 3;        // 3. Serial Number Substring Match
+        if (name === q) return 4;            // 4. Exact Item Name Match
+        if (name.startsWith(q)) return 5;    // 5. Name Prefix Match
+        if (name.includes(q)) return 6;      // 6. Name Substring Match
+        return 99;
+      };
 
- const openModal = (item?: MenuItem) => {
- if (categories.length === 0) {
- toast.error('Please create a category first');
- return;
- }
+      const scoreA = getScore(a);
+      const scoreB = getScore(b);
+      if (scoreA !== scoreB) return scoreA - scoreB;
+      return (a.display_order || 0) - (b.display_order || 0);
+    });
+  }, [safeMenuItems, searchQuery]);
+  const openModal = (item?: MenuItem) => {
+    if (categories.length === 0) {
+      toast.error('Please create a category first');
+      return;
+    }
 
- if (item) {
- setEditingItem(item);
- setFormData({
- category_id: item.category_id,
- name: item.name,
- description: item.description || '',
- price: item.price,
- offer_price: item.offer_price || '',
- online_price: item.online_price || item.price || '',
- online_offer_price: item.online_offer_price || item.offer_price || '',
- food_types: item.food_types || [],
- is_bestseller: item.is_bestseller,
- is_highlighted: item.is_highlighted,
- is_available: item.is_available,
- variants: item.variants || [],
- addons: item.addons || [],
- allow_ice_preference: item.allow_ice_preference || false,
- available_days: item.available_days || [],
- available_time_presets: item.available_time_presets || [],
- custom_time_from: item.custom_time_from || '',
- custom_time_to: item.custom_time_to || ''
- });
- } else {
- setEditingItem(null);
- setFormData({ 
- ...defaultForm, 
- category_id: activeTab !== 'all'? activeTab : categories[0]?.id || ''
- });
- }
- setPendingImages([]);
- setPendingImageUrls([]);
- setCurrentStep(1);
- setIsModalOpen(true);
- };
+    if (item) {
+      setEditingItem(item);
+      setFormData({
+        category_id: item.category_id,
+        name: item.name,
+        description: item.description || '',
+        price: item.price,
+        offer_price: item.offer_price || '',
+        online_price: item.online_price || item.price || '',
+        online_offer_price: item.online_offer_price || item.offer_price || '',
+        serial_number: item.serial_number || '',
+        multiplier: item.multiplier || 1,
+        wholesale_price: item.wholesale_price || '',
+        wholesale_multiplier: item.wholesale_multiplier || 1,
+        other_price: item.other_price || '',
+        other_multiplier: item.other_multiplier || 1,
+        is_public_visible: item.is_public_visible ?? true,
+        food_types: item.food_types || [],
+        is_bestseller: item.is_bestseller,
+        is_highlighted: item.is_highlighted,
+        is_available: item.is_available,
+        variants: item.variants || [],
+        addons: item.addons || [],
+        allow_ice_preference: item.allow_ice_preference || false,
+        available_days: item.available_days || [],
+        available_time_presets: item.available_time_presets || [],
+        custom_time_from: item.custom_time_from || '',
+        custom_time_to: item.custom_time_to || ''
+      });
+    } else {
+      setEditingItem(null);
+      const nextSerial = (shop?.settings?.auto_serial_number_enabled || isCrackers)
+        ? generateNextSerialNumber(safeMenuItems)
+        : '';
+      setFormData({ 
+        ...defaultForm, 
+        category_id: activeTab !== 'all' ? activeTab : categories[0]?.id || '',
+        serial_number: nextSerial
+      });
+    }
+    setPendingImages([]);
+    setPendingImageUrls([]);
+    setCurrentStep(1);
+    setIsModalOpen(true);
+  };
 
  const handleSubmit = async (e: React.FormEvent) => {
  e.preventDefault();
@@ -417,10 +492,19 @@ export function MenuItemsPage() {
  const baseOnlineOfferPrice = hasVariants ? (formData.variants[0].online_offer_price || formData.variants[0].offer_price) : (formData.online_offer_price || formData.offer_price);
  
  if (currentStep < 4) {
- if (currentStep === 1 && (!formData.name.trim() || !formData.category_id)) {
- toast.error('Please fill required fields');
- return;
- }
+ if (currentStep === 1) {
+      if (!formData.name.trim() || !formData.category_id) {
+        toast.error('Please fill required fields');
+        return;
+      }
+      if (formData.serial_number?.trim()) {
+        const dup = checkDuplicateSerial(formData.serial_number, editingItem?.id);
+        if (dup) {
+          toast.error(`Serial number "${formData.serial_number.trim()}" is already used by "${dup.name}". Please enter a unique serial number.`);
+          return;
+        }
+      }
+    }
  if (currentStep === 2) {
  if (!basePrice) {
  toast.error('Please provide a regular price or add variants');
@@ -500,15 +584,20 @@ export function MenuItemsPage() {
  online_price: v.online_price || v.price,
  online_offer_price: v.online_offer_price || v.offer_price || null,
  }));
-
- const payload = {
- ...formData,
- price: parseFloat(basePrice),
- offer_price: baseOfferPrice ? parseFloat(baseOfferPrice) : null,
- online_price: baseOnlinePrice ? parseFloat(baseOnlinePrice) : parseFloat(basePrice),
- online_offer_price: baseOnlineOfferPrice ? parseFloat(baseOnlineOfferPrice) : (baseOfferPrice ? parseFloat(baseOfferPrice) : null),
- variants: processedVariants,
- };
+    const payload = {
+      ...formData,
+      price: parseFloat(basePrice),
+      offer_price: baseOfferPrice ? parseFloat(baseOfferPrice) : null,
+      online_price: baseOnlinePrice ? parseFloat(baseOnlinePrice) : parseFloat(basePrice),
+      online_offer_price: baseOnlineOfferPrice ? parseFloat(baseOnlineOfferPrice) : (baseOfferPrice ? parseFloat(baseOfferPrice) : null),
+      serial_number: formData.serial_number?.trim() || null,
+      multiplier: formData.multiplier ? Number(formData.multiplier) : 1,
+      wholesale_price: formData.wholesale_price ? parseFloat(formData.wholesale_price) : null,
+      wholesale_multiplier: formData.wholesale_multiplier ? Number(formData.wholesale_multiplier) : 1,
+      other_price: formData.other_price ? parseFloat(formData.other_price) : null,
+      other_multiplier: formData.other_multiplier ? Number(formData.other_multiplier) : 1,
+      variants: processedVariants,
+    };
 
  if (editingItem) {
  await api.put(`/menu-items/${editingItem.id}`, payload);
@@ -902,7 +991,19 @@ export function MenuItemsPage() {
  
  <CardContent className={`flex-1 flex flex-col ${viewMode === 'grid'? 'p-3 sm:p-4': 'p-3 sm:p-4'}`}>
  <div className="flex justify-between items-start mb-1">
- <h3 className="font-semibold text-sm sm:text-base text-foreground line-clamp-1" title={item.name}>{item.name}</h3>
+ <div className="flex items-center gap-1.5 flex-wrap">
+  {item.serial_number && (
+    <span className="bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded shadow-xs">
+      #{item.serial_number}
+    </span>
+  )}
+  <h3 className="font-semibold text-sm sm:text-base text-foreground line-clamp-1" title={item.name}>{item.name}</h3>
+  {Boolean(item.multiplier && item.multiplier > 1) && (
+    <span className="text-[10px] font-extrabold bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300 px-1.5 py-0.5 rounded">
+      ×{item.multiplier} Pack
+    </span>
+  )}
+</div>
  <div className="flex flex-col items-end">
  <span className="font-bold text-sm sm:text-base text-primary whitespace-nowrap">₹{item.offer_price || item.price}</span>
  {item.offer_price && (
@@ -1004,7 +1105,7 @@ export function MenuItemsPage() {
  isOpen={isModalOpen} 
  onClose={() => setIsModalOpen(false)}
  title={editingItem ? `Edit ${businessCategory.itemSingular}` : `Add New ${businessCategory.itemSingular}`}
- className="max-w-xl"
+ className="max-w-3xl"
  footer={
  <div className="flex justify-between items-center w-full">
  <Button 
@@ -1027,9 +1128,16 @@ export function MenuItemsPage() {
  onClick={(e) => {
  e.preventDefault();
  if (!formData.name.trim() || !formData.category_id) {
- toast.error('Please fill in Menu Name and Category');
- return;
- }
+                toast.error('Please fill in Menu Name and Category');
+                return;
+              }
+              if (formData.serial_number?.trim()) {
+                const dup = checkDuplicateSerial(formData.serial_number, editingItem?.id);
+                if (dup) {
+                  toast.error(`Serial number "${formData.serial_number.trim()}" is already used by "${dup.name}". Please enter a unique serial number.`);
+                  return;
+                }
+              }
  setCurrentStep(currentStep + 1);
  }}
  >
@@ -1076,6 +1184,33 @@ export function MenuItemsPage() {
  <div className="space-y-5">
  {currentStep === 1 && (
  <div className="space-y-4 animate-fade-in">
+  <div className={isCrackers ? "grid grid-cols-1 sm:grid-cols-3 gap-3" : ""}>
+  {isCrackers && (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium text-foreground">Serial No / S.No</label>
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, serial_number: generateNextSerialNumber(safeMenuItems) }))}
+                  className="text-xs text-primary hover:text-primary-600 font-semibold flex items-center gap-1 hover:underline transition-all"
+                  title="Auto-generate next Serial Number"
+                >
+                  <Sparkles size={13} className="text-amber-500 animate-pulse" /> Auto S.No
+                </button>
+              </div>
+              <Input
+                value={formData.serial_number}
+                onChange={(e) => setFormData({...formData, serial_number: e.target.value})}
+                placeholder="e.g. 101, C-01"
+              />
+              {Boolean(formData.serial_number?.trim() && checkDuplicateSerial(formData.serial_number, editingItem?.id)) && (
+                <p className="text-[11px] font-semibold text-rose-500 mt-1 flex items-center gap-1 animate-fade-in">
+                  <AlertCircle size={12} /> Serial number already assigned to "{checkDuplicateSerial(formData.serial_number, editingItem?.id)?.name}"
+                </p>
+              )}
+            </div>
+          )}
+  <div className={isCrackers ? "sm:col-span-2" : ""}>
  <Input
  label={`${businessCategory.itemSingular} Name *`}
  value={formData.name}
@@ -1083,6 +1218,9 @@ export function MenuItemsPage() {
  placeholder={businessCategory.itemPlaceholder}
  required
  />
+
+  </div>
+  </div>
  
  <div className="space-y-1.5 text-left">
  <label className="text-sm font-medium text-foreground">Category *</label>
@@ -1108,208 +1246,412 @@ export function MenuItemsPage() {
 
  {currentStep === 2 && (
  <div className="space-y-4 animate-fade-in">
- {formData.variants.length === 0 && (
- <div className="space-y-3">
- <div className="bg-muted/50 /40 p-3.5 rounded-xl border border-border /60">
- <div className="text-xs font-semibold text-foreground mb-2 flex items-center gap-1.5">
- <Store size={14} className="text-muted-foreground" /> In-Store / Standard Price
- </div>
- <div className="grid grid-cols-2 gap-3">
- <Input
- label="Regular Price *"
- type="number"
- step="0.01"
- value={formData.price}
- onChange={(e) => {
- const val = e.target.value;
- const prevPrice = formData.price;
- setFormData(prev => ({
- ...prev,
- price: val,
- online_price: (!prev.online_price || prev.online_price === prevPrice) ? val : prev.online_price
- }));
- }}
- placeholder="0.00"
- required
- />
- <div className="space-y-1">
- <Input
- label="Offer Price (Opt)"
- type="number"
- step="0.01"
- value={formData.offer_price}
- onChange={(e) => {
- const val = e.target.value;
- const prevOffer = formData.offer_price;
- setFormData(prev => ({
- ...prev,
- offer_price: val,
- online_offer_price: (!prev.online_offer_price || prev.online_offer_price === prevOffer) ? val : prev.online_offer_price
- }));
- }}
- placeholder="0.00"
- />
- {formData.offer_price && formData.price && parseFloat(formData.offer_price) >= parseFloat(formData.price) && (
-   <p className="text-[11px] font-semibold text-rose-500 mt-1 flex items-center gap-1">
-     ⚠️ Offer price must be less than regular price (₹{formData.price})
-   </p>
- )}
- </div>
- </div>
- </div>
+  {formData.variants.length === 0 && (
+    <div className="space-y-3">
+            {/* Tier 1: Retailer / In-Store */}
+      <div className="bg-background p-3.5 rounded-2xl border border-border space-y-3 shadow-2xs">
+        <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
+          <Store size={15} className="text-primary" /> Retailer Tier (In-Store / Standard Price)
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <Input
+            label="Regular Price (₹) *"
+            type="number"
+            step="0.01"
+            value={formData.price}
+            onChange={(e) => {
+              const val = e.target.value;
+              const prevPrice = formData.price;
+              setFormData(prev => ({
+                ...prev,
+                price: val,
+                online_price: (!prev.online_price || prev.online_price === prevPrice) ? val : prev.online_price
+              }));
+            }}
+            placeholder="0.00"
+            required
+          />
+          <div className="space-y-1">
+            <Input
+              label="Offer Price (₹)"
+              type="number"
+              step="0.01"
+              value={formData.offer_price}
+              onChange={(e) => {
+                const val = e.target.value;
+                const prevOffer = formData.offer_price;
+                setFormData(prev => ({
+                  ...prev,
+                  offer_price: val,
+                  online_offer_price: (!prev.online_offer_price || prev.online_offer_price === prevOffer) ? val : prev.online_offer_price
+                }));
+              }}
+              placeholder="0.00"
+            />
+            {formData.offer_price && formData.price && parseFloat(formData.offer_price) >= parseFloat(formData.price) && (
+              <p className="text-[11px] font-semibold text-rose-500 mt-1 flex items-center gap-1">
+                ⚠️ Must be less than ₹{formData.price}
+              </p>
+            )}
+          </div>
+          <Input
+            label="Retail Qty Multiplier"
+            type="number"
+            min="1"
+            step="1"
+            value={formData.multiplier}
+            onChange={(e) => setFormData({...formData, multiplier: parseInt(e.target.value) || 1})}
+            placeholder="1"
+          />
+        </div>
 
- <div className="bg-blue-50/40 dark:bg-blue-950/20 p-3.5 rounded-xl border border-blue-100 dark:border-blue-900/40">
- <div className="text-xs font-semibold text-blue-600 dark:text-blue-400 mb-1 flex items-center justify-between">
- <span className="flex items-center gap-1.5"><Globe size={14} /> Online Delivery Price (Delivery Orders Only)</span>
- <span className="text-[10px] font-normal text-muted-foreground">Defaults to In-Store price if left blank</span>
- </div>
- <div className="grid grid-cols-2 gap-3 mt-2">
- <Input
- label="Online Price"
- type="number"
- step="0.01"
- value={formData.online_price}
- onChange={(e) => setFormData({...formData, online_price: e.target.value})}
- placeholder={formData.price ||"0.00"}
- />
- <div className="space-y-1">
- <Input
- label="Online Offer Price"
- type="number"
- step="0.01"
- value={formData.online_offer_price}
- onChange={(e) => setFormData({...formData, online_offer_price: e.target.value})}
- placeholder={formData.offer_price ||"0.00"}
- />
- {formData.online_offer_price && (formData.online_price || formData.price) && parseFloat(formData.online_offer_price) >= parseFloat(formData.online_price || formData.price) && (
-   <p className="text-[11px] font-semibold text-rose-500 mt-1 flex items-center gap-1">
-     ⚠️ Must be less than online price (₹{formData.online_price || formData.price})
-   </p>
- )}
- </div>
- </div>
- </div>
- </div>
- )}
- 
- <div className="space-y-3 pt-2">
- <div className="flex justify-between items-center">
- <label className="text-sm font-medium text-foreground">Variants (e.g. Sizes)</label>
- <button 
- type="button" 
- onClick={() => setFormData({...formData, variants: [...formData.variants, { name: '', price: '', offer_price: '', online_price: '', online_offer_price: ''}]})}
- className="text-xs text-primary hover:text-primary-600 font-medium flex items-center"
- >
- <Plus size={14} className="mr-1"/> Add Variant
- </button>
- </div>
- {formData.variants.map((v, idx) => (
- <div key={idx} className="flex gap-2 items-start bg-muted/50 p-3 rounded-lg border border-border">
- <div className="flex-1 space-y-3">
- <Input 
- label="Variant Name" 
- placeholder="e.g. 500ml" 
- value={v.name} 
- onChange={(e) => {
- const newV = [...formData.variants];
- newV[idx].name = e.target.value;
- setFormData({...formData, variants: newV});
- }} 
- required 
- />
- <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
- <Input 
- label="Price *" 
- type="number" 
- step="0.01" 
- placeholder="0.00" 
- value={v.price} 
- onChange={(e) => {
- const val = e.target.value;
- const newV = [...formData.variants];
- const prevP = newV[idx].price;
- newV[idx].price = val;
- if (!newV[idx].online_price || newV[idx].online_price === prevP) {
- newV[idx].online_price = val;
- }
- setFormData({...formData, variants: newV});
- }} 
- required 
- />
- <div>
- <Input 
- label="Offer Price" 
- type="number" 
- step="0.01" 
- placeholder="0.00" 
- value={v.offer_price || ''} 
- onChange={(e) => {
- const val = e.target.value;
- const newV = [...formData.variants];
- const prevOp = newV[idx].offer_price;
- newV[idx].offer_price = val || null;
- if (!newV[idx].online_offer_price || newV[idx].online_offer_price === prevOp) {
- newV[idx].online_offer_price = val || null;
- }
- setFormData({...formData, variants: newV});
- }} 
- />
- {v.offer_price && v.price && parseFloat(v.offer_price) >= parseFloat(v.price) && (
-   <p className="text-[10px] font-semibold text-rose-500 mt-0.5 leading-tight">
-     ⚠️ Must be &lt; ₹{v.price}
-   </p>
- )}
- </div>
- <Input 
- label="Online Price" 
- type="number" 
- step="0.01" 
- placeholder={v.price ||"0.00"} 
- value={v.online_price || ''} 
- onChange={(e) => {
- const newV = [...formData.variants];
- newV[idx].online_price = e.target.value || null;
- setFormData({...formData, variants: newV});
- }} 
- />
- <div>
- <Input 
- label="Online Offer" 
- type="number" 
- step="0.01" 
- placeholder={v.offer_price ||"0.00"} 
- value={v.online_offer_price || ''} 
- onChange={(e) => {
- const newV = [...formData.variants];
- newV[idx].online_offer_price = e.target.value || null;
- setFormData({...formData, variants: newV});
- }} 
- />
- {v.online_offer_price && (v.online_price || v.price) && parseFloat(v.online_offer_price) >= parseFloat(v.online_price || v.price) && (
-   <p className="text-[10px] font-semibold text-rose-500 mt-0.5 leading-tight">
-     ⚠️ Must be &lt; ₹{v.online_price || v.price}
-   </p>
- )}
- </div>
- </div>
- </div>
- <button 
- type="button" 
- onClick={() => {
- const newV = [...formData.variants];
- newV.splice(idx, 1);
- setFormData({...formData, variants: newV});
- }}
- className="p-1.5 text-muted-foreground hover:text-destructive mt-6"
- >
- <Trash2 size={16} />
- </button>
- </div>
- ))}
- </div>
+        {/* Online Delivery / Takeaway Pricing Override */}
+        <div className="pt-2.5 border-t border-border/60">
+          <div className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 mb-2 flex items-center gap-1.5">
+            <Truck size={13} /> Online Delivery / Digital Order Price
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Input
+              label="Online Price (₹)"
+              type="number"
+              step="0.01"
+              value={formData.online_price}
+              onChange={(e) => setFormData({ ...formData, online_price: e.target.value })}
+              placeholder={formData.price || "0.00"}
+            />
+            <Input
+              label="Online Offer Price (₹)"
+              type="number"
+              step="0.01"
+              value={formData.online_offer_price}
+              onChange={(e) => setFormData({ ...formData, online_offer_price: e.target.value })}
+              placeholder={formData.offer_price || "0.00"}
+            />
+          </div>
+        </div>
+      </div>
 
+      {/* Tier 2 & 3: Wholesaler & Other / Agent for Single Items */}
+      {isCrackers && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* Wholesaler Tier */}
+          <div className="bg-amber-500/10 dark:bg-amber-950/20 p-3.5 rounded-2xl border border-amber-500/30 space-y-2.5">
+            <div className="text-xs font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+              <Package size={15} className="text-amber-600 dark:text-amber-400" /> Wholesaler Tier (Bulk Pricing)
+            </div>
+            <div className="grid grid-cols-2 gap-2.5">
+              <Input
+                label="Wholesale Price (₹)"
+                type="number"
+                step="0.01"
+                value={formData.wholesale_price}
+                onChange={(e) => setFormData({...formData, wholesale_price: e.target.value})}
+                placeholder="0.00"
+              />
+              <Input
+                label="Wholesale Multiplier"
+                type="number"
+                min="1"
+                step="1"
+                value={formData.wholesale_multiplier}
+                onChange={(e) => setFormData({...formData, wholesale_multiplier: parseInt(e.target.value) || 1})}
+                placeholder="1"
+              />
+            </div>
+          </div>
 
- <div className="pt-4 border-t border-border">
+          {/* Other / Agent Tier */}
+          <div className="bg-blue-500/10 dark:bg-blue-950/20 p-3.5 rounded-2xl border border-blue-500/30 space-y-2.5">
+            <div className="text-xs font-bold text-blue-800 dark:text-blue-300 flex items-center gap-1.5">
+              <Tag size={15} className="text-blue-600 dark:text-blue-400" /> Other / Agent Tier (Special Pricing)
+            </div>
+            <div className="grid grid-cols-2 gap-2.5">
+              <Input
+                label="Other / Agent Price (₹)"
+                type="number"
+                step="0.01"
+                value={formData.other_price}
+                onChange={(e) => setFormData({...formData, other_price: e.target.value})}
+                placeholder="0.00"
+              />
+              <Input
+                label="Other Multiplier"
+                type="number"
+                min="1"
+                step="1"
+                value={formData.other_multiplier}
+                onChange={(e) => setFormData({...formData, other_multiplier: parseInt(e.target.value) || 1})}
+                placeholder="1"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )}
+
+  <div className="space-y-3 pt-2">
+    <div className="flex justify-between items-center">
+      <div>
+        <label className="text-sm font-bold text-foreground block">Variants (e.g. Sizes / Packs)</label>
+        <p className="text-xs text-muted-foreground">Each variant can have separate Retail, Wholesale, and Agent pricing</p>
+      </div>
+      <button 
+        type="button" 
+        onClick={() => setFormData({
+          ...formData, 
+          variants: [
+            ...formData.variants, 
+            { 
+              name: '', 
+              price: '', 
+              offer_price: '', 
+              wholesale_price: '', 
+              wholesale_multiplier: 1, 
+              other_price: '', 
+              other_multiplier: 1, 
+              multiplier: 1, 
+              is_public_visible: true 
+            }
+          ]
+        })}
+        className="text-xs bg-primary/10 text-primary hover:bg-primary hover:text-white px-3 py-1.5 rounded-xl font-bold transition-all flex items-center cursor-pointer"
+      >
+        <Plus size={14} className="mr-1"/> Add Variant
+      </button>
+    </div>
+
+    {formData.variants.map((v, idx) => (
+      <div key={idx} className="bg-card p-4 rounded-2xl border border-border space-y-3.5 relative shadow-xs">
+        {/* Header: Variant Name + Public Visibility + Delete Button */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pb-3 border-b border-border/60">
+          <div className="flex-1">
+            <Input 
+              label={`Variant #${idx + 1} Name *`} 
+              placeholder="e.g. 100ml, Box of 10, Standard Pack" 
+              value={v.name} 
+              onChange={(e) => {
+                const newV = [...formData.variants];
+                newV[idx].name = e.target.value;
+                setFormData({...formData, variants: newV});
+              }} 
+              required 
+            />
+          </div>
+          
+          <div className="flex items-center justify-between sm:justify-end gap-3 pt-1 sm:pt-4">
+            {/* Public Menu Visibility Toggle */}
+            <div className="flex items-center gap-2 bg-muted/50 px-3 py-1.5 rounded-xl border border-border">
+              <label 
+                className="text-xs font-semibold text-foreground cursor-pointer"
+                onClick={() => {
+                  const newV = [...formData.variants];
+                  newV[idx].is_public_visible = !(newV[idx].is_public_visible !== false);
+                  setFormData({...formData, variants: newV});
+                }}
+              >
+                Public Menu:
+              </label>
+              <Switch
+                checked={v.is_public_visible !== false}
+                onCheckedChange={(checked) => {
+                  const newV = [...formData.variants];
+                  newV[idx].is_public_visible = checked;
+                  setFormData({...formData, variants: newV});
+                }}
+              />
+              <span className={`text-[11px] font-bold ${v.is_public_visible !== false ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`}>
+                {v.is_public_visible !== false ? 'Visible' : 'Hidden'}
+              </span>
+            </div>
+
+            <button 
+              type="button" 
+              onClick={() => {
+                const newV = [...formData.variants];
+                newV.splice(idx, 1);
+                setFormData({...formData, variants: newV});
+              }}
+              className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl transition-all cursor-pointer"
+              title="Delete Variant"
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
+        </div>
+                {/* Tier 1: Retailer / Regular Price */}
+        <div className="bg-slate-50 dark:bg-slate-900/50 p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 space-y-3">
+          <div className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+            <Store size={15} className="text-primary" /> Retailer Tier (In-Store / Standard Price)
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <Input 
+              label="Regular Price (₹) *" 
+              type="number" 
+              step="0.01" 
+              placeholder="0.00" 
+              value={v.price} 
+              onChange={(e) => {
+                const val = e.target.value;
+                const newV = [...formData.variants];
+                const prevP = newV[idx].price;
+                newV[idx].price = val;
+                if (!newV[idx].online_price || newV[idx].online_price === prevP) {
+                  newV[idx].online_price = val;
+                }
+                setFormData({...formData, variants: newV});
+              }} 
+              required 
+            />
+            <div>
+              <Input 
+                label="Offer Price (₹)" 
+                type="number" 
+                step="0.01" 
+                placeholder="0.00" 
+                value={v.offer_price || ''} 
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const newV = [...formData.variants];
+                  const prevOp = newV[idx].offer_price;
+                  newV[idx].offer_price = val || null;
+                  if (!newV[idx].online_offer_price || newV[idx].online_offer_price === prevOp) {
+                    newV[idx].online_offer_price = val || null;
+                  }
+                  setFormData({...formData, variants: newV});
+                }} 
+              />
+              {v.offer_price && v.price && parseFloat(v.offer_price) >= parseFloat(v.price) && (
+                <p className="text-[10px] font-semibold text-rose-500 mt-0.5 leading-tight">
+                  ⚠️ Must be &lt; ₹{v.price}
+                </p>
+              )}
+            </div>
+            <Input 
+              label="Retail Multiplier" 
+              type="number" 
+              min="1" 
+              step="1" 
+              placeholder="1" 
+              value={v.multiplier || 1} 
+              onChange={(e) => {
+                const newV = [...formData.variants];
+                newV[idx].multiplier = parseInt(e.target.value) || 1;
+                setFormData({...formData, variants: newV});
+              }} 
+            />
+          </div>
+
+          {/* Online Price override for Variant */}
+          <div className="pt-2 border-t border-border/50">
+            <div className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 mb-2 flex items-center gap-1.5">
+              <Truck size={13} /> Online Delivery / Digital Order Price
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Input 
+                label="Online Price (₹)" 
+                type="number" 
+                step="0.01" 
+                placeholder={v.price || "0.00"}
+                value={v.online_price || ''} 
+                onChange={(e) => {
+                  const newV = [...formData.variants];
+                  newV[idx].online_price = e.target.value;
+                  setFormData({...formData, variants: newV});
+                }} 
+              />
+              <Input 
+                label="Online Offer Price (₹)" 
+                type="number" 
+                step="0.01" 
+                placeholder={v.offer_price || "0.00"}
+                value={v.online_offer_price || ''} 
+                onChange={(e) => {
+                  const newV = [...formData.variants];
+                  newV[idx].online_offer_price = e.target.value || null;
+                  setFormData({...formData, variants: newV});
+                }} 
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Tier 2 & 3: Wholesaler & Other / Agent */}
+        {isCrackers && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Wholesaler Tier */}
+            <div className="bg-amber-500/10 dark:bg-amber-950/20 p-3.5 rounded-xl border border-amber-500/30 space-y-2.5">
+              <div className="text-xs font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+                <Package size={15} className="text-amber-600 dark:text-amber-400" /> Wholesaler Tier (Bulk Pricing)
+              </div>
+              <div className="grid grid-cols-2 gap-2.5">
+                <Input 
+                  label="Wholesale Price (₹)" 
+                  type="number" 
+                  step="0.01" 
+                  placeholder="0.00" 
+                  value={v.wholesale_price || ''} 
+                  onChange={(e) => {
+                    const newV = [...formData.variants];
+                    newV[idx].wholesale_price = e.target.value || null;
+                    setFormData({...formData, variants: newV});
+                  }} 
+                />
+                <Input 
+                  label="Wholesale Multiplier" 
+                  type="number" 
+                  min="1" 
+                  step="1" 
+                  placeholder="1" 
+                  value={v.wholesale_multiplier || 1} 
+                  onChange={(e) => {
+                    const newV = [...formData.variants];
+                    newV[idx].wholesale_multiplier = parseInt(e.target.value) || 1;
+                    setFormData({...formData, variants: newV});
+                  }} 
+                />
+              </div>
+            </div>
+
+            {/* Other / Agent Tier */}
+            <div className="bg-blue-500/10 dark:bg-blue-950/20 p-3.5 rounded-xl border border-blue-500/30 space-y-2.5">
+              <div className="text-xs font-bold text-blue-800 dark:text-blue-300 flex items-center gap-1.5">
+                <Tag size={15} className="text-blue-600 dark:text-blue-400" /> Other / Agent Tier (Special Pricing)
+              </div>
+              <div className="grid grid-cols-2 gap-2.5">
+                <Input 
+                  label="Other Price (₹)" 
+                  type="number" 
+                  step="0.01" 
+                  placeholder="0.00" 
+                  value={v.other_price || ''} 
+                  onChange={(e) => {
+                    const newV = [...formData.variants];
+                    newV[idx].other_price = e.target.value || null;
+                    setFormData({...formData, variants: newV});
+                  }} 
+                />
+                <Input 
+                  label="Other Multiplier" 
+                  type="number" 
+                  min="1" 
+                  step="1" 
+                  placeholder="1" 
+                  value={v.other_multiplier || 1} 
+                  onChange={(e) => {
+                    const newV = [...formData.variants];
+                    newV[idx].other_multiplier = parseInt(e.target.value) || 1;
+                    setFormData({...formData, variants: newV});
+                  }} 
+                />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    ))}
+  </div>
+<div className="pt-4 border-t border-border">
  <div className="flex justify-between items-center mb-3">
  <div>
  <h4 className="text-sm font-medium text-foreground">Add-ons (Optional)</h4>

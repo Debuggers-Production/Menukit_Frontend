@@ -44,6 +44,10 @@ export interface ShopSettings {
   online_payments_dinein_enabled?: boolean;
   online_payments_takeaway_enabled?: boolean;
   online_payments_delivery_enabled?: boolean;
+  accept_after_payment?: boolean;
+  serial_number_prefix?: string;
+  serial_number_digits?: number;
+  auto_serial_number_enabled?: boolean;
 }
 
 export interface ThemeSettings {
@@ -145,8 +149,14 @@ export interface MenuItemVariant {
   name: string;
   price: string;
   offer_price?: string | null;
+  wholesale_price?: string | null;
+  other_price?: string | null;
   online_price?: string | null;
   online_offer_price?: string | null;
+  multiplier?: number | null;
+  wholesale_multiplier?: number | null;
+  other_multiplier?: number | null;
+  is_public_visible?: boolean | null;
 }
 
 export interface MenuItemAddon {
@@ -158,9 +168,15 @@ export interface MenuItem {
   id: string;
   category_id: string;
   name: string;
+  serial_number?: string | null;
+  multiplier?: number | null;
+  wholesale_multiplier?: number | null;
+  other_multiplier?: number | null;
   description: string | null;
   price: string;
   offer_price: string | null;
+  wholesale_price?: string | null;
+  other_price?: string | null;
   online_price?: string | null;
   online_offer_price?: string | null;
   food_types: ('veg' | 'non-veg' | 'egg' | 'drink' | 'none' | 'dessert')[];

@@ -1,7 +1,7 @@
 import { LinkifiedText } from '../../components/LinkifiedText';
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { ShoppingBag, Plus, Minus, Info, ChevronLeft, ChevronRight, CheckCircle, XCircle, Key, MapPin, Navigation, Map, Armchair, Gift, Sparkles, Percent, Banknote, Truck, Tag, Clock, AlertTriangle, UtensilsCrossed, Gamepad2, History, Trophy, ChefHat } from 'lucide-react';
+import { ShoppingBag, Plus, Minus, Info, ChevronLeft, ChevronRight, CheckCircle, XCircle, Key, MapPin, Navigation, Map, Armchair, Gift, Sparkles, Percent, Banknote, Truck, Tag, Clock, AlertTriangle, UtensilsCrossed, Gamepad2, History, Trophy, ChefHat, ShieldCheck } from 'lucide-react';
 import { useCartStore, useShopCart } from '@/store/cartStore';
 import { api } from '@/services/api';
 import { Shop, Discount } from '@/types';
@@ -526,7 +526,7 @@ export function PublicCartPage() {
       return;
     }
 
-    if (orderType === 'dine_in') {
+    if (orderType === 'dine_in' && businessCategory.isFood) {
       if (!tableNumber) {
         toast.error(`Please select a ${businessCategory.tableOrStallLabel || 'table number'}`);
         return;
@@ -648,6 +648,90 @@ export function PublicCartPage() {
       const res = await api.post(`/public/shop/${id}/orders`, payload);
       const order = res.data;
 
+      const isAcceptAfterPayment = Boolean((shop?.settings as any)?.accept_after_payment);
+
+      if (isAcceptAfterPayment && apiPaymentMethod === 'online') {
+        try {
+          const payRes = await api.post(`/public/shop/${id}/orders/${order.id}/pay`);
+          const payData = payRes.data;
+
+          if (payData.mock_mode) {
+            await api.post(`/public/shop/${id}/orders/${order.id}/verify`, {
+              razorpay_order_id: payData.razorpay_order_id,
+              razorpay_payment_id: `pay_mock_${Date.now()}`,
+              razorpay_signature: 'mock_signature'
+            });
+            clearCart();
+            triggerHaptic(HAPTIC_PATTERNS.successUnlock);
+            confetti({ particleCount: 100, spread: 65, origin: { y: 0.6 }, colors: [primaryColor, '#22c55e', '#3b82f6'], zIndex: 9999 });
+            toast.success("Payment successful! Order confirmed.");
+            navigate(`/shop/${id}/order/${order.id}`);
+            return;
+          }
+
+          const sdkLoaded = await loadRazorpaySDK();
+          if (!sdkLoaded) {
+            toast.error("Could not load payment gateway. Please try again.");
+            setIsPlacingOrder(false);
+            return;
+          }
+
+          const currSymbol = payData.currency_symbol || shop?.settings?.currency || '₹';
+          const currencyCode = payData.currency || 'INR';
+          const baseTotal = payData.base_total || (payData.amount / 100).toFixed(2);
+          const platFee = payData.platform_fee || 0;
+          const pgFee = payData.pg_fee || 0;
+          const grandTotalVal = payData.grand_total || (payData.amount / 100).toFixed(2);
+
+          const rzpOptions = {
+            key: payData.razorpay_key,
+            amount: payData.amount,
+            currency: currencyCode,
+            name: shop?.name || 'Restaurant Order',
+            description: `Items: ${currSymbol}${baseTotal} | Platform Fee: ${currSymbol}${platFee} | PG Fee: ${currSymbol}${pgFee} = ${currSymbol}${grandTotalVal}`,
+            order_id: payData.razorpay_order_id,
+            handler: async (response: any) => {
+              try {
+                await api.post(`/public/shop/${id}/orders/${order.id}/verify`, {
+                  razorpay_order_id: response.razorpay_order_id,
+                  razorpay_payment_id: response.razorpay_payment_id,
+                  razorpay_signature: response.razorpay_signature,
+                });
+                clearCart();
+                triggerHaptic(HAPTIC_PATTERNS.successUnlock);
+                confetti({ particleCount: 100, spread: 65, origin: { y: 0.6 }, colors: [primaryColor, '#22c55e', '#3b82f6'], zIndex: 9999 });
+                toast.success("Payment successful! Order confirmed.");
+                navigate(`/shop/${id}/order/${order.id}`);
+              } catch {
+                toast.error("Payment verification failed. Please contact support.");
+                navigate(`/shop/${id}/order/${order.id}`);
+              }
+            },
+            prefill: {
+              name: customerName,
+              contact: finalPhone
+            },
+            theme: { color: primaryColor },
+            modal: {
+              ondismiss: () => {
+                toast.error("Payment cancelled. Please complete payment to confirm your order.");
+                setIsPlacingOrder(false);
+              }
+            }
+          };
+
+          const rzp = new (window as any).Razorpay(rzpOptions);
+          rzp.open();
+          return;
+        } catch (payErr: any) {
+          console.error("Payment initiation failed", payErr);
+          toast.error(payErr.response?.data?.detail || "Failed to initiate online payment.");
+          setIsPlacingOrder(false);
+          return;
+        }
+      }
+
+      // Default Flow (accept_after_payment = false or cash):
       // Navigate immediately to the order tracking page.
       // Payment will happen there ONLY AFTER the shop accepts the order.
       clearCart();
@@ -736,6 +820,7 @@ export function PublicCartPage() {
     gstOnFee,
     totalPgFee,
     grandTotal,
+    isOnlineAllowed,
   } = useMemo(() => {
     let subtotal = 0;
     let autoDiscountTotal = 0;
@@ -876,6 +961,7 @@ export function PublicCartPage() {
       gstOnFee,
       totalPgFee,
       grandTotal,
+      isOnlineAllowed: isMasterOnline && isChannelOnline,
     };
   }, [items, availableDiscounts, manualDiscountId, memberStatus, deliveryFee, paymentMethod, orderType, shop?.settings]);
 
@@ -1857,6 +1943,8 @@ export function PublicCartPage() {
               >
                 {isPlacingOrder ? (
                   <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
+                ) : Boolean((shop?.settings as any)?.accept_after_payment) && ((shop?.settings as any)?.online_payments_enabled !== false) ? (
+                  `Pay & Place Order (${currencySymbol}${grandTotal.toFixed(2)})`
                 ) : (
                   `Place Order (${currencySymbol}${grandTotal.toFixed(2)})`
                 )}
@@ -1944,7 +2032,7 @@ export function PublicCartPage() {
                 )}
               </div>
 
-              {orderType === 'dine_in' && (() => {
+              {orderType === 'dine_in' && businessCategory.isFood && (() => {
                 const totalTables = Number((shop?.settings as any)?.dinein_tables_count || 10);
                 const tablesList = Array.from({ length: totalTables }, (_, i) => `Table-${i + 1}`);
 
@@ -2197,67 +2285,67 @@ export function PublicCartPage() {
               <div>
                 <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Payment Option</label>
                 <div className="space-y-2">
-                  {(() => {
-                    const isMasterOnline = (shop?.settings as any)?.online_payments_enabled !== false;
-                    let isChannelOnline = true;
-                    if (orderType === 'dine_in') isChannelOnline = (shop?.settings as any)?.online_payments_dinein_enabled !== false;
-                    else if (orderType === 'takeaway') isChannelOnline = (shop?.settings as any)?.online_payments_takeaway_enabled !== false;
-                    else if (orderType === 'delivery') isChannelOnline = (shop?.settings as any)?.online_payments_delivery_enabled !== false;
-                    const isOnlineAllowed = isMasterOnline && isChannelOnline;
-
-                    return isOnlineAllowed ? (
-                      <label
-                        className="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all"
-                        style={{ borderColor: primaryColor, backgroundColor: `${primaryColor}08` }}
-                      >
-                        <input
-                          type="radio"
-                          name="payment"
-                          checked={true}
-                          readOnly
-                          className="w-4 h-4"
-                          style={{ accentColor: primaryColor }}
-                        />
-                        <div className="flex flex-col flex-1">
-                          <span className="text-sm font-semibold text-slate-850">Pay Online</span>
-                          <span className="text-[10px] text-slate-400">UPI, Cards, Netbanking. Fast & secure.</span>
-                        </div>
-                      </label>
-                    ) : (
-                      <label className="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all border-emerald-200 bg-emerald-50/40">
-                        <input
-                          type="radio"
-                          name="payment"
-                          checked={paymentMethod === 'cash'}
-                          onChange={() => setPaymentMethod('cash')}
-                          className="w-4 h-4 accent-emerald-600"
-                        />
-                        <div className="flex flex-col flex-1">
-                          <span className="text-sm font-semibold text-slate-850">
-                            {orderType === 'dine_in'
-                              ? 'Pay at Counter / Cash'
-                              : orderType === 'delivery'
-                              ? 'Pay on Delivery (Cash / UPI on Spot)'
-                              : 'Pay on Pickup (Cash / UPI at Shop)'}
-                          </span>
-                          <span className="text-[10px] text-slate-500">
-                            {orderType === 'dine_in'
-                              ? 'Pay physically at the shop / counter.'
-                              : 'Pay directly upon delivery or when you pick up.'}
-                          </span>
-                        </div>
-                      </label>
-                    );
-                  })()}
+                  {isOnlineAllowed ? (
+                    <label
+                      className="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all"
+                      style={{ borderColor: primaryColor, backgroundColor: `${primaryColor}08` }}
+                    >
+                      <input
+                        type="radio"
+                        name="payment"
+                        checked={true}
+                        readOnly
+                        className="w-4 h-4"
+                        style={{ accentColor: primaryColor }}
+                      />
+                      <div className="flex flex-col flex-1">
+                        <span className="text-sm font-semibold text-slate-850">Pay Online</span>
+                        <span className="text-[10px] text-slate-400">UPI, Cards, Netbanking. Fast & secure.</span>
+                      </div>
+                    </label>
+                  ) : (
+                    <label className="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all border-emerald-200 bg-emerald-50/40">
+                      <input
+                        type="radio"
+                        name="payment"
+                        checked={paymentMethod === 'cash'}
+                        onChange={() => setPaymentMethod('cash')}
+                        className="w-4 h-4 accent-emerald-600"
+                      />
+                      <div className="flex flex-col flex-1">
+                        <span className="text-sm font-semibold text-slate-850">
+                          {orderType === 'dine_in'
+                            ? 'Pay at Counter / Cash'
+                            : orderType === 'delivery'
+                            ? 'Pay on Delivery (Cash / UPI on Spot)'
+                            : 'Pay on Pickup (Cash / UPI at Shop)'}
+                        </span>
+                        <span className="text-[10px] text-slate-500">
+                          {orderType === 'dine_in'
+                            ? 'Pay physically at the shop / counter.'
+                            : 'Pay directly upon delivery or when you pick up.'}
+                        </span>
+                      </div>
+                    </label>
+                  )}
                 </div>
                 
-                {/* Payment Delay Note */}
-                <div className="mt-4 p-3 bg-blue-50/50 border border-blue-100 rounded-xl flex gap-2">
-                  <Info size={16} className="text-blue-500 shrink-0 mt-0.5" />
-                  <p className="text-[11px] text-blue-700 font-medium leading-snug">
-                    <span className="font-bold">Payment Option Unlocks Later:</span> You can pay only after {shop?.name || 'the shop'} accepts your order. This reduces cancellation rates and guarantees your order is prepared!
-                  </p>
-                </div>
+                {/* Payment Notice */}
+                {Boolean((shop?.settings as any)?.accept_after_payment) && isOnlineAllowed ? (
+                  <div className="mt-4 p-3 bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 rounded-xl flex gap-2">
+                    <ShieldCheck size={16} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                    <p className="text-[11px] text-amber-900 dark:text-amber-200 font-medium leading-snug">
+                      <span className="font-bold">Instant Payment Required:</span> Complete payment to confirm and place your order immediately.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="mt-4 p-3 bg-blue-50/50 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/40 rounded-xl flex gap-2">
+                    <Info size={16} className="text-blue-500 shrink-0 mt-0.5" />
+                    <p className="text-[11px] text-blue-700 dark:text-blue-300 font-medium leading-snug">
+                      <span className="font-bold">Payment Option Unlocks Later:</span> You can pay only after {shop?.name || 'the shop'} accepts your order. This reduces cancellation rates and guarantees your order is prepared!
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           )}

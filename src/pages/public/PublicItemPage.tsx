@@ -601,11 +601,11 @@ export function PublicItemPage() {
           </div>
         )}
 
-        {item.variants && item.variants.length > 0 && (
+        {item.variants && item.variants.filter(v => v.is_public_visible !== false).length > 0 && (
           <div className="mb-6">
             <h3 className="font-semibold text-sm mb-3 text-slate-700 dark:text-slate-300">Portion Size</h3>
             <div className="grid grid-cols-2 gap-2">
-              {item.variants.map((variant, idx) => (
+              {item.variants.filter(v => v.is_public_visible !== false).map((variant, idx) => (
                 <button
                   key={idx}
                   onClick={() => setSelectedVariantIdx(idx)}

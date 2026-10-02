@@ -238,7 +238,12 @@ function generateOrderBillText(order: any) {
   bill += `------------------------------\n`;
   bill += `🛒 *Items Summary:*\n${itemsText}\n`;
   bill += `------------------------------\n`;
-  bill += `💳 Payment: ${order.payment_method?.toUpperCase()} (${order.payment_status?.toUpperCase()})\n`;
+  if (order.payment_method === 'split' && order.split_payments?.length) {
+    const spText = order.split_payments.map((sp: any) => `${(sp.method || 'cash').toUpperCase()}: ₹${Number(sp.amount || 0).toFixed(2)}`).join(' + ');
+    bill += `💳 Payment: SPLIT [${spText}] (${order.payment_status?.toUpperCase()})\n`;
+  } else {
+    bill += `💳 Payment: ${order.payment_method?.toUpperCase()} (${order.payment_status?.toUpperCase()})\n`;
+  }
   bill += `💰 *Grand Total: ₹${hotelTotal.toFixed(2)}*\n`;
   bill += `------------------------------\n`;
   bill += `Thank you for ordering with us!`;
@@ -402,6 +407,25 @@ function getOrderStatusOptions(orderType?: string, paymentMethod?: string, payme
   // Completed or Cancelled orders cannot change status
   if (['COMPLETED', 'DELIVERED', 'CANCELLED', 'REJECTED'].includes(normStatus)) {
     return [];
+  }
+
+  if (normStatus === 'PENDING_VENDOR' || normStatus === 'PENDING') {
+    if (isPaid) {
+      return [
+        { value: 'PREPARING', label: 'Accept Order', cls: 'text-amber-700 bg-amber-50 border-amber-200', dot: 'bg-amber-500' },
+        { value: 'CANCELLED', label: 'Cancel & Refund', cls: 'text-rose-700 bg-rose-50 border-rose-200', dot: 'bg-rose-500' },
+      ];
+    }
+    if (isCash) {
+      return [
+        { value: 'PREPARING', label: 'Accept Order', cls: 'text-orange-700 bg-orange-50 border-orange-200', dot: 'bg-orange-500' },
+        { value: 'CANCELLED', label: 'Cancel', cls: 'text-rose-700 bg-rose-50 border-rose-200', dot: 'bg-rose-500' },
+      ];
+    }
+    return [
+      { value: 'PAYMENT_PENDING', label: 'Accept & Request Payment', cls: 'text-orange-700 bg-orange-50 border-orange-200', dot: 'bg-orange-500' },
+      { value: 'CANCELLED', label: 'Cancel', cls: 'text-rose-700 bg-rose-50 border-rose-200', dot: 'bg-rose-500' },
+    ];
   }
 
   const isAwaitingComplete = isPaid || normStatus === 'PREPARING' || normStatus === 'ACCEPTED' || normStatus === 'READY' || normStatus === 'OUT_FOR_DELIVERY';
@@ -1659,6 +1683,24 @@ export function OrdersPage() {
                             disabled={order.order_type === 'takeaway' && order.payment_method === 'online'}
                           />
                         </div>
+                        {/* Split Payments Breakdown Badges */}
+                        {order.split_payments && Array.isArray(order.split_payments) && order.split_payments.length > 0 && (
+                          <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                            {order.split_payments.map((sp: any, spIdx: number) => {
+                              const spMethod = (sp.method || 'cash').toUpperCase();
+                              const spAmt = Number(sp.amount || 0);
+                              return (
+                                <span
+                                  key={spIdx}
+                                  className="inline-flex items-center gap-1 text-[11px] font-bold font-mono px-2 py-0.5 rounded-md bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200/90 dark:border-slate-700 shadow-2xs"
+                                >
+                                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight">{spMethod}:</span>
+                                  <span className="text-primary font-black">{shop?.settings?.currency || '₹'}{spAmt.toFixed(2)}</span>
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
                         {order.payment_session_id && (
                           <div className="flex items-center gap-1 text-[10px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded max-w-fit">
                             <span className="font-bold text-[9px] text-slate-400">PAY ID:</span>
@@ -1763,7 +1805,7 @@ export function OrdersPage() {
 
                     {/* Tier 2: Operational Action Controls (Evenly Distributed Grid) */}
                     {(() => {
-                      const hasCancelBtn = isCancellable && order.payment_status !== 'paid';
+                      const hasCancelBtn = isCancellable;
                       const isRefundNeeded = order.payment_method === 'online' && (
                         ['refund_pending', 'refund_failed', 'awaiting_refund'].includes((order.payment_status || '').toLowerCase()) ||
                         (status === 'CANCELLED' && ['paid', 'partially_refunded'].includes((order.payment_status || '').toLowerCase()))
@@ -1893,15 +1935,18 @@ export function OrdersPage() {
                               size="sm"
                               className={`text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white h-9 shadow-xs px-4 justify-center w-full whitespace-nowrap ${hasCancelBtn ? 'col-span-1' : 'col-span-2'}`}
                               onClick={() => {
+                                const isPaid = (order.payment_status || '').toLowerCase() === 'paid';
                                 const isCash = order.payment_method === 'cash' || order.payment_method === 'cash_on_delivery' || order.payment_method === 'counter';
-                                const nextStatus = isCash ? 'PREPARING' : 'PAYMENT_PENDING';
+                                const nextStatus = (isPaid || isCash) ? 'PREPARING' : 'PAYMENT_PENDING';
                                 handleUpdateStatus(order.id, nextStatus);
                               }}
                               isLoading={updatingOrderId === order.id}
                             >
-                              {order.payment_method === 'cash' || order.payment_method === 'cash_on_delivery' || order.payment_method === 'counter'
+                              {(order.payment_status || '').toLowerCase() === 'paid'
                                 ? 'Accept Order'
-                                : 'Accept & Request Payment'}
+                                : (order.payment_method === 'cash' || order.payment_method === 'cash_on_delivery' || order.payment_method === 'counter'
+                                  ? 'Accept Order'
+                                  : 'Accept & Request Payment')}
                             </Button>
                           )}
 

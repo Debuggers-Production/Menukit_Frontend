@@ -702,6 +702,7 @@ export function SettingsPage() {
     online_payments_dinein_enabled: shop?.settings?.online_payments_dinein_enabled !== false,
     online_payments_takeaway_enabled: shop?.settings?.online_payments_takeaway_enabled !== false,
     online_payments_delivery_enabled: shop?.settings?.online_payments_delivery_enabled !== false,
+    accept_after_payment: shop?.settings?.accept_after_payment || false,
     bank_account_number: '',
     ifsc_code: shop?.settings?.ifsc_code || '',
     beneficiary_name: shop?.settings?.beneficiary_name || '',
@@ -714,6 +715,9 @@ export function SettingsPage() {
     sgst_rate: shop?.settings?.sgst_rate ?? 2.5,
     inclusive_tax: shop?.settings?.inclusive_tax || false,
     tax_invoice_notes: shop?.settings?.tax_invoice_notes || '',
+    serial_number_prefix: shop?.settings?.serial_number_prefix || '',
+    serial_number_digits: shop?.settings?.serial_number_digits || 3,
+    auto_serial_number_enabled: shop?.settings?.auto_serial_number_enabled || false,
   });
 
   const discoveryModInfo = subscriptionStatus?.module_expirations?.['hide-discovery-badge'];
@@ -723,10 +727,8 @@ export function SettingsPage() {
     : null;
 
   const isPaidDiscoveryActive = Boolean(
-    (
-      subscriptionStatus?.active_modules?.includes('hide-discovery-badge') ||
-      (settingsData.is_discoverable && settingsData.hide_discovery_badge)
-    ) &&
+    !subscriptionStatus?.is_all_access &&
+    subscriptionStatus?.active_modules?.includes('hide-discovery-badge') &&
     discoveryDaysLeft > 0 &&
     !subscriptionStatus?.is_expired
   );
@@ -770,6 +772,7 @@ export function SettingsPage() {
         online_payments_dinein_enabled: shop.settings.online_payments_dinein_enabled !== false,
         online_payments_takeaway_enabled: shop.settings.online_payments_takeaway_enabled !== false,
         online_payments_delivery_enabled: shop.settings.online_payments_delivery_enabled !== false,
+        accept_after_payment: shop.settings.accept_after_payment || false,
         bank_account_number: '',
         ifsc_code: shop.settings.ifsc_code || '',
         beneficiary_name: shop.settings.beneficiary_name || '',
@@ -782,6 +785,9 @@ export function SettingsPage() {
         sgst_rate: shop.settings.sgst_rate ?? 2.5,
         inclusive_tax: shop.settings.inclusive_tax || false,
         tax_invoice_notes: shop.settings.tax_invoice_notes || '',
+        serial_number_prefix: shop.settings.serial_number_prefix || '',
+        serial_number_digits: shop.settings.serial_number_digits || 3,
+        auto_serial_number_enabled: shop.settings.auto_serial_number_enabled || false,
       });
     }
   }, [shop]);
@@ -824,6 +830,7 @@ export function SettingsPage() {
         takeaway_enabled: isVerified ? settingsData.takeaway_enabled : false,
         delivery_enabled: isVerified ? settingsData.delivery_enabled : false,
         auto_accept_orders: isVerified ? settingsData.auto_accept_orders : false,
+        accept_after_payment: isVerified ? Boolean(settingsData.accept_after_payment) : false,
       };
       
       const res = await api.put('/shops/me/settings', payload);
@@ -1667,6 +1674,88 @@ export function SettingsPage() {
               </CardContent>
             </Card>
 
+            {/* Product Serial Number & SKU Configuration */}
+            <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs animate-in fade-in duration-300">
+              <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-slate-50/50 dark:bg-slate-900/50">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+                    <Tag size={20} />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base font-bold">Product Serial Number & SKU</CardTitle>
+                    <CardDescription className="text-xs">Configure auto-generation format, prefix, and digits padding for product serial numbers.</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="p-4 sm:p-6 space-y-5">
+                <SettingRow
+                  icon={Sparkles}
+                  title="Auto-Generate Serial Numbers"
+                  description="Automatically generate the next sequential serial number when adding new products."
+                  checked={settingsData.auto_serial_number_enabled}
+                  onChange={(checked) => setSettingsData(prev => ({ ...prev, auto_serial_number_enabled: checked }))}
+                />
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50/60 dark:bg-slate-800/40 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                      Prefix (Optional)
+                    </label>
+                    <Input
+                      value={settingsData.serial_number_prefix}
+                      onChange={(e) => setSettingsData(prev => ({ ...prev, serial_number_prefix: e.target.value }))}
+                      placeholder="e.g. CRK-, C-, SKU-"
+                      className="bg-white dark:bg-slate-900"
+                    />
+                    <p className="text-[11px] text-muted-foreground">Appended before sequence number (e.g. C-101)</p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                      Number Digits Padding
+                    </label>
+                    <SearchableSelect
+                      options={[
+                        { id: '1', name: '1 Digit (1, 2, 3...)' },
+                        { id: '2', name: '2 Digits (01, 02...)' },
+                        { id: '3', name: '3 Digits (001, 002...)' },
+                        { id: '4', name: '4 Digits (0001, 0002...)' },
+                        { id: '5', name: '5 Digits (00001, 00002...)' },
+                      ]}
+                      value={String(settingsData.serial_number_digits || 3)}
+                      onChange={(val) => setSettingsData(prev => ({ ...prev, serial_number_digits: parseInt(val, 10) || 3 }))}
+                      showSearch={false}
+                      className="bg-white dark:bg-slate-900"
+                    />
+                    <p className="text-[11px] text-muted-foreground">Minimum number of digits with zero-padding</p>
+                  </div>
+                </div>
+
+                {/* Live Preview Box */}
+                <div className="p-3.5 bg-purple-50/70 dark:bg-purple-950/30 border border-purple-200/80 dark:border-purple-800/60 rounded-xl flex items-center justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <span className="text-[11px] font-bold text-purple-900 dark:text-purple-200 flex items-center gap-1.5">
+                      <Eye size={13} className="text-purple-600" /> Live Format Preview
+                    </span>
+                    <p className="text-xs text-purple-700 dark:text-purple-300 font-mono font-bold">
+                      {settingsData.serial_number_prefix}{String(1).padStart(settingsData.serial_number_digits || 3, '0')},&nbsp;
+                      {settingsData.serial_number_prefix}{String(2).padStart(settingsData.serial_number_digits || 3, '0')},&nbsp;
+                      {settingsData.serial_number_prefix}{String(3).padStart(settingsData.serial_number_digits || 3, '0')}, ...
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleSaveShopSettings}
+                    disabled={isSavingSettings}
+                    className="shrink-0 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-lg"
+                  >
+                    {isSavingSettings ? 'Saving...' : 'Save Format'}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
             {/* App Version & Mode Card */}
             <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs animate-in fade-in duration-300">
               <CardContent className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -1766,7 +1855,7 @@ export function SettingsPage() {
                       disabled={!isBankVerified}
                     />
 
-                    {isBankVerified && settingsData.dinein_enabled && (
+                    {isBankVerified && settingsData.dinein_enabled && businessCategory.isFood && (
                       <div className="py-3 px-4 sm:px-5 bg-amber-50/60 dark:bg-amber-950/20 rounded-2xl border border-amber-200/80 dark:border-amber-900/40 my-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all">
                         <div className="space-y-0.5">
                           <div className="flex items-center gap-2">
@@ -1832,6 +1921,21 @@ export function SettingsPage() {
                       onChange={(c) => {
                         if (isBankVerified) {
                           setSettingsData(prev => ({ ...prev, auto_accept_orders: c }));
+                        } else {
+                          toast.error("Please add and verify your settlement bank account first.");
+                        }
+                      }}
+                      disabled={!isBankVerified}
+                    />
+
+                    <SettingRow
+                      icon={CreditCard}
+                      title="Accept Orders Only After Payment"
+                      description="When enabled, online orders placed via the public menu must be paid upfront before the order is accepted. When disabled (default), the order is submitted first for merchant acceptance, and then the customer pays."
+                      checked={isBankVerified && settingsData.accept_after_payment}
+                      onChange={(c) => {
+                        if (isBankVerified) {
+                          setSettingsData(prev => ({ ...prev, accept_after_payment: c }));
                         } else {
                           toast.error("Please add and verify your settlement bank account first.");
                         }
