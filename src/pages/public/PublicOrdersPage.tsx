@@ -733,7 +733,8 @@ export function PublicOrdersPage() {
                       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 pt-1">
                         {(() => {
                           const allItems = order.items || [];
-                          const allItemsSubtotal = allItems.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+                          const presentedItems = allItems.filter((it: any) => !String(it.cancellation_reason || '').startsWith('Replaced with'));
+                          const allItemsSubtotal = presentedItems.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
                           const activeItems = allItems.filter((it: any) => !it.is_cancelled);
                           const activeItemsSubtotal = activeItems.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
                           const rawTotal = Number(order.total_amount || 0);
@@ -742,9 +743,21 @@ export function PublicOrdersPage() {
                           const totalTaxRate = cgstRate + sgstRate;
                           
                           const targetSubtotal = isCancelled && activeItemsSubtotal === 0 ? allItemsSubtotal : activeItemsSubtotal;
-                          let computedBase = rawTotal > 0 ? rawTotal : targetSubtotal;
+                          let computedBase = rawTotal > 0 ? (isCancelled && activeItemsSubtotal === 0 ? allItemsSubtotal : rawTotal) : targetSubtotal;
                           if (shop?.settings?.gst_enabled && totalTaxRate > 0 && !shop?.settings?.inclusive_tax && rawTotal === 0) {
                             computedBase = Math.round((targetSubtotal + (targetSubtotal * totalTaxRate / 100)) * 100) / 100;
+                          }
+
+                          // Replaced items credit deduction for unpaid replacement differences
+                          const replacedCredit = isUnpaid ? (order.items || []).reduce((acc: number, it: any) => {
+                            if (it.is_cancelled && String(it.cancellation_reason || '').startsWith('Replaced with')) {
+                              return acc + (Number(it.price || 0) * Number(it.quantity || 1));
+                            }
+                            return acc;
+                          }, 0) : 0;
+
+                          if (replacedCredit > 0 && isUnpaid) {
+                            computedBase = Math.max(0, computedBase - replacedCredit);
                           }
 
                           // Calculate actual grand total (including online payment convenience & gateway fees if paid online)
@@ -838,19 +851,21 @@ export function PublicOrdersPage() {
       </div>
 
       {/* 🏷️ Zomato District Style Side Tab (Clings to right wall) */}
-      <div 
-        className="fixed right-0 bottom-24 z-50 transition-transform duration-300 ease-in-out"
-        style={{ transform: isScrollingDown ? 'translateX(100%)' : 'translateX(0)' }}
-      >
-        <button
-          onClick={() => navigate('/discover')}
-          className="flex items-center justify-center gap-1.5 pl-4 pr-3 h-[42px] rounded-l-full font-black text-white shadow-[0_4px_16px_rgba(0,0,0,0.15)] border-l border-y border-white/20 active:scale-95 group transition-transform hover:brightness-110"
-          style={{ backgroundColor: primaryColor }}
+      {shop?.settings?.is_discoverable !== false && !shop?.settings?.hide_discovery_badge && (
+        <div 
+          className="fixed right-0 bottom-24 z-50 transition-transform duration-300 ease-in-out"
+          style={{ transform: isScrollingDown ? 'translateX(100%)' : 'translateX(0)' }}
         >
-          <span className="tracking-wide text-xs">Discover</span>
-          <ArrowUpRight size={14} strokeWidth={3} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
-        </button>
-      </div>
+          <button
+            onClick={() => navigate('/discover')}
+            className="flex items-center justify-center gap-1.5 pl-4 pr-3 h-[42px] rounded-l-full font-black text-white shadow-[0_4px_16px_rgba(0,0,0,0.15)] border-l border-y border-white/20 active:scale-95 group transition-transform hover:brightness-110"
+            style={{ backgroundColor: primaryColor }}
+          >
+            <span className="tracking-wide text-xs">Discover</span>
+            <ArrowUpRight size={14} strokeWidth={3} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+          </button>
+        </div>
+      )}
 
       {/* 🧱 Premium Floating Bottom Asymmetric Sized Navigation Dock Frame */}
       <div 

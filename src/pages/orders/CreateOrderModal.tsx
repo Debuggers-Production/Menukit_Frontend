@@ -1043,7 +1043,7 @@ export function CreateOrderModal({
     }
   };
 
-  // Global Keyboard Shortcuts (Ctrl+N, Ctrl+Enter, Ctrl+B, Escape, F2)
+  // Global Keyboard Shortcuts (Ctrl+Enter, Ctrl+B, Escape, F2)
   useEffect(() => {
     if (!isOpen) return;
 
@@ -2384,11 +2384,11 @@ export function CreateOrderModal({
                 <Keyboard size={13} className="text-primary" />
                 {step === 1 ? (
                   <span>
-                    <strong className="text-foreground font-mono">[Enter]</strong> Select & Qty • <strong className="text-foreground font-mono">[↑/↓]</strong> Qty • <strong className="text-foreground font-mono">[Ctrl+N]</strong> Next
+                    <strong className="text-foreground font-mono">[Enter]</strong> Select & Qty • <strong className="text-foreground font-mono">[↑/↓]</strong> Qty • <strong className="text-foreground font-mono">[Ctrl+Enter]</strong> Next
                   </span>
                 ) : (
                   <span>
-                    <strong className="text-foreground font-mono">[Ctrl+N]</strong> or <strong className="text-foreground font-mono">[Ctrl+Enter]</strong> Create Order • <strong className="text-foreground font-mono">[Ctrl+B]</strong> Back
+                    <strong className="text-foreground font-mono">[Ctrl+Enter]</strong> Create Order • <strong className="text-foreground font-mono">[Ctrl+B]</strong> Back
                   </span>
                 )}
               </div>
@@ -2406,7 +2406,7 @@ export function CreateOrderModal({
                 ) : (
                   <>
                     <span>Next (₹{gstCalculation.finalTotal.toFixed(2)})</span>
-                    <span className="hidden sm:inline-flex text-[10px] font-mono bg-white/20 px-1.5 py-0.5 rounded">Ctrl+N</span>
+                    <span className="hidden sm:inline-flex text-[10px] font-mono bg-white/20 px-1.5 py-0.5 rounded">Ctrl+Enter</span>
                     <ArrowRight size={16} />
                   </>
                 )}
@@ -2419,7 +2419,7 @@ export function CreateOrderModal({
               >
                 <Check size={16} />
                 <span>Create Order (₹{gstCalculation.finalTotal.toFixed(2)})</span>
-                <span className="hidden sm:inline-flex text-[10px] font-mono bg-white/20 px-1.5 py-0.5 rounded">Ctrl+N</span>
+                <span className="hidden sm:inline-flex text-[10px] font-mono bg-white/20 px-1.5 py-0.5 rounded">Ctrl+Enter</span>
               </Button>
             )}
           </>

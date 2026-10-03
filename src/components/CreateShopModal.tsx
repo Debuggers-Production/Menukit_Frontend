@@ -4,6 +4,7 @@ import { toast } from 'react-hot-toast';
 import { api } from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
 import { BUSINESS_CATEGORIES } from '@/config/businessCategories';
+import { SearchableSelect } from '@/components/ui/SearchableSelect';
 
 interface CreateShopModalProps {
   isOpen: boolean;
@@ -30,13 +31,24 @@ export function CreateShopModal({ isOpen, onClose, ownedShops = [], onSuccess }:
   const { user } = useAuthStore();
   const [name, setName] = useState('');
   const [category, setCategory] = useState('restaurants_cafes_hotels');
-  const [description, setDescription] = useState('');
-  const [phone, setPhone] = useState('');
-  const [address, setAddress] = useState('');
   const [cloneFromShopId, setCloneFromShopId] = useState<string>(ownedShops[0]?.id || '');
   
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [pricingInfo, setPricingInfo] = useState<{ required: boolean; amount: number; currency: string } | null>(null);
+  const [pricingInfo, setPricingInfo] = useState<{
+    required: boolean;
+    base_amount: number;
+    pg_fee: number;
+    gst_on_fee: number;
+    amount: number;
+    currency: string;
+  }>({
+    required: true,
+    base_amount: 50,
+    pg_fee: 1.50,
+    gst_on_fee: 0.27,
+    amount: 51.77,
+    currency: 'INR'
+  });
   const [loadingPricing, setLoadingPricing] = useState(false);
 
   const isAdditionalShop = ownedShops.length > 0;
@@ -44,9 +56,7 @@ export function CreateShopModal({ isOpen, onClose, ownedShops = [], onSuccess }:
   useEffect(() => {
     if (isOpen) {
       setName('');
-      setDescription('');
-      setPhone(user?.phone || '');
-      setAddress('');
+      setCategory('restaurants_cafes_hotels');
       setCloneFromShopId(ownedShops[0]?.id || '');
 
       const checkPricing = async () => {
@@ -54,15 +64,21 @@ export function CreateShopModal({ isOpen, onClose, ownedShops = [], onSuccess }:
         try {
           const res = await api.post('/shops/additional-shop-order');
           setPricingInfo({
-            required: res.data.required ?? isAdditionalShop,
-            amount: res.data.amount ?? 50,
+            required: res.data.required ?? true,
+            base_amount: res.data.base_amount ?? 50,
+            pg_fee: res.data.pg_fee ?? 1.50,
+            gst_on_fee: res.data.gst_on_fee ?? 0.27,
+            amount: res.data.amount ?? 51.77,
             currency: res.data.currency || 'INR'
           });
         } catch (err) {
-          console.error("Failed to check additional shop pricing", err);
+          console.error("Failed to check shop creation pricing", err);
           setPricingInfo({
-            required: isAdditionalShop,
-            amount: 50,
+            required: true,
+            base_amount: 50,
+            pg_fee: 1.50,
+            gst_on_fee: 0.27,
+            amount: 51.77,
             currency: 'INR'
           });
         } finally {
@@ -96,13 +112,10 @@ export function CreateShopModal({ isOpen, onClose, ownedShops = [], onSuccess }:
       const payload: any = {
         name: name.trim(),
         category,
-        description: description.trim() || undefined,
-        phone: phone.trim() || undefined,
-        address: address.trim() || undefined,
         clone_from_shop_id: cloneFromShopId || undefined,
       };
 
-      // 1. If additional shop payment is required, initiate order & payment
+      // 1. If shop creation payment is required, initiate order & payment
       if (pricingInfo?.required) {
         const orderRes = await api.post('/shops/additional-shop-order');
         const orderData = orderRes.data;
@@ -128,7 +141,7 @@ export function CreateShopModal({ isOpen, onClose, ownedShops = [], onSuccess }:
                 amount: Math.round(orderData.amount * 100),
                 currency: orderData.currency || 'INR',
                 name: 'Menukit QR',
-                description: `Additional Shop Add-on (₹${orderData.amount}/mo)`,
+                description: isAdditionalShop ? `Additional Branch Setup (₹${orderData.amount})` : `Shop Creation Fee (₹${orderData.amount})`,
                 order_id: orderData.order_id,
                 prefill: {
                   name: user?.email?.split('@')[0] || 'Merchant',
@@ -197,17 +210,17 @@ export function CreateShopModal({ isOpen, onClose, ownedShops = [], onSuccess }:
             </div>
             <div>
               <h3 className="font-heading font-black text-lg text-slate-900 dark:text-white leading-tight">
-                {isAdditionalShop ? 'Create New Branch / Shop' : 'Create Your First Shop'}
+                {isAdditionalShop ? 'Create New Branch / Shop' : 'Create New Shop'}
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                {isAdditionalShop ? 'Add an additional branch to your merchant account' : 'Set up your primary store details'}
+                {isAdditionalShop ? 'Add an additional branch to your merchant account' : 'Set up your store and start managing your menu'}
               </p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           >
             <X size={18} />
           </button>
@@ -215,8 +228,8 @@ export function CreateShopModal({ isOpen, onClose, ownedShops = [], onSuccess }:
 
         {/* Modal Form Content */}
         <form onSubmit={handleSubmit} className="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-4">
-          {/* Add-on Pricing Badge */}
-          {isAdditionalShop && (
+          {/* Shop Creation Pricing Badge */}
+          {pricingInfo?.required && (
             <div className="p-4 rounded-2xl bg-orange-50/80 dark:bg-orange-950/30 border border-orange-200/80 dark:border-orange-800/50 flex items-start gap-3">
               <div className="w-8 h-8 rounded-xl bg-orange-500/10 text-orange-600 dark:text-orange-400 flex items-center justify-center shrink-0 mt-0.5">
                 <CreditCard size={18} />
@@ -224,15 +237,21 @@ export function CreateShopModal({ isOpen, onClose, ownedShops = [], onSuccess }:
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-heading font-black text-sm text-orange-950 dark:text-orange-200">
-                    Additional Branch Add-on
+                    {isAdditionalShop ? 'Additional Branch Fee' : 'One-Time Shop Creation Fee'}
                   </span>
                   <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-orange-500 text-white shadow-sm">
-                    ₹50 / month
+                    ₹{pricingInfo.amount.toFixed(2)} Total
                   </span>
                 </div>
                 <p className="text-xs text-orange-800/80 dark:text-orange-300/80 mt-1 leading-relaxed">
-                  Automatically shares your primary store’s active subscription plan, unlocked modules, and customized catalog.
+                  {isAdditionalShop 
+                    ? `One-time ₹${pricingInfo.base_amount.toFixed(0)} fee + ₹${(pricingInfo.pg_fee + pricingInfo.gst_on_fee).toFixed(2)} payment gateway fee (3% + 18% GST). Automatically links with your account.` 
+                    : `One-time ₹${pricingInfo.base_amount.toFixed(0)} setup fee + ₹${(pricingInfo.pg_fee + pricingInfo.gst_on_fee).toFixed(2)} payment gateway fee (3% + 18% GST).`}
                 </p>
+                <div className="mt-2.5 pt-2 border-t border-orange-200/60 dark:border-orange-800/40 flex items-center justify-between text-[11px] text-orange-900/80 dark:text-orange-200/80 font-medium">
+                  <span>Base: ₹{pricingInfo.base_amount.toFixed(2)} • PG (3%): ₹{pricingInfo.pg_fee.toFixed(2)} • GST (18%): ₹{pricingInfo.gst_on_fee.toFixed(2)}</span>
+                  <strong className="font-bold text-orange-700 dark:text-orange-300">Total: ₹{pricingInfo.amount.toFixed(2)}</strong>
+                </div>
               </div>
             </div>
           )}
@@ -247,7 +266,7 @@ export function CreateShopModal({ isOpen, onClose, ownedShops = [], onSuccess }:
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Siva Hotel - Branch 2"
+              placeholder="e.g. Siva Hotel & Cafe"
               className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 text-slate-900 dark:text-white placeholder:text-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-medium"
             />
           </div>
@@ -257,17 +276,17 @@ export function CreateShopModal({ isOpen, onClose, ownedShops = [], onSuccess }:
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
               Business Category
             </label>
-            <select
+            <SearchableSelect
+              options={BUSINESS_CATEGORIES.map((cat) => ({
+                id: cat.id,
+                name: cat.label,
+                subtext: cat.shortLabel ? `(${cat.shortLabel})` : undefined
+              }))}
               value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-medium cursor-pointer"
-            >
-              {BUSINESS_CATEGORIES.map((cat) => (
-                <option key={cat.id} value={cat.id}>
-                  {cat.label}
-                </option>
-              ))}
-            </select>
+              onChange={(val) => setCategory(val)}
+              placeholder="Select business category"
+              showSearch={false}
+            />
           </div>
 
           {/* Menu Sharing / Clone Option (if user has existing shops) */}
@@ -316,48 +335,6 @@ export function CreateShopModal({ isOpen, onClose, ownedShops = [], onSuccess }:
             </div>
           )}
 
-          {/* Optional Phone & Address */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
-                Contact Phone
-              </label>
-              <input
-                type="text"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="+91 9876543210"
-                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 text-slate-900 dark:text-white placeholder:text-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-medium"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
-                Area / City
-              </label>
-              <input
-                type="text"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="e.g. Gandhinagar, Bengaluru"
-                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 text-slate-900 dark:text-white placeholder:text-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-medium"
-              />
-            </div>
-          </div>
-
-          {/* Short Description */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
-              Tagline / Description (Optional)
-            </label>
-            <input
-              type="text"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="e.g. Delicious South Indian meals & filter coffee"
-              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 text-slate-900 dark:text-white placeholder:text-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-medium"
-            />
-          </div>
-
           {/* Action Button */}
           <div className="pt-2">
             <button
@@ -370,16 +347,16 @@ export function CreateShopModal({ isOpen, onClose, ownedShops = [], onSuccess }:
                   <Loader2 className="w-5 h-5 animate-spin" />
                   <span>Processing Setup...</span>
                 </>
-              ) : isAdditionalShop ? (
+              ) : pricingInfo?.required ? (
                 <>
                   <CreditCard className="w-4 h-4" />
-                  <span>Pay ₹50 & Create Branch</span>
+                  <span>Pay ₹{pricingInfo.amount.toFixed(2)} & {isAdditionalShop ? 'Create Branch' : 'Create Shop'}</span>
                   <ArrowRight className="w-4 h-4 ml-1" />
                 </>
               ) : (
                 <>
                   <Sparkles className="w-4 h-4" />
-                  <span>Create Free Shop</span>
+                  <span>{isAdditionalShop ? 'Create Branch' : 'Create Shop'}</span>
                 </>
               )}
             </button>

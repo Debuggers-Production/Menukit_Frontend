@@ -26,6 +26,7 @@ import { PageContainer } from '@/components/ui/PageContainer';
 import { useHeaderStore } from '@/store/useHeaderStore';
 import { HeaderActions } from '@/components/HeaderActions';
 import { CreateOrderModal } from '@/pages/orders/CreateOrderModal';
+import { formatLocalDateTime, formatLocalDate } from '@/utils/dateTime';
 
 export function DashboardPage() {
   const [stats, setStats] = useState<any>(null);
@@ -272,7 +273,7 @@ export function DashboardPage() {
                       </p>
 
                       <p className="text-xs text-slate-500">
-                        {new Date(activity.created_at).toLocaleString()}
+                        {formatLocalDateTime(activity.created_at)}
                       </p>
                     </div>
                   </div>
@@ -316,7 +317,7 @@ export function DashboardPage() {
                     )}
                     <div className="flex justify-between items-center text-[10px] text-slate-400">
                       <span className="font-medium">{review.reviewer_name}</span>
-                      <span>{review.created_at}</span>
+                      <span>{formatLocalDate(review.created_at)}</span>
                     </div>
                   </div>
                 ))}

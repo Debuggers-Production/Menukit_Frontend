@@ -11,6 +11,7 @@ import { Lightbox } from '@/components/ui/Lightbox';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { DiscountUnlockPopup } from '@/components/public/DiscountUnlockPopup';
 import { useCartStore, useShopCart } from '@/store/cartStore';
+import { getItemMultiplier } from '@/utils/itemMultiplier';
 import toast from 'react-hot-toast';
 
 const PRESET_TIMINGS: Record<string, string> = {
@@ -867,26 +868,33 @@ export function PublicItemPage() {
               <>
                 {/* Cart Item Quantity Selector */}
                 <div className="flex items-center gap-2 px-2 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-xl animate-[fadeIn_0.3s_ease-out]">
-                  <button 
-                    onClick={() => {
-                      if (existingCartItem.quantity > 1) {
-                        updateQuantity(existingCartItem.id, -1);
-                      } else {
-                        removeFromCart(existingCartItem.id);
-                        toast.success(`Removed ${item.name} from cart`);
-                      }
-                    }}
-                    className="w-7 h-7 flex items-center justify-center rounded-lg bg-white dark:bg-slate-700 shadow-sm text-slate-700 dark:text-slate-200 active:scale-95 transition-transform"
-                  >
-                    <Minus size={14} />
-                  </button>
-                  <span className="font-bold w-4 text-center text-sm">{existingCartItem.quantity}</span>
-                  <button 
-                    onClick={() => updateQuantity(existingCartItem.id, 1)}
-                    className="w-7 h-7 flex items-center justify-center rounded-lg bg-white dark:bg-slate-700 shadow-sm text-slate-700 dark:text-slate-200 active:scale-95 transition-transform"
-                  >
-                    <Plus size={14} />
-                  </button>
+                  {(() => {
+                    const itemStep = getItemMultiplier(item, existingCartItem.selectedVariantIdx);
+                    return (
+                      <>
+                        <button 
+                          onClick={() => {
+                            if (existingCartItem.quantity > itemStep) {
+                              updateQuantity(existingCartItem.id, -itemStep);
+                            } else {
+                              removeFromCart(existingCartItem.id);
+                              toast.success(`Removed ${item.name} from cart`);
+                            }
+                          }}
+                          className="w-7 h-7 flex items-center justify-center rounded-lg bg-white dark:bg-slate-700 shadow-sm text-slate-700 dark:text-slate-200 active:scale-95 transition-transform"
+                        >
+                          <Minus size={14} />
+                        </button>
+                        <span className="font-bold min-w-5 text-center text-sm px-1">{existingCartItem.quantity}</span>
+                        <button 
+                          onClick={() => updateQuantity(existingCartItem.id, itemStep)}
+                          className="w-7 h-7 flex items-center justify-center rounded-lg bg-white dark:bg-slate-700 shadow-sm text-slate-700 dark:text-slate-200 active:scale-95 transition-transform"
+                        >
+                          <Plus size={14} />
+                        </button>
+                      </>
+                    );
+                  })()}
                 </div>
 
                 {/* View Cart Button */}
@@ -915,11 +923,12 @@ export function PublicItemPage() {
               <button
                 onClick={(e) => {
                   if (id && item) {
+                    const initialQty = getItemMultiplier(item, selectedVariantIdx);
                     addToCart(id, {
                       menuItem: item,
                       selectedVariantIdx,
                       selectedAddons,
-                      quantity: 1
+                      quantity: initialQty
                     });
                     
                     // Trigger falling/flying clone animation from main image to the clicked bottom button

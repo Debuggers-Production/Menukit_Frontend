@@ -5,7 +5,7 @@ import {
   QrCode, Eye, Search, CalendarDays, Filter, Users, Lock, ChevronRight, ChevronLeft,
   TrendingUp, TrendingDown, DollarSign, Receipt, ShoppingBag, Trophy, 
   Sparkles, Download, ExternalLink, ArrowUpRight, Wallet, FileText, Calendar, CheckCircle2, CreditCard, Banknote,
-  PieChart, Smartphone
+  PieChart, Smartphone, Package, Layers, BarChart2, ArrowLeft, Tag, ArrowUpDown, Check
 } from 'lucide-react';
 import { api } from '@/services/api';
 import toast from 'react-hot-toast';
@@ -21,6 +21,9 @@ import { membershipService, RepeatedCustomer } from '@/services/memberships';
 import { InfiniteScrollTrigger } from '@/components/ui/InfiniteScrollTrigger';
 
 import { Button } from '@/components/ui/Button';
+import { SearchableSelect } from '@/components/ui/SearchableSelect';
+import { cn } from '@/utils/cn';
+import { formatLocalDateTime } from '@/utils/dateTime';
 
 export function AnalyticsPage() {
   const navigate = useNavigate();
@@ -28,9 +31,130 @@ export function AnalyticsPage() {
   const businessCategory = getBusinessCategory(shop?.category);
   const currencySymbol = shop?.currency_symbol || '₹';
 
-  const [activeTab, setActiveTab] = useState<'revenue' | 'scans' | 'gst'>('revenue');
+  const [activeTab, setActiveTab] = useState<'revenue' | 'products' | 'scans' | 'gst'>('revenue');
   const [data, setData] = useState<any>(null);
   const [revenueData, setRevenueData] = useState<any>(null);
+  const [productSalesData, setProductSalesData] = useState<any>(null);
+  const [isProductSalesLoading, setIsProductSalesLoading] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
+  const [productSearch, setProductSearch] = useState('');
+  const [productSortBy, setProductSortBy] = useState<'revenue' | 'quantity' | 'name'>('revenue');
+  const [hoveredDailyStat, setHoveredDailyStat] = useState<any>(null);
+  const [hoveredRevenueDay, setHoveredRevenueDay] = useState<any>(null);
+  const [hoveredScanDay, setHoveredScanDay] = useState<any>(null);
+
+  // Product Dropdown Async Search & Pagination
+  const [dropdownSearch, setDropdownSearch] = useState('');
+  const [dropdownProducts, setDropdownProducts] = useState<any[]>([]);
+  const [dropdownSkip, setDropdownSkip] = useState(0);
+  const [dropdownHasMore, setDropdownHasMore] = useState(true);
+  const [isDropdownLoading, setIsDropdownLoading] = useState(false);
+  const [isDropdownLoadingMore, setIsDropdownLoadingMore] = useState(false);
+
+  const DROPDOWN_PAGE_SIZE = 20;
+
+  const fetchDropdownProducts = useCallback(async (query: string, skipVal: number, append: boolean = false) => {
+    if (append) {
+      setIsDropdownLoadingMore(true);
+    } else {
+      setIsDropdownLoading(true);
+    }
+    try {
+      const params = new URLSearchParams();
+      if (query.trim()) {
+        params.append('search', query.trim());
+      }
+      params.append('skip', String(skipVal));
+      params.append('limit', String(DROPDOWN_PAGE_SIZE));
+      
+      const res = await api.get(`/menu-items?${params.toString()}`);
+      const items = res.data || [];
+      
+      if (append) {
+        setDropdownProducts(prev => {
+          const existingIds = new Set(prev.map((it: any) => it.id));
+          const newItems = items.filter((it: any) => !existingIds.has(it.id));
+          return [...prev, ...newItems];
+        });
+      } else {
+        setDropdownProducts(items);
+      }
+      setDropdownHasMore(items.length >= DROPDOWN_PAGE_SIZE);
+      setDropdownSkip(skipVal + items.length);
+    } catch (err) {
+      console.error('Failed to fetch products for dropdown', err);
+    } finally {
+      setIsDropdownLoading(false);
+      setIsDropdownLoadingMore(false);
+    }
+  }, []);
+
+  // Debounced search for dropdown
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      fetchDropdownProducts(dropdownSearch, 0, false);
+    }, 250);
+    return () => clearTimeout(handler);
+  }, [dropdownSearch, fetchDropdownProducts]);
+
+  const handleDropdownLoadMore = useCallback(() => {
+    if (dropdownHasMore && !isDropdownLoadingMore && !isDropdownLoading) {
+      fetchDropdownProducts(dropdownSearch, dropdownSkip, true);
+    }
+  }, [dropdownHasMore, isDropdownLoadingMore, isDropdownLoading, dropdownSearch, dropdownSkip, fetchDropdownProducts]);
+
+  const productDropdownOptions = useMemo(() => {
+    const salesMap = new Map<string, any>();
+    (productSalesData?.products || []).forEach((p: any) => {
+      if (p.name) salesMap.set(p.name.toLowerCase(), p);
+      if (p.item_id) salesMap.set(String(p.item_id), p);
+    });
+
+    const optionsList: any[] = [
+      {
+        id: 'all',
+        name: 'Overall (All Products)',
+        icon: <ShoppingBag size={15} className="text-primary shrink-0" />,
+        subtext: productSalesData?.total_products_sold_count ? `${productSalesData.total_products_sold_count} sold • ${currencySymbol}${productSalesData.total_product_revenue}` : undefined,
+      }
+    ];
+
+    // If selectedProduct is not 'all' and not yet in dropdownProducts, add it so it displays nicely
+    if (selectedProduct && selectedProduct !== 'all') {
+      const isAlreadyInList = dropdownProducts.some((it: any) => it.name === selectedProduct);
+      if (!isAlreadyInList) {
+        const stats = salesMap.get(selectedProduct.toLowerCase());
+        optionsList.push({
+          id: selectedProduct,
+          name: selectedProduct,
+          icon: stats?.image_url ? (
+            <img src={stats.image_url} alt={selectedProduct} className="w-5 h-5 rounded-md object-cover shrink-0 border border-slate-200 dark:border-slate-700" />
+          ) : (
+            <Package size={15} className="text-slate-400 shrink-0" />
+          ),
+          subtext: stats ? `${stats.total_quantity_sold} sold • ${currencySymbol}${stats.total_revenue}` : undefined,
+        });
+      }
+    }
+
+    dropdownProducts.forEach((item: any) => {
+      const stats = salesMap.get(item.name?.toLowerCase()) || (item.id ? salesMap.get(String(item.id)) : null);
+      const imgUrl = item.images?.[0]?.image_url || item.image_url || stats?.image_url;
+      optionsList.push({
+        id: item.name,
+        name: item.name,
+        icon: imgUrl ? (
+          <img src={imgUrl} alt={item.name} className="w-5 h-5 rounded-md object-cover shrink-0 border border-slate-200 dark:border-slate-700" />
+        ) : (
+          <Package size={15} className="text-slate-400 shrink-0" />
+        ),
+        subtext: stats ? `${stats.total_quantity_sold} sold • ${currencySymbol}${stats.total_revenue}` : '0 sold',
+      });
+    });
+
+    return optionsList;
+  }, [dropdownProducts, selectedProduct, productSalesData, currencySymbol]);
+
   const [gstData, setGstData] = useState<any>(null);
   const [isGstLoading, setIsGstLoading] = useState(false);
   const [gstSearch, setGstSearch] = useState('');
@@ -81,6 +205,100 @@ export function AnalyticsPage() {
     return `/analytics/revenue?days=${typeof dateFilter === 'number' ? dateFilter : 30}`;
   };
 
+  const getProductSalesApiUrl = (productName = selectedProduct, search = productSearch) => {
+    const params = new URLSearchParams();
+    if (dateFilter === 'custom' && customStart && customEnd) {
+      params.append('start_date', customStart);
+      params.append('end_date', customEnd);
+    } else {
+      params.append('days', String(typeof dateFilter === 'number' ? dateFilter : 30));
+    }
+    if (productName && productName !== 'all') {
+      params.append('product_name', productName);
+    }
+    if (search && search.trim()) {
+      params.append('search', search.trim());
+    }
+    return `/analytics/product-sales?${params.toString()}`;
+  };
+
+  const handleExportProductSalesCsv = () => {
+    if (!productSalesData || !productSalesData.products || productSalesData.products.length === 0) {
+      toast.error("No product sales data available to export.");
+      return;
+    }
+    const isDrilldown = Boolean(selectedProduct && selectedProduct !== 'all');
+    let headers: string[];
+    let rows: (string | number)[][];
+
+    if (isDrilldown) {
+      if ((productSalesData.recent_sales || []).length > 0) {
+        // Full order-level transaction details in local date/time
+        headers = [
+          "Order ID",
+          "Date / Time",
+          "Product Name",
+          "Variant",
+          "Customer Name",
+          "Customer Phone",
+          "Quantity Sold",
+          "Unit Price (INR)",
+          "Line Total (INR)",
+          "Payment Method",
+          "Order Type"
+        ];
+        rows = productSalesData.recent_sales.map((s: any) => [
+          `"${s.order_id ? `#${s.order_id.slice(0, 8)}` : ''}"`,
+          `"${formatLocalDateTime(s.created_at)}"`,
+          `"${(selectedProduct || '').replace(/"/g, '""')}"`,
+          `"${(s.variant_name || 'Standard').replace(/"/g, '""')}"`,
+          `"${(s.customer_name || 'Guest').replace(/"/g, '""')}"`,
+          `"${s.customer_phone || ''}"`,
+          s.quantity,
+          Number(s.unit_price || 0).toFixed(2),
+          Number(s.total_price || 0).toFixed(2),
+          `"${(s.payment_method || 'cash').toUpperCase()}"`,
+          `"${(s.order_type || 'dine_in').toUpperCase()}"`
+        ]);
+      } else {
+        // Active dates only, sorted newest date first
+        headers = ["Product Name", "Date", "Units Sold", "Daily Revenue (INR)", "Orders Count"];
+        rows = (productSalesData.daily_sales || [])
+          .filter((d: any) => d.quantity_sold > 0)
+          .slice()
+          .reverse()
+          .map((d: any) => [
+            `"${selectedProduct}"`,
+            `"${d.date}"`,
+            d.quantity_sold,
+            Number(d.revenue || 0).toFixed(2),
+            d.orders_count
+          ]);
+      }
+    } else {
+      headers = ["Product Name", "Category", "Avg Unit Price (INR)", "Units Sold", "Total Revenue (INR)", "Orders Count", "First Sale Date", "Last Sale Date"];
+      rows = productSalesData.products.map((p: any) => [
+        `"${p.name.replace(/"/g, '""')}"`,
+        `"${(p.category_name || 'Uncategorized').replace(/"/g, '""')}"`,
+        Number(p.average_unit_price || 0).toFixed(2),
+        p.total_quantity_sold,
+        Number(p.total_revenue || 0).toFixed(2),
+        p.orders_count,
+        `"${p.first_sale_date || ''}"`,
+        `"${p.last_sale_date || ''}"`
+      ]);
+    }
+
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `Product_Sales_Report_${isDrilldown ? selectedProduct?.replace(/\s+/g, '_') : 'Overall'}_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    toast.success("Product sales report CSV exported!");
+  };
+
   const getGstApiUrl = (page = 1, limit = GST_PAGE_SIZE, search = debouncedGstSearch) => {
     const params = new URLSearchParams();
     if (dateFilter === 'custom' && customStart && customEnd) {
@@ -127,7 +345,7 @@ export function AnalyticsPage() {
       const rows = fullData.invoices.map((inv: any) => [
         `"${inv.invoice_no || inv.bill_number || ''}"`,
         `"${inv.order_id || ''}"`,
-        `"${inv.date || (inv.created_at ? new Date(inv.created_at).toLocaleString() : '')}"`,
+        `"${inv.date ? formatLocalDateTime(inv.date) : (inv.created_at ? formatLocalDateTime(inv.created_at) : '')}"`,
         `"${(inv.customer_name || 'Walk-in').replace(/"/g, '""')}"`,
         `"${inv.customer_phone || ''}"`,
         `"${inv.payment_method || ''}"`,
@@ -286,6 +504,29 @@ export function AnalyticsPage() {
     }
   }, [dateFilter, customStart, customEnd]);
 
+  useEffect(() => {
+    if (activeTab === 'products' && !isLoading) {
+      const fetchProductSales = async () => {
+        if (dateFilter === 'custom' && (!customStart || !customEnd)) return;
+        setIsProductSalesLoading(true);
+        try {
+          const res = await api.get(getProductSalesApiUrl());
+          setProductSalesData(res.data);
+          setIsLocked(false);
+        } catch (err: any) {
+          if (err.response?.status === 403) {
+            setIsLocked(true);
+          } else {
+            console.error('Failed to update product sales filter', err);
+          }
+        } finally {
+          setIsProductSalesLoading(false);
+        }
+      };
+      fetchProductSales();
+    }
+  }, [activeTab, dateFilter, customStart, customEnd, selectedProduct, productSearch, isLoading]);
+
   const isOnlinePm = (pm: string) => 
     ['online', 'upi', 'card', 'pay_online', 'razorpay', 'cashfree'].includes((pm || '').toLowerCase());
 
@@ -357,6 +598,16 @@ export function AnalyticsPage() {
             <TrendingUp size={14} /> Revenue
           </button>
           <button
+            onClick={() => setActiveTab('products')}
+            className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+              activeTab === 'products' 
+                ? 'bg-white dark:bg-slate-900 text-primary shadow-sm' 
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+            }`}
+          >
+            <Package size={14} /> Sales by Product
+          </button>
+          <button
             onClick={() => setActiveTab('scans')}
             className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
               activeTab === 'scans' 
@@ -380,36 +631,46 @@ export function AnalyticsPage() {
       </HeaderActions>
 
       {/* Mobile Tab Switcher */}
-      <div className="lg:hidden bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl flex items-center gap-1 border border-slate-200/80 dark:border-slate-700/80 shrink-0 shadow-2xs">
+      <div className="lg:hidden bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl grid grid-cols-2 sm:grid-cols-4 gap-1 border border-slate-200/80 dark:border-slate-700/80 shrink-0 shadow-2xs">
         <button
           onClick={() => setActiveTab('revenue')}
-          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+          className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
             activeTab === 'revenue' 
               ? 'bg-white dark:bg-slate-900 text-primary shadow-xs' 
               : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
           }`}
         >
-          <TrendingUp size={14} /> Revenue
+          <TrendingUp size={13} /> Revenue
+        </button>
+        <button
+          onClick={() => setActiveTab('products')}
+          className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+            activeTab === 'products' 
+              ? 'bg-white dark:bg-slate-900 text-primary shadow-xs' 
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+          }`}
+        >
+          <Package size={13} /> Products
         </button>
         <button
           onClick={() => setActiveTab('scans')}
-          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+          className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
             activeTab === 'scans' 
               ? 'bg-white dark:bg-slate-900 text-primary shadow-xs' 
               : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
           }`}
         >
-          <QrCode size={14} /> Traffic
+          <QrCode size={13} /> Traffic
         </button>
         <button
           onClick={() => setActiveTab('gst')}
-          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+          className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
             activeTab === 'gst' 
               ? 'bg-white dark:bg-slate-900 text-primary shadow-xs' 
               : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
           }`}
         >
-          <Receipt size={14} /> GST Reports
+          <Receipt size={13} /> GST
         </button>
       </div>
 
@@ -780,23 +1041,32 @@ export function AnalyticsPage() {
                   </div>
                 </div>
                 <p className="text-[10px] text-slate-500 mt-2.5 font-medium">
-                  After {currencySymbol}{displayedPgCharges.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} PG charges
+                  100% direct settlement to linked bank account
                 </p>
               </CardContent>
             </Card>
 
             {/* Highest Revenue Food */}
-            <Card className="relative overflow-hidden border-amber-100 dark:border-amber-950/40 bg-gradient-to-br from-amber-50/50 via-white to-amber-50/20 dark:from-amber-950/20 dark:to-slate-900">
+            <Card className="relative overflow-hidden border-amber-100 dark:border-amber-950/40 bg-gradient-to-br from-amber-50/50 via-white to-amber-50/20 dark:from-amber-950/20 dark:to-slate-900 shadow-xs">
               <CardContent className="p-4 sm:p-5">
                 <div className="flex justify-between items-start gap-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider mb-0.5">Top Revenue {businessCategory.isFood ? 'Food' : 'Product'}</p>
-                    <h3 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate">
-                      {revenueData?.highest_revenue_food?.name || 'No Sales Yet'}
-                    </h3>
-                    <p className="text-xs font-bold text-amber-600 dark:text-amber-400 mt-0.5">
-                      {currencySymbol}{revenueData?.highest_revenue_food?.total_revenue || 0}
-                    </p>
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    {revenueData?.highest_revenue_food?.image_url ? (
+                      <img
+                        src={revenueData.highest_revenue_food.image_url}
+                        alt={revenueData.highest_revenue_food.name}
+                        className="w-10 h-10 rounded-xl object-cover shrink-0 border border-slate-200/80 dark:border-slate-700 shadow-2xs"
+                      />
+                    ) : null}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider mb-0.5">Top Revenue {businessCategory.isFood ? 'Food' : 'Product'}</p>
+                      <h3 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate">
+                        {revenueData?.highest_revenue_food?.name || 'No Sales Yet'}
+                      </h3>
+                      <p className="text-xs font-bold text-amber-600 dark:text-amber-400 mt-0.5">
+                        {currencySymbol}{revenueData?.highest_revenue_food?.total_revenue || 0}
+                      </p>
+                    </div>
                   </div>
                   <div className="p-2 sm:p-2.5 rounded-xl bg-amber-100 dark:bg-amber-900/40 text-amber-600 shrink-0">
                     <Trophy size={18} className="sm:w-5 sm:h-5" />
@@ -809,17 +1079,26 @@ export function AnalyticsPage() {
             </Card>
 
             {/* Most Ordered Item */}
-            <Card className="relative overflow-hidden border-purple-100 dark:border-purple-950/40 bg-gradient-to-br from-purple-50/50 via-white to-purple-50/20 dark:from-purple-950/20 dark:to-slate-900">
+            <Card className="relative overflow-hidden border-purple-100 dark:border-purple-950/40 bg-gradient-to-br from-purple-50/50 via-white to-purple-50/20 dark:from-purple-950/20 dark:to-slate-900 shadow-xs">
               <CardContent className="p-4 sm:p-5">
                 <div className="flex justify-between items-start gap-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider mb-0.5">Most Ordered Item</p>
-                    <h3 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate">
-                      {revenueData?.most_ordered_food?.name || 'No Orders Yet'}
-                    </h3>
-                    <p className="text-xs font-bold text-purple-600 dark:text-purple-400 mt-0.5">
-                      {revenueData?.most_ordered_food?.total_quantity || 0} Orders
-                    </p>
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    {revenueData?.most_ordered_food?.image_url ? (
+                      <img
+                        src={revenueData.most_ordered_food.image_url}
+                        alt={revenueData.most_ordered_food.name}
+                        className="w-10 h-10 rounded-xl object-cover shrink-0 border border-slate-200/80 dark:border-slate-700 shadow-2xs"
+                      />
+                    ) : null}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider mb-0.5">Most Ordered Item</p>
+                      <h3 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate">
+                        {revenueData?.most_ordered_food?.name || 'No Orders Yet'}
+                      </h3>
+                      <p className="text-xs font-bold text-purple-600 dark:text-purple-400 mt-0.5">
+                        {revenueData?.most_ordered_food?.total_quantity || 0} Orders
+                      </p>
+                    </div>
                   </div>
                   <div className="p-2 sm:p-2.5 rounded-xl bg-purple-100 dark:bg-purple-900/40 text-purple-600 shrink-0">
                     <ShoppingBag size={18} className="sm:w-5 sm:h-5" />
@@ -963,42 +1242,97 @@ export function AnalyticsPage() {
 
           {/* Daily Revenue Chart & Breakdown */}
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
+            <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-slate-100 dark:border-slate-800 pb-3">
               <div>
                 <CardTitle className="text-sm sm:text-base font-bold flex items-center gap-2">
-                  <TrendingUp size={18} className="text-primary shrink-0" /> Daily Revenue & Order Velocity
+                  <TrendingUp size={18} className="text-primary shrink-0" />
+                  <span>Daily Revenue & Order Velocity</span>
                 </CardTitle>
-                <p className="text-[11px] text-slate-500 mt-0.5">Daily breakdown of gross revenue vs net settlements</p>
               </div>
+
+              {/* Dynamic Live Info Badge for Hovered / Tapped Day */}
+              {hoveredRevenueDay && (
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-primary/10 dark:bg-primary/20 border border-primary/30 text-xs font-bold animate-fade-in shrink-0">
+                  <Calendar size={13} className="text-primary" />
+                  <span className="font-mono text-slate-900 dark:text-white">{hoveredRevenueDay.date}:</span>
+                  <span className="text-emerald-600 dark:text-emerald-400 font-black">{currencySymbol}{hoveredRevenueDay.gross_revenue}</span>
+                  <span className="text-slate-300 dark:text-slate-700">•</span>
+                  <span className="text-slate-500 font-normal">{hoveredRevenueDay.orders_count} orders</span>
+                </div>
+              )}
             </CardHeader>
-            <CardContent className="pt-6">
+            <CardContent className="pt-4">
               {revenueData?.daily_sales?.length > 0 ? (
-                <div className="h-56 sm:h-60 flex items-end gap-1.5 sm:gap-2 pt-6 border-b border-slate-100 dark:border-slate-800 pb-4 relative">
-                  {revenueData.daily_sales.map((day: any, i: number) => {
-                    const heightPct = maxRevenueBar > 0 ? (day.gross_revenue / maxRevenueBar) * 100 : 0;
-                    return (
-                      <div 
-                        key={i}
-                        className="flex-1 flex flex-col items-center group relative h-full justify-end cursor-pointer"
-                      >
-                        {/* Bar */}
-                        <div 
-                          className="w-full max-w-[32px] bg-gradient-to-t from-primary/90 to-primary/40 hover:from-primary hover:to-primary-600 rounded-t-lg transition-all relative border border-primary/20"
-                          style={{ height: `${Math.max(heightPct, 8)}%` }}
-                        >
-                          {/* Hover Tooltip */}
-                          <div className="absolute -top-16 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[11px] py-1.5 px-3 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-30 shadow-xl border border-slate-700">
-                            <span className="font-bold">{day.date}</span><br />
-                            <span className="text-emerald-400 font-black">Gross: {currencySymbol}{day.gross_revenue}</span><br />
-                            <span className="text-slate-300">Orders: {day.orders_count}</span>
+                <div>
+                  <div className="h-64 flex items-end gap-1.5 sm:gap-2.5 pt-16 border-b border-slate-100 dark:border-slate-800 pb-2 relative overflow-x-auto no-scrollbar">
+                    {(() => {
+                      const dailyList = revenueData.daily_sales;
+                      const maxGross = Math.max(...dailyList.map((d: any) => d.gross_revenue), 1);
+                      return dailyList.map((day: any, i: number) => {
+                        const heightPct = day.gross_revenue > 0
+                          ? Math.max(8, Math.round((day.gross_revenue / maxGross) * 65))
+                          : 4;
+                        const isHovered = hoveredRevenueDay?.date === day.date;
+                        const isLeftEdge = i < 3;
+                        const isRightEdge = i >= dailyList.length - 3;
+                        const tooltipAlignClass = isLeftEdge
+                          ? 'left-0'
+                          : isRightEdge
+                            ? 'right-0'
+                            : 'left-1/2 -translate-x-1/2';
+
+                        return (
+                          <div 
+                            key={day.date || i}
+                            className="flex-1 min-w-[28px] sm:min-w-[36px] max-w-[48px] flex flex-col items-center group relative h-full justify-end cursor-pointer"
+                            onMouseEnter={() => setHoveredRevenueDay(day)}
+                            onMouseLeave={() => setHoveredRevenueDay(null)}
+                            onClick={() => setHoveredRevenueDay((prev: any) => prev?.date === day.date ? null : day)}
+                          >
+                            {/* Bar */}
+                            <div 
+                              className={cn(
+                                "w-full rounded-t-lg transition-all relative border border-primary/20 shadow-2xs",
+                                day.gross_revenue > 0
+                                  ? isHovered
+                                    ? "bg-gradient-to-t from-primary-600 to-primary ring-2 ring-primary ring-offset-1"
+                                    : "bg-gradient-to-t from-primary/80 to-primary hover:from-primary-600 hover:to-primary"
+                                  : "bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700"
+                              )}
+                              style={{ height: `${heightPct}%` }}
+                            >
+                              {/* Floating Tooltip */}
+                              <div className={cn(
+                                "absolute -top-16 bg-slate-900/95 backdrop-blur-md text-white text-[11px] py-1.5 px-3 rounded-xl transition-all whitespace-nowrap z-30 shadow-2xl border border-slate-700/80 flex flex-col gap-0.5",
+                                isHovered ? "opacity-100 z-40" : "opacity-0 group-hover:opacity-100 pointer-events-none",
+                                tooltipAlignClass
+                              )}>
+                                <div className="flex items-center justify-between gap-3 border-b border-slate-700/80 pb-0.5">
+                                  <span className="font-mono font-bold text-slate-200">{day.date}</span>
+                                  <span className="text-[9px] text-slate-400 font-medium">{day.orders_count} orders</span>
+                                </div>
+                                <div className="flex items-center gap-2 pt-0.5">
+                                  <span className="text-emerald-400 font-extrabold">{currencySymbol}{day.gross_revenue}</span>
+                                </div>
+                              </div>
+                            </div>
+                            <span className={cn(
+                              "text-[9px] sm:text-[10px] mt-2 truncate w-full text-center font-mono transition-colors",
+                              isHovered ? "font-bold text-primary" : "text-slate-400"
+                            )}>
+                              {new Date(day.date).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' })}
+                            </span>
                           </div>
-                        </div>
-                        <span className="text-[8px] sm:text-[9px] text-slate-400 font-bold mt-2 truncate w-full text-center">
-                          {new Date(day.date).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' })}
-                        </span>
-                      </div>
-                    );
-                  })}
+                        );
+                      });
+                    })()}
+                  </div>
+                  <div className="mt-3 flex items-center justify-between text-xs text-slate-400 pt-2 border-t border-slate-100 dark:border-slate-800/60">
+                    <span className="flex items-center gap-1.5 text-[11px]">
+                      <span className="w-2.5 h-2.5 rounded bg-primary inline-block"></span>
+                      <span>Bar height represents daily gross revenue</span>
+                    </span>
+                  </div>
                 </div>
               ) : (
                 <div className="h-44 flex items-center justify-center text-slate-400 text-xs">
@@ -1043,6 +1377,13 @@ export function AnalyticsPage() {
                             }`}>
                               {idx + 1}
                             </span>
+                            {item.image_url ? (
+                              <img
+                                src={item.image_url}
+                                alt={item.name}
+                                className="w-6 h-6 rounded-md object-cover shrink-0 border border-slate-200/80 dark:border-slate-700"
+                              />
+                            ) : null}
                             <span className="font-bold text-slate-800 dark:text-slate-200 truncate">{item.name}</span>
                           </div>
                           
@@ -1098,6 +1439,13 @@ export function AnalyticsPage() {
                             }`}>
                               {idx + 1}
                             </span>
+                            {item.image_url ? (
+                              <img
+                                src={item.image_url}
+                                alt={item.name}
+                                className="w-6 h-6 rounded-md object-cover shrink-0 border border-slate-200/80 dark:border-slate-700"
+                              />
+                            ) : null}
                             <span className="font-bold text-slate-800 dark:text-slate-200 truncate">{item.name}</span>
                           </div>
                           
@@ -1238,7 +1586,630 @@ export function AnalyticsPage() {
         </div>
       )}
 
-      {/* TAB 2: MENU SCANS & TRAFFIC ANALYTICS */}
+      {/* TAB 2: SALES BY PRODUCT ANALYTICS */}
+      {activeTab === 'products' && (
+        <div className="space-y-5 sm:space-y-6 animate-fade-in">
+          {/* Top KPI Cards for Product Sales */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
+            {/* Total Units Sold */}
+            <Card className="relative overflow-hidden border-primary/20 dark:border-primary/20 bg-gradient-to-br from-primary/10 via-white to-primary/5 dark:from-primary/10 dark:to-slate-900 shadow-xs">
+              <CardContent className="p-4 sm:p-5">
+                <div className="flex justify-between items-start gap-2">
+                  <div className="min-w-0">
+                    <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider mb-0.5">
+                      {selectedProduct && selectedProduct !== 'all' ? 'Units Saled (This Product)' : 'Total Units Saled'}
+                    </p>
+                    <h3 className="text-xl sm:text-2xl lg:text-3xl font-black text-primary font-heading">
+                      {(selectedProduct && selectedProduct !== 'all'
+                        ? productSalesData?.selected_product_stats?.total_quantity_sold
+                        : productSalesData?.total_products_sold_count) || 0}
+                      <span className="text-xs font-bold text-slate-400 ml-1.5 font-normal">units</span>
+                    </h3>
+                  </div>
+                  <div className="p-2 sm:p-2.5 rounded-xl bg-primary/10 dark:bg-primary/20 text-primary shrink-0">
+                    <Package size={18} className="sm:w-5 sm:h-5" />
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-500 mt-2 font-medium">
+                  {selectedProduct && selectedProduct !== 'all'
+                    ? `From ${productSalesData?.selected_product_stats?.orders_count || 0} customer orders`
+                    : `Across ${productSalesData?.total_orders_count || 0} customer orders`}
+                </p>
+              </CardContent>
+            </Card>
+
+            {/* Total Product Sales Revenue */}
+            <Card className="relative overflow-hidden border-emerald-100 dark:border-emerald-950/40 bg-gradient-to-br from-emerald-50/50 via-white to-emerald-50/20 dark:from-emerald-950/20 dark:to-slate-900 shadow-xs">
+              <CardContent className="p-4 sm:p-5">
+                <div className="flex justify-between items-start gap-2">
+                  <div className="min-w-0">
+                    <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider mb-0.5">
+                      {selectedProduct && selectedProduct !== 'all' ? 'Product Revenue' : 'Total Product Revenue'}
+                    </p>
+                    <h3 className="text-xl sm:text-2xl lg:text-3xl font-black text-emerald-600 dark:text-emerald-400 font-heading">
+                      {currencySymbol}
+                      {((selectedProduct && selectedProduct !== 'all'
+                        ? productSalesData?.selected_product_stats?.total_revenue
+                        : productSalesData?.total_product_revenue) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                    </h3>
+                  </div>
+                  <div className="p-2 sm:p-2.5 rounded-xl bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 shrink-0">
+                    <Banknote size={18} className="sm:w-5 sm:h-5" />
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-500 mt-2 font-medium">
+                  Gross item sales value in selected timeframe
+                </p>
+              </CardContent>
+            </Card>
+
+            {/* Products Sold */}
+            <Card className="relative overflow-hidden border-purple-100 dark:border-purple-950/40 bg-gradient-to-br from-purple-50/50 via-white to-purple-50/20 dark:from-purple-950/20 dark:to-slate-900 shadow-xs">
+              <CardContent className="p-4 sm:p-5">
+                <div className="flex justify-between items-start gap-2">
+                  <div className="min-w-0">
+                    <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider mb-0.5">Products Sold</p>
+                    <h3 className="text-xl sm:text-2xl lg:text-3xl font-black text-purple-600 dark:text-purple-400 font-heading">
+                      {productSalesData?.total_unique_products_sold || 0}
+                      <span className="text-xs font-bold text-slate-400 ml-1.5 font-normal">items</span>
+                    </h3>
+                  </div>
+                  <div className="p-2 sm:p-2.5 rounded-xl bg-purple-100 dark:bg-purple-900/40 text-purple-600 shrink-0">
+                    <Layers size={18} className="sm:w-5 sm:h-5" />
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-500 mt-2 font-medium">
+                  Active menu items ordered at least once
+                </p>
+              </CardContent>
+            </Card>
+
+            {/* Top Selling Product */}
+            <Card className="relative overflow-hidden border-amber-100 dark:border-amber-950/40 bg-gradient-to-br from-amber-50/50 via-white to-amber-50/20 dark:from-amber-950/20 dark:to-slate-900 shadow-xs">
+              <CardContent className="p-4 sm:p-5">
+                <div className="flex justify-between items-start gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    {productSalesData?.top_selling_product?.image_url ? (
+                      <img
+                        src={productSalesData.top_selling_product.image_url}
+                        alt={productSalesData.top_selling_product.name}
+                        className="w-10 h-10 rounded-xl object-cover shrink-0 border border-slate-200/80 dark:border-slate-700 shadow-2xs"
+                      />
+                    ) : null}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider mb-0.5">Top Selling Item</p>
+                      <h3 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate">
+                        {productSalesData?.top_selling_product?.name || 'No Sales Yet'}
+                      </h3>
+                      <p className="text-xs font-bold text-amber-600 dark:text-amber-400 mt-0.5">
+                        {productSalesData?.top_selling_product?.total_quantity_sold || 0} units ({currencySymbol}{productSalesData?.top_selling_product?.total_revenue || 0})
+                      </p>
+                    </div>
+                  </div>
+                  <div className="p-2 sm:p-2.5 rounded-xl bg-amber-100 dark:bg-amber-900/40 text-amber-600 shrink-0">
+                    <Trophy size={18} className="sm:w-5 sm:h-5" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Product Filter, Search & Export Bar */}
+          <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+            {/* Left: Product Selector Dropdown & Quick Search */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1 min-w-0">
+              {/* Product Selector SearchableSelect */}
+              <div className="w-full sm:w-[280px] shrink-0">
+                <SearchableSelect
+                  options={productDropdownOptions}
+                  value={selectedProduct || 'all'}
+                  onChange={(val) => setSelectedProduct(val === 'all' ? null : val)}
+                  placeholder="Select product..."
+                  showSearch={true}
+                  className="h-10 text-xs font-bold"
+                  onSearchChange={setDropdownSearch}
+                  onLoadMore={handleDropdownLoadMore}
+                  hasMore={dropdownHasMore}
+                  isLoading={isDropdownLoading}
+                  isLoadingMore={isDropdownLoadingMore}
+                />
+              </div>
+
+              {/* Text Search input */}
+              <div className="relative flex-1 min-w-[180px]">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={productSearch}
+                  onChange={(e) => setProductSearch(e.target.value)}
+                  placeholder="Filter table by product or category..."
+                  className="w-full h-10 pl-8 pr-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium focus:outline-none focus:border-primary"
+                />
+              </div>
+            </div>
+
+            {/* Right: Export CSV & Reset Button */}
+            <div className="flex items-center gap-2 shrink-0">
+              {selectedProduct && selectedProduct !== 'all' && (
+                <button
+                  onClick={() => setSelectedProduct(null)}
+                  className="h-10 px-3.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <ArrowLeft size={13} />
+                  <span>Show Overall</span>
+                </button>
+              )}
+
+              <Button
+                variant="outline"
+                onClick={handleExportProductSalesCsv}
+                className="h-10 font-bold text-xs border-slate-200 dark:border-slate-700 flex items-center gap-1.5 shadow-2xs cursor-pointer"
+              >
+                <Download size={13} />
+                <span>Export Report</span>
+              </Button>
+            </div>
+          </div>
+
+          {/* Active Product Drilldown Banner (if specific product selected) */}
+          {selectedProduct && selectedProduct !== 'all' && (
+            <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent p-4 rounded-2xl border border-primary/20 dark:border-primary/30 flex items-center justify-between gap-4 animate-fade-in">
+              <div className="flex items-center gap-3 min-w-0">
+                {productSalesData?.selected_product_stats?.image_url ? (
+                  <img
+                    src={productSalesData.selected_product_stats.image_url}
+                    alt={selectedProduct}
+                    className="w-12 h-12 rounded-xl object-cover shrink-0 border border-slate-200/80 dark:border-slate-700 shadow-xs"
+                  />
+                ) : (
+                  <div className="w-11 h-11 rounded-xl bg-primary text-white flex items-center justify-center font-black text-sm shrink-0 shadow-sm">
+                    <Package size={22} />
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white truncate">
+                      {selectedProduct}
+                    </h4>
+                    {productSalesData?.selected_product_stats?.category_name && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary">
+                        {productSalesData.selected_product_stats.category_name}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    Total Sold: <strong className="text-slate-800 dark:text-slate-200">{productSalesData?.selected_product_stats?.total_quantity_sold || 0} units</strong> • Revenue: <strong className="text-emerald-600 dark:text-emerald-400">{currencySymbol}{productSalesData?.selected_product_stats?.total_revenue || 0}</strong> • Avg Price: {currencySymbol}{productSalesData?.selected_product_stats?.average_unit_price || 0}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setSelectedProduct(null)}
+                className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 shadow-2xs shrink-0 cursor-pointer"
+              >
+                Clear Filter ✕
+              </button>
+            </div>
+          )}
+
+          {/* Daily Sales Quantity & Revenue Trend Bar Chart */}
+          <Card>
+            <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2">
+              <div>
+                <CardTitle className="text-sm sm:text-base font-bold flex items-center gap-2">
+                  <BarChart2 size={18} className="text-primary shrink-0" />
+                  <span>
+                    {selectedProduct && selectedProduct !== 'all'
+                      ? `Daily Sales & Revenue: ${selectedProduct}`
+                      : 'Daily Units Sold & Revenue Timeline (All Products)'}
+                  </span>
+                </CardTitle>
+              </div>
+
+              {/* Dynamic Live Info Badge for Hovered Day */}
+              {hoveredDailyStat && (
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-primary/10 dark:bg-primary/20 border border-primary/30 text-xs font-bold animate-fade-in shrink-0">
+                  <Calendar size={13} className="text-primary" />
+                  <span className="font-mono text-slate-900 dark:text-white">{hoveredDailyStat.date}:</span>
+                  <span className="text-primary">{hoveredDailyStat.quantity_sold} units</span>
+                  <span className="text-slate-300 dark:text-slate-700">•</span>
+                  <span className="text-emerald-600 dark:text-emerald-400">{currencySymbol}{hoveredDailyStat.revenue}</span>
+                  <span className="text-slate-300 dark:text-slate-700">•</span>
+                  <span className="text-slate-500 font-normal">{hoveredDailyStat.orders_count} orders</span>
+                </div>
+              )}
+            </CardHeader>
+            <CardContent>
+              {isProductSalesLoading ? (
+                <div className="h-56 flex items-center justify-center">
+                  <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : (productSalesData?.daily_sales || []).length > 0 ? (
+                <div>
+                  <div className="h-64 flex items-end gap-1.5 sm:gap-2.5 mt-2 pt-16 pb-2 border-t border-slate-100 dark:border-slate-800 relative overflow-x-auto no-scrollbar">
+                    {(() => {
+                      const dailyList = productSalesData.daily_sales;
+                      const maxUnits = Math.max(...dailyList.map((d: any) => d.quantity_sold), 1);
+                      return dailyList.map((day: any, i: number) => {
+                        // Scale to max 65% height so tooltips have 35% clearance from the top edge and NEVER get clipped!
+                        const heightPct = day.quantity_sold > 0 
+                          ? Math.max(8, Math.round((day.quantity_sold / maxUnits) * 65))
+                          : 4;
+                        const isHovered = hoveredDailyStat?.date === day.date;
+                        const isLeftEdge = i < 3;
+                        const isRightEdge = i >= dailyList.length - 3;
+                        const tooltipAlignClass = isLeftEdge 
+                          ? 'left-0' 
+                          : isRightEdge 
+                            ? 'right-0' 
+                            : 'left-1/2 -translate-x-1/2';
+
+                        return (
+                          <div 
+                            key={day.date} 
+                            className="flex-1 min-w-[30px] max-w-[48px] flex flex-col items-center group relative h-full justify-end cursor-pointer"
+                            onMouseEnter={() => setHoveredDailyStat(day)}
+                            onMouseLeave={() => setHoveredDailyStat(null)}
+                            onClick={() => setHoveredDailyStat((prev: any) => prev?.date === day.date ? null : day)}
+                          >
+                            <div
+                              className={cn(
+                                "w-full rounded-t-md transition-all relative shadow-2xs",
+                                day.quantity_sold > 0
+                                  ? isHovered 
+                                    ? "bg-gradient-to-t from-primary-600 to-primary ring-2 ring-primary ring-offset-1" 
+                                    : "bg-gradient-to-t from-primary/80 to-primary hover:from-primary-600 hover:to-primary"
+                                  : "bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700"
+                              )}
+                              style={{ height: `${heightPct}%` }}
+                            >
+                              {/* Floating Tooltip with full information and guaranteed non-clipping visibility */}
+                              <div className={cn(
+                                "absolute -top-16 bg-slate-900/95 backdrop-blur-md text-white text-[11px] py-1.5 px-3 rounded-xl transition-all whitespace-nowrap z-30 shadow-2xl border border-slate-700/80 flex flex-col gap-0.5",
+                                isHovered ? "opacity-100 z-40" : "opacity-0 group-hover:opacity-100 pointer-events-none",
+                                tooltipAlignClass
+                              )}>
+                                <div className="flex items-center justify-between gap-3 border-b border-slate-700/80 pb-0.5">
+                                  <span className="font-mono font-bold text-slate-200">{day.date}</span>
+                                  <span className="text-[9px] text-slate-400 font-medium">{day.orders_count} orders</span>
+                                </div>
+                                <div className="flex items-center gap-2 pt-0.5">
+                                  <span className="text-amber-300 font-bold">{day.quantity_sold} units</span>
+                                  <span className="text-slate-500">•</span>
+                                  <span className="text-emerald-400 font-extrabold">{currencySymbol}{day.revenue}</span>
+                                </div>
+                              </div>
+                            </div>
+                            <span className={cn(
+                              "text-[10px] mt-2 truncate w-full text-center font-mono transition-colors",
+                              isHovered ? "font-bold text-primary" : "text-slate-400"
+                            )}>
+                              {day.date.slice(5)}
+                            </span>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                  <div className="mt-3 flex items-center justify-between text-xs text-slate-400 pt-2 border-t border-slate-100 dark:border-slate-800/60">
+                    <span className="flex items-center gap-1.5 text-[11px]">
+                      <span className="w-2.5 h-2.5 rounded bg-primary inline-block"></span>
+                      <span>Bar height represents units sold on that date</span>
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="h-40 flex items-center justify-center text-slate-400 text-xs">
+                  No daily sales recorded for this timeframe.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* MAIN PRODUCT SALES PERFORMANCE TABLE (When Overall View) */}
+          {(!selectedProduct || selectedProduct === 'all') && (
+            <Card>
+              <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2">
+                <div>
+                  <CardTitle className="text-base font-bold flex items-center gap-2">
+                    <ShoppingBag size={18} className="text-primary" />
+                    <span>Every Product Sales Report</span>
+                  </CardTitle>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Click any product to drill down into its date-by-date sales timeline & recent orders
+                  </p>
+                </div>
+
+                {/* Sort selector */}
+                <div className="flex items-center gap-2 self-start sm:self-auto">
+                  <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1">
+                    <ArrowUpDown size={12} /> Sort:
+                  </span>
+                  <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg text-xs">
+                    <button
+                      onClick={() => setProductSortBy('revenue')}
+                      className={`px-2 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                        productSortBy === 'revenue' ? 'bg-white dark:bg-slate-900 text-primary shadow-xs' : 'text-slate-500'
+                      }`}
+                    >
+                      Revenue
+                    </button>
+                    <button
+                      onClick={() => setProductSortBy('quantity')}
+                      className={`px-2 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                        productSortBy === 'quantity' ? 'bg-white dark:bg-slate-900 text-primary shadow-xs' : 'text-slate-500'
+                      }`}
+                    >
+                      Units
+                    </button>
+                    <button
+                      onClick={() => setProductSortBy('name')}
+                      className={`px-2 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                        productSortBy === 'name' ? 'bg-white dark:bg-slate-900 text-primary shadow-xs' : 'text-slate-500'
+                      }`}
+                    >
+                      Name
+                    </button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                {isProductSalesLoading ? (
+                  <div className="p-12 text-center">
+                    <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                    <p className="text-xs text-slate-400">Loading product sales reports...</p>
+                  </div>
+                ) : (productSalesData?.products || []).length > 0 ? (
+                  <div className="overflow-x-auto border-t border-slate-100 dark:border-slate-800">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-200/80 dark:border-slate-800 text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider bg-slate-50/75 dark:bg-slate-850/75">
+                          <th className="p-3 pl-4"># Rank & Product</th>
+                          <th className="p-3">Category</th>
+                          <th className="p-3 text-right">Avg Unit Price</th>
+                          <th className="p-3 text-right">Units Saled</th>
+                          <th className="p-3 text-right">Total Revenue</th>
+                          <th className="p-3 text-right">Orders</th>
+                          <th className="p-3 pr-4 text-center">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {(() => {
+                          const totalRev = productSalesData.total_product_revenue || 1;
+                          const totalUnits = productSalesData.total_products_sold_count || 1;
+                          let list = [...productSalesData.products];
+                          if (productSearch.trim()) {
+                            const q = productSearch.toLowerCase();
+                            list = list.filter((p: any) =>
+                              (p.name && p.name.toLowerCase().includes(q)) ||
+                              (p.category_name && p.category_name.toLowerCase().includes(q))
+                            );
+                          }
+                          if (productSortBy === 'quantity') {
+                            list.sort((a, b) => b.total_quantity_sold - a.total_quantity_sold);
+                          } else if (productSortBy === 'name') {
+                            list.sort((a, b) => a.name.localeCompare(b.name));
+                          } else {
+                            list.sort((a, b) => b.total_revenue - a.total_revenue);
+                          }
+                          return list.map((p: any, idx: number) => {
+                            const revPct = Math.round((p.total_revenue / totalRev) * 100);
+                            const unitPct = Math.round((p.total_quantity_sold / totalUnits) * 100);
+                            return (
+                              <tr
+                                key={p.name}
+                                onClick={() => setSelectedProduct(p.name)}
+                                className="hover:bg-slate-50/75 dark:hover:bg-slate-800/40 transition-colors cursor-pointer group"
+                              >
+                                <td className="p-3 pl-4">
+                                  <div className="flex items-center gap-2.5">
+                                    <span className={`w-5 h-5 rounded-full flex items-center justify-center font-black text-[10px] shrink-0 ${
+                                      idx === 0 ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/80 dark:text-amber-300' :
+                                      idx === 1 ? 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200' :
+                                      idx === 2 ? 'bg-orange-100 text-orange-700 dark:bg-orange-950/80 dark:text-orange-300' :
+                                      'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                                    }`}>
+                                      {idx + 1}
+                                    </span>
+                                    {p.image_url ? (
+                                      <img src={p.image_url} alt={p.name} className="w-8 h-8 rounded-lg object-cover shrink-0 border border-slate-200 dark:border-slate-700" />
+                                    ) : (
+                                      <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 shrink-0">
+                                        <Package size={14} />
+                                      </div>
+                                    )}
+                                    <span className="font-bold text-slate-900 dark:text-white group-hover:text-primary transition-colors line-clamp-1">
+                                      {p.name}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td className="p-3 text-slate-500 dark:text-slate-400">
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                                    {p.category_name || 'General'}
+                                  </span>
+                                </td>
+                                <td className="p-3 text-right font-mono font-medium text-slate-700 dark:text-slate-300">
+                                  {currencySymbol}{p.average_unit_price}
+                                </td>
+                                <td className="p-3 text-right">
+                                  <div className="flex flex-col items-end gap-1">
+                                    <span className="font-mono font-black text-primary">
+                                      {p.total_quantity_sold} units
+                                    </span>
+                                    <div className="w-14 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                                      <div className="h-full bg-primary rounded-full" style={{ width: `${Math.min(100, Math.max(5, unitPct))}%` }} />
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="p-3 text-right">
+                                  <div className="flex flex-col items-end gap-1">
+                                    <span className="font-mono font-black text-emerald-600 dark:text-emerald-400">
+                                      {currencySymbol}{p.total_revenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                                    </span>
+                                    <span className="text-[10px] text-slate-400">{revPct}% of total</span>
+                                  </div>
+                                </td>
+                                <td className="p-3 text-right font-mono text-slate-600 dark:text-slate-400">
+                                  {p.orders_count}
+                                </td>
+                                <td className="p-3 pr-4 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedProduct(p.name);
+                                    }}
+                                    className="px-2.5 py-1 rounded-lg bg-primary/10 hover:bg-primary text-primary hover:text-white font-bold text-[11px] transition-all cursor-pointer shrink-0"
+                                  >
+                                    View Dates →
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          });
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="text-center py-12 text-slate-400">
+                    <Package size={32} className="mx-auto mb-2 opacity-40" />
+                    <p className="text-xs font-bold text-slate-600 dark:text-slate-300">No product sales found</p>
+                    <p className="text-[10px] text-slate-400 mt-1">Try selecting a wider timeframe or check if orders have been placed.</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* DATE-BY-DATE SALES BREAKDOWN TABLE (For selected product or overall) */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 sm:gap-6">
+            {/* Daily Date Breakdown */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <div>
+                  <CardTitle className="text-sm sm:text-base font-bold flex items-center gap-2">
+                    <CalendarDays size={18} className="text-primary" />
+                    <span>
+                      {selectedProduct && selectedProduct !== 'all'
+                        ? `Date-by-Date Sales: ${selectedProduct}`
+                        : 'Daily Sales Volume & Revenue'}
+                    </span>
+                  </CardTitle>
+                  <p className="text-[11px] text-slate-400 mt-0.5">Which date, how many units saled & revenue generated</p>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                {(() => {
+                  const filteredDays = (productSalesData?.daily_sales || []).filter((d: any) => d.quantity_sold > 0);
+                  if (filteredDays.length === 0) {
+                    return (
+                      <div className="text-center py-10 text-slate-400 text-xs">
+                        No sales recorded on any date in this timeframe.
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="overflow-x-auto max-h-[380px] overflow-y-auto no-scrollbar scrollbar-thin border-t border-slate-100 dark:border-slate-800">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead className="sticky top-0 bg-slate-50 dark:bg-slate-850 z-10">
+                          <tr className="border-b border-slate-200/80 dark:border-slate-800 text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">
+                            <th className="p-3 pl-4">Date</th>
+                            <th className="p-3 text-right">Units Saled</th>
+                            <th className="p-3 text-right">Revenue</th>
+                            <th className="p-3 pr-4 text-right">Orders</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                          {filteredDays.map((d: any) => (
+                            <tr key={d.date} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/30">
+                              <td className="p-3 pl-4 font-bold text-slate-800 dark:text-slate-200 font-mono">
+                                {d.date}
+                              </td>
+                              <td className="p-3 text-right font-mono font-black text-primary">
+                                {d.quantity_sold} qty
+                              </td>
+                              <td className="p-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                                {currencySymbol}{d.revenue.toFixed(2)}
+                              </td>
+                              <td className="p-3 pr-4 text-right font-mono text-slate-500">
+                                {d.orders_count}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })()}
+              </CardContent>
+            </Card>
+
+            {/* Recent Orders with this Product */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <div>
+                  <CardTitle className="text-sm sm:text-base font-bold flex items-center gap-2">
+                    <Receipt size={18} className="text-emerald-600" />
+                    <span>
+                      {selectedProduct && selectedProduct !== 'all'
+                        ? `Recent Orders: ${selectedProduct}`
+                        : 'Recent Product Orders'}
+                    </span>
+                  </CardTitle>
+                  <p className="text-[11px] text-slate-400 mt-0.5">Individual line item order transactions</p>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                {(productSalesData?.recent_sales || []).length > 0 ? (
+                  <div className="overflow-x-auto max-h-[380px] overflow-y-auto no-scrollbar scrollbar-thin border-t border-slate-100 dark:border-slate-800">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead className="sticky top-0 bg-slate-50 dark:bg-slate-850 z-10">
+                        <tr className="border-b border-slate-200/80 dark:border-slate-800 text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">
+                          <th className="p-3 pl-4">Order / Time</th>
+                          <th className="p-3">Customer</th>
+                          <th className="p-3 text-right">Qty</th>
+                          <th className="p-3 pr-4 text-right">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {productSalesData.recent_sales.map((s: any, idx: number) => (
+                          <tr key={idx} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/30">
+                            <td className="p-3 pl-4">
+                              <span className="font-mono font-bold text-slate-800 dark:text-slate-200 block text-[11px]">
+                                #{s.order_id.slice(0, 8)}
+                              </span>
+                              <span className="text-[10px] text-slate-400 block">{formatLocalDateTime(s.created_at)}</span>
+                            </td>
+                            <td className="p-3">
+                              <span className="font-bold text-slate-700 dark:text-slate-300 block">{s.customer_name}</span>
+                              {s.variant_name && (
+                                <span className="text-[10px] text-slate-400 font-medium">({s.variant_name})</span>
+                              )}
+                            </td>
+                            <td className="p-3 text-right font-mono font-black text-primary">
+                              {s.quantity}x
+                            </td>
+                            <td className="p-3 pr-4 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                              {currencySymbol}{s.total_price.toFixed(2)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="text-center py-10 text-slate-400 text-xs">
+                    No order transactions recorded for this product in this timeframe.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: MENU SCANS & TRAFFIC ANALYTICS */}
       {activeTab === 'scans' && (
         <div className="space-y-5 sm:space-y-6 animate-fade-in">
           {/* Main Scans Stats */}
@@ -1278,31 +2249,80 @@ export function AnalyticsPage() {
 
           {/* Traffic Scan Chart */}
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-base font-bold flex items-center">
+            <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2">
+              <CardTitle className="text-sm sm:text-base font-bold flex items-center">
                 <CalendarDays size={18} className="mr-2 text-primary" /> Daily Traffic & QR Scans
               </CardTitle>
+
+              {/* Dynamic Live Info Badge for Hovered / Tapped Day */}
+              {hoveredScanDay && (
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-primary/10 dark:bg-primary/20 border border-primary/30 text-xs font-bold animate-fade-in shrink-0">
+                  <Calendar size={13} className="text-primary" />
+                  <span className="font-mono text-slate-900 dark:text-white">{hoveredScanDay.date}:</span>
+                  <span className="text-primary font-black">{hoveredScanDay.count} scans</span>
+                </div>
+              )}
             </CardHeader>
             <CardContent>
               {data?.daily_scans?.length > 0 ? (
-                <div className="h-56 flex items-end gap-2 mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 relative">
-                  {data.daily_scans.map((day: any, i: number) => {
-                    const maxS = Math.max(...data.daily_scans.map((d: any) => d.count), 1);
-                    const height = `${(day.count / maxS) * 100}%`;
-                    return (
-                      <div key={i} className="flex-1 flex flex-col items-center group relative h-full justify-end">
-                        <div 
-                          className="w-full max-w-[40px] bg-primary/20 dark:bg-primary-900/40 hover:bg-primary rounded-t-md transition-all relative cursor-pointer"
-                          style={{ height: height === '0%' ? '4px' : height }}
-                        >
-                          <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
-                            {day.count} scans ({day.date})
+                <div>
+                  <div className="h-64 flex items-end gap-1.5 sm:gap-2.5 mt-2 pt-16 pb-2 border-t border-slate-100 dark:border-slate-800 relative overflow-x-auto no-scrollbar">
+                    {(() => {
+                      const dailyList = data.daily_scans;
+                      const maxS = Math.max(...dailyList.map((d: any) => d.count), 1);
+                      return dailyList.map((day: any, i: number) => {
+                        const heightPct = day.count > 0 ? Math.max(8, Math.round((day.count / maxS) * 65)) : 4;
+                        const isHovered = hoveredScanDay?.date === day.date;
+                        const isLeftEdge = i < 3;
+                        const isRightEdge = i >= dailyList.length - 3;
+                        const tooltipAlignClass = isLeftEdge
+                          ? 'left-0'
+                          : isRightEdge
+                            ? 'right-0'
+                            : 'left-1/2 -translate-x-1/2';
+
+                        return (
+                          <div 
+                            key={day.date || i}
+                            className="flex-1 min-w-[28px] sm:min-w-[36px] max-w-[48px] flex flex-col items-center group relative h-full justify-end cursor-pointer"
+                            onMouseEnter={() => setHoveredScanDay(day)}
+                            onMouseLeave={() => setHoveredScanDay(null)}
+                            onClick={() => setHoveredScanDay((prev: any) => prev?.date === day.date ? null : day)}
+                          >
+                            <div 
+                              className={cn(
+                                "w-full rounded-t-md transition-all relative",
+                                day.count > 0
+                                  ? isHovered
+                                    ? "bg-gradient-to-t from-primary-600 to-primary ring-2 ring-primary ring-offset-1"
+                                    : "bg-primary/30 dark:bg-primary-900/40 hover:bg-primary"
+                                  : "bg-slate-200 dark:bg-slate-800"
+                              )}
+                              style={{ height: `${heightPct}%` }}
+                            >
+                              {/* Floating Tooltip */}
+                              <div className={cn(
+                                "absolute -top-14 bg-slate-900/95 backdrop-blur-md text-white text-[11px] py-1.5 px-3 rounded-xl transition-all whitespace-nowrap z-30 shadow-2xl border border-slate-700/80 flex flex-col gap-0.5",
+                                isHovered ? "opacity-100 z-40" : "opacity-0 group-hover:opacity-100 pointer-events-none",
+                                tooltipAlignClass
+                              )}>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono font-bold text-slate-200">{day.date}</span>
+                                  <span className="text-primary font-bold">{day.count} scans</span>
+                                </div>
+                              </div>
+                            </div>
+                            <span className={cn(
+                              "text-[9px] sm:text-[10px] mt-2 truncate w-full text-center font-mono transition-colors",
+                              isHovered ? "font-bold text-primary" : "text-slate-400"
+                            )}>
+                              {day.date.slice(5)}
+                            </span>
                           </div>
-                        </div>
-                        <span className="text-[9px] text-slate-400 mt-2 truncate">{day.date.slice(5)}</span>
-                      </div>
-                    );
-                  })}
+                        );
+                      });
+                    })()}
+                  </div>
                 </div>
               ) : (
                 <div className="h-40 flex items-center justify-center text-slate-400 text-xs">
@@ -1491,7 +2511,7 @@ export function AnalyticsPage() {
                                 {inv.invoice_no || inv.bill_number}
                               </span>
                               <span className="text-[10px] text-slate-400">
-                                {inv.date || (inv.created_at ? new Date(inv.created_at).toLocaleString() : '-')}
+                                {inv.date ? formatLocalDateTime(inv.date) : (inv.created_at ? formatLocalDateTime(inv.created_at) : '-')}
                               </span>
                             </td>
                             <td className="p-3">

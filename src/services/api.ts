@@ -1,17 +1,42 @@
-import axios from 'axios';
+import axios, { AxiosRequestConfig, AxiosResponse } from 'axios';
 import { APP_CONFIG } from '../config';
 
 // Create Axios instance with base URL
-// Fallback to empty string in development to use the Vite proxy (fixes local CORS delays)
 const BASE_URL = APP_CONFIG.API_URL;
 
 export const api = axios.create({
   baseURL: `${BASE_URL}/api/v1`,
-  timeout: 60_000,  // 60 second timeout — allows slower mobile networks, large payloads, and backend operations without timing out
+  timeout: 60_000,
   headers: {
     'Content-Type': 'application/json',
   },
 });
+
+// In-flight GET request deduplication cache to prevent duplicate concurrent network calls
+const inflightGetRequests = new Map<string, Promise<AxiosResponse<any>>>();
+
+const originalGet = api.get.bind(api);
+api.get = function <T = any, R = AxiosResponse<T>, D = any>(url: string, config?: AxiosRequestConfig<D>): Promise<R> {
+  // If skipDedupe is specified or request is not standard, use original get
+  const authHeader = config?.headers?.Authorization || localStorage.getItem('customer_token') || localStorage.getItem('access_token') || '';
+  const dedupeKey = `GET:${url}:${JSON.stringify(config?.params || '')}:${authHeader ? authHeader.slice(-10) : ''}`;
+
+  const existing = inflightGetRequests.get(dedupeKey);
+  if (existing) {
+    return existing as unknown as Promise<R>;
+  }
+
+  const promise = originalGet<T, R, D>(url, config)
+    .finally(() => {
+      // Clear once completed
+      setTimeout(() => {
+        inflightGetRequests.delete(dedupeKey);
+      }, 50);
+    });
+
+  inflightGetRequests.set(dedupeKey, promise as unknown as Promise<AxiosResponse<any>>);
+  return promise;
+};
 
 // Request interceptor to attach JWT token
 api.interceptors.request.use(

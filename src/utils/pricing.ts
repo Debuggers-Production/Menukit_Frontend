@@ -33,21 +33,23 @@ export interface ReplacementCalculationResult {
   newSubtotal: number;
   originalPaidAmount: number;
   newTotalPayable: number;
-  difference: number;
-  refundAmount: number;
-  additionalPayment: number;
+  productDifference: number; // Pure product difference without charges
+  difference: number;        // Pure product difference shown on admin side
+  refundAmount: number;      // Pure product refund amount
+  additionalPayment: number; // Customer payable amount on extra difference with online charges included
   action: 'refund' | 'payment_due' | 'none';
   pricing: OrderPricingResult;
 }
 
 export function roundStrictTwoDecimals(val: number): number {
-  if (isNaN(val)) return 0;
-  const shifted = Math.abs(val) * 1000;
+  if (isNaN(val) || val === null || val === undefined) return 0;
+  const num = Number(val);
+  const shifted = Math.abs(num) * 1000;
   const thirdDigit = Math.floor(shifted + 1e-9) % 10;
   if (thirdDigit > 5) {
-    return Math.sign(val) * (Math.ceil(Math.abs(val) * 100 - 1e-9) / 100);
+    return Math.sign(num) * (Math.ceil(Math.abs(num) * 100 - 1e-9) / 100);
   } else {
-    return Math.sign(val) * (Math.floor(Math.abs(val) * 100 + 1e-9) / 100);
+    return Math.sign(num) * (Math.floor(Math.abs(num) * 100 + 1e-9) / 100);
   }
 }
 
@@ -72,12 +74,22 @@ export function calculateOrderPricing(subtotal: number, isOnline = true): OrderP
     };
   }
 
+  // 1. 2% Platform Fee
   const platformFeeUnrounded = cleanSub * 0.02;
+
+  // 2. 3% Payment Gateway Fee
   const gatewayFeeUnrounded = cleanSub * 0.03;
+
+  // 3. 18% GST on the 3% Payment Gateway Fee
   const gatewayGstUnrounded = gatewayFeeUnrounded * 0.18;
+
+  // 4. Combined Total PG Fee
   const totalPgFeeUnrounded = gatewayFeeUnrounded + gatewayGstUnrounded;
+
+  // 5. Total Unrounded
   const totalPayableUnrounded = cleanSub + platformFeeUnrounded + totalPgFeeUnrounded;
 
+  // Strict > 5 rounding
   const roundedSub = roundStrictTwoDecimals(cleanSub);
   const roundedPlat = roundStrictTwoDecimals(platformFeeUnrounded);
   const roundedGw = roundStrictTwoDecimals(gatewayFeeUnrounded);
@@ -108,32 +120,76 @@ export function calculateReplacement(
   isOnline = true
 ): ReplacementCalculationResult {
   const origPaid = roundStrictTwoDecimals(Number(originalPaidAmount) || 0);
-  const newPricing = calculateOrderPricing(newSubtotal, isOnline);
-  const newTotal = newPricing.totalPayable;
+  const oldSub = roundStrictTwoDecimals(Number(oldSubtotal) || 0);
+  const newSub = roundStrictTwoDecimals(Number(newSubtotal) || 0);
 
-  const diff = roundStrictTwoDecimals(newTotal - origPaid);
+  // Pure product price difference without charges
+  const productDiff = roundStrictTwoDecimals(newSub - oldSub);
+  const newPricing = calculateOrderPricing(newSub, isOnline);
 
   let refundAmount = 0;
   let additionalPayment = 0;
   let action: 'refund' | 'payment_due' | 'none' = 'none';
 
-  if (diff < 0) {
-    refundAmount = Math.abs(diff);
+  if (productDiff < 0) {
+    // Cheaper item replacement: refund purely the product price difference without charges
+    refundAmount = Math.abs(productDiff);
     action = 'refund';
-  } else if (diff > 0) {
-    additionalPayment = diff;
+  } else if (productDiff > 0) {
+    // More expensive item replacement: extra product amount due (+ fee on the extra amount if online for customer)
+    if (isOnline) {
+      const extraPricing = calculateOrderPricing(productDiff, true);
+      additionalPayment = extraPricing.totalPayable;
+    } else {
+      additionalPayment = productDiff;
+    }
     action = 'payment_due';
   }
 
   return {
-    oldSubtotal: roundStrictTwoDecimals(oldSubtotal),
-    newSubtotal: roundStrictTwoDecimals(newSubtotal),
+    oldSubtotal: oldSub,
+    newSubtotal: newSub,
     originalPaidAmount: origPaid,
-    newTotalPayable: newTotal,
-    difference: diff,
+    newTotalPayable: newPricing.totalPayable,
+    productDifference: productDiff,
+    difference: productDiff, // Pure product difference shown on admin side
     refundAmount,
     additionalPayment,
     action,
     pricing: newPricing,
   };
 }
+
+export function calculateOrderReplacementCredit(items: any[] = [], isPaid = true): number {
+  if (!items || !items.length) return 0;
+
+  const activeItems = items.filter((it: any) => !it.is_cancelled);
+  const replacedCancelled = items.filter(
+    (it: any) => it.is_cancelled && String(it.cancellation_reason || '').startsWith('Replaced with')
+  );
+
+  let totalCredit = 0;
+  for (const act of activeItems) {
+    const actName = act.name || '';
+    const actPrice = Number(act.price || 0);
+    const actQty = Number(act.quantity || 1);
+    const actTotal = actPrice * actQty;
+
+    // Direct predecessor in replacedCancelled
+    const predecessor = replacedCancelled.find((p: any) =>
+      String(p.cancellation_reason || '').startsWith(`Replaced with ${actName}`)
+    );
+
+    if (predecessor) {
+      const predPrice = Number(predecessor.price || 0);
+      const predQty = Number(predecessor.quantity || 1);
+      const predTotal = predPrice * predQty;
+      totalCredit += Math.min(actTotal, predTotal);
+    } else if (isPaid) {
+      totalCredit += actTotal;
+    }
+  }
+
+  return roundStrictTwoDecimals(totalCredit);
+}
+

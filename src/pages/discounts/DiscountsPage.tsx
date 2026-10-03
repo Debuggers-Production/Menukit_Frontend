@@ -901,9 +901,14 @@ export function DiscountsPage() {
  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold uppercase tracking-wider ${statusCfg.color}`}>
  {statusCfg.icon} {statusCfg.label}
  </span>
- {(d.visibility_type === 'members_only_hidden'|| d.visibility_type === 'members_only_visible') && (
+ {d.visibility_type === 'members_only_hidden' && (
  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold uppercase tracking-wider bg-purple-50 text-purple-700 ring-1 ring-purple-200">
- <Crown size={12} /> Members Only
+ <Crown size={12} /> Member Only Hidden
+ </span>
+ )}
+ {d.visibility_type === 'members_only_visible' && (
+ <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold uppercase tracking-wider bg-purple-50 text-purple-700 ring-1 ring-purple-200">
+ <Crown size={12} /> Member Only Visible
  </span>
  )}
  {d.visibility_type === 'unlock_required'&& (
@@ -2085,11 +2090,21 @@ export function DiscountsPage() {
                         Code Cannot Be Reused
                       </h5>
                       <p className="text-xs text-rose-700 dark:text-rose-300 mt-1">
-                        {verificationResult.message}
+                        {verificationResult.redeemed_at 
+                          ? `This discount code was already verified and redeemed on ${(() => {
+                              const d = new Date(verificationResult.redeemed_at);
+                              if (isNaN(d.getTime())) return verificationResult.redeemed_at;
+                              return d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' }) + ', ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: true });
+                            })()}. It cannot be reused.`
+                          : verificationResult.message}
                       </p>
                       {verificationResult.redeemed_at && (
-                        <p className="text-[11px] font-mono text-rose-600 dark:text-rose-400 mt-1">
-                          Redeemed on: {verificationResult.redeemed_at}
+                        <p className="text-[11px] font-mono text-rose-600 dark:text-rose-400 mt-1 font-bold">
+                          Redeemed on: {(() => {
+                            const d = new Date(verificationResult.redeemed_at);
+                            if (isNaN(d.getTime())) return verificationResult.redeemed_at;
+                            return d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' }) + ', ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: true });
+                          })()}
                         </p>
                       )}
                       {(verificationResult.customer_name || verificationResult.customer_phone) && (
@@ -2198,12 +2213,23 @@ export function DiscountsPage() {
                     </div>
                   )}
 
-                  <div className="flex items-center justify-between p-2.5 bg-background rounded-lg border border-border text-xs">
-                    <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-between p-2.5 bg-background rounded-xl border border-border text-xs">
+                    <div className="flex items-center gap-2 min-w-0">
                       <Tag size={14} className="text-emerald-600 shrink-0" />
-                      <span className="font-mono font-bold tracking-wider text-sm">{verificationResult.code}</span>
+                      <span className="font-mono font-bold tracking-wider text-sm truncate">{verificationResult.code}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(verificationResult.code);
+                          toast.success(`Discount code "${verificationResult.code}" copied!`);
+                        }}
+                        className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-foreground transition-colors cursor-pointer shrink-0"
+                        title="Copy code"
+                      >
+                        <Copy size={14} />
+                      </button>
                     </div>
-                    <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-100/60 dark:bg-emerald-950/50 px-2 py-0.5 rounded-md">
+                    <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-100/60 dark:bg-emerald-950/50 px-2 py-0.5 rounded-md shrink-0">
                       Ready for redemption
                     </span>
                   </div>
@@ -2254,18 +2280,48 @@ export function DiscountsPage() {
                 ) : recentRedemptions.length === 0 ? (
                   <p className="text-xs text-muted-foreground text-center py-3">No codes redeemed yet.</p>
                 ) : (
-                  recentRedemptions.map(r => (
-                    <div key={r.id} className="flex items-center justify-between p-2.5 rounded-lg bg-muted/40 border border-border text-xs">
-                      <div>
-                        <span className="font-mono font-bold tracking-wider text-foreground">{r.code}</span>
-                        <p className="text-[11px] text-muted-foreground truncate">{r.discount_title}</p>
+                  recentRedemptions.map(r => {
+                    const localTime = (() => {
+                      if (!r.redeemed_at) return '';
+                      const d = new Date(r.redeemed_at);
+                      if (isNaN(d.getTime())) return r.redeemed_at;
+                      return d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' }) + ', ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: true });
+                    })();
+                    const displayCode = (() => {
+                      if (r.code && !r.code.includes(' ') && !r.code.includes('%') && r.code !== r.discount_title) {
+                        return r.code;
+                      }
+                      const prefix = (r.discount_title || 'OFFER').trim().replace(/[^a-zA-Z0-9]/g, '').slice(0, 6).toUpperCase() || 'OFFER';
+                      const discToken = (r.discount_id || 'DISC').replace(/-/g, '').slice(0, 4).toUpperCase();
+                      const custToken = (r.customer_identifier || 'CUST').replace(/\D/g, '').slice(-4) || (r.customer_identifier || 'CUST').slice(-4).toUpperCase();
+                      return `${prefix}-${discToken}-${custToken}`;
+                    })();
+                    return (
+                      <div key={r.id} className="flex items-center justify-between p-2.5 rounded-lg bg-muted/40 border border-border text-xs">
+                        <div className="min-w-0 pr-2">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono font-bold tracking-wider text-foreground truncate">{displayCode}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(displayCode);
+                                toast.success(`Code "${displayCode}" copied!`);
+                              }}
+                              className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-slate-400 hover:text-foreground transition-colors cursor-pointer shrink-0"
+                              title="Copy code"
+                            >
+                              <Copy size={12} />
+                            </button>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground truncate">{r.discount_title}</p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <span className="text-[10px] font-bold text-rose-600 block">REDEEMED</span>
+                          <span className="text-[10px] text-muted-foreground">{localTime}</span>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <span className="text-[10px] font-bold text-rose-600 block">REDEEMED</span>
-                        <span className="text-[10px] text-muted-foreground">{formatDateTime(r.redeemed_at)}</span>
-                      </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             )}

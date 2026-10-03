@@ -167,7 +167,7 @@ export function ShopSwitcherDropdown({ collapsed = false }: ShopSwitcherProps) {
                 className="w-full flex items-center justify-center gap-2 px-3 py-2 text-[13px] font-bold text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950/40 rounded-xl transition-all border border-orange-200/60 dark:border-orange-900/40 shadow-xs cursor-pointer"
               >
                 <Plus className="w-4 h-4 stroke-[2.5]" />
-                <span>{ownedShops.length > 0 ? '+ Add New Branch / Shop' : '+ Create Shop'}</span>
+                <span>{ownedShops.length > 0 ? 'Add New Branch / Shop' : 'Create Shop'}</span>
               </button>
             </div>
           </div>

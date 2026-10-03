@@ -3015,10 +3015,11 @@ export function PublicMenuPage() {
 
             <div className="pt-4">
               {(() => {
+                const isAlreadyUsed = !!selectedDiscountForModal.is_already_used;
                 const isOfferUnlockRequired = selectedDiscountForModal.visibility_type === 'unlock_required' && !memberStatus;
                 const isOfferMemberRequired = (selectedDiscountForModal.visibility_type === 'members_only_visible' || selectedDiscountForModal.visibility_type === 'members_only_hidden') && memberStatus !== 'verified-member';
 
-                if (isOfferMemberRequired) {
+                if (!isAlreadyUsed && isOfferMemberRequired) {
                   return (
                     <button
                       type="button"
@@ -3033,7 +3034,7 @@ export function PublicMenuPage() {
                   );
                 }
 
-                if (isOfferUnlockRequired) {
+                if (!isAlreadyUsed && isOfferUnlockRequired) {
                   return (
                     <button
                       onClick={() => {
@@ -3050,6 +3051,10 @@ export function PublicMenuPage() {
                   );
                 }
 
+                const buttonText = isAlreadyUsed 
+                  ? 'View Redeemed Items' 
+                  : 'View Applicable Items';
+
                 return (
                   <button
                     onClick={() => {
@@ -3060,7 +3065,7 @@ export function PublicMenuPage() {
                     className="w-full py-4 px-4 rounded-2xl font-bold text-white transition-all transform hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2 shadow-lg cursor-pointer"
                     style={{ backgroundColor: primaryColor, boxShadow: `0 8px 24px ${primaryColor}50` }}
                   >
-                    View Applicable Items
+                    {buttonText}
                   </button>
                 );
               })()}

@@ -23,6 +23,7 @@ import { SearchableSelect } from '@/components/ui/SearchableSelect';
 import { DatePicker } from '@/components/ui/DatePicker';
 import { InfiniteScrollTrigger } from '@/components/ui/InfiniteScrollTrigger';
 import toast from 'react-hot-toast';
+import { parseDateSafe } from '@/utils/dateTime';
 
 interface SettlementItem {
   order_id: string;
@@ -61,33 +62,19 @@ interface SettlementSummary {
 
 function formatSettlementDateTime(dateStr: string) {
   if (!dateStr) return { date: '-', time: '' };
-  const d = new Date(dateStr.endsWith('Z') || dateStr.includes('+') ? dateStr : `${dateStr}Z`);
-  if (isNaN(d.getTime())) {
-    const fallback = new Date(dateStr);
-    if (!isNaN(fallback.getTime())) {
-      return {
-        date: fallback.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
-        time: fallback.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
-      };
-    }
-    return { date: dateStr, time: '' };
-  }
+  const d = parseDateSafe(dateStr);
+  if (!d) return { date: dateStr, time: '' };
   return {
-    date: d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+    date: d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' }),
     time: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
   };
 }
 
 function formatSettlementDate(dateStr?: string) {
   if (!dateStr) return '-';
-  const d = new Date(dateStr.endsWith('Z') || dateStr.includes('+') ? dateStr : `${dateStr}Z`);
-  if (isNaN(d.getTime())) {
-    const fallback = new Date(dateStr);
-    if (!isNaN(fallback.getTime())) {
-      return fallback.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-    }
-    return dateStr;
-  }
+  const d = parseDateSafe(dateStr);
+  if (!d) return dateStr;
+  return d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 const PAGE_SIZE = 20;

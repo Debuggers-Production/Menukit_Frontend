@@ -10,7 +10,7 @@ import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { QRCodeCanvas } from 'qrcode.react';
-import { calculateOrderPricing } from '@/utils/pricing';
+import { calculateOrderPricing, calculateOrderReplacementCredit } from '@/utils/pricing';
 
 export const playChimeNotificationSound = () => {
   try {
@@ -659,7 +659,7 @@ export function OrderStatusPage() {
   const isUnpaid = String(order?.payment_status || '').toLowerCase() === 'pending';
   const isAllItemsCancelled = (order?.items || []).length > 0 && (order?.items || []).every((it: any) => it.is_cancelled);
   const isCancelled = order?.order_status?.toUpperCase() === 'REJECTED' || order?.order_status?.toUpperCase() === 'CANCELLED' || isAllItemsCancelled;
-  const isActuallyCancelled = isCancelled || order?.payment_status === 'refunded';
+  const isActuallyCancelled = isCancelled || (order?.payment_status === 'refunded' && isAllItemsCancelled);
   const isDineIn = order?.order_type === 'dine_in';
   const normOrderStatus = (order?.order_status || '').toUpperCase();
   const isCompleted = normOrderStatus === 'COMPLETED' || normOrderStatus === 'DELIVERED';
@@ -668,7 +668,9 @@ export function OrderStatusPage() {
   // Rule: Payment is disabled until the merchant accepts the order.
   const isPaymentDisabledUntilAccepted = isPendingVendor;
   const canPayNow = isUnpaid && !isCancelled && !isPaymentDisabledUntilAccepted;
-  const allItemsSubtotal = (order?.items || []).reduce((acc: number, it: any) => acc + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+  // Presented items: excludes replaced predecessor items
+  const presentedItems = (order?.items || []).filter((it: any) => !String(it.cancellation_reason || '').startsWith('Replaced with'));
+  const allItemsSubtotal = presentedItems.reduce((acc: number, it: any) => acc + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
   const activeItems = (order?.items || []).filter((it: any) => !it.is_cancelled);
   const activeItemsSubtotal = activeItems.reduce((acc: number, it: any) => acc + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
 
@@ -686,7 +688,13 @@ export function OrderStatusPage() {
   const backendTotal = Number(order?.total_amount || 0);
   const effectiveOrderTotal = (backendTotal > 0) ? backendTotal : (computedFoodTotal > 0 ? computedFoodTotal : allItemsSubtotal);
 
-  const netPayableBase = effectiveOrderTotal;
+  // Replaced items credit deduction: accurate predecessor credit calculation
+  const hasReplacementCancelled = (order?.items || []).some((it: any) => it.is_cancelled && String(it.cancellation_reason || '').startsWith('Replaced with'));
+  const replacedCredit = hasReplacementCancelled ? calculateOrderReplacementCredit(order?.items || [], false) : 0;
+
+  const netPayableBase = (replacedCredit > 0 && isUnpaid)
+    ? Math.max(0, effectiveOrderTotal - replacedCredit)
+    : effectiveOrderTotal;
 
   const currencySymbol = shop?.settings?.currency || '₹';
 
@@ -966,6 +974,13 @@ export function OrderStatusPage() {
                 ).toFixed(2)}
               </span>
             </div>
+
+            {replacedCredit > 0 && isUnpaid && (
+              <div className="flex justify-between font-bold text-amber-600 dark:text-amber-400">
+                <span>Previous Payment (Replaced Items)</span>
+                <span>-{shop?.settings?.currency || '₹'}{replacedCredit.toFixed(2)}</span>
+              </div>
+            )}
 
             {isActuallyCancelled && (
               <div className="flex justify-between text-rose-600 dark:text-rose-400 font-bold">
@@ -1323,9 +1338,23 @@ export function OrderStatusPage() {
           );
           const isPaid = ['paid', 'refunded', 'partially_refunded'].includes(String(order?.payment_status || '').toLowerCase());
 
+          // Compute exact refundable/refunded amount accounting for predecessors and paid differences
+          const refundableRefundTotal = (order?.items || []).reduce((acc: number, it: any) => {
+            if (it.is_cancelled && !String(it.cancellation_reason || '').startsWith('Replaced with')) {
+              const predecessor = (order?.items || []).find((p: any) =>
+                p.is_cancelled && String(p.cancellation_reason || '').startsWith(`Replaced with ${it.name}`)
+              );
+              if (predecessor) {
+                return acc + Math.min(Number(it.price || 0) * Number(it.quantity || 1), Number(predecessor.price || 0) * Number(predecessor.quantity || 1));
+              }
+              return acc + (Number(it.price || 0) * Number(it.quantity || 1));
+            }
+            return acc;
+          }, 0);
+
           const pureCancelledTotal = isFullyCancelled
-            ? (Number(order.total_amount || 0) > 0 ? Number(order.total_amount) : (rawCancelledTotal > 0 ? rawCancelledTotal : allItemsSubtotal))
-            : rawCancelledTotal;
+            ? (Number(order.total_amount || 0) > 0 ? Number(order.total_amount) : (allItemsSubtotal > 0 ? allItemsSubtotal : (refundableRefundTotal > 0 ? refundableRefundTotal : rawCancelledTotal)))
+            : (refundableRefundTotal > 0 ? refundableRefundTotal : rawCancelledTotal);
 
           if (pureCancelledTotal <= 0.01) return null;
 
@@ -1371,8 +1400,8 @@ export function OrderStatusPage() {
       </main>
 
       {/* Floating Premium Bottom Actions Dock */}
-      <div className="fixed bottom-4 left-4 right-4 sm:bottom-6 sm:left-1/2 sm:-translate-x-1/2 sm:w-[420px] z-40 print:hidden">
-        <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl rounded-[20px] shadow-[0_10px_35px_rgba(0,0,0,0.12)] border border-slate-100 dark:border-slate-800 p-1.5 flex items-center gap-1.5">
+      <div className="fixed bottom-4 left-3 right-3 sm:bottom-6 sm:left-1/2 sm:-translate-x-1/2 sm:w-[480px] sm:max-w-lg z-40 print:hidden">
+        <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl rounded-2xl shadow-[0_10px_35px_rgba(0,0,0,0.15)] border border-slate-200/80 dark:border-slate-800 p-2 flex items-center gap-2">
 
           {/* Bottom Dock Action Buttons - Dine-in only for adding items to current table order */}
           {isDineIn && !isActuallyCancelled && !isCompleted && !isPendingVendor && (
@@ -1381,11 +1410,11 @@ export function OrderStatusPage() {
                 const tableParam = order.table_number ? `?table=${encodeURIComponent(order.table_number)}` : '';
                 navigate(`/shop/${id}${tableParam}`);
               }}
-              className="flex-1 py-2.5 px-3 bg-orange-500/10 hover:bg-orange-500/20 text-orange-600 dark:text-orange-400 border border-orange-500/30 rounded-xl font-black text-[10px] uppercase tracking-wider active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
+              className="flex-1 min-w-0 py-2.5 px-2 bg-orange-500/10 hover:bg-orange-500/20 text-orange-600 dark:text-orange-400 border border-orange-500/30 rounded-xl font-heading font-black text-[10px] sm:text-[11px] uppercase tracking-wider active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1 text-center"
               title="Add more items to this order"
             >
-              <Plus size={14} />
-              <span>Order Another Item</span>
+              <Plus size={13} className="shrink-0" />
+              <span className="leading-tight">Order More</span>
             </button>
           )}
 
@@ -1399,38 +1428,38 @@ export function OrderStatusPage() {
             <button
               onClick={handlePayOnline}
               disabled={isRedirecting}
-              className="flex-1 py-2.5 text-white rounded-xl font-black text-[10px] uppercase tracking-wider active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md bg-gradient-to-r from-orange-500 to-amber-500 hover:brightness-110 disabled:opacity-50"
+              className="flex-1 min-w-0 py-2.5 px-2.5 text-white rounded-xl font-heading font-black text-[10px] sm:text-[11px] uppercase tracking-wider active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md bg-gradient-to-r from-orange-500 to-amber-500 hover:brightness-110 disabled:opacity-50 text-center"
             >
               {isRedirecting ? (
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white shrink-0" />
               ) : (
                 <>
-                  <CreditCard size={14} />
-                  <span>Pay Now ({currencySymbol}{grandTotalFormatted})</span>
+                  <CreditCard size={14} className="shrink-0" />
+                  <span className="leading-tight">Pay Now ({currencySymbol}{grandTotalFormatted})</span>
                 </>
               )}
             </button>
           ) : isPaymentDisabledUntilAccepted ? (
-            <div className="flex-1 py-2 text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 rounded-lg font-bold text-[10px] uppercase tracking-wider flex items-center justify-center gap-1.5 text-center">
-              <Clock size={12} className="text-blue-500 shrink-0 animate-spin" />
-              <span>Awaiting Acceptance</span>
+            <div className="flex-1 min-w-0 py-2.5 px-2 text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 rounded-xl font-bold text-[10px] sm:text-[11px] uppercase tracking-wider flex items-center justify-center gap-1.5 text-center">
+              <Clock size={13} className="text-blue-500 shrink-0 animate-spin" />
+              <span className="leading-tight">Awaiting Acceptance</span>
             </div>
           ) : (
             <button
               onClick={() => navigate(`/shop/${id}/orders`)}
-              className="flex-1 py-2 text-slate-700 dark:text-slate-200 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-lg font-bold text-[10px] uppercase tracking-wider active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5"
+              className="flex-1 min-w-0 py-2.5 px-2 text-slate-700 dark:text-slate-200 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-xl font-heading font-black text-[10px] sm:text-[11px] uppercase tracking-wider active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5 text-center"
             >
-              <History size={13} />
-              <span>View Orders</span>
+              <History size={13} className="shrink-0" />
+              <span className="leading-tight">View Orders</span>
             </button>
           )}
           <button
             onClick={() => setIsReceiptSheetOpen(true)}
-            className="py-2.5 px-3.5 text-white rounded-xl font-black text-[10px] uppercase tracking-wider active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm shrink-0"
+            className="flex-1 min-w-0 py-2.5 px-2 text-white rounded-xl font-heading font-black text-[10px] sm:text-[11px] uppercase tracking-wider active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1 shadow-sm text-center"
             style={{ backgroundColor: primaryColor }}
           >
-            <Receipt size={13} />
-            <span>Print / Download</span>
+            <Receipt size={13} className="shrink-0" />
+            <span className="leading-tight">Receipt</span>
           </button>
         </div>
       </div>

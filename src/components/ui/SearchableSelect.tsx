@@ -22,6 +22,12 @@ export interface SearchableSelectProps {
   id?: string;
   tabIndex?: number;
   onKeyDown?: (e: React.KeyboardEvent<HTMLDivElement>) => void;
+  // Async backend search & infinite scroll pagination props
+  onSearchChange?: (query: string) => void;
+  onLoadMore?: () => void;
+  hasMore?: boolean;
+  isLoading?: boolean;
+  isLoadingMore?: boolean;
 }
 
 export const SearchableSelect = forwardRef<HTMLDivElement, SearchableSelectProps>(function SearchableSelect({
@@ -34,7 +40,12 @@ export const SearchableSelect = forwardRef<HTMLDivElement, SearchableSelectProps
   minWidth,
   id,
   tabIndex = 0,
-  onKeyDown
+  onKeyDown,
+  onSearchChange,
+  onLoadMore,
+  hasMore = false,
+  isLoading = false,
+  isLoadingMore = false,
 }, ref) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -56,11 +67,13 @@ export const SearchableSelect = forwardRef<HTMLDivElement, SearchableSelectProps
     openUpward: boolean;
   }>({ left: 0, width: 0, maxHeight: 240, openUpward: false });
 
+  const isAsync = Boolean(onSearchChange);
+
   const filteredOptions = useMemo(() => {
-    if (!showSearch || !deferredSearch.trim()) return options;
+    if (isAsync || !showSearch || !deferredSearch.trim()) return options;
     const query = deferredSearch.toLowerCase();
     return options.filter(opt => opt.name.toLowerCase().includes(query));
-  }, [options, showSearch, deferredSearch]);
+  }, [options, showSearch, deferredSearch, isAsync]);
 
   const selectedOption = useMemo(() => {
     return options.find(opt => opt.id?.toString() === value?.toString());
@@ -86,7 +99,7 @@ export const SearchableSelect = forwardRef<HTMLDivElement, SearchableSelectProps
       // Decide whether to flip upward
       const shouldFlipUpward = spaceBelow < 180 && spaceAbove > spaceBelow;
       const availableSpace = shouldFlipUpward ? spaceAbove : spaceBelow;
-      const maxHeight = Math.max(120, Math.min(260, availableSpace));
+      const maxHeight = Math.max(140, Math.min(280, availableSpace));
       const calculatedWidth = Math.max(rect.width, minWidth || 160);
 
       // Prevent overflow off right edge of viewport
@@ -198,6 +211,14 @@ export const SearchableSelect = forwardRef<HTMLDivElement, SearchableSelectProps
     }
   };
 
+  const handleDropdownScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    if (!onLoadMore || !hasMore || isLoadingMore || isLoading) return;
+    const target = e.currentTarget;
+    if (target.scrollHeight - target.scrollTop - target.clientHeight < 35) {
+      onLoadMore();
+    }
+  };
+
   return (
     <div ref={wrapperRef} className="relative w-full">
       <div 
@@ -239,7 +260,13 @@ export const SearchableSelect = forwardRef<HTMLDivElement, SearchableSelectProps
                 className="w-full bg-transparent text-sm focus:outline-none placeholder:text-muted-foreground"
                 placeholder="Search..."
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSearch(val);
+                  if (onSearchChange) {
+                    onSearchChange(val);
+                  }
+                }}
                 onClick={(e) => e.stopPropagation()}
                 onKeyDown={(e) => {
                   if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter') {
@@ -253,38 +280,56 @@ export const SearchableSelect = forwardRef<HTMLDivElement, SearchableSelectProps
               />
             </div>
           )}
-          <div className="flex-1 overflow-y-auto overscroll-contain py-1 scrollbar-thin">
-            {filteredOptions.length === 0 ? (
-              <div className="px-3 py-3 text-sm text-center text-muted-foreground">No results found</div>
+          <div 
+            className="flex-1 overflow-y-auto overscroll-contain py-1 scrollbar-thin"
+            onScroll={handleDropdownScroll}
+          >
+            {isLoading ? (
+              <div className="py-5 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
+                <div className="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                <span>Searching products...</span>
+              </div>
+            ) : filteredOptions.length === 0 ? (
+              <div className="px-3 py-4 text-xs text-center text-muted-foreground">No matching products found</div>
             ) : (
-              filteredOptions.map((opt, idx) => (
-                <div
-                  key={opt.id}
-                  className={`px-3 py-2.5 text-sm flex items-center justify-between gap-2 transition-colors ${
-                    opt.disabled
-                      ? 'opacity-50 cursor-not-allowed bg-muted/40 text-muted-foreground'
-                      : 'cursor-pointer ' + 
-                        (idx === highlightedIndex ? 'bg-accent text-accent-foreground ' : '') +
-                        (value?.toString() === opt.id.toString() ? 'bg-primary/10 text-primary font-semibold' : 'text-foreground hover:bg-accent hover:text-accent-foreground')
-                  }`}
-                  onClick={() => {
-                    if (opt.disabled) return;
-                    onChange(opt.id);
-                    setIsOpen(false);
-                    setSearch('');
-                    triggerRef.current?.focus();
-                  }}
-                  onMouseEnter={() => setHighlightedIndex(idx)}
-                >
-                  <div className="flex items-center gap-2 truncate">
-                    {opt.icon}
-                    <span className="truncate">{opt.name}</span>
+              <>
+                {filteredOptions.map((opt, idx) => (
+                  <div
+                    key={opt.id}
+                    className={`px-3 py-2.5 text-sm flex items-center justify-between gap-2 transition-colors ${
+                      opt.disabled
+                        ? 'opacity-50 cursor-not-allowed bg-muted/40 text-muted-foreground'
+                        : 'cursor-pointer ' + 
+                          (idx === highlightedIndex ? 'bg-accent text-accent-foreground ' : '') +
+                          (value?.toString() === opt.id.toString() ? 'bg-primary/10 text-primary font-semibold' : 'text-foreground hover:bg-accent hover:text-accent-foreground')
+                    }`}
+                    onClick={() => {
+                      if (opt.disabled) return;
+                      onChange(opt.id);
+                      setIsOpen(false);
+                      setSearch('');
+                      if (onSearchChange) onSearchChange('');
+                      triggerRef.current?.focus();
+                    }}
+                    onMouseEnter={() => setHighlightedIndex(idx)}
+                  >
+                    <div className="flex items-center gap-2 truncate">
+                      {opt.icon}
+                      <span className="truncate">{opt.name}</span>
+                    </div>
+                    {opt.subtext && (
+                      <span className="text-[10px] font-bold shrink-0 opacity-80">{opt.subtext}</span>
+                    )}
                   </div>
-                  {opt.subtext && (
-                    <span className="text-[10px] font-bold shrink-0 opacity-80">{opt.subtext}</span>
-                  )}
-                </div>
-              ))
+                ))}
+
+                {isLoadingMore && (
+                  <div className="py-2.5 text-center text-xs text-muted-foreground flex items-center justify-center gap-1.5 border-t border-border/40">
+                    <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                    <span>Loading more...</span>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>,

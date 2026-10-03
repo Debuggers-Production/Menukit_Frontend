@@ -76,7 +76,7 @@ export function ItemReplacementModal({
 
   if (!itemToReplace || !order) return null;
 
-  const isPaid = String(order.payment_status || '').toLowerCase() === 'paid';
+  const isPaid = ['paid', 'partially_refunded'].includes(String(order.payment_status || '').toLowerCase()) || Boolean(order.payment_session_id || order.razorpay_order_id || order.refund_id);
   const isPaidOnline = isPaid && String(order.payment_method || '').toLowerCase() === 'online';
 
   const oldTotal = Number(itemToReplace.price || 0) * Number(itemToReplace.quantity || 1);

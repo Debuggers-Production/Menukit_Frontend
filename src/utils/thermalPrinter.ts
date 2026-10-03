@@ -10,6 +10,7 @@ import {
   disconnectBluetoothPrinter
 } from './webBluetoothPrinter';
 import type { BillingPrinterConfig } from '@/store/usePrinterStore';
+import { parseDateSafe } from './dateTime';
 
 /**
  * Checks the status of the local Menukit Print Bridge (running on the user's laptop/PC at port 9101).
@@ -218,7 +219,8 @@ export interface ThermalPrintOptions {
 
 export function formatReceiptDateTime(dateStr: string) {
   if (!dateStr) return { date: '—', time: '—', full: '—' };
-  const d = new Date(dateStr);
+  const d = parseDateSafe(dateStr);
+  if (!d) return { date: '—', time: '—', full: '—' };
   const day = String(d.getDate()).padStart(2, '0');
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const year = String(d.getFullYear()).slice(-2);

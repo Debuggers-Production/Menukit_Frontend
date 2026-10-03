@@ -13,9 +13,10 @@ interface ModalProps {
   footer?: React.ReactNode;
   className?: string;
   closeOnBackdropClick?: boolean;
+  hideCloseButton?: boolean;
 }
 
-export function Modal({ isOpen, onClose, title, description, children, footer, className, closeOnBackdropClick = false }: ModalProps) {
+export function Modal({ isOpen, onClose, title, description, children, footer, className, closeOnBackdropClick = false, hideCloseButton = false }: ModalProps) {
   const [mounted, setMounted] = React.useState(false);
 
   React.useEffect(() => {
@@ -61,20 +62,22 @@ export function Modal({ isOpen, onClose, title, description, children, footer, c
             {/* Fixed Header */}
             {(title || description) ? (
               <div className="relative z-30 bg-background pt-3.5 pb-3.5 px-4 sm:pt-4 sm:pb-4 sm:px-8 border-b border-border shrink-0">
-                <button
-                  onClick={onClose}
-                  className="absolute right-3.5 top-3.5 sm:right-4 sm:top-4 rounded-full p-1.5 text-muted-foreground hover:bg-muted transition-colors cursor-pointer"
-                >
-                  <X className="h-4.5 w-4.5" />
-                  <span className="sr-only">Close</span>
-                </button>
+                {!hideCloseButton && (
+                  <button
+                    onClick={onClose}
+                    className="absolute right-3.5 top-3.5 sm:right-4 sm:top-4 rounded-full p-1.5 text-muted-foreground hover:bg-muted transition-colors cursor-pointer"
+                  >
+                    <X className="h-4.5 w-4.5" />
+                    <span className="sr-only">Close</span>
+                  </button>
+                )}
 
                 <div className="space-y-1 pr-8 text-left">
                   {title && <h2 className="text-base sm:text-xl font-bold tracking-tight font-heading text-foreground">{title}</h2>}
                   {description && <p className="text-xs sm:text-sm text-muted-foreground">{description}</p>}
                 </div>
               </div>
-            ) : (
+            ) : !hideCloseButton ? (
               <button
                 onClick={onClose}
                 className="absolute right-3.5 top-3.5 sm:right-4 sm:top-4 rounded-full p-1.5 text-muted-foreground hover:bg-muted transition-colors z-40 cursor-pointer"
@@ -82,7 +85,7 @@ export function Modal({ isOpen, onClose, title, description, children, footer, c
                 <X className="h-4.5 w-4.5" />
                 <span className="sr-only">Close</span>
               </button>
-            )}
+            ) : null}
 
             {/* Scrollable Content Container */}
             <div className="flex-1 overflow-y-auto scrollbar-thin px-4 py-3.5 sm:px-8 sm:py-4 space-y-3 sm:space-y-4">

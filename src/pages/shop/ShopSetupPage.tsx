@@ -398,81 +398,79 @@ export function ShopSetupPage() {
         useAuthStore.getState().fetchUser();
         setViewMode('summary');
       } else {
-        // If creating an additional branch/shop, check for addon payment
-        if (ownedShops.length > 0) {
-          try {
-            const orderRes = await api.post('/shops/additional-shop-order');
-            const orderData = orderRes.data;
+        // Shop creation requires ₹50 one-time payment
+        try {
+          const orderRes = await api.post('/shops/additional-shop-order');
+          const orderData = orderRes.data;
 
-            if (orderData.required) {
-              if (orderData.mock_mode) {
-                payload.razorpay_order_id = orderData.order_id;
-                payload.razorpay_payment_id = `pay_mock_${Date.now()}`;
-                payload.razorpay_signature = 'sig_mock_verified';
-              } else {
-                const loadRzp = (): Promise<boolean> => {
-                  return new Promise((resolve) => {
-                    if ((window as any).Razorpay) {
-                      resolve(true);
-                      return;
-                    }
-                    const script = document.createElement('script');
-                    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-                    script.onload = () => resolve(true);
-                    script.onerror = () => resolve(false);
-                    document.body.appendChild(script);
-                  });
+          if (orderData.required) {
+            if (orderData.mock_mode) {
+              payload.razorpay_order_id = orderData.order_id;
+              payload.razorpay_payment_id = `pay_mock_${Date.now()}`;
+              payload.razorpay_signature = 'sig_mock_verified';
+            } else {
+              const loadRzp = (): Promise<boolean> => {
+                return new Promise((resolve) => {
+                  if ((window as any).Razorpay) {
+                    resolve(true);
+                    return;
+                  }
+                  const script = document.createElement('script');
+                  script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+                  script.onload = () => resolve(true);
+                  script.onerror = () => resolve(false);
+                  document.body.appendChild(script);
+                });
+              };
+
+              const isLoaded = await loadRzp();
+              if (!isLoaded) {
+                toast.error('Razorpay SDK failed to load. Please check your connection.');
+                setIsLoading(false);
+                return;
+              }
+
+              const paymentPromise = new Promise<{ order_id: string; payment_id: string; signature: string }>((resolve, reject) => {
+                const options = {
+                  key: orderData.key_id,
+                  amount: Math.round(orderData.amount * 100),
+                  currency: orderData.currency || 'INR',
+                  name: 'Menukit QR',
+                  description: ownedShops.length > 0 ? `Additional Branch Setup (₹${orderData.amount})` : `Shop Creation Fee (₹${orderData.amount})`,
+                  order_id: orderData.order_id,
+                  prefill: {
+                    name: user?.email?.split('@')[0] || 'Merchant',
+                    email: user?.email || '',
+                    contact: user?.phone || '',
+                  },
+                  theme: { color: '#f97316' },
+                  handler: (response: any) => {
+                    resolve({
+                      order_id: response.razorpay_order_id,
+                      payment_id: response.razorpay_payment_id,
+                      signature: response.razorpay_signature,
+                    });
+                  },
+                  modal: {
+                    ondismiss: () => reject(new Error('Payment window closed')),
+                  },
                 };
 
-                const isLoaded = await loadRzp();
-                if (!isLoaded) {
-                  toast.error('Razorpay SDK failed to load. Please check your connection.');
-                  setIsLoading(false);
-                  return;
-                }
+                const rzp = new (window as any).Razorpay(options);
+                rzp.open();
+              });
 
-                const paymentPromise = new Promise<{ order_id: string; payment_id: string; signature: string }>((resolve, reject) => {
-                  const options = {
-                    key: orderData.key_id,
-                    amount: Math.round(orderData.amount * 100),
-                    currency: orderData.currency || 'INR',
-                    name: 'Menukit QR',
-                    description: `Additional Shop Add-on (₹${orderData.amount}/mo)`,
-                    order_id: orderData.order_id,
-                    prefill: {
-                      name: user?.email?.split('@')[0] || 'Merchant',
-                      email: user?.email || '',
-                      contact: user?.phone || '',
-                    },
-                    theme: { color: '#f97316' },
-                    handler: (response: any) => {
-                      resolve({
-                        order_id: response.razorpay_order_id,
-                        payment_id: response.razorpay_payment_id,
-                        signature: response.razorpay_signature,
-                      });
-                    },
-                    modal: {
-                      ondismiss: () => reject(new Error('Payment window closed')),
-                    },
-                  };
-
-                  const rzp = new (window as any).Razorpay(options);
-                  rzp.open();
-                });
-
-                const paymentResult = await paymentPromise;
-                payload.razorpay_order_id = paymentResult.order_id;
-                payload.razorpay_payment_id = paymentResult.payment_id;
-                payload.razorpay_signature = paymentResult.signature;
-              }
+              const paymentResult = await paymentPromise;
+              payload.razorpay_order_id = paymentResult.order_id;
+              payload.razorpay_payment_id = paymentResult.payment_id;
+              payload.razorpay_signature = paymentResult.signature;
             }
-          } catch (err: any) {
-            console.error('Payment initiation error', err);
-            toast.error(err.message || 'Payment processing failed');
-            setIsLoading(false);
-            return;
           }
+        } catch (err: any) {
+          console.error('Payment initiation error', err);
+          toast.error(err.message || 'Payment processing failed');
+          setIsLoading(false);
+          return;
         }
 
         res = await api.post('/shops', payload);
@@ -671,6 +669,18 @@ export function ShopSetupPage() {
  {isCreateNew ?"Set up your new shop's primary details." :"Update your shop's primary details."}
  </p>
  </div>
+
+ {(isCreateNew || !shop?.id) && (
+ <div className="p-3.5 rounded-2xl bg-orange-50/80 dark:bg-orange-950/30 border border-orange-200/80 dark:border-orange-800/50 flex items-center justify-between gap-3 text-sm my-3">
+ <div className="flex items-center gap-2 text-orange-900 dark:text-orange-200 font-medium">
+ <Sparkles size={16} className="text-orange-500 shrink-0" />
+ <span>One-Time Shop Creation Fee: <strong>₹50</strong></span>
+ </div>
+ <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-orange-500 text-white shadow-sm">
+ ₹50 One-Time
+ </span>
+ </div>
+ )}
    {!isCreateNew && (
   <div className="flex items-center gap-2">
     <Button 
@@ -955,7 +965,7 @@ export function ShopSetupPage() {
               size="sm" 
               className="rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white"
             >
-              {isLoading ? (isCreateNew ? 'Creating Shop...' : 'Saving Shop...') : (isCreateNew ? 'Create Shop' : 'Save Shop Profile')} <Save size={16} className="ml-1.5" />
+              {isLoading ? (isCreateNew || !shop?.id ? 'Processing Setup...' : 'Saving Shop...') : (isCreateNew || !shop?.id ? 'Pay ₹50 & Create Shop' : 'Save Shop Profile')} <Save size={16} className="ml-1.5" />
             </Button>
           )}
         </div>

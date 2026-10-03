@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { 
-  Mail, Store, Shield, Smartphone, Phone, ChevronRight, ChevronDown, ArrowRight, Sliders, Globe, 
+  Mail, Store, Shield, ShieldCheck, Smartphone, Phone, ChevronRight, ChevronDown, ArrowRight, Sliders, Globe, 
   Coins, Truck, ShoppingBag, QrCode, Tag, MapPin, Zap, CheckCircle2, Lock, Info, AlertCircle,
   CreditCard, Printer, Plus, Trash2, Edit2, UtensilsCrossed, FileText, Check, RotateCcw,
   Wifi, Usb, Bluetooth, Volume2, Terminal, Copy, Receipt, Search, X, Tags, Layers, Sparkles, Eye, EyeOff, Loader2, Save,
@@ -851,10 +851,6 @@ export function SettingsPage() {
   };
 
   const handleSelectFreeDiscoveryOption = async () => {
-    if (isPaidDiscoveryActive) {
-      toast.error(`You have an active paid subscription for Discovery option (₹49/mo) with ${discoveryDaysLeft} day${discoveryDaysLeft === 1 ? '' : 's'} remaining. You cannot switch to Free until it expires.`);
-      return;
-    }
     try {
       const updated = {
         ...settingsData,
@@ -872,7 +868,7 @@ export function SettingsPage() {
         setShop({ ...shop, settings: { ...shop.settings, ...updated } });
       }
       setIsDiscoveryModalOpen(false);
-      toast.success('Store discovery disabled and Discover button removed from your menu.');
+      toast.success('Free Option activated: Shop is removed from public discovery map, and Discover label is removed from your customer menu & orders.');
     } catch (err: any) {
       toast.error(err.response?.data?.detail || 'Failed to update discovery settings');
     }
@@ -965,10 +961,6 @@ export function SettingsPage() {
   };
 
   const handleResetToStandardDiscovery = async () => {
-    if (isPaidDiscoveryActive) {
-      toast.error(`You have an active paid subscription for Discovery option (₹49/mo) with ${discoveryDaysLeft} day${discoveryDaysLeft === 1 ? '' : 's'} remaining. You cannot switch to Free until it expires.`);
-      return;
-    }
     try {
       const updated = {
         ...settingsData,
@@ -979,7 +971,9 @@ export function SettingsPage() {
         show_menus_in_discovery: true,
       };
       setSettingsData(updated);
-      await api.put('/shops/me/settings', updated);
+      const res = await api.put('/shops/me/settings', updated);
+      publicCache.clear();
+      window.dispatchEvent(new CustomEvent('menukit-shop-settings-updated', { detail: res.data }));
       if (shop) {
         setShop({ ...shop, settings: { ...shop.settings, ...updated } });
       }
@@ -1743,15 +1737,6 @@ export function SettingsPage() {
                       {settingsData.serial_number_prefix}{String(3).padStart(settingsData.serial_number_digits || 3, '0')}, ...
                     </p>
                   </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={handleSaveShopSettings}
-                    disabled={isSavingSettings}
-                    className="shrink-0 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-lg"
-                  >
-                    {isSavingSettings ? 'Saving...' : 'Save Format'}
-                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -1824,12 +1809,13 @@ export function SettingsPage() {
                   </div>
                 )}
 
+                {/* 1. Ordering Channels Card */}
                 <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs">
                   <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-slate-50/50 dark:bg-slate-900/50">
                     <div className="flex items-center justify-between">
                       <div>
-                        <CardTitle className="text-base font-bold">Fulfillment Modes</CardTitle>
-                        <CardDescription className="text-xs">Toggle available channels and auto-acceptance rules.</CardDescription>
+                        <CardTitle className="text-base font-bold">Active Ordering Channels</CardTitle>
+                        <CardDescription className="text-xs">Enable the fulfillment channels available to your customers on the digital menu.</CardDescription>
                       </div>
                       {!isBankVerified && (
                         <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/60 px-2.5 py-1 rounded-lg flex items-center gap-1">
@@ -1912,15 +1898,34 @@ export function SettingsPage() {
                       }}
                       disabled={!isBankVerified}
                     />
+                  </CardContent>
+                </Card>
 
+                {/* 2. Order Acceptance & Payment Rules Card */}
+                <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs">
+                  <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-slate-50/50 dark:bg-slate-900/50">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <CardTitle className="text-base font-bold">Order Acceptance & Payment Rules</CardTitle>
+                        <CardDescription className="text-xs">Configure how incoming orders are accepted and whether upfront customer payment is required.</CardDescription>
+                      </div>
+                      {!isBankVerified && (
+                        <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/60 px-2.5 py-1 rounded-lg flex items-center gap-1">
+                          <Lock size={12} />
+                          Locked
+                        </span>
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent className="p-4 sm:p-6 divide-y divide-slate-100 dark:divide-slate-800">
                     <SettingRow
-                      icon={Zap}
-                      title="Auto Accept Incoming Orders"
-                      description="Automatically confirm incoming orders without manual approval."
-                      checked={isBankVerified && settingsData.auto_accept_orders}
+                      icon={ShieldCheck}
+                      title="Accept Orders Only After Payment"
+                      description="When enabled, online orders placed via the public menu must be paid upfront before the order is placed/confirmed. When disabled (default), the order is submitted first for merchant review and acceptance, and then payment is made."
+                      checked={isBankVerified && settingsData.accept_after_payment}
                       onChange={(c) => {
                         if (isBankVerified) {
-                          setSettingsData(prev => ({ ...prev, auto_accept_orders: c }));
+                          setSettingsData(prev => ({ ...prev, accept_after_payment: c }));
                         } else {
                           toast.error("Please add and verify your settlement bank account first.");
                         }
@@ -1929,13 +1934,13 @@ export function SettingsPage() {
                     />
 
                     <SettingRow
-                      icon={CreditCard}
-                      title="Accept Orders Only After Payment"
-                      description="When enabled, online orders placed via the public menu must be paid upfront before the order is accepted. When disabled (default), the order is submitted first for merchant acceptance, and then the customer pays."
-                      checked={isBankVerified && settingsData.accept_after_payment}
+                      icon={Zap}
+                      title="Auto Accept Incoming Orders"
+                      description="Automatically accept and confirm incoming orders immediately without requiring manual merchant approval."
+                      checked={isBankVerified && settingsData.auto_accept_orders}
                       onChange={(c) => {
                         if (isBankVerified) {
-                          setSettingsData(prev => ({ ...prev, accept_after_payment: c }));
+                          setSettingsData(prev => ({ ...prev, auto_accept_orders: c }));
                         } else {
                           toast.error("Please add and verify your settlement bank account first.");
                         }
@@ -2096,24 +2101,39 @@ export function SettingsPage() {
                   title="Enable Store Discovery"
                   description={
                     settingsData.is_discoverable && settingsData.hide_discovery_badge
-                      ? `Paid mode active (${discoveryDaysLeft} days left): Shop is discoverable on public map, and 'Discover' label is hidden on your public menu.`
+                      ? `Paid mode active (${discoveryDaysLeft} days left): Shop is discoverable on public map, and 'Discover' label is hidden on your public menu & orders.`
                       : settingsData.is_discoverable
-                      ? "Standard mode active: Shop is discoverable on public map, and 'Discover' label is shown on your public menu."
-                      : "Discovery disabled: Shop is removed from public map, and 'Discover' label is hidden on your menu."
+                      ? "Standard mode active: Shop is discoverable on public map, and 'Discover' label is shown on your public menu & orders."
+                      : "Discovery disabled: Shop is removed from public map & search, and 'Discover' label is hidden on your menu & orders."
                   }
                   checked={settingsData.is_discoverable}
-                  onChange={(c) => {
-                    if (isPaidDiscoveryActive && !c) {
-                      toast.error(`You have an active paid subscription for Discovery option (₹49/mo) with ${discoveryDaysLeft} days remaining. You cannot switch to the Free option until it expires.`);
-                      setIsDiscoveryModalOpen(true);
-                      return;
-                    }
-                    if (!c) {
-                      // Turning off -> show the 2 options modal!
-                      setIsDiscoveryModalOpen(true);
+                  onChange={(checked) => {
+                    if (!checked) {
+                      // Smoothly turn OFF store discovery without any error
+                      handleSelectFreeDiscoveryOption();
                     } else {
-                      // Turning back on -> standard discovery
-                      handleResetToStandardDiscovery();
+                      // Turn ON store discovery
+                      if (isPaidDiscoveryActive) {
+                        const updated = {
+                          ...settingsData,
+                          is_discoverable: true,
+                          hide_discovery_badge: true,
+                          show_prices: true,
+                          show_offers: true,
+                          show_menus_in_discovery: true,
+                        };
+                        setSettingsData(updated);
+                        api.put('/shops/me/settings', updated).then((res) => {
+                          publicCache.clear();
+                          window.dispatchEvent(new CustomEvent('menukit-shop-settings-updated', { detail: res.data }));
+                          if (shop) setShop({ ...shop, settings: { ...shop.settings, ...updated } });
+                          toast.success('Store discovery enabled (Shop is on public map & Discover label is hidden).');
+                        }).catch((err) => {
+                          toast.error(err.response?.data?.detail || 'Failed to enable discovery');
+                        });
+                      } else {
+                        handleResetToStandardDiscovery();
+                      }
                     }
                   }}
                 />
@@ -2141,8 +2161,6 @@ export function SettingsPage() {
                       className={`p-4 rounded-xl border transition-all cursor-pointer ${
                         !settingsData.is_discoverable
                           ? 'border-purple-500 bg-purple-50/40 dark:bg-purple-950/20 ring-1 ring-purple-500'
-                          : isPaidDiscoveryActive
-                          ? 'border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/20 opacity-80'
                           : 'border-border bg-card hover:border-slate-300'
                       }`}
                     >
@@ -2151,28 +2169,18 @@ export function SettingsPage() {
                           <EyeOff size={14} className="text-slate-500" />
                           Option 1: Free Option
                         </span>
-                        {isPaidDiscoveryActive ? (
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300 flex items-center gap-1">
-                            <Lock size={10} /> Locked
-                          </span>
-                        ) : (
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                            ₹0 Free
-                          </span>
-                        )}
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                          ₹0 Free
+                        </span>
                       </div>
                       <p className="text-xs text-muted-foreground leading-relaxed">
-                        Hides your shop completely from the public discovery map, and removes the "Discover" label from your customer menu.
+                        Hides your shop completely from the public discovery map & search, and removes the "Discover" label from your customer menu & orders.
                       </p>
-                      {isPaidDiscoveryActive ? (
-                        <div className="mt-2 text-[11px] font-medium text-amber-700 dark:text-amber-400 flex items-center gap-1">
-                          <Lock size={12} /> Locked until paid subscription expires ({discoveryDaysLeft}d left)
-                        </div>
-                      ) : !settingsData.is_discoverable ? (
+                      {!settingsData.is_discoverable && (
                         <div className="mt-2 text-[11px] font-bold text-purple-700 dark:text-purple-400 flex items-center gap-1">
                           <Check size={12} strokeWidth={3} /> Currently Active
                         </div>
-                      ) : null}
+                      )}
                     </div>
 
                     {/* Paid Option Card */}
@@ -4245,34 +4253,13 @@ export function SettingsPage() {
               </li>
             </ul>
 
-            {/* Lock explanation notice if paid discovery is active */}
-            {isPaidDiscoveryActive && (
-              <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-800/60 flex items-start gap-2 text-amber-900 dark:text-amber-300 text-xs">
-                <Lock size={15} className="shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
-                <div>
-                  <span className="font-bold">Active Paid Subscription:</span> You have already paid ₹49/mo for Discovery Option. Switching to Free is locked until your billing cycle expires in <strong>{discoveryDaysLeft} day{discoveryDaysLeft === 1 ? '' : 's'}</strong>{discoveryExpiresAt ? ` (${discoveryExpiresAt})` : ''}.
-                </div>
-              </div>
-            )}
-
             <Button
               type="button"
               variant="outline"
-              disabled={isPaidDiscoveryActive}
-              className={`w-full ${
-                isPaidDiscoveryActive 
-                  ? 'opacity-60 cursor-not-allowed bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-700' 
-                  : 'cursor-pointer'
-              }`}
+              className="w-full cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 font-bold"
               onClick={handleSelectFreeDiscoveryOption}
             >
-              {isPaidDiscoveryActive ? (
-                <span className="flex items-center justify-center gap-1.5">
-                  <Lock size={14} /> Locked (Cannot Change to Free Until It Expires)
-                </span>
-              ) : (
-                'Select Free Option (Turn Off Discovery)'
-              )}
+              Select Free Option (Turn Off Discovery & Hide Menu Label)
             </Button>
           </div>
 

@@ -1,7 +1,7 @@
 import { LinkifiedText } from '../../components/LinkifiedText';
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { ShoppingBag, Plus, Minus, Info, ChevronLeft, ChevronRight, CheckCircle, XCircle, Key, MapPin, Navigation, Map, Armchair, Gift, Sparkles, Percent, Banknote, Truck, Tag, Clock, AlertTriangle, UtensilsCrossed, Gamepad2, History, Trophy, ChefHat, ShieldCheck } from 'lucide-react';
+import { ShoppingBag, Plus, Minus, Info, ChevronLeft, ChevronRight, CheckCircle, XCircle, Key, MapPin, Navigation, Map, Armchair, Gift, Sparkles, Percent, Banknote, Truck, Tag, Clock, AlertTriangle, UtensilsCrossed, Gamepad2, History, Trophy, ChefHat, ShieldCheck, RotateCcw, Calendar, Copy, Crown, Lock, CheckCircle2 } from 'lucide-react';
 import { useCartStore, useShopCart } from '@/store/cartStore';
 import { api } from '@/services/api';
 import { Shop, Discount } from '@/types';
@@ -23,6 +23,37 @@ import { useActiveOrders } from '@/hooks/useActiveOrders';
 import { triggerHaptic, HAPTIC_PATTERNS } from '@/utils/haptic';
 import { loadGoogleFont } from '@/utils/fontLoader';
 import { calculateOrderPricing } from '@/utils/pricing';
+import { getItemMultiplier } from '@/utils/itemMultiplier';
+import { getUniqueCustomerDiscountCode } from '@/utils/discountCodeHelper';
+
+const formatDays = (days: string[]) => {
+  if (!days || days.length === 0) return '';
+  const dayOrder = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const sortedDays = [...days].sort((a, b) => dayOrder.indexOf(a) - dayOrder.indexOf(b));
+
+  if (sortedDays.length === 7) return 'Everyday';
+  if (sortedDays.length === 5 && sortedDays.join(',') === 'Mon,Tue,Wed,Thu,Fri') return 'Weekdays';
+  if (sortedDays.length === 2 && sortedDays.join(',') === 'Sat,Sun') return 'Weekends';
+
+  return sortedDays.join(', ');
+};
+
+const formatDateTime = (iso: string | null) => {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleString([], {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return iso;
+  }
+};
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -606,7 +637,7 @@ export function PublicCartPage() {
         payment_method: apiPaymentMethod,
         total_amount: finalTotal,
         applied_discount_ids: appliedDiscountsList.map(d => d.id),
-        applied_discount_codes: appliedDiscountsList.map(d => d.discount.code || d.discount.title),
+        applied_discount_codes: appliedDiscountsList.map(d => getUniqueCustomerDiscountCode(d.discount)),
         items: items.map(it => {
           const isDelivery = orderType === 'delivery';
           let itemPrice = 0;
@@ -1483,28 +1514,35 @@ export function PublicCartPage() {
                     </button>
                     
                     <div className="flex items-center gap-3 bg-white/90 dark:bg-slate-800 rounded-lg p-1 border border-amber-200/40 dark:border-slate-700 shadow-2xs">
-                      <button 
-                        onClick={() => {
-                          if (quantity === 1) {
-                            removeFromCart(item.id);
-                            if (activeTableIdx >= items.length - 1) {
-                              setActiveTableIdx(Math.max(0, items.length - 2));
-                            }
-                          } else {
-                            updateQuantity(item.id, -1);
-                          }
-                        }}
-                        className="w-7 h-7 flex items-center justify-center rounded-md bg-white dark:bg-slate-750 shadow-3xs text-slate-600 hover:text-slate-900 dark:text-slate-350 transition-colors"
-                      >
-                        <Minus size={14} />
-                      </button>
-                      <span className="text-xs font-black w-5 text-center text-slate-800 dark:text-slate-100">{quantity}</span>
-                      <button 
-                        onClick={() => updateQuantity(item.id, 1)}
-                        className="w-7 h-7 flex items-center justify-center rounded-md bg-white dark:bg-slate-750 shadow-3xs text-slate-600 hover:text-slate-900 dark:text-slate-350 transition-colors"
-                      >
-                        <Plus size={14} />
-                      </button>
+                      {(() => {
+                        const itemStep = getItemMultiplier(item.menuItem, item.selectedVariantIdx);
+                        return (
+                          <>
+                            <button 
+                              onClick={() => {
+                                if (quantity > itemStep) {
+                                  updateQuantity(item.id, -itemStep);
+                                } else {
+                                  removeFromCart(item.id);
+                                  if (activeTableIdx >= items.length - 1) {
+                                    setActiveTableIdx(Math.max(0, items.length - 2));
+                                  }
+                                }
+                              }}
+                              className="w-7 h-7 flex items-center justify-center rounded-md bg-white dark:bg-slate-750 shadow-3xs text-slate-600 hover:text-slate-900 dark:text-slate-350 transition-colors"
+                            >
+                              <Minus size={14} />
+                            </button>
+                            <span className="text-xs font-black min-w-5 text-center text-slate-800 dark:text-slate-100">{quantity}</span>
+                            <button 
+                              onClick={() => updateQuantity(item.id, itemStep)}
+                              className="w-7 h-7 flex items-center justify-center rounded-md bg-white dark:bg-slate-750 shadow-3xs text-slate-600 hover:text-slate-900 dark:text-slate-350 transition-colors"
+                            >
+                              <Plus size={14} />
+                            </button>
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -1828,6 +1866,23 @@ export function PublicCartPage() {
                   <span>You saved {currencySymbol}{(automaticDiscountAmount + manualDiscountAmount).toFixed(2)} on this order</span>
                 </div>
               )}
+            </div>
+
+            {/* Refund & Replacement Policy Notice */}
+            <div className="mt-3 p-3.5 rounded-2xl bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/40 text-xs shadow-2xs">
+              <div className="flex items-start gap-2.5">
+                <div className="w-6 h-6 rounded-lg bg-amber-100 dark:bg-amber-900/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
+                  <RotateCcw size={13} />
+                </div>
+                <div className="space-y-0.5">
+                  <span className="font-bold text-[11px] uppercase tracking-wider text-amber-800 dark:text-amber-300 block">
+                    Refund &amp; Replacement Policy
+                  </span>
+                  <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
+                    If any item is cancelled or replaced by the restaurant, <strong className="text-slate-800 dark:text-slate-100 font-bold">100% of the item product price</strong> will be refunded or adjusted. Platform and payment gateway convenience fees are non-refundable.
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -2279,6 +2334,14 @@ export function PublicCartPage() {
                     </span>
                   </div>
                 </div>
+
+                {/* Refund & Replacement Policy Note */}
+                <div className="p-3 rounded-xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/30 text-[10.5px] flex items-start gap-2 text-slate-600 dark:text-slate-300">
+                  <RotateCcw size={13} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <p className="leading-tight">
+                    <strong className="text-slate-800 dark:text-slate-200 font-bold">Refund Policy:</strong> In case of item replacement/cancellation, <strong className="text-slate-800 dark:text-slate-100 font-bold">100% of the product price</strong> is refunded. Platform and gateway fees are non-refundable.
+                  </p>
+                </div>
               </div>
 
               {/* Payment Method Selector */}
@@ -2386,73 +2449,216 @@ export function PublicCartPage() {
           const disc = selectedBalloonDiscount;
           const isApplied = manualDiscountId === disc.id;
           const isUsed = !!disc.is_already_used;
+          const isOfferUnlockRequired = disc.visibility_type === 'unlock_required' && !memberStatus;
+          const isOfferMemberRequired = (disc.visibility_type === 'members_only_visible' || disc.visibility_type === 'members_only_hidden') && memberStatus !== 'verified-member';
+
+          const hasDates = Boolean(disc.start_date || disc.end_date);
+          const hasDays = Boolean(disc.available_days && disc.available_days.length > 0);
+          const hasTimings = Boolean(disc.available_time_presets && disc.available_time_presets.length > 0);
+          const hasAppliesTo = Boolean(disc.applies_to);
+
+          const uniqueCode = getUniqueCustomerDiscountCode(disc);
+
           return (
-            <div className="text-center p-3">
-              <div className="flex justify-center mb-4">
-                {isUsed ? (
-                  <div className="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center border-2 border-red-200">
-                    <XCircle size={36} className="text-red-500" />
-                  </div>
-                ) : disc.discount_type === 'percentage' ? (
-                  <Percent size={40} className="text-emerald-500 animate-bounce" />
-                ) : (
-                  <Banknote size={40} className="text-emerald-500 animate-bounce" />
+            <div className="space-y-4 max-h-[80vh] overflow-y-auto pr-1">
+              <div className="flex flex-col items-center text-center">
+                {/* Coupon Ticket Styling */}
+                <div
+                  className="min-w-[8rem] w-auto h-24 px-8 flex items-center justify-center shrink-0 text-white font-bold mb-4 transform hover:scale-105 transition-transform duration-300 relative overflow-hidden"
+                  style={{
+                    backgroundColor: isUsed ? '#64748b' : primaryColor,
+                    borderRadius: '16px',
+                    boxShadow: isUsed ? '0 12px 32px #64748b50' : `0 12px 32px ${primaryColor}60`
+                  }}
+                >
+                  <div className="absolute -left-4 top-1/2 -translate-y-1/2 w-8 h-8 bg-white dark:bg-slate-900 rounded-full shadow-[inset_0_0_10px_rgba(0,0,0,0.1)]" />
+                  <div className="absolute -right-4 top-1/2 -translate-y-1/2 w-8 h-8 bg-white dark:bg-slate-900 rounded-full shadow-[inset_0_0_10px_rgba(0,0,0,0.1)]" />
+                  <span className="text-3xl tracking-tight z-10 text-center px-2 font-black">
+                    {disc.discount_type === 'percentage' 
+                      ? `${Number(disc.discount_value)}%` 
+                      : disc.discount_type === 'flat'
+                      ? `₹${Number(disc.discount_value)}`
+                      : disc.discount_type === 'bogo'
+                      ? `Buy ${disc.buy_quantity} Get ${disc.get_quantity}`
+                      : disc.discount_type === 'combo'
+                      ? `₹${disc.discount_value} Combo`
+                      : 'FREE ITEM'}
+                  </span>
+                </div>
+
+                <h3 className="text-xl font-bold font-heading text-slate-900 dark:text-slate-100">{disc.title}</h3>
+                {disc.description && (
+                  <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-2 max-w-[320px] leading-relaxed">
+                    <LinkifiedText text={disc.description} showIcon />
+                  </p>
                 )}
               </div>
-              <h3 className="text-xl font-black text-slate-800">{disc.title}</h3>
-              {isUsed && (
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-100/80 text-red-700 text-xs font-bold mt-2 border border-red-200">
-                  <XCircle size={14} />
-                  Already Used
+
+              {/* Availability & Terms */}
+              {(hasDates || hasDays || hasTimings || hasAppliesTo) && (
+                <div className="pt-1">
+                  <h4 className="text-xs font-bold text-slate-400 dark:text-slate-500 mb-2 uppercase tracking-wider flex items-center gap-2">
+                    <Clock size={14} className="text-blue-500" /> Availability & Terms
+                  </h4>
+                  <div className="bg-slate-50 dark:bg-slate-850 rounded-2xl p-3.5 border border-slate-100 dark:border-slate-800 flex flex-col gap-2.5">
+                    {hasDates && (
+                      <div className="flex items-start gap-2.5 text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">
+                        <Calendar size={15} className="text-slate-400 shrink-0 mt-0.5" />
+                        <span className="leading-snug">
+                          {disc.start_date && disc.end_date
+                            ? `${formatDateTime(disc.start_date)} — ${formatDateTime(disc.end_date)}`
+                            : disc.start_date
+                            ? `Valid from ${formatDateTime(disc.start_date)}`
+                            : `Valid until ${formatDateTime(disc.end_date)}`}
+                        </span>
+                      </div>
+                    )}
+                    {hasDays && (
+                      <div className="flex items-start gap-2.5 text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">
+                        <Calendar size={15} className="text-slate-400 shrink-0 mt-0.5" />
+                        <span className="leading-snug">{formatDays(disc.available_days!)}</span>
+                      </div>
+                    )}
+                    {hasTimings && (
+                      <div className="flex items-start gap-2.5 text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">
+                        <Clock size={15} className="text-slate-400 shrink-0 mt-0.5" />
+                        <span className="leading-snug">{disc.available_time_presets!.join(', ')}</span>
+                      </div>
+                    )}
+                    {hasAppliesTo && (
+                      <div className="flex items-start gap-2.5 text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">
+                        <ShoppingBag size={15} className="text-slate-400 shrink-0 mt-0.5" />
+                        <span className="leading-snug">
+                          {disc.applies_to === 'all'
+                            ? 'Applicable on all menu items'
+                            : disc.applies_to === 'category'
+                            ? `Applicable on ${(disc.target_ids?.length || 0)} ${(disc.target_ids?.length === 1) ? 'category' : 'categories'}`
+                            : `Applicable on ${(disc.target_ids?.length || 0)} ${(disc.target_ids?.length === 1) ? 'item' : 'items'}`}
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
-              <p className="text-sm font-medium text-slate-500 mt-2">
-                <LinkifiedText text={disc.description || 'Tap below to apply this exclusive dining discount to your current bill!'} showIcon />
-              </p>
-              
-              <div className={`border rounded-xl p-3 my-5 flex items-center justify-between shadow-inner ${
-                isUsed ? 'bg-slate-100/70 border-slate-200 opacity-75' : 'bg-slate-50 border-slate-200'
-              }`}>
-                <span className="text-xs font-bold text-slate-500">Discount Offer</span>
-                <span className={`font-black text-lg ${isUsed ? 'text-slate-500 line-through' : 'text-emerald-600'}`}>
-                  {disc.discount_type === 'percentage' ? `${disc.discount_value}% OFF` : `Flat ₹${disc.discount_value} OFF`}
-                </span>
-              </div>
 
+              {/* Status & Code Cards */}
               {isUsed ? (
-                <div className="space-y-3">
-                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 text-center font-medium">
-                    This discount has already been redeemed for your account/mobile number.
+                <div className="space-y-3 pt-1">
+                  <div className="bg-amber-50/90 dark:bg-amber-950/40 border border-amber-200/90 dark:border-amber-800/60 rounded-2xl p-4 flex items-start gap-3.5 shadow-xs">
+                    <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0 border border-amber-500/20">
+                      <CheckCircle2 className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-black uppercase tracking-wider text-amber-900 dark:text-amber-200">Already Redeemed</span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 dark:bg-amber-800 text-amber-900 dark:text-amber-100">Used</span>
+                      </div>
+                      <p className="text-xs text-amber-800/90 dark:text-amber-300/80 mt-1 leading-snug">
+                        You have already used this discount on a previous order. Each promotional offer can only be used once per customer.
+                      </p>
+                    </div>
                   </div>
+
+                  <div className="bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 flex items-center justify-between gap-3 opacity-75">
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block">Unique Discount Code</span>
+                      <span className="font-mono font-black text-base sm:text-lg text-slate-500 tracking-wider select-all truncate block line-through">
+                        {uniqueCode}
+                      </span>
+                    </div>
+                    <div className="px-3 py-1.5 bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold rounded-xl flex items-center gap-1 shrink-0">
+                      <CheckCircle2 size={13} className="text-slate-500 dark:text-slate-400" />
+                      <span>Already Used</span>
+                    </div>
+                  </div>
+                </div>
+              ) : isOfferMemberRequired ? (
+                <div className="pt-1">
+                  <div className="bg-gradient-to-r from-amber-50 to-orange-50/70 dark:from-amber-950/30 dark:to-orange-950/20 border border-amber-200/90 dark:border-amber-800/50 rounded-2xl p-4 flex items-center gap-3.5 shadow-xs">
+                    <div className="w-11 h-11 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 shadow-xs border border-amber-500/20">
+                      <Crown className="w-6 h-6 text-amber-600 dark:text-amber-400" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-black uppercase tracking-wider text-amber-900 dark:text-amber-200">Member Exclusive</span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 dark:bg-amber-800 text-amber-900 dark:text-amber-100">Locked</span>
+                      </div>
+                      <p className="text-xs text-amber-800/85 dark:text-amber-300/80 mt-1 leading-snug">
+                        This discount code is reserved exclusively for registered members.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : isOfferUnlockRequired ? (
+                <div className="pt-1">
+                  <div className="bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 flex items-center gap-3.5">
+                    <div className="w-10 h-10 rounded-xl bg-slate-200 dark:bg-slate-750 text-slate-600 dark:text-slate-300 flex items-center justify-center shrink-0">
+                      <Lock className="w-5 h-5 text-slate-600 dark:text-slate-300" />
+                    </div>
+                    <div className="min-w-0">
+                      <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">Unlock Required</h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
+                        Verify your mobile number to unlock and view the discount code.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="pt-1">
+                  <div className="bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200/90 dark:border-amber-800/50 rounded-2xl p-3.5 flex items-center justify-between gap-3 shadow-xs">
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-800/80 dark:text-amber-300/80 block">Unique Discount Code</span>
+                      <span className="font-mono font-black text-base sm:text-lg text-amber-950 dark:text-amber-100 tracking-wider select-all truncate block">
+                        {uniqueCode}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(uniqueCode);
+                        toast.success(`Discount code "${uniqueCode}" copied!`);
+                      }}
+                      className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all active:scale-95 flex items-center gap-1.5 shrink-0 cursor-pointer"
+                    >
+                      <Copy size={13} />
+                      <span>Copy Code</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Action Button */}
+              <div className="pt-2">
+                {isUsed ? (
                   <button
                     disabled={true}
-                    className="w-full py-3.5 rounded-xl bg-slate-200 text-slate-500 font-extrabold text-base border border-slate-300 cursor-not-allowed"
+                    className="w-full py-3.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-extrabold text-base border border-slate-300 dark:border-slate-700 cursor-not-allowed"
                   >
                     Already Used
                   </button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => {
-                    if (!isApplied && !isDiscountApplicable(disc)) {
-                      toast.error('This discount is not applicable to any items in your cart');
-                      triggerHaptic(HAPTIC_PATTERNS.error);
-                      return;
-                    }
-                    setManualDiscount(isApplied ? 'none' : disc.id);
-                    setSelectedBalloonDiscount(null);
-                    if (!isApplied) {
-                      toast.success(`Discount applied successfully!`);
-                    } else {
-                      toast.success('Discount removed.');
-                    }
-                  }}
-                  className="w-full py-3.5 rounded-xl text-white font-extrabold text-base shadow-lg transition-all hover:brightness-110 active:scale-[0.97]"
-                  style={{ backgroundColor: primaryColor }}
-                >
-                  {isApplied ? 'Remove Discount' : 'Apply Discount'}
-                </button>
-              )}
+                ) : (
+                  <button
+                    onClick={() => {
+                      if (!isApplied && !isDiscountApplicable(disc)) {
+                        toast.error('This discount is not applicable to any items in your cart');
+                        triggerHaptic(HAPTIC_PATTERNS.error);
+                        return;
+                      }
+                      setManualDiscount(isApplied ? 'none' : disc.id);
+                      setSelectedBalloonDiscount(null);
+                      if (!isApplied) {
+                        toast.success(`Discount applied successfully!`);
+                      } else {
+                        toast.success('Discount removed.');
+                      }
+                    }}
+                    className="w-full py-3.5 px-4 rounded-2xl text-white font-extrabold text-base shadow-lg transition-all hover:brightness-110 active:scale-[0.98] cursor-pointer"
+                    style={{ backgroundColor: primaryColor }}
+                  >
+                    {isApplied ? 'Remove Discount' : 'Apply Discount'}
+                  </button>
+                )}
+              </div>
             </div>
           );
         })()}

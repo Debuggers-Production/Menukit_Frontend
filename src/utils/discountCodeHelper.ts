@@ -6,21 +6,11 @@
 export function getCustomerIdentifier(): string {
   if (typeof window === 'undefined') return 'CUST';
 
-  // 1. Check logged in customer mobile or stored mobile
-  const storedMobile = localStorage.getItem('customer_mobile') || localStorage.getItem('customer_phone');
-  if (storedMobile) {
-    const digits = storedMobile.replace(/\D/g, '');
-    if (digits.length >= 4) {
-      return digits.slice(-4);
-    }
-  }
-
-  // 2. Persistent customer device UID
+  // Persistent customer device UID (random alphanumeric token)
   let uid = localStorage.getItem('menukit_customer_uid');
   if (!uid) {
-    // Generate a 4-char uppercase alphanumeric token
     const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
-    uid = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    uid = Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
     try {
       localStorage.setItem('menukit_customer_uid', uid);
     } catch (e) {
@@ -33,7 +23,7 @@ export function getCustomerIdentifier(): string {
 export function getUniqueCustomerDiscountCode(discount: { id: string; title?: string; code?: string | null }): string {
   if (!discount || !discount.id) return 'OFFER-DISC';
 
-  // If the backend returned an officially assigned unique code, prioritize it
+  // 1. If the backend returned an officially assigned unique code, prioritize it
   if (discount.code && discount.code.trim()) {
     const assignedCode = discount.code.trim().toUpperCase();
     if (typeof window !== 'undefined') {
@@ -49,7 +39,7 @@ export function getUniqueCustomerDiscountCode(discount: { id: string; title?: st
     return assignedCode;
   }
 
-  // Check if we already assigned and cached a unique code for this customer on this device
+  // 2. Check if we already cached a unique code for this discount on this device
   const cacheKey = 'menukit_assigned_discount_codes';
   let cachedMap: Record<string, string> = {};
   if (typeof window !== 'undefined') {
@@ -63,12 +53,14 @@ export function getUniqueCustomerDiscountCode(discount: { id: string; title?: st
     }
   }
 
-  const custToken = getCustomerIdentifier();
-  const discToken = discount.id.replace(/-/g, '').slice(0, 4).toUpperCase();
+  // 3. Fallback: generate a completely random, secure alphanumeric code (no phone numbers or predictable patterns)
+  const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const part1 = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+  const part2 = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
   const rawTitle = (discount.title || 'OFFER').trim().replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-  const prefix = (rawTitle.slice(0, 6) || 'OFFER');
+  const prefix = (rawTitle.slice(0, 4) || 'MK');
 
-  const uniqueCode = `${prefix}-${discToken}-${custToken}`;
+  const uniqueCode = `${prefix}-${part1}-${part2}`;
 
   // Cache it for consistency
   if (typeof window !== 'undefined') {

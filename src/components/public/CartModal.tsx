@@ -2,6 +2,7 @@ import { LinkifiedText } from '../LinkifiedText';
 import { useMemo } from 'react';
 import { ShoppingBag, X, Plus, Minus, Info } from 'lucide-react';
 import { useCartStore, useShopCart } from '@/store/cartStore';
+import { getItemMultiplier } from '@/utils/itemMultiplier';
 import { Discount, Shop } from '@/types';
 
 interface CartModalProps {
@@ -257,22 +258,29 @@ export function CartModal({ isOpen, onClose, shop, availableDiscounts, memberSta
 
                         <div className="flex items-center justify-between mt-3">
                           <div className="flex items-center gap-3 bg-white dark:bg-slate-950 rounded-lg p-1 border border-slate-200 dark:border-slate-700 shadow-sm">
-                            <button 
-                              onClick={() => {
-                                if (quantity === 1) removeFromCart(item.id);
-                                else updateQuantity(item.id, -1);
-                              }}
-                              className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 dark:text-slate-300"
-                            >
-                              <Minus size={14} />
-                            </button>
-                            <span className="text-sm font-bold w-4 text-center dark:text-slate-200">{quantity}</span>
-                            <button 
-                              onClick={() => updateQuantity(item.id, 1)}
-                              className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 dark:text-slate-300"
-                            >
-                              <Plus size={14} />
-                            </button>
+                            {(() => {
+                              const itemStep = getItemMultiplier(menuItem, selectedVariantIdx);
+                              return (
+                                <>
+                                  <button 
+                                    onClick={() => {
+                                      if (quantity > itemStep) updateQuantity(item.id, -itemStep);
+                                      else removeFromCart(item.id);
+                                    }}
+                                    className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 dark:text-slate-300"
+                                  >
+                                    <Minus size={14} />
+                                  </button>
+                                  <span className="text-sm font-bold min-w-5 text-center dark:text-slate-200">{quantity}</span>
+                                  <button 
+                                    onClick={() => updateQuantity(item.id, itemStep)}
+                                    className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 dark:text-slate-300"
+                                  >
+                                    <Plus size={14} />
+                                  </button>
+                                </>
+                              );
+                            })()}
                           </div>
                         </div>
                       </div>

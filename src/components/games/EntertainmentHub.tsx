@@ -459,6 +459,7 @@ export const EntertainmentHub: React.FC<EntertainmentHubProps> = ({ isOpen, onCl
     <Modal 
       isOpen={isOpen} 
       onClose={onClose} 
+      hideCloseButton={true}
       className="bg-white max-w-lg sm:max-w-xl w-full h-[96dvh] sm:h-[88vh] max-h-[96dvh] sm:max-h-[88vh] !p-0 overflow-hidden rounded-t-3xl sm:rounded-3xl border-0 shadow-2xl"
     >
       <div className="flex flex-col h-full bg-slate-50 overflow-hidden">

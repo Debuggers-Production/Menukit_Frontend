@@ -1,7 +1,7 @@
 {
-  "name": "Menukit - Restaurant Operating System",
+  "name": "Menukit",
   "short_name": "Menukit",
-  "description": "Complete restaurant operating system, QR menu, real-time orders, analytics & billing POS",
+  "description": "QR menu, real-time orders, analytics & billing POS",
   "start_url": "/dashboard",
   "scope": "/",
   "display": "standalone",

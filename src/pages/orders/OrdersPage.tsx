@@ -21,11 +21,13 @@ import toast from 'react-hot-toast';
 import { CreateOrderModal } from './CreateOrderModal';
 import { ThermalBillModal } from '@/components/orders/ThermalBillModal';
 import { ThermalKotModal } from '@/components/orders/ThermalKotModal';
+import { PaymentModeModal } from '@/components/orders/PaymentModeModal';
 import { usePrinterStore } from '@/store/usePrinterStore';
 import { printOrderToStations, printBillToPrinter, printBillToAllPrinters, isNewlyAddedItem } from '@/utils/thermalPrinter';
 import { printOrderA4Invoice } from '@/utils/orderInvoice';
 import { useIsMobile } from '@/hooks/useMediaQuery';
 import { getBusinessCategory } from '@/config/businessCategories';
+import { calculateOrderReplacementCredit } from '@/utils/pricing';
 
 const getTodayDateStr = () => {
   const now = new Date();
@@ -121,12 +123,14 @@ function OrderCardSkeleton() {
 }
 
 
+import { parseDateSafe } from '@/utils/dateTime';
+
 function formatDateTime(dateStr: string) {
   if (!dateStr) return { date: '—', time: '—' };
-  const safeStr = dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T');
-  const d = new Date(safeStr + (safeStr.endsWith('Z') || safeStr.includes('+') ? '' : 'Z'));
-  const date = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-  const time = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+  const d = parseDateSafe(dateStr);
+  if (!d) return { date: '—', time: '—' };
+  const date = d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
   return { date, time };
 }
 
@@ -343,6 +347,10 @@ function PayDropdown({ orderId, paymentStatus, paymentMethod, orderStatus, onSel
       if (confirm('This will process an automatic online refund to the customer via payment gateway. Continue?')) {
         onSelect(orderId, opt.value);
       }
+      return;
+    }
+    if (opt.value === 'paid') {
+      onSelect(orderId, 'paid');
       return;
     }
     if (confirm(`Change payment status to "${opt.label}"?`)) {
@@ -671,6 +679,7 @@ export function OrdersPage() {
   const [refundingOrderId, setRefundingOrderId] = useState<string | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [paymentModeModalOrder, setPaymentModeModalOrder] = useState<any | null>(null);
   const [targetOrderForAdd, setTargetOrderForAdd] = useState<any | null>(null);
   const { setTitle } = useHeaderStore();
   const { shop, menuItems, setMenuItems } = useShopStore();
@@ -1129,7 +1138,12 @@ export function OrdersPage() {
   };
 
 
-  const handleUpdatePaymentStatus = useCallback(async (orderId: string, newPayStatus: string) => {
+  const handleUpdatePaymentStatus = useCallback(async (
+    orderId: string, 
+    newPayStatus: string, 
+    customMethod?: string, 
+    customSplit?: any[]
+  ) => {
     const targetOrder = orders.find(o => o.id === orderId);
     if (targetOrder) {
       const curStatus = (targetOrder.order_status || '').toUpperCase();
@@ -1143,11 +1157,33 @@ export function OrdersPage() {
       }
     }
 
+    // If user selected 'paid' without supplying payment mode, open selection modal
+    if (newPayStatus.toLowerCase() === 'paid' && !customMethod) {
+      if (targetOrder) {
+        setPaymentModeModalOrder(targetOrder);
+      }
+      return;
+    }
+
     try {
-      const res = await api.put(`/orders/${orderId}/payment`, { payment_status: newPayStatus });
-      toast.success(`Payment marked as ${newPayStatus}`);
+      const payload: any = { payment_status: newPayStatus };
+      if (customMethod) {
+        payload.payment_method = customMethod;
+      }
+      if (customSplit) {
+        payload.split_payments = customSplit;
+      }
+      const res = await api.put(`/orders/${orderId}/payment`, payload);
+      const methodLabel = customMethod ? ` (${customMethod.toUpperCase()})` : '';
+      toast.success(`Payment marked as ${newPayStatus.toUpperCase()}${methodLabel}`);
       fetchStatusCounts();
-      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, payment_status: res.data.payment_status ?? newPayStatus, order_status: res.data.order_status ?? o.order_status } : o));
+      setOrders(prev => prev.map(o => o.id === orderId ? { 
+        ...o, 
+        payment_status: res.data.payment_status ?? newPayStatus, 
+        payment_method: res.data.payment_method ?? (customMethod || o.payment_method),
+        split_payments: res.data.split_payments ?? customSplit ?? o.split_payments,
+        order_status: res.data.order_status ?? o.order_status 
+      } : o));
 
       // If marked as paid, automatically print KOT if not yet printed
       if (newPayStatus.toLowerCase() === 'paid' && autoPrintOnAccept && !isOrderKotPrinted(orderId)) {
@@ -1673,13 +1709,26 @@ export function OrdersPage() {
                       <div className="space-y-1">
                         <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Payment</span>
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-bold capitalize text-xs text-foreground shrink-0">{order.payment_method}</span>
+                          <button
+                            type="button"
+                            onClick={() => setPaymentModeModalOrder(order)}
+                            title="Click to change payment method"
+                            className="font-bold capitalize text-xs text-foreground shrink-0 hover:text-primary transition-colors cursor-pointer flex items-center gap-1 group/pm px-1 py-0.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800"
+                          >
+                            <span>{order.payment_method}</span>
+                          </button>
                           <PayDropdown
                             orderId={order.id}
                             paymentStatus={order.payment_status}
                             paymentMethod={order.payment_method}
                             orderStatus={order.order_status}
-                            onSelect={handleUpdatePaymentStatus}
+                            onSelect={(oId, val) => {
+                              if (val === 'paid') {
+                                setPaymentModeModalOrder(order);
+                              } else {
+                                handleUpdatePaymentStatus(oId, val);
+                              }
+                            }}
                             disabled={order.order_type === 'takeaway' && order.payment_method === 'online'}
                           />
                         </div>
@@ -1747,7 +1796,8 @@ export function OrdersPage() {
                         const isExclusiveTax = isGstEnabled && !shop?.settings?.inclusive_tax;
 
                         const allItems = order.items || [];
-                        const allItemsSubtotal = allItems.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+                        const presentedItems = allItems.filter((it: any) => !String(it.cancellation_reason || '').startsWith('Replaced with'));
+                        const allItemsSubtotal = presentedItems.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
                         const activeItems = allItems.filter((it: any) => !it.is_cancelled);
                         const isOrderCancelled = status === 'CANCELLED' || allItemsCancelled;
                         const itemsSubtotal = (isOrderCancelled && activeItems.length === 0)
@@ -1774,7 +1824,25 @@ export function OrdersPage() {
 
                         const computedTotal = foodTotal + deliveryFee;
                         const rawTotal = Number(order.total_amount || 0);
-                        const finalTotal = rawTotal > 0 ? rawTotal : (computedTotal > 0 ? computedTotal : allItemsSubtotal);
+                        const finalTotal = rawTotal > 0 ? (isOrderCancelled && activeItems.length === 0 ? allItemsSubtotal : rawTotal) : (computedTotal > 0 ? computedTotal : allItemsSubtotal);
+
+                        const replacedCredit = calculateOrderReplacementCredit(allItems, false);
+                        const isPendingDiff = (order.payment_status || '').toLowerCase() === 'pending' && replacedCredit > 0;
+                        const remainingProductDue = isPendingDiff ? Math.max(0, finalTotal - replacedCredit) : 0;
+
+                        const isRefunded = ['refunded', 'partially_refunded'].includes(String(order.payment_status || '').toLowerCase());
+                        const refundedAmount = isRefunded ? (isOrderCancelled ? finalTotal : (allItems.reduce((acc: number, it: any) => {
+                          if (it.is_cancelled && !String(it.cancellation_reason || '').startsWith('Replaced with')) {
+                            const predecessor = allItems.find((p: any) =>
+                              p.is_cancelled && String(p.cancellation_reason || '').startsWith(`Replaced with ${it.name}`)
+                            );
+                            if (predecessor) {
+                              return acc + Math.min(Number(it.price || 0) * Number(it.quantity || 1), Number(predecessor.price || 0) * Number(predecessor.quantity || 1));
+                            }
+                            return acc + (Number(it.price || 0) * Number(it.quantity || 1));
+                          }
+                          return acc;
+                        }, 0))) : 0;
 
                         return (
                           <div className="space-y-0.5 text-right">
@@ -1798,6 +1866,20 @@ export function OrdersPage() {
                                 </span>
                               )}
                             </div>
+                            {isPendingDiff && remainingProductDue > 0 && (
+                              <div className="flex items-center justify-end gap-1.5 pt-0.5">
+                                <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/60 px-2 py-0.5 rounded border border-amber-300 dark:border-amber-800">
+                                  Paid: {shop?.settings?.currency || '₹'}{replacedCredit.toFixed(2)} &bull; Due: {shop?.settings?.currency || '₹'}{remainingProductDue.toFixed(2)}
+                                </span>
+                              </div>
+                            )}
+                            {isRefunded && refundedAmount > 0 && (
+                              <div className="flex items-center justify-end gap-1.5 pt-0.5">
+                                <span className="text-[10px] font-bold text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-950/60 px-2 py-0.5 rounded border border-purple-300 dark:border-purple-800">
+                                  Refunded: {shop?.settings?.currency || '₹'}{refundedAmount.toFixed(2)}
+                                </span>
+                              </div>
+                            )}
                           </div>
                         );
                       })()}
@@ -3202,6 +3284,17 @@ export function OrdersPage() {
         order={thermalKotOrder}
         shop={shop}
         initialMode={thermalKotMode}
+      />
+
+      {/* Payment Mode Selection Modal (When changing to Paid) */}
+      <PaymentModeModal
+        isOpen={!!paymentModeModalOrder}
+        onClose={() => setPaymentModeModalOrder(null)}
+        order={paymentModeModalOrder}
+        currencySymbol={shop?.settings?.currency || '₹'}
+        onConfirm={async (orderId, paymentStatus, paymentMethod, splitPayments) => {
+          await handleUpdatePaymentStatus(orderId, paymentStatus, paymentMethod, splitPayments);
+        }}
       />
 
       {/* Floating Action Button (FAB) for Create Order */}
