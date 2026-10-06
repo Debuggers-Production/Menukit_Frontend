@@ -557,7 +557,9 @@ export function PublicCartPage() {
       return;
     }
 
-    if (orderType === 'dine_in' && businessCategory.isFood) {
+    const isTableEnabled = (shop?.settings as any)?.dinein_tables_enabled !== false;
+
+    if (orderType === 'dine_in' && businessCategory.isFood && isTableEnabled) {
       if (!tableNumber) {
         toast.error(`Please select a ${businessCategory.tableOrStallLabel || 'table number'}`);
         return;
@@ -632,7 +634,7 @@ export function PublicCartPage() {
         customer_name: customerName,
         customer_phone: finalPhone,
         order_type: orderType,
-        table_number: orderType === 'dine_in' ? tableNumber : null,
+        table_number: (orderType === 'dine_in' && isTableEnabled) ? tableNumber : null,
         delivery_address: orderType === 'delivery' ? finalAddress : null,
         payment_method: apiPaymentMethod,
         total_amount: finalTotal,
@@ -1868,18 +1870,41 @@ export function PublicCartPage() {
               )}
             </div>
 
-            {/* Refund & Replacement Policy Notice */}
-            <div className="mt-3 p-3.5 rounded-2xl bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/40 text-xs shadow-2xs">
+            {/* Store Policies Notice (Refund, Return & Replacement) */}
+            <div className="mt-3 p-3.5 rounded-2xl bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/40 text-xs shadow-2xs space-y-2">
               <div className="flex items-start gap-2.5">
                 <div className="w-6 h-6 rounded-lg bg-amber-100 dark:bg-amber-900/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
                   <RotateCcw size={13} />
                 </div>
-                <div className="space-y-0.5">
+                <div className="space-y-1.5 flex-1">
                   <span className="font-bold text-[11px] uppercase tracking-wider text-amber-800 dark:text-amber-300 block">
-                    Refund &amp; Replacement Policy
+                    Store Policies & Cancellation
                   </span>
-                  <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
-                    If any item is cancelled or replaced by the restaurant, <strong className="text-slate-800 dark:text-slate-100 font-bold">100% of the item product price</strong> will be refunded or adjusted. Platform and payment gateway convenience fees are non-refundable.
+                  
+                  {/* Cancellation Policy */}
+                  <div className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
+                    <strong className="text-slate-800 dark:text-slate-100 font-bold">
+                      {shop?.settings?.refund_allowed === false ? '• Cancellation Policy (No Refunds): ' : '• Cancellation Policy: '}
+                    </strong>
+                    {shop?.settings?.refund_allowed === false
+                      ? (shop?.settings?.refund_policy_notes || 'This store operates under a strict no-refund policy. Orders cannot be refunded upon cancellation.')
+                      : (shop?.settings?.refund_policy_notes || 'If any item is cancelled, 100% of the food item price is refunded to your account within 5-7 business days.')
+                    }
+                  </div>
+
+                  {/* Replacement Policy */}
+                  <div className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
+                    <strong className="text-slate-800 dark:text-slate-100 font-bold">
+                      {shop?.settings?.replacement_allowed === false ? '• Replacement Policy (No Replacements): ' : `• Replacement Policy ${shop?.settings?.replacement_window_days ? `(${shop.settings.replacement_window_days} Days)` : ''}: `}
+                    </strong>
+                    {shop?.settings?.replacement_allowed === false
+                      ? (shop?.settings?.replacement_policy_notes || 'Item replacements are not accepted on public orders.')
+                      : (shop?.settings?.replacement_policy_notes || 'Free replacement available for damaged or incorrect delivered items.')
+                    }
+                  </div>
+
+                  <p className="text-[10px] text-amber-700/80 dark:text-amber-400/80 font-medium italic pt-0.5">
+                    *Terms & conditions applicable
                   </p>
                 </div>
               </div>
@@ -2087,7 +2112,7 @@ export function PublicCartPage() {
                 )}
               </div>
 
-              {orderType === 'dine_in' && businessCategory.isFood && (() => {
+              {orderType === 'dine_in' && businessCategory.isFood && (shop?.settings as any)?.dinein_tables_enabled !== false && (() => {
                 const totalTables = Number((shop?.settings as any)?.dinein_tables_count || 10);
                 const tablesList = Array.from({ length: totalTables }, (_, i) => `Table-${i + 1}`);
 
@@ -2335,12 +2360,44 @@ export function PublicCartPage() {
                   </div>
                 </div>
 
-                {/* Refund & Replacement Policy Note */}
-                <div className="p-3 rounded-xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/30 text-[10.5px] flex items-start gap-2 text-slate-600 dark:text-slate-300">
-                  <RotateCcw size={13} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-                  <p className="leading-tight">
-                    <strong className="text-slate-800 dark:text-slate-200 font-bold">Refund Policy:</strong> In case of item replacement/cancellation, <strong className="text-slate-800 dark:text-slate-100 font-bold">100% of the product price</strong> is refunded. Platform and gateway fees are non-refundable.
-                  </p>
+                {/* Store Policies Notice (Cancellation & Replacement) */}
+                <div className="p-3.5 rounded-xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/30 text-xs shadow-2xs space-y-2">
+                  <div className="flex items-start gap-2.5">
+                    <div className="w-5 h-5 rounded-md bg-amber-100 dark:bg-amber-900/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
+                      <RotateCcw size={12} />
+                    </div>
+                    <div className="space-y-1.5 flex-1">
+                      <span className="font-bold text-[11px] uppercase tracking-wider text-amber-800 dark:text-amber-300 block">
+                        Store Policies & Cancellation
+                      </span>
+                      
+                      {/* Cancellation Policy */}
+                      <div className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
+                        <strong className="text-slate-800 dark:text-slate-100 font-bold">
+                          {shop?.settings?.refund_allowed === false ? '• Cancellation Policy (No Refunds): ' : '• Cancellation Policy: '}
+                        </strong>
+                        {shop?.settings?.refund_allowed === false
+                          ? (shop?.settings?.refund_policy_notes || 'This store operates under a strict no-refund policy. Orders cannot be refunded upon cancellation.')
+                          : (shop?.settings?.refund_policy_notes || 'If any item is cancelled, 100% of the food item price is refunded to your account within 5-7 business days.')
+                        }
+                      </div>
+
+                      {/* Replacement Policy */}
+                      <div className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
+                        <strong className="text-slate-800 dark:text-slate-100 font-bold">
+                          {shop?.settings?.replacement_allowed === false ? '• Replacement Policy (No Replacements): ' : `• Replacement Policy ${shop?.settings?.replacement_window_days ? `(${shop.settings.replacement_window_days} Days)` : ''}: `}
+                        </strong>
+                        {shop?.settings?.replacement_allowed === false
+                          ? (shop?.settings?.replacement_policy_notes || 'Item replacements are not accepted on public orders.')
+                          : (shop?.settings?.replacement_policy_notes || 'Free replacement available for damaged or incorrect delivered items.')
+                        }
+                      </div>
+
+                      <p className="text-[10px] text-amber-700/80 dark:text-amber-400/80 font-medium italic pt-0.5">
+                        *Terms & conditions applicable
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
 

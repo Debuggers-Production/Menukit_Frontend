@@ -47,47 +47,51 @@ export function QRCodePage() {
       const img = new Image();
       img.crossOrigin = "anonymous";
       img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const canvasSize = 1024;
-        canvas.width = canvasSize;
-        canvas.height = canvasSize;
-        const ctx = canvas.getContext("2d");
-        if (ctx) {
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = "high";
+        try {
+          const canvas = document.createElement("canvas");
+          const canvasSize = 1024;
+          canvas.width = canvasSize;
+          canvas.height = canvasSize;
+          const ctx = canvas.getContext("2d");
+          if (ctx && img.width > 0 && img.height > 0) {
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = "high";
 
-          ctx.clearRect(0, 0, canvasSize, canvasSize);
+            ctx.clearRect(0, 0, canvasSize, canvasSize);
 
-          // 1. Draw solid opaque white circular badge
-          ctx.beginPath();
-          ctx.arc(canvasSize / 2, canvasSize / 2, (canvasSize / 2) - 8, 0, Math.PI * 2);
-          ctx.fillStyle = "#FFFFFF";
-          ctx.fill();
+            // 1. Draw solid opaque white circular badge
+            ctx.beginPath();
+            ctx.arc(canvasSize / 2, canvasSize / 2, (canvasSize / 2) - 8, 0, Math.PI * 2);
+            ctx.fillStyle = "#FFFFFF";
+            ctx.fill();
 
-          // 2. Draw logo nicely centered and clipped into the circle
-          ctx.save();
-          ctx.beginPath();
-          ctx.arc(canvasSize / 2, canvasSize / 2, (canvasSize / 2) - 20, 0, Math.PI * 2);
-          ctx.clip();
+            // 2. Draw logo nicely centered and clipped into the circle
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(canvasSize / 2, canvasSize / 2, (canvasSize / 2) - 20, 0, Math.PI * 2);
+            ctx.clip();
 
-          const maxDim = canvasSize - 56;
-          const scale = Math.min(maxDim / img.width, maxDim / img.height);
-          const w = img.width * scale;
-          const h = img.height * scale;
-          const x = (canvasSize - w) / 2;
-          const y = (canvasSize - h) / 2;
-          ctx.drawImage(img, x, y, w, h);
-          ctx.restore();
+            const maxDim = canvasSize - 56;
+            const scale = Math.min(maxDim / img.width, maxDim / img.height);
+            const w = img.width * scale;
+            const h = img.height * scale;
+            const x = (canvasSize - w) / 2;
+            const y = (canvasSize - h) / 2;
+            ctx.drawImage(img, x, y, w, h);
+            ctx.restore();
 
-          // 3. Crisp circular border ring for clear round shape definition
-          ctx.beginPath();
-          ctx.arc(canvasSize / 2, canvasSize / 2, (canvasSize / 2) - 12, 0, Math.PI * 2);
-          ctx.strokeStyle = "#CBD5E1";
-          ctx.lineWidth = 18;
-          ctx.stroke();
+            // 3. Crisp circular border ring for clear round shape definition
+            ctx.beginPath();
+            ctx.arc(canvasSize / 2, canvasSize / 2, (canvasSize / 2) - 12, 0, Math.PI * 2);
+            ctx.strokeStyle = "#CBD5E1";
+            ctx.lineWidth = 18;
+            ctx.stroke();
 
-          setRoundedLogoUrl(canvas.toDataURL("image/png"));
-        } else {
+            setRoundedLogoUrl(canvas.toDataURL("image/png"));
+          } else {
+            setRoundedLogoUrl(logoSource);
+          }
+        } catch {
           setRoundedLogoUrl(logoSource);
         }
       };
@@ -153,16 +157,13 @@ export function QRCodePage() {
         }
       };
 
-      if (!qrCodeInstance.current) {
-        qrCodeInstance.current = new QRCodeStyling(qrOptions);
+      try {
         qrRef.current.innerHTML = '';
-        qrCodeInstance.current.append(qrRef.current);
-      } else {
-        qrCodeInstance.current.update(qrOptions);
-        if (!qrRef.current.hasChildNodes()) {
-          qrRef.current.innerHTML = '';
-          qrCodeInstance.current.append(qrRef.current);
-        }
+        const instance = new QRCodeStyling(qrOptions);
+        instance.append(qrRef.current);
+        qrCodeInstance.current = instance;
+      } catch (err) {
+        console.error("Failed to render QR Code", err);
       }
     }, 50);
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { ChevronLeft, ShoppingBag, Clock, ArrowRight, History, UtensilsCrossed, Gamepad2, MapPin, ArrowUpRight, Trophy, ChefHat, CheckCircle2, XCircle, CreditCard, AlertCircle, SlidersHorizontal, Bike, Home, Hotel, User, Plus } from 'lucide-react';
+import { ChevronLeft, ShoppingBag, Clock, ArrowRight, History, UtensilsCrossed, Gamepad2, MapPin, ArrowUpRight, Trophy, ChefHat, CheckCircle2, XCircle, CreditCard, AlertCircle, SlidersHorizontal, Bike, Home, Hotel, User, Plus, RotateCcw } from 'lucide-react';
 import { api } from '@/services/api';
 import { APP_CONFIG } from '@/config';
 import { Shop } from '@/types';
@@ -461,7 +461,9 @@ export function PublicOrdersPage() {
           {isCancelled && (
             <div className="flex items-center gap-2 text-slate-400">
               <XCircle size={15} />
-              <span className="text-[8px] font-black uppercase tracking-wider">Cancelled / Refunded</span>
+              <span className="text-[8px] font-black uppercase tracking-wider">
+                {shop?.settings?.refund_allowed === false ? 'Cancelled (Non-Refundable)' : 'Cancelled / Refunded'}
+              </span>
             </div>
           )}
         </div>
@@ -846,6 +848,38 @@ export function PublicOrdersPage() {
                   isLoading={isLoadingMore}
                   hasMore={hasMore}
                 />
+
+                {/* Dynamic Store Order Policies */}
+                <div className="mt-4 p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-2xs space-y-2 text-left">
+                  <div className="flex items-center gap-2">
+                    <RotateCcw size={14} className="text-amber-600 dark:text-amber-400" />
+                    <h4 className="text-[11px] font-extrabold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                      Store Cancellation & Return Policy
+                    </h4>
+                  </div>
+                  <div className="space-y-1.5 text-[10.5px] text-slate-600 dark:text-slate-400 divide-y divide-slate-100 dark:divide-slate-800/60 leading-relaxed">
+                    <div className="pt-1 first:pt-0">
+                      <strong className="text-slate-800 dark:text-slate-200 font-semibold">
+                        {shop?.settings?.refund_allowed === false ? 'Cancellation Policy (No Refunds): ' : 'Cancellation Policy: '}
+                      </strong>
+                      <span>
+                        {shop?.settings?.refund_allowed === false
+                          ? (shop?.settings?.refund_policy_notes || 'This store operates under a strict no-refund policy upon cancellation.')
+                          : (shop?.settings?.refund_policy_notes || 'Cancelled items are refunded to original payment method within 5–7 business days.')}
+                      </span>
+                    </div>
+                    <div className="pt-1">
+                      <strong className="text-slate-800 dark:text-slate-200 font-semibold">
+                        {shop?.settings?.replacement_allowed === false ? 'Replacement Policy (No Replacements): ' : `Replacement Policy ${shop?.settings?.replacement_window_days ? `(${shop.settings.replacement_window_days} Days)` : ''}: `}
+                      </strong>
+                      <span>
+                        {shop?.settings?.replacement_allowed === false
+                          ? (shop?.settings?.replacement_policy_notes || 'No item replacements accepted on orders.')
+                          : (shop?.settings?.replacement_policy_notes || 'Free replacement for incorrect or damaged delivered items.')}
+                      </span>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
       </div>

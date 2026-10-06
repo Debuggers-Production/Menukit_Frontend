@@ -173,6 +173,7 @@ export function ShopSetupPage() {
   const [isCreateNew, setIsCreateNew] = useState<boolean>(isCreateNewParam);
   const [viewMode, setViewMode] = useState<'summary' | 'edit'>(isCreateNewParam ? 'edit' : 'edit');
   const [ownedShops, setOwnedShops] = useState<{ id: string; name: string }[]>([]);
+  const isAdditionalShop = ownedShops.length > 0;
   const { canRead } = usePermissions('settings');
 
   const formatTime = (timeStr: string) => {
@@ -398,79 +399,81 @@ export function ShopSetupPage() {
         useAuthStore.getState().fetchUser();
         setViewMode('summary');
       } else {
-        // Shop creation requires ₹50 one-time payment
-        try {
-          const orderRes = await api.post('/shops/additional-shop-order');
-          const orderData = orderRes.data;
+        // Only additional shops require ₹50 one-time payment; first shop is 100% free
+        if (isAdditionalShop) {
+          try {
+            const orderRes = await api.post('/shops/additional-shop-order');
+            const orderData = orderRes.data;
 
-          if (orderData.required) {
-            if (orderData.mock_mode) {
-              payload.razorpay_order_id = orderData.order_id;
-              payload.razorpay_payment_id = `pay_mock_${Date.now()}`;
-              payload.razorpay_signature = 'sig_mock_verified';
-            } else {
-              const loadRzp = (): Promise<boolean> => {
-                return new Promise((resolve) => {
-                  if ((window as any).Razorpay) {
-                    resolve(true);
-                    return;
-                  }
-                  const script = document.createElement('script');
-                  script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-                  script.onload = () => resolve(true);
-                  script.onerror = () => resolve(false);
-                  document.body.appendChild(script);
-                });
-              };
-
-              const isLoaded = await loadRzp();
-              if (!isLoaded) {
-                toast.error('Razorpay SDK failed to load. Please check your connection.');
-                setIsLoading(false);
-                return;
-              }
-
-              const paymentPromise = new Promise<{ order_id: string; payment_id: string; signature: string }>((resolve, reject) => {
-                const options = {
-                  key: orderData.key_id,
-                  amount: Math.round(orderData.amount * 100),
-                  currency: orderData.currency || 'INR',
-                  name: 'Menukit QR',
-                  description: ownedShops.length > 0 ? `Additional Branch Setup (₹${orderData.amount})` : `Shop Creation Fee (₹${orderData.amount})`,
-                  order_id: orderData.order_id,
-                  prefill: {
-                    name: user?.email?.split('@')[0] || 'Merchant',
-                    email: user?.email || '',
-                    contact: user?.phone || '',
-                  },
-                  theme: { color: '#f97316' },
-                  handler: (response: any) => {
-                    resolve({
-                      order_id: response.razorpay_order_id,
-                      payment_id: response.razorpay_payment_id,
-                      signature: response.razorpay_signature,
-                    });
-                  },
-                  modal: {
-                    ondismiss: () => reject(new Error('Payment window closed')),
-                  },
+            if (orderData.required) {
+              if (orderData.mock_mode) {
+                payload.razorpay_order_id = orderData.order_id;
+                payload.razorpay_payment_id = `pay_mock_${Date.now()}`;
+                payload.razorpay_signature = 'sig_mock_verified';
+              } else {
+                const loadRzp = (): Promise<boolean> => {
+                  return new Promise((resolve) => {
+                    if ((window as any).Razorpay) {
+                      resolve(true);
+                      return;
+                    }
+                    const script = document.createElement('script');
+                    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+                    script.onload = () => resolve(true);
+                    script.onerror = () => resolve(false);
+                    document.body.appendChild(script);
+                  });
                 };
 
-                const rzp = new (window as any).Razorpay(options);
-                rzp.open();
-              });
+                const isLoaded = await loadRzp();
+                if (!isLoaded) {
+                  toast.error('Razorpay SDK failed to load. Please check your connection.');
+                  setIsLoading(false);
+                  return;
+                }
 
-              const paymentResult = await paymentPromise;
-              payload.razorpay_order_id = paymentResult.order_id;
-              payload.razorpay_payment_id = paymentResult.payment_id;
-              payload.razorpay_signature = paymentResult.signature;
+                const paymentPromise = new Promise<{ order_id: string; payment_id: string; signature: string }>((resolve, reject) => {
+                  const options = {
+                    key: orderData.key_id,
+                    amount: Math.round(orderData.amount * 100),
+                    currency: orderData.currency || 'INR',
+                    name: 'Menukit QR',
+                    description: `Additional Branch Setup (₹${orderData.amount})`,
+                    order_id: orderData.order_id,
+                    prefill: {
+                      name: user?.email?.split('@')[0] || 'Merchant',
+                      email: user?.email || '',
+                      contact: user?.phone || '',
+                    },
+                    theme: { color: '#f97316' },
+                    handler: (response: any) => {
+                      resolve({
+                        order_id: response.razorpay_order_id,
+                        payment_id: response.razorpay_payment_id,
+                        signature: response.razorpay_signature,
+                      });
+                    },
+                    modal: {
+                      ondismiss: () => reject(new Error('Payment window closed')),
+                    },
+                  };
+
+                  const rzp = new (window as any).Razorpay(options);
+                  rzp.open();
+                });
+
+                const paymentResult = await paymentPromise;
+                payload.razorpay_order_id = paymentResult.order_id;
+                payload.razorpay_payment_id = paymentResult.payment_id;
+                payload.razorpay_signature = paymentResult.signature;
+              }
             }
+          } catch (err: any) {
+            console.error('Payment initiation error', err);
+            toast.error(err.message || 'Payment processing failed');
+            setIsLoading(false);
+            return;
           }
-        } catch (err: any) {
-          console.error('Payment initiation error', err);
-          toast.error(err.message || 'Payment processing failed');
-          setIsLoading(false);
-          return;
         }
 
         res = await api.post('/shops', payload);
@@ -670,14 +673,25 @@ export function ShopSetupPage() {
  </p>
  </div>
 
- {(isCreateNew || !shop?.id) && (
+ {((isCreateNew || !shop?.id) && isAdditionalShop) && (
  <div className="p-3.5 rounded-2xl bg-orange-50/80 dark:bg-orange-950/30 border border-orange-200/80 dark:border-orange-800/50 flex items-center justify-between gap-3 text-sm my-3">
  <div className="flex items-center gap-2 text-orange-900 dark:text-orange-200 font-medium">
  <Sparkles size={16} className="text-orange-500 shrink-0" />
- <span>One-Time Shop Creation Fee: <strong>₹50</strong></span>
+ <span>Additional Branch Setup Fee: <strong>₹50</strong></span>
  </div>
  <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-orange-500 text-white shadow-sm">
  ₹50 One-Time
+ </span>
+ </div>
+ )}
+ {((isCreateNew || !shop?.id) && !isAdditionalShop) && (
+ <div className="p-3.5 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-800/50 flex items-center justify-between gap-3 text-sm my-3">
+ <div className="flex items-center gap-2 text-emerald-900 dark:text-emerald-200 font-medium">
+ <Sparkles size={16} className="text-emerald-500 shrink-0" />
+ <span>First Shop Setup: <strong>Free Plan Included</strong></span>
+ </div>
+ <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-emerald-600 text-white shadow-sm">
+ Free
  </span>
  </div>
  )}
@@ -965,7 +979,9 @@ export function ShopSetupPage() {
               size="sm" 
               className="rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white"
             >
-              {isLoading ? (isCreateNew || !shop?.id ? 'Processing Setup...' : 'Saving Shop...') : (isCreateNew || !shop?.id ? 'Pay ₹50 & Create Shop' : 'Save Shop Profile')} <Save size={16} className="ml-1.5" />
+              {isLoading 
+                ? (isCreateNew || !shop?.id ? 'Processing Setup...' : 'Saving Shop...') 
+                : (isCreateNew || !shop?.id ? (isAdditionalShop ? 'Pay ₹50 & Create Branch' : 'Create Free Shop Profile') : 'Save Shop Profile')} <Save size={16} className="ml-1.5" />
             </Button>
           )}
         </div>

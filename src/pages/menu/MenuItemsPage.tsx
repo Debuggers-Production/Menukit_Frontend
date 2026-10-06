@@ -1654,8 +1654,8 @@ export function MenuItemsPage() {
 <div className="pt-4 border-t border-border">
  <div className="flex justify-between items-center mb-3">
  <div>
- <h4 className="text-sm font-medium text-foreground">Add-ons (Optional)</h4>
- <p className="text-xs text-muted-foreground">Optional extras that increase the price (e.g. Extra Cheese +20)</p>
+ <h4 className="text-sm font-medium text-foreground">{businessCategory.addonLabel || 'Add-ons (Optional)'}</h4>
+ <p className="text-xs text-muted-foreground">{businessCategory.addonDesc || 'Optional extras that increase the price'}</p>
  </div>
  <Button 
  type="button" 
@@ -1676,7 +1676,7 @@ export function MenuItemsPage() {
  <div>
  <label className="text-xs font-medium text-muted-foreground mb-1 block">Add-on Name</label>
  <Input 
- placeholder="e.g. With Ice" 
+ placeholder={businessCategory.addonNamePlaceholder || "e.g. Extra Cheese"} 
  value={addon.name} 
  onChange={(e) => {
  const newA = [...formData.addons];

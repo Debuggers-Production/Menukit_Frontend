@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { ChevronLeft, CookingPot, CheckCircle2, Clock, XCircle, AlertCircle, CreditCard, Printer, Receipt, FileText, CheckCircle, ChefHat, Download, History, Lock, PackageCheck, Info, Plus } from 'lucide-react';
+import { ChevronLeft, CookingPot, CheckCircle2, Clock, XCircle, AlertCircle, CreditCard, Printer, Receipt, FileText, CheckCircle, ChefHat, Download, History, Lock, PackageCheck, Info, Plus, RotateCcw } from 'lucide-react';
 import { api } from '@/services/api';
 import { Shop } from '@/types';
 import { getBusinessCategory } from '@/config/businessCategories';
@@ -1358,18 +1358,22 @@ export function OrderStatusPage() {
 
           if (pureCancelledTotal <= 0.01) return null;
 
+          const isRefundAllowed = shop?.settings?.refund_allowed !== false;
+
           return (
-            <div className="p-4 rounded-2xl bg-rose-50/90 dark:bg-rose-950/30 border border-rose-200/90 dark:border-rose-900/50 text-rose-900 dark:text-rose-200 text-xs font-medium flex items-start gap-3 shadow-xs">
-              <div className="w-8 h-8 rounded-xl bg-rose-100 dark:bg-rose-900/60 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0 mt-0.5">
+            <div className={`p-4 rounded-2xl ${isRefundAllowed ? 'bg-rose-50/90 dark:bg-rose-950/30 border-rose-200/90 dark:border-rose-900/50 text-rose-900 dark:text-rose-200' : 'bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-200'} border text-xs font-medium flex items-start gap-3 shadow-xs`}>
+              <div className={`w-8 h-8 rounded-xl ${isRefundAllowed ? 'bg-rose-100 dark:bg-rose-900/60 text-rose-600 dark:text-rose-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'} flex items-center justify-center shrink-0 mt-0.5`}>
                 <Info size={18} />
               </div>
               <div className="space-y-0.5 text-left">
-                <p className="font-extrabold text-[11px] uppercase tracking-wider text-rose-700 dark:text-rose-400">
-                  Refund Notice
+                <p className={`font-extrabold text-[11px] uppercase tracking-wider ${isRefundAllowed ? 'text-rose-700 dark:text-rose-400' : 'text-slate-700 dark:text-slate-400'}`}>
+                  {isPaid ? (isRefundAllowed ? 'Refund Notice' : 'Cancellation & Policy Notice') : 'Order Adjustment Notice'}
                 </p>
                 <p className="text-[11px] leading-relaxed text-slate-700 dark:text-slate-300">
                   {isPaid
-                    ? `The amount for cancelled ${isFullyCancelled ? 'order' : 'items'} (${shop?.settings?.currency || '₹'}${pureCancelledTotal.toFixed(2)}) will be refunded to your account within 5–7 working days.`
+                    ? (isRefundAllowed
+                        ? (shop?.settings?.refund_policy_notes || `The amount for cancelled ${isFullyCancelled ? 'order' : 'items'} (${shop?.settings?.currency || '₹'}${pureCancelledTotal.toFixed(2)}) will be refunded to your account within 5–7 working days.`)
+                        : (shop?.settings?.refund_policy_notes || `This store has a strict no-refund policy. As per store rules, the amount for cancelled ${isFullyCancelled ? 'order' : 'items'} (${shop?.settings?.currency || '₹'}${pureCancelledTotal.toFixed(2)}) is non-refundable.`))
                     : `The amount for cancelled ${isFullyCancelled ? 'order' : 'items'} (${shop?.settings?.currency || '₹'}${pureCancelledTotal.toFixed(2)}) has been deducted from your payable total.`
                   }
                 </p>
@@ -1394,6 +1398,50 @@ export function OrderStatusPage() {
             </div>
           </div>
         )}
+
+        {/* Dynamic Store Policies (Refund, Return & Replacement) */}
+        <div className="p-4 rounded-2xl bg-white/90 dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800 shadow-2xs space-y-2.5">
+          <div className="flex items-center gap-2">
+            <RotateCcw size={14} className="text-amber-600 dark:text-amber-400" />
+            <h4 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">
+              Store Order & Cancellation Policies
+            </h4>
+          </div>
+
+          <div className="space-y-1.5 text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed divide-y divide-slate-100 dark:divide-slate-800/60">
+            {/* Cancellation Policy */}
+            <div className="pt-1.5 first:pt-0">
+              <strong className="text-slate-900 dark:text-white font-semibold">
+                {shop?.settings?.refund_allowed === false ? '• Cancellation Policy (No Refunds): ' : '• Cancellation Policy: '}
+              </strong>
+              <span>
+                {shop?.settings?.refund_allowed === false
+                  ? (shop?.settings?.refund_policy_notes || 'This store operates under a strict no-refund policy. Orders cannot be refunded upon cancellation.')
+                  : (shop?.settings?.refund_policy_notes || 'If any item is cancelled or unavailable, 100% of product value is refunded to original source in 5-7 business days.')
+                }
+              </span>
+            </div>
+
+            {/* Replacement Policy */}
+            <div className="pt-1.5">
+              <strong className="text-slate-900 dark:text-white font-semibold">
+                {shop?.settings?.replacement_allowed === false ? '• Replacement Policy (No Replacements): ' : `• Replacement Policy ${shop?.settings?.replacement_window_days ? `(${shop.settings.replacement_window_days} Days)` : ''}: `}
+              </strong>
+              <span>
+                {shop?.settings?.replacement_allowed === false
+                  ? (shop?.settings?.replacement_policy_notes || 'Item replacements are not accepted on public orders.')
+                  : (shop?.settings?.replacement_policy_notes || 'Free replacement provided for damaged or mismatched delivered items.')
+                }
+              </span>
+            </div>
+
+            <div className="pt-1.5">
+              <p className="text-[10px] text-amber-700/80 dark:text-amber-400/80 font-medium italic">
+                *Terms & conditions applicable
+              </p>
+            </div>
+          </div>
+        </div>
 
         {/* Bottom Spacing to offset fixed bottom dock */}
         <div className="h-20 print:hidden" />

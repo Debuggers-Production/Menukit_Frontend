@@ -123,7 +123,7 @@ export function SettingsPage() {
   const { isInstalled, promptInstall } = usePWAInstall();
 
   // Tab & Module State
-  const [activeTab, setActiveTab] = useState<'overview' | 'general' | 'ordering' | 'discovery' | 'payments' | 'gst' | 'printers' | 'account'>(
+  const [activeTab, setActiveTab] = useState<'overview' | 'general' | 'ordering' | 'policies' | 'discovery' | 'payments' | 'gst' | 'printers' | 'account'>(
     (tabFromUrl as any) || 'overview'
   );
   const [moduleSearchQuery, setModuleSearchQuery] = useState('');
@@ -142,6 +142,7 @@ export function SettingsPage() {
       const moduleTitles: Record<string, { title: string; desc: string }> = {
         general: { title: 'General Settings', desc: 'Manage currency, display languages, and app installation' },
         ordering: { title: 'Ordering Channels', desc: 'Set up table dine-in, takeaway counters, and deliveries' },
+        policies: { title: 'Cancellation & Replacement Policy', desc: 'Configure order cancellation refund processing and item replacement rules' },
         discovery: { title: 'Public Discovery & SEO', desc: 'Boost public search visibility and customer store discovery' },
         payments: { title: 'Payments & Bank Accounts', desc: 'Manage bank settlement account, online UPI and card gateways' },
         gst: { title: 'GST & Tax Compliances', desc: 'Manage business legal entity, GSTIN, and FSSAI licenses' },
@@ -696,6 +697,7 @@ export function SettingsPage() {
     extra_delivery_charge_per_step: shop?.settings?.extra_delivery_charge_per_step ?? 0,
     takeaway_enabled: shop?.settings?.takeaway_enabled || false,
     dinein_enabled: shop?.settings?.dinein_enabled || false,
+    dinein_tables_enabled: (shop?.settings as any)?.dinein_tables_enabled !== false,
     dinein_tables_count: (shop?.settings as any)?.dinein_tables_count ?? 10,
     auto_accept_orders: shop?.settings?.auto_accept_orders || false,
     online_payments_enabled: shop?.settings?.online_payments_enabled !== false,
@@ -718,6 +720,14 @@ export function SettingsPage() {
     serial_number_prefix: shop?.settings?.serial_number_prefix || '',
     serial_number_digits: shop?.settings?.serial_number_digits || 3,
     auto_serial_number_enabled: shop?.settings?.auto_serial_number_enabled || false,
+    return_allowed: shop?.settings?.return_allowed || false,
+    return_window_days: shop?.settings?.return_window_days ?? 0,
+    return_policy_notes: shop?.settings?.return_policy_notes || '',
+    refund_allowed: shop?.settings?.refund_allowed === true,
+    refund_policy_notes: shop?.settings?.refund_policy_notes || (shop?.settings?.refund_allowed === true ? 'If any item is cancelled, 100% of the food item price is refunded to your account within 5-7 business days.' : 'This store operates under a strict no-refund policy. Orders cannot be refunded upon cancellation.'),
+    replacement_allowed: shop?.settings?.replacement_allowed !== false,
+    replacement_window_days: shop?.settings?.replacement_window_days ?? 0,
+    replacement_policy_notes: shop?.settings?.replacement_policy_notes || (shop?.settings?.replacement_allowed !== false ? 'Free replacement available for damaged or incorrect delivered items.' : 'Item replacements are not accepted on public orders.'),
   });
 
   const discoveryModInfo = subscriptionStatus?.module_expirations?.['hide-discovery-badge'];
@@ -766,6 +776,7 @@ export function SettingsPage() {
         extra_delivery_charge_per_step: shop.settings.extra_delivery_charge_per_step ?? 0,
         takeaway_enabled: shop.settings.takeaway_enabled || false,
         dinein_enabled: shop.settings.dinein_enabled || false,
+        dinein_tables_enabled: (shop.settings as any).dinein_tables_enabled !== false,
         dinein_tables_count: (shop.settings as any).dinein_tables_count ?? 10,
         auto_accept_orders: shop.settings.auto_accept_orders || false,
         online_payments_enabled: shop.settings.online_payments_enabled !== false,
@@ -788,6 +799,14 @@ export function SettingsPage() {
         serial_number_prefix: shop.settings.serial_number_prefix || '',
         serial_number_digits: shop.settings.serial_number_digits || 3,
         auto_serial_number_enabled: shop.settings.auto_serial_number_enabled || false,
+        return_allowed: shop.settings.return_allowed || false,
+        return_window_days: shop.settings.return_window_days ?? 0,
+        return_policy_notes: shop.settings.return_policy_notes || '',
+        refund_allowed: shop.settings.refund_allowed === true,
+        refund_policy_notes: shop.settings.refund_policy_notes || (shop.settings.refund_allowed === true ? 'If any item is cancelled, 100% of the food item price is refunded to your account within 5-7 business days.' : 'This store operates under a strict no-refund policy. Orders cannot be refunded upon cancellation.'),
+        replacement_allowed: shop.settings.replacement_allowed !== false,
+        replacement_window_days: shop.settings.replacement_window_days ?? 0,
+        replacement_policy_notes: shop.settings.replacement_policy_notes || (shop.settings.replacement_allowed !== false ? 'Free replacement available for damaged or incorrect delivered items.' : 'Item replacements are not accepted on public orders.'),
       });
     }
   }, [shop]);
@@ -1344,6 +1363,19 @@ export function SettingsPage() {
       ]
     },
     {
+      id: 'policies',
+      title: 'Cancellation & Replacement Policy',
+      description: 'Configure order cancellation refund processing and item replacement rules',
+      icon: RotateCcw,
+      badgeColor: 'bg-teal-50 dark:bg-teal-950/60 text-teal-600 dark:text-teal-400 border border-teal-200/70 dark:border-teal-800/60',
+      items: [
+        'Automatic Food Refund on Cancel',
+        'Customer Cancellation Terms',
+        'Item Replacement Rules & Windows',
+        'Customer Storefront Policy Badges'
+      ]
+    },
+    {
       id: 'discovery',
       title: 'Public Discovery & SEO',
       description: 'Boost public search visibility and customer store discovery',
@@ -1842,30 +1874,42 @@ export function SettingsPage() {
                     />
 
                     {isBankVerified && settingsData.dinein_enabled && businessCategory.isFood && (
-                      <div className="py-3 px-4 sm:px-5 bg-amber-50/60 dark:bg-amber-950/20 rounded-2xl border border-amber-200/80 dark:border-amber-900/40 my-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all">
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-black text-slate-800 dark:text-slate-100">Total Dine-In Tables</span>
-                            <span className="text-[10px] font-black uppercase px-2 py-0.5 bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 rounded-md">Table-1 to Table-N</span>
+                      <div className="ml-2 sm:ml-4 pl-3.5 border-l-2 border-amber-200 dark:border-amber-800/60 my-2 space-y-2.5 transition-all">
+                        <SettingRow
+                          icon={UtensilsCrossed}
+                          title="Enable Table Selection (Table Numbers)"
+                          description="Allow customers and staff to choose specific table numbers (Table-1, Table-2, etc.). Turn off if your restaurant does not use table numbers."
+                          checked={settingsData.dinein_tables_enabled}
+                          onChange={(c) => setSettingsData(prev => ({ ...prev, dinein_tables_enabled: c }))}
+                        />
+
+                        {settingsData.dinein_tables_enabled && (
+                          <div className="py-3 px-4 sm:px-5 bg-amber-50/60 dark:bg-amber-950/20 rounded-2xl border border-amber-200/80 dark:border-amber-900/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all">
+                            <div className="space-y-0.5">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-black text-slate-800 dark:text-slate-100">Total Dine-In Tables</span>
+                                <span className="text-[10px] font-black uppercase px-2 py-0.5 bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 rounded-md">Table-1 to Table-N</span>
+                              </div>
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                Configure total restaurant tables. Customers and staff will choose from a structured dropdown (Table-1, Table-2, etc.).
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2 w-full sm:w-auto">
+                              <input
+                                type="number"
+                                min={1}
+                                max={500}
+                                value={settingsData.dinein_tables_count || 10}
+                                onChange={(e) => {
+                                  const val = Math.max(1, Math.min(500, parseInt(e.target.value) || 1));
+                                  setSettingsData(prev => ({ ...prev, dinein_tables_count: val }));
+                                }}
+                                className="w-24 px-3 py-1.5 text-xs font-black bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700/60 rounded-xl text-center focus:ring-2 focus:ring-primary focus:outline-none shadow-2xs font-mono"
+                              />
+                              <span className="text-xs font-bold text-slate-600 dark:text-slate-300">Tables</span>
+                            </div>
                           </div>
-                          <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                            Configure total restaurant tables. Customers and staff will choose from a structured dropdown (Table-1, Table-2, etc.).
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2 w-full sm:w-auto">
-                          <input
-                            type="number"
-                            min={1}
-                            max={500}
-                            value={settingsData.dinein_tables_count || 10}
-                            onChange={(e) => {
-                              const val = Math.max(1, Math.min(500, parseInt(e.target.value) || 1));
-                              setSettingsData(prev => ({ ...prev, dinein_tables_count: val }));
-                            }}
-                            className="w-24 px-3 py-1.5 text-xs font-black bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700/60 rounded-xl text-center focus:ring-2 focus:ring-primary focus:outline-none shadow-2xs font-mono"
-                          />
-                          <span className="text-xs font-bold text-slate-600 dark:text-slate-300">Tables</span>
-                        </div>
+                        )}
                       </div>
                     )}
 
@@ -1898,6 +1942,119 @@ export function SettingsPage() {
                       }}
                       disabled={!isBankVerified}
                     />
+
+                    {isBankVerified && settingsData.delivery_enabled && (
+                      <div className="ml-2 sm:ml-4 pl-3.5 border-l-2 border-amber-200 dark:border-amber-800/60 my-2 space-y-4 transition-all">
+                        <div className="p-4 bg-amber-50/50 dark:bg-amber-950/20 rounded-2xl border border-amber-200/80 dark:border-amber-900/40 space-y-4">
+                          <div className="flex items-center gap-2">
+                            <Truck className="w-4 h-4 text-amber-500" />
+                            <span className="text-xs font-black text-slate-800 dark:text-slate-100 uppercase tracking-wider">
+                              Delivery Pricing & Range Rules
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
+                            <div>
+                              <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1.5 truncate">
+                                Base Cost ({settingsData.currency})
+                              </label>
+                              <input
+                                type="number" min="0" step="1"
+                                value={settingsData.base_delivery_charge}
+                                onChange={(e) => setSettingsData(prev => ({ ...prev, base_delivery_charge: parseFloat(e.target.value) || 0 }))}
+                                className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-amber-500 font-semibold text-slate-900 dark:text-white"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1.5 truncate">
+                                Included Distance (km)
+                              </label>
+                              <input
+                                type="number" min="0" step="0.5"
+                                value={settingsData.base_delivery_distance}
+                                onChange={(e) => setSettingsData(prev => ({ ...prev, base_delivery_distance: parseFloat(e.target.value) || 0 }))}
+                                className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-amber-500 font-semibold text-slate-900 dark:text-white"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1.5 truncate">
+                                Extra Step (km)
+                              </label>
+                              <input
+                                type="number" min="0.1" step="0.5"
+                                value={settingsData.extra_delivery_distance_step}
+                                onChange={(e) => setSettingsData(prev => ({ ...prev, extra_delivery_distance_step: Math.max(0.1, parseFloat(e.target.value) || 1) }))}
+                                className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-amber-500 font-semibold text-slate-900 dark:text-white"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1.5 truncate">
+                                Extra Rate ({settingsData.currency})
+                              </label>
+                              <input
+                                type="number" min="0" step="1"
+                                value={settingsData.extra_delivery_charge_per_step}
+                                onChange={(e) => setSettingsData(prev => ({ ...prev, extra_delivery_charge_per_step: parseFloat(e.target.value) || 0 }))}
+                                className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-amber-500 font-semibold text-slate-900 dark:text-white"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1.5 flex items-center justify-between gap-1">
+                                <span className="truncate">Coverable Radius</span>
+                                <span className="text-[10px] text-amber-600 dark:text-amber-400 font-normal shrink-0">(0 = ∞)</span>
+                              </label>
+                              <input
+                                type="number" min="0" step="0.5"
+                                placeholder="0"
+                                value={(settingsData as any).max_delivery_distance ?? 0}
+                                onChange={(e) => setSettingsData(prev => ({ ...prev, max_delivery_distance: Math.max(0, parseFloat(e.target.value) || 0) }))}
+                                className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-amber-500 font-semibold text-slate-900 dark:text-white"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-amber-200/80 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 space-y-2">
+                            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-2">
+                              <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Calculation Preview
+                              </span>
+                              <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 px-2.5 py-0.5 rounded-lg border border-slate-200 dark:border-slate-700 shadow-2xs">
+                                <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Test Distance:</span>
+                                <input
+                                  type="number" min="0" step="0.5"
+                                  value={testDistance}
+                                  onChange={(e) => setTestDistance(Math.max(0, parseFloat(e.target.value) || 0))}
+                                  className="w-14 px-1.5 py-0.5 text-xs bg-transparent border-0 text-center font-bold text-primary focus:outline-none"
+                                />
+                                <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">km</span>
+                              </div>
+                            </div>
+                            <div className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                              {(() => {
+                                const dist = testDistance;
+                                const baseDist = settingsData.base_delivery_distance || 0;
+                                const baseCharge = settingsData.base_delivery_charge || 0;
+                                const step = settingsData.extra_delivery_distance_step || 1;
+                                const rate = settingsData.extra_delivery_charge_per_step || 0;
+                                const maxDist = (settingsData as any).max_delivery_distance || 0;
+
+                                if (maxDist > 0 && dist > maxDist) {
+                                  return <span className="text-rose-500 font-bold">⚠️ Outside Delivery Range: Test distance ({dist} km) exceeds maximum coverable distance ({maxDist} km). Orders will be blocked.</span>;
+                                }
+
+                                if (dist <= baseDist) {
+                                  return <span>Total Fee: <strong className="text-emerald-600 dark:text-emerald-400">{settingsData.currency}{baseCharge}</strong> (Within base distance).</span>;
+                                }
+                                const extraKm = dist - baseDist;
+                                const steps = Math.ceil(extraKm / step);
+                                const extraFee = steps * rate;
+                                return <span>Base: <strong className="text-slate-900 dark:text-white">{settingsData.currency}{baseCharge}</strong> + Extra: <strong className="text-amber-600 dark:text-amber-400">{settingsData.currency}{extraFee}</strong> ({steps} steps) = Total: <strong className="text-emerald-600 dark:text-emerald-400 text-sm">{settingsData.currency}{baseCharge + extraFee}</strong></span>;
+                              })()}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
 
@@ -1949,121 +2106,265 @@ export function SettingsPage() {
                     />
                   </CardContent>
                 </Card>
-
-                {isBankVerified && settingsData.delivery_enabled && (
-                <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs border-amber-200/60 dark:border-amber-900/40">
-                  <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-amber-50/30 dark:bg-amber-900/10">
-                    <div className="flex items-center gap-2">
-                      <Truck className="w-5 h-5 text-amber-500" />
-                      <CardTitle className="text-base font-bold">Delivery Pricing Rules</CardTitle>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="p-4 sm:p-6 space-y-6">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
-                      <div>
-                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1.5 truncate">
-                          Base Cost ({settingsData.currency})
-                        </label>
-                        <input
-                          type="number" min="0" step="1"
-                          value={settingsData.base_delivery_charge}
-                          onChange={(e) => setSettingsData(prev => ({ ...prev, base_delivery_charge: parseFloat(e.target.value) || 0 }))}
-                          className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-amber-500 font-semibold text-slate-900 dark:text-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1.5 truncate">
-                          Included Distance (km)
-                        </label>
-                        <input
-                          type="number" min="0" step="0.5"
-                          value={settingsData.base_delivery_distance}
-                          onChange={(e) => setSettingsData(prev => ({ ...prev, base_delivery_distance: parseFloat(e.target.value) || 0 }))}
-                          className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-amber-500 font-semibold text-slate-900 dark:text-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1.5 truncate">
-                          Extra Step (km)
-                        </label>
-                        <input
-                          type="number" min="0.1" step="0.5"
-                          value={settingsData.extra_delivery_distance_step}
-                          onChange={(e) => setSettingsData(prev => ({ ...prev, extra_delivery_distance_step: Math.max(0.1, parseFloat(e.target.value) || 1) }))}
-                          className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-amber-500 font-semibold text-slate-900 dark:text-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1.5 truncate">
-                          Extra Rate ({settingsData.currency})
-                        </label>
-                        <input
-                          type="number" min="0" step="1"
-                          value={settingsData.extra_delivery_charge_per_step}
-                          onChange={(e) => setSettingsData(prev => ({ ...prev, extra_delivery_charge_per_step: parseFloat(e.target.value) || 0 }))}
-                          className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-amber-500 font-semibold text-slate-900 dark:text-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1.5 flex items-center justify-between gap-1">
-                          <span className="truncate">Coverable Radius</span>
-                          <span className="text-[10px] text-amber-600 dark:text-amber-400 font-normal shrink-0">(0 = ∞)</span>
-                        </label>
-                        <input
-                          type="number" min="0" step="0.5"
-                          placeholder="0"
-                          value={(settingsData as any).max_delivery_distance ?? 0}
-                          onChange={(e) => setSettingsData(prev => ({ ...prev, max_delivery_distance: Math.max(0, parseFloat(e.target.value) || 0) }))}
-                          className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-amber-500 font-semibold text-slate-900 dark:text-white"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="p-4 bg-slate-50 dark:bg-slate-900/60 rounded-2xl border border-slate-200/80 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 space-y-2.5">
-                      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 dark:border-slate-800 pb-2.5">
-                        <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Calculation Preview
-                        </span>
-                        <div className="flex items-center gap-2 bg-white dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 shadow-2xs">
-                          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Test Distance:</span>
-                          <input
-                            type="number" min="0" step="0.5"
-                            value={testDistance}
-                            onChange={(e) => setTestDistance(Math.max(0, parseFloat(e.target.value) || 0))}
-                            className="w-14 px-1.5 py-0.5 text-xs bg-transparent border-0 text-center font-bold text-primary focus:outline-none"
-                          />
-                          <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">km</span>
-                        </div>
-                      </div>
-                      <div className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                        {(() => {
-                          const dist = testDistance;
-                          const baseDist = settingsData.base_delivery_distance || 0;
-                          const baseCharge = settingsData.base_delivery_charge || 0;
-                          const step = settingsData.extra_delivery_distance_step || 1;
-                          const rate = settingsData.extra_delivery_charge_per_step || 0;
-                          const maxDist = (settingsData as any).max_delivery_distance || 0;
-
-                          if (maxDist > 0 && dist > maxDist) {
-                            return <span className="text-rose-500 font-bold">⚠️ Outside Delivery Range: Test distance ({dist} km) exceeds maximum coverable distance ({maxDist} km). Orders will be blocked.</span>;
-                          }
-
-                          if (dist <= baseDist) {
-                            return <span>Total Fee: <strong className="text-emerald-600 dark:text-emerald-400">{settingsData.currency}{baseCharge}</strong> (Within base distance).</span>;
-                          }
-                          const extraKm = dist - baseDist;
-                          const steps = Math.ceil(extraKm / step);
-                          const extraFee = steps * rate;
-                          return <span>Base: <strong className="text-slate-900 dark:text-white">{settingsData.currency}{baseCharge}</strong> + Extra: <strong className="text-amber-600 dark:text-amber-400">{settingsData.currency}{extraFee}</strong> ({steps} steps) = Total: <strong className="text-emerald-600 dark:text-emerald-400 text-sm">{settingsData.currency}{baseCharge + extraFee}</strong></span>;
-                        })()}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-                )}
               </div>
             );
           })()}
+
+          {/* =========================================
+              CANCELLATION & REPLACEMENT POLICIES TAB
+          ========================================= */}
+          {activeTab === 'policies' && (
+            <div className="space-y-6 animate-in fade-in duration-300">
+              {/* 1. CANCELLATION & REFUND POLICY CARD */}
+              <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs">
+                <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-slate-50/50 dark:bg-slate-900/50">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className={`p-2 rounded-xl ${settingsData.refund_allowed ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'}`}>
+                        <RotateCcw className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-base font-bold">Cancellation Policy</CardTitle>
+                        <CardDescription className="text-xs">Control whether order cancellation triggers automated food amount refunds to customers.</CardDescription>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={settingsData.refund_allowed}
+                      onCheckedChange={(checked) => {
+                        setSettingsData(prev => {
+                          const isDefaultOrEmpty = !prev.refund_policy_notes || 
+                            prev.refund_policy_notes === 'If any item is cancelled, 100% of the food item price is refunded to your account within 5-7 business days.' ||
+                            prev.refund_policy_notes === 'This store operates under a strict no-refund policy. Orders cannot be refunded upon cancellation.';
+                          return {
+                            ...prev,
+                            refund_allowed: checked,
+                            refund_policy_notes: isDefaultOrEmpty
+                              ? (checked ? 'If any item is cancelled, 100% of the food item price is refunded to your account within 5-7 business days.' : 'This store operates under a strict no-refund policy. Orders cannot be refunded upon cancellation.')
+                              : prev.refund_policy_notes,
+                          };
+                        });
+                      }}
+                    />
+                  </div>
+                </CardHeader>
+                <CardContent className="p-6 space-y-4">
+                  {settingsData.refund_allowed ? (
+                    <div className="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50 text-xs text-emerald-800 dark:text-emerald-300 flex items-start gap-2.5">
+                      <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 mt-0.5" />
+                      <div>
+                        <span className="font-semibold">Cancellation Refund Enabled:</span> When an online-paid order is cancelled (by customer or store), the food amount will be refunded automatically via payment gateway (Razorpay) and a WhatsApp refund confirmation will be sent to the customer.
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/50 text-xs text-rose-800 dark:text-rose-300 flex items-start gap-2.5">
+                      <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+                      <div>
+                        <span className="font-semibold">No Refund on Cancellation:</span> If an order is cancelled, the food amount will <strong className="underline">NOT</strong> be refunded and <strong className="underline">NO</strong> payment gateway refund or automated refund activities will be triggered. Orders are treated as non-refundable.
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        Cancellation Policy Terms & Instructions (Shown to Customers)
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setSettingsData(prev => ({
+                          ...prev,
+                          refund_policy_notes: settingsData.refund_allowed
+                            ? 'If any item is cancelled, 100% of the food item price is refunded to your account within 5-7 business days.'
+                            : 'This store operates under a strict no-refund policy. Orders cannot be refunded upon cancellation.'
+                        }))}
+                        className="text-[10px] font-bold text-primary hover:underline cursor-pointer"
+                      >
+                        Reset to Default Text
+                      </button>
+                    </div>
+                    <textarea
+                      rows={3}
+                      value={settingsData.refund_policy_notes || ''}
+                      onChange={(e) => setSettingsData(prev => ({ ...prev, refund_policy_notes: e.target.value }))}
+                      placeholder={settingsData.refund_allowed ? "If any item is cancelled, 100% of the food item price is refunded to your account within 5-7 business days." : "This store operates under a strict no-refund policy. Orders cannot be refunded upon cancellation."}
+                      className="w-full text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none font-medium leading-relaxed"
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* 2. REPLACEMENT POLICY CARD */}
+              <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs">
+                <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-slate-50/50 dark:bg-slate-900/50">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className={`p-2 rounded-xl ${settingsData.replacement_allowed ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' : 'bg-slate-500/10 text-slate-600 dark:text-slate-400'}`}>
+                        <UtensilsCrossed className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-base font-bold">Replacement Policy</CardTitle>
+                        <CardDescription className="text-xs">Set customer-facing item replacement policy. (Store staff can still perform manual replacements from admin portal).</CardDescription>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={settingsData.replacement_allowed}
+                      onCheckedChange={(checked) => {
+                        setSettingsData(prev => {
+                          const isDefaultOrEmpty = !prev.replacement_policy_notes || 
+                            prev.replacement_policy_notes === 'Free replacement available for damaged or incorrect delivered items.' ||
+                            prev.replacement_policy_notes === 'Item replacements are not accepted on public orders.';
+                          return {
+                            ...prev,
+                            replacement_allowed: checked,
+                            replacement_policy_notes: isDefaultOrEmpty
+                              ? (checked ? 'Free replacement available for damaged or incorrect delivered items.' : 'Item replacements are not accepted on public orders.')
+                              : prev.replacement_policy_notes,
+                          };
+                        });
+                      }}
+                    />
+                  </div>
+                </CardHeader>
+                <CardContent className="p-6 space-y-4">
+                  {settingsData.replacement_allowed ? (
+                    <>
+                      <div className="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50 text-xs text-emerald-800 dark:text-emerald-300 flex items-start gap-2.5">
+                        <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 mt-0.5" />
+                        <div>
+                          <span className="font-semibold">Customer Replacements Enabled:</span> Customers will see that item replacements are available on your storefront for damaged, defective, or incorrect food items.
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                            Replacement Window (Days)
+                          </label>
+                          <Input
+                            type="number"
+                            min="0"
+                            max="90"
+                            value={settingsData.replacement_window_days ?? 0}
+                            onChange={(e) => setSettingsData(prev => ({ ...prev, replacement_window_days: parseInt(e.target.value) || 0 }))}
+                            placeholder="0 (Immediate / Same Day) or days"
+                            className="text-xs rounded-xl"
+                          />
+                          <p className="text-[11px] text-slate-400">Enter 0 for same-day replacement upon delivery, or number of days.</p>
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                            Replacement Terms & Guidelines (Shown to Customers)
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setSettingsData(prev => ({
+                              ...prev,
+                              replacement_policy_notes: 'Free replacement available for damaged or incorrect delivered items.'
+                            }))}
+                            className="text-[10px] font-bold text-primary hover:underline cursor-pointer"
+                          >
+                            Reset to Default Text
+                          </button>
+                        </div>
+                        <textarea
+                          rows={3}
+                          value={settingsData.replacement_policy_notes || ''}
+                          onChange={(e) => setSettingsData(prev => ({ ...prev, replacement_policy_notes: e.target.value }))}
+                          placeholder="Free replacement available for damaged or incorrect delivered items."
+                          className="w-full text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none font-medium leading-relaxed"
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 flex items-start gap-2.5">
+                        <Info className="w-4 h-4 shrink-0 text-slate-500 mt-0.5" />
+                        <div>
+                          <span className="font-semibold">Customer Replacements Disabled:</span> Customers will see "No item replacements accepted" on your storefront. <strong className="text-slate-900 dark:text-white">Note:</strong> Store staff and admin can still manually replace items from the order manager if needed for customer resolution.
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                            Replacement Policy Terms (Shown to Customers)
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setSettingsData(prev => ({
+                              ...prev,
+                              replacement_policy_notes: 'Item replacements are not accepted on public orders.'
+                            }))}
+                            className="text-[10px] font-bold text-primary hover:underline cursor-pointer"
+                          >
+                            Reset to Default Text
+                          </button>
+                        </div>
+                        <textarea
+                          rows={2}
+                          value={settingsData.replacement_policy_notes || ''}
+                          onChange={(e) => setSettingsData(prev => ({ ...prev, replacement_policy_notes: e.target.value }))}
+                          placeholder="Item replacements are not accepted on public orders."
+                          className="w-full text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none font-medium leading-relaxed"
+                        />
+                      </div>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* 3. CUSTOMER PREVIEW SUMMARY CARD */}
+              <Card className="border-dashed border-2 border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/30">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                    <Sparkles className="w-3.5 h-3.5 text-primary" />
+                    Customer Storefront Policy Badges Preview
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <div className="flex flex-wrap gap-2.5">
+                    {/* Cancellation Badge */}
+                    <div className={`px-3 py-1.5 rounded-xl text-xs font-medium border flex items-center gap-1.5 ${
+                      settingsData.refund_allowed 
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/60' 
+                        : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800/60'
+                    }`}>
+                      <RotateCcw className="w-3.5 h-3.5 shrink-0" />
+                      <span>{settingsData.refund_allowed ? 'Cancellation Refund Supported' : 'No Refund on Cancellation'}</span>
+                    </div>
+
+                    {/* Replacement Badge */}
+                    <div className={`px-3 py-1.5 rounded-xl text-xs font-medium border flex items-center gap-1.5 ${
+                      settingsData.replacement_allowed 
+                        ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/60' 
+                        : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+                    }`}>
+                      <UtensilsCrossed className="w-3.5 h-3.5 shrink-0" />
+                      <span>
+                        {settingsData.replacement_allowed 
+                          ? `${settingsData.replacement_window_days ? `${settingsData.replacement_window_days}-Day ` : ''}Replacement Available` 
+                          : 'No Replacements Accepted'}
+                      </span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Bottom Action Save */}
+              <div className="flex justify-end pt-2">
+                <Button
+                  onClick={handleSaveShopSettings}
+                  disabled={isSavingSettings}
+                  className="font-bold bg-primary text-white rounded-xl shadow-md hover:shadow-lg transition-all px-6 py-2.5"
+                >
+                  <Save className="w-4 h-4 mr-2" />
+                  {isSavingSettings ? 'Saving...' : 'Save Policy Settings'}
+                </Button>
+              </div>
+            </div>
+          )}
 
           {/* =========================================
               DISCOVERY TAB

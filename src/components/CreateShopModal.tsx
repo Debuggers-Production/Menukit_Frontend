@@ -60,6 +60,18 @@ export function CreateShopModal({ isOpen, onClose, ownedShops = [], onSuccess }:
       setCloneFromShopId(ownedShops[0]?.id || '');
 
       const checkPricing = async () => {
+        if (!isAdditionalShop) {
+          setPricingInfo({
+            required: false,
+            base_amount: 0,
+            pg_fee: 0,
+            gst_on_fee: 0,
+            amount: 0,
+            currency: 'INR'
+          });
+          return;
+        }
+
         setLoadingPricing(true);
         try {
           const res = await api.post('/shops/additional-shop-order');
@@ -74,7 +86,7 @@ export function CreateShopModal({ isOpen, onClose, ownedShops = [], onSuccess }:
         } catch (err) {
           console.error("Failed to check shop creation pricing", err);
           setPricingInfo({
-            required: true,
+            required: isAdditionalShop,
             base_amount: 50,
             pg_fee: 1.50,
             gst_on_fee: 0.27,
@@ -88,7 +100,7 @@ export function CreateShopModal({ isOpen, onClose, ownedShops = [], onSuccess }:
 
       checkPricing();
     }
-  }, [isOpen, ownedShops.length, user]);
+  }, [isOpen, ownedShops.length, isAdditionalShop, user]);
 
   if (!isOpen) return null;
 

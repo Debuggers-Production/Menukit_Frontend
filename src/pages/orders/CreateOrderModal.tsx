@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, Plus, Minus, ShoppingBag, ArrowRight, ArrowLeft, User, Phone, Check, X, ChevronDown, LayoutGrid, RotateCcw, UtensilsCrossed, AlertCircle, CornerDownLeft, Sparkles, Keyboard, Banknote, QrCode, CreditCard, Tag, Split as SplitIcon, CheckCircle2, Clock, Store, Package, UserCheck, Star, Flame, Layers } from 'lucide-react';
+import { Search, Plus, Minus, ShoppingBag, ArrowRight, ArrowLeft, User, Phone, Check, X, ChevronDown, LayoutGrid, RotateCcw, UtensilsCrossed, AlertCircle, CornerDownLeft, Sparkles, Keyboard, Banknote, QrCode, CreditCard, Tag, Split as SplitIcon, CheckCircle2, Clock, Store, Package, UserCheck, Star, Flame, Layers, Percent, Calculator, Trash2, Delete } from 'lucide-react';
 
 
 
@@ -30,12 +30,15 @@ interface CreateOrderModalProps {
 
 interface CartItem {
   id: string;
-  menuItem: MenuItem;
-  selectedVariantIdx: number;
+  menuItem?: MenuItem;
+  customName?: string;
+  name?: string;
+  selectedVariantIdx?: number;
   selectedVariant?: any;
-  selectedAddons: number[]; // indices of menuItem.addons
+  selectedAddons?: number[]; // indices of menuItem.addons
   quantity: number;
   unitPrice: number;
+  isCalculatorItem?: boolean;
 }
 
 const REPLACEMENT_REASONS = [
@@ -95,8 +98,19 @@ export function CreateOrderModal({
   // Cart state
   const [cart, setCart] = useState<Record<string, CartItem>>({});
 
+  // Calculator Mode state
+  const [orderInputMode, setOrderInputMode] = useState<'menu' | 'calculator'>('menu');
+  const [calcAmount, setCalcAmount] = useState<string>('');
+  const [calcQty, setCalcQty] = useState<number>(1);
+  const [calcCustomNote, setCalcCustomNote] = useState<string>('');
+  const calcAmountInputRef = useRef<HTMLInputElement>(null);
+  const calcQtyInputRef = useRef<HTMLInputElement>(null);
+  const calcNoteInputRef = useRef<HTMLInputElement>(null);
+
   // Discounts state
   const [availableDiscounts, setAvailableDiscounts] = useState<any[]>([]);
+  const [discountType, setDiscountType] = useState<'percentage' | 'fixed'>('percentage');
+  const [discountValue, setDiscountValue] = useState<string>('');
 
   // Item Customization state (Variants & Add-ons)
   const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
@@ -247,6 +261,8 @@ export function CreateOrderModal({
       setPaymentMethod('cash');
       setPaymentStatus('pending');
       setPriceTier('retail');
+      setDiscountType('percentage');
+      setDiscountValue('');
       setSplitPayments([
         { method: 'cash', amount: '' },
         { method: 'upi', amount: '' },
@@ -329,7 +345,8 @@ export function CreateOrderModal({
   const safeMenuItems = Array.isArray(menuItems) ? menuItems : [];
 
   // Multiplier Helper taking active priceTier into account
-  const getItemMultiplier = (item: MenuItem, variantIdx = 0, currentTier = priceTier) => {
+  const getItemMultiplier = (item?: MenuItem, variantIdx = 0, currentTier = priceTier) => {
+    if (!item) return 1;
     if (item.variants && item.variants.length > 0) {
       const v = item.variants[variantIdx] || item.variants[0];
       if (currentTier === 'wholesale') return v.wholesale_multiplier || v.multiplier || item.wholesale_multiplier || item.multiplier || 1;
@@ -481,10 +498,14 @@ export function CreateOrderModal({
         const next: Record<string, CartItem> = {};
         Object.keys(prev).forEach(key => {
           const it = prev[key];
-          next[key] = {
-            ...it,
-            unitPrice: computeUnitPrice(it.menuItem, it.selectedVariantIdx, it.selectedAddons, customerUsedDiscountIds, tier)
-          };
+          if (it.menuItem) {
+            next[key] = {
+              ...it,
+              unitPrice: computeUnitPrice(it.menuItem, it.selectedVariantIdx, it.selectedAddons, customerUsedDiscountIds, tier)
+            };
+          } else {
+            next[key] = it;
+          }
         });
         return next;
       });
@@ -498,7 +519,7 @@ export function CreateOrderModal({
 
   const getItemTotalQuantity = (itemId: string) => {
     return Object.values(cart)
-      .filter(i => i.menuItem.id === itemId)
+      .filter(i => i.menuItem?.id === itemId)
       .reduce((sum, i) => sum + i.quantity, 0);
   };
 
@@ -703,8 +724,83 @@ export function CreateOrderModal({
     });
   };
 
+  const clearCart = () => {
+    setCart({});
+  };
+
+  // Helper to add calculator / quick item
+  const handleAddCalculatorItem = () => {
+    const amt = parseFloat(calcAmount);
+    if (isNaN(amt) || amt <= 0) {
+      toast.error('Please enter a valid amount (greater than ₹0)');
+      calcAmountInputRef.current?.focus();
+      return;
+    }
+    const qty = isNaN(calcQty) || calcQty <= 0 ? 1 : calcQty;
+    
+    // Determine sequential name: "Item 1", "Item 2", or custom note
+    const existingCalcItems = Object.values(cart).filter(i => i.isCalculatorItem);
+    const defaultItemName = `Item ${existingCalcItems.length + 1}`;
+    const finalName = calcCustomNote.trim() || defaultItemName;
+    
+    const cartItemId = `calc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    
+    setCart(prev => ({
+      ...prev,
+      [cartItemId]: {
+        id: cartItemId,
+        name: finalName,
+        customName: finalName,
+        quantity: qty,
+        unitPrice: amt,
+        isCalculatorItem: true,
+      }
+    }));
+
+    toast.success(`Added ${finalName} (₹${amt.toFixed(2)} × ${qty})`);
+    setCalcAmount('');
+    setCalcQty(1);
+    setCalcCustomNote('');
+    setTimeout(() => {
+      calcAmountInputRef.current?.focus();
+    }, 40);
+  };
+
+  const handleNumpadPress = (val: string) => {
+    if (val === 'C') {
+      setCalcAmount('');
+    } else if (val === 'BACK') {
+      setCalcAmount(prev => prev.slice(0, -1));
+    } else if (val === '.') {
+      if (!calcAmount.includes('.')) {
+        setCalcAmount(prev => (prev ? prev + '.' : '0.'));
+      }
+    } else if (val === '+10') {
+      const cur = parseFloat(calcAmount) || 0;
+      setCalcAmount(String(cur + 10));
+    } else if (val === '+50') {
+      const cur = parseFloat(calcAmount) || 0;
+      setCalcAmount(String(cur + 50));
+    } else if (val === '+100') {
+      const cur = parseFloat(calcAmount) || 0;
+      setCalcAmount(String(cur + 100));
+    } else if (val === '+500') {
+      const cur = parseFloat(calcAmount) || 0;
+      setCalcAmount(String(cur + 500));
+    } else {
+      // Numbers e.g. 0, 00, 1..9
+      setCalcAmount(prev => {
+        if (prev === '0' && val !== '.') return val;
+        return prev + val;
+      });
+    }
+  };
+
   // Compute line total taking multiplier pack pricing into account
   const getItemLineTotal = (item: CartItem) => {
+    if (item.isCalculatorItem || !item.menuItem) {
+      return item.unitPrice * item.quantity;
+    }
     const mult = getItemMultiplier(item.menuItem, item.selectedVariantIdx);
     const effQty = mult > 1 ? (item.quantity / mult) : item.quantity;
     return item.unitPrice * effQty;
@@ -720,7 +816,23 @@ export function CreateOrderModal({
     }, 0);
   }, [cart]);
 
-  // GST Calculation
+  // Manual Discount Calculation (Percentage or Flat Amount)
+  const computedManualDiscount = useMemo(() => {
+    const numVal = parseFloat(discountValue);
+    if (isNaN(numVal) || numVal <= 0 || totalCartAmount <= 0) return 0;
+    if (discountType === 'percentage') {
+      const clampedPct = Math.min(100, Math.max(0, numVal));
+      return Math.round((totalCartAmount * (clampedPct / 100)) * 100) / 100;
+    } else {
+      return Math.min(totalCartAmount, Math.round(numVal * 100) / 100);
+    }
+  }, [discountType, discountValue, totalCartAmount]);
+
+  const netSubtotalAfterDiscount = useMemo(() => {
+    return Math.max(0, Math.round((totalCartAmount - computedManualDiscount) * 100) / 100);
+  }, [totalCartAmount, computedManualDiscount]);
+
+  // GST Calculation (Applied on post-discount subtotal)
   const cgstRate = Number(shop?.settings?.cgst_rate || 0);
   const sgstRate = Number(shop?.settings?.sgst_rate || 0);
   const totalTaxRate = cgstRate + sgstRate;
@@ -728,23 +840,24 @@ export function CreateOrderModal({
   const isExclusiveTax = isGstEnabled && !shop?.settings?.inclusive_tax;
 
   const gstCalculation = useMemo(() => {
+    const baseForTax = netSubtotalAfterDiscount;
     if (!isGstEnabled) {
       return {
-        taxable: totalCartAmount,
+        taxable: baseForTax,
         cgst: 0,
         sgst: 0,
         totalTax: 0,
-        finalTotal: totalCartAmount,
+        finalTotal: baseForTax,
       };
     }
     if (isExclusiveTax) {
       // EXCLUSIVE: Tax is added on top of food items
-      const totalTax = Math.round((totalCartAmount * (totalTaxRate / 100)) * 100) / 100;
+      const totalTax = Math.round((baseForTax * (totalTaxRate / 100)) * 100) / 100;
       const cgst = Math.round((totalTax * (cgstRate / totalTaxRate)) * 100) / 100;
       const sgst = Math.round((totalTax - cgst) * 100) / 100;
-      const finalTotal = Math.round((totalCartAmount + totalTax) * 100) / 100;
+      const finalTotal = Math.round((baseForTax + totalTax) * 100) / 100;
       return {
-        taxable: totalCartAmount,
+        taxable: baseForTax,
         cgst,
         sgst,
         totalTax,
@@ -752,8 +865,8 @@ export function CreateOrderModal({
       };
     } else {
       // INCLUSIVE: Tax is already baked in
-      const taxable = Math.round((totalCartAmount / (1 + totalTaxRate / 100)) * 100) / 100;
-      const totalTax = Math.round((totalCartAmount - taxable) * 100) / 100;
+      const taxable = Math.round((baseForTax / (1 + totalTaxRate / 100)) * 100) / 100;
+      const totalTax = Math.round((baseForTax - taxable) * 100) / 100;
       const cgst = Math.round((totalTax * (cgstRate / totalTaxRate)) * 100) / 100;
       const sgst = Math.round((totalTax - cgst) * 100) / 100;
       return {
@@ -761,10 +874,10 @@ export function CreateOrderModal({
         cgst,
         sgst,
         totalTax,
-        finalTotal: totalCartAmount,
+        finalTotal: baseForTax,
       };
     }
-  }, [isGstEnabled, isExclusiveTax, totalCartAmount, cgstRate, sgstRate, totalTaxRate]);
+  }, [isGstEnabled, isExclusiveTax, netSubtotalAfterDiscount, cgstRate, sgstRate, totalTaxRate]);
 
   // Replacement mode calculations
   const currencySymbol = shop?.currency || '₹';
@@ -865,6 +978,7 @@ export function CreateOrderModal({
   const handleAppendItems = async () => {
     if (!targetOrder || totalCartCount === 0) return;
     for (const item of Object.values(cart)) {
+      if (item.isCalculatorItem || !item.menuItem) continue;
       const mult = getItemMultiplier(item.menuItem, item.selectedVariantIdx);
       if (mult > 1 && item.quantity % mult !== 0) {
         toast.error(`Quantity for '${item.menuItem.name}' must be a multiple of ${mult} (received ${item.quantity}).`);
@@ -874,14 +988,24 @@ export function CreateOrderModal({
     setLoading(true);
     try {
       const itemsPayload = Object.values(cart).map(item => {
+        if (item.isCalculatorItem || !item.menuItem) {
+          return {
+            menu_item_id: null,
+            name: item.customName || item.name || 'Item',
+            quantity: item.quantity,
+            price: item.unitPrice,
+            variant_info: null,
+            addons_info: null,
+          };
+        }
         const variant = item.menuItem.variants && item.menuItem.variants.length > 0 
-          ? item.menuItem.variants[item.selectedVariantIdx] 
+          ? item.menuItem.variants[item.selectedVariantIdx || 0] 
           : null;
         const variant_info = variant ? { name: variant.name, price: Number(variant.offer_price || variant.price) } : null;
-        const addons_info = (item.menuItem.addons && item.selectedAddons.length > 0)
+        const addons_info = (item.menuItem.addons && item.selectedAddons && item.selectedAddons.length > 0)
           ? item.selectedAddons.map(idx => ({
-              name: item.menuItem.addons![idx].name,
-              price: Number(item.menuItem.addons![idx].price),
+              name: item.menuItem!.addons![idx].name,
+              price: Number(item.menuItem!.addons![idx].price),
             }))
           : null;
 
@@ -920,10 +1044,11 @@ export function CreateOrderModal({
       commitActiveQuantity();
     }
     if (totalCartCount === 0) {
-      toast.error('Please select at least one menu item');
+      toast.error('Please select at least one item');
       return;
     }
     for (const item of Object.values(cart)) {
+      if (item.isCalculatorItem || !item.menuItem) continue;
       const mult = getItemMultiplier(item.menuItem, item.selectedVariantIdx);
       if (mult > 1 && item.quantity % mult !== 0) {
         toast.error(`Quantity for '${item.menuItem.name}' must be a multiple of ${mult} (received ${item.quantity}). Please adjust to ${mult}, ${mult * 2}, ${mult * 3}, etc.`);
@@ -943,6 +1068,7 @@ export function CreateOrderModal({
       return;
     }
     for (const item of Object.values(cart)) {
+      if (item.isCalculatorItem || !item.menuItem) continue;
       const mult = getItemMultiplier(item.menuItem, item.selectedVariantIdx);
       if (mult > 1 && item.quantity % mult !== 0) {
         toast.error(`Quantity for '${item.menuItem.name}' must be a multiple of ${mult} (received ${item.quantity}). Please adjust to ${mult}, ${mult * 2}, ${mult * 3}, etc.`);
@@ -950,7 +1076,9 @@ export function CreateOrderModal({
       }
     }
 
-    if (orderType === 'dine_in' && !isCrackers && tableNumber) {
+    const isTableEnabled = (shop?.settings as any)?.dinein_tables_enabled !== false;
+
+    if (orderType === 'dine_in' && !isCrackers && isTableEnabled && tableNumber) {
       const isOcc = occupiedTables.some((ot: any) => {
         const otNorm = String(ot.table_number || '').trim().toLowerCase();
         const tblNorm = tableNumber.trim().toLowerCase();
@@ -965,14 +1093,24 @@ export function CreateOrderModal({
     setLoading(true);
     try {
       const itemsPayload = Object.values(cart).map(item => {
+        if (item.isCalculatorItem || !item.menuItem) {
+          return {
+            menu_item_id: null,
+            name: item.customName || item.name || 'Item',
+            quantity: item.quantity,
+            price: item.unitPrice,
+            variant_info: null,
+            addons_info: null,
+          };
+        }
         const variant = item.menuItem.variants && item.menuItem.variants.length > 0 
-          ? item.menuItem.variants[item.selectedVariantIdx] 
+          ? item.menuItem.variants[item.selectedVariantIdx || 0] 
           : null;
         const variant_info = variant ? { name: variant.name, price: Number(variant.offer_price || variant.price) } : null;
-        const addons_info = (item.menuItem.addons && item.selectedAddons.length > 0)
+        const addons_info = (item.menuItem.addons && item.selectedAddons && item.selectedAddons.length > 0)
           ? item.selectedAddons.map(idx => ({
-              name: item.menuItem.addons![idx].name,
-              price: Number(item.menuItem.addons![idx].price),
+              name: item.menuItem!.addons![idx].name,
+              price: Number(item.menuItem!.addons![idx].price),
             }))
           : null;
 
@@ -991,6 +1129,7 @@ export function CreateOrderModal({
       const appliedDiscIds: string[] = [];
       const appliedDiscCodes: string[] = [];
       Object.values(cart).forEach(it => {
+        if (!it.menuItem) return;
         const dInfo = getItemDiscount(it.menuItem, it.unitPrice, customerUsedDiscountIds);
         if (dInfo && !customerUsedDiscountIds.includes(String(dInfo.discount.id))) {
           if (!appliedDiscIds.includes(String(dInfo.discount.id))) {
@@ -999,6 +1138,13 @@ export function CreateOrderModal({
           }
         }
       });
+
+      if (computedManualDiscount > 0) {
+        const discLabel = discountType === 'percentage'
+          ? `Discount (${discountValue}% - ₹${computedManualDiscount.toFixed(2)})`
+          : `Flat Discount (₹${computedManualDiscount.toFixed(2)})`;
+        appliedDiscCodes.push(discLabel);
+      }
 
       const validSplitPayments = paymentMethod === 'split' 
         ? splitPayments
@@ -1018,7 +1164,7 @@ export function CreateOrderModal({
         customer_name: customerName.trim() || 'Walk-in',
         customer_phone: customerPhone.trim() || '',
         order_type: orderType,
-        table_number: (orderType === 'dine_in' && !isCrackers) ? tableNumber.trim() || null : null,
+        table_number: (orderType === 'dine_in' && !isCrackers && isTableEnabled) ? tableNumber.trim() || null : null,
         delivery_address: orderType === 'delivery' ? deliveryAddress.trim() || null : null,
         payment_method: paymentMethod,
         payment_status: resolvedPaymentStatus,
@@ -1140,8 +1286,9 @@ export function CreateOrderModal({
   return createPortal(
     <div className="fixed inset-0 z-[100] bg-background flex flex-col h-screen w-screen overflow-hidden">
       {/* 1. Sleek Compact Header (Only 48px!) */}
-      <div className="h-12 px-3 sm:px-6 border-b border-border flex items-center justify-between shrink-0 bg-background/95 backdrop-blur z-20">
-        <div className="flex items-center gap-2 min-w-0">
+      <div className="h-12 px-3 sm:px-6 border-b border-border flex items-center justify-between shrink-0 bg-background/95 backdrop-blur z-20 gap-2">
+        {/* Left: Title & Step Badge */}
+        <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 flex-1">
           {step === 2 && (
             <button
               onClick={() => setStep(1)}
@@ -1151,28 +1298,74 @@ export function CreateOrderModal({
               <ArrowLeft size={18} />
             </button>
           )}
-          <h2 className="text-sm sm:text-base font-bold text-foreground truncate">
+          <h2 className="text-xs sm:text-base font-bold text-foreground truncate">
             {replacingItem
-              ? `Replace "${replacingItem.item.name}" in Order #${replacingItem.order.daily_order_number || replacingItem.order.id.slice(0, 8).toUpperCase()}`
+              ? `Replace "${replacingItem.item.name}"`
               : targetOrder 
               ? `Add Items to #${targetOrder.daily_order_number || targetOrder.id.slice(0, 8).toUpperCase()}`
               : (step === 1 ? 'Select Menu Items' : 'Customer & Order Info')}
           </h2>
-          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary shrink-0">
+          <span className="text-[10px] sm:text-[11px] font-bold px-1.5 sm:px-2 py-0.5 rounded-full bg-primary/10 text-primary shrink-0">
             {replacingItem
-              ? 'Replacement Mode'
+              ? 'Replacement'
               : step === 1 
-              ? `Step 1/2 • ${totalCartCount} item${totalCartCount === 1 ? '' : 's'}` 
+              ? (
+                <>
+                  <span className="hidden sm:inline">Step 1/2 • </span>
+                  <span>{totalCartCount} item{totalCartCount === 1 ? '' : 's'}</span>
+                </>
+              )
               : 'Step 2/2'}
           </span>
         </div>
 
-        <button
-          onClick={onClose}
-          className="p-1.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer shrink-0"
-        >
-          <X size={20} />
-        </button>
+        {/* Right Group: Mode Switcher Tabs + Close Button (Pushed to the Right!) */}
+        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+          {step === 1 && !replacingItem && (
+            <div className="flex items-center bg-muted/80 p-0.5 rounded-xl border border-border shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setOrderInputMode('menu');
+                  setTimeout(() => searchInputRef.current?.focus(), 50);
+                }}
+                className={`px-2 sm:px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 sm:gap-1.5 ${
+                  orderInputMode === 'menu'
+                    ? 'bg-primary text-white shadow-xs'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <UtensilsCrossed size={13} />
+                <span className="hidden sm:inline">Menu Items</span>
+                <span className="sm:hidden text-[11px]">Menu</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setOrderInputMode('calculator');
+                  setTimeout(() => calcAmountInputRef.current?.focus(), 50);
+                }}
+                className={`px-2 sm:px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 sm:gap-1.5 ${
+                  orderInputMode === 'calculator'
+                    ? 'bg-primary text-white shadow-xs'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <Calculator size={13} />
+                <span className="hidden sm:inline">Calculator Mode</span>
+                <span className="sm:hidden text-[11px]">Calc</span>
+              </button>
+            </div>
+          )}
+
+          <button
+            onClick={onClose}
+            className="p-1 sm:p-1.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer shrink-0"
+            title="Close modal"
+          >
+            <X size={18} className="sm:w-5 sm:h-5" />
+          </button>
+        </div>
       </div>
 
       {/* Replacement Context Sub-Banner */}
@@ -1196,11 +1389,295 @@ export function CreateOrderModal({
         </div>
       )}
 
-      {/* STEP 1: MENU SELECTION */}
+      {/* STEP 1: MENU SELECTION OR CALCULATOR MODE */}
       {step === 1 && (
-        <div className="flex flex-col flex-1 overflow-hidden">
-          {/* Crackers Price Tier Banner */}
-          {isCrackers && (
+        <div className="flex flex-col flex-1 overflow-hidden min-h-0">
+          {orderInputMode === 'calculator' && !replacingItem ? (
+            /* CALCULATOR / QUICK BILLING MODE */
+            <div className="flex-1 overflow-y-auto p-3 sm:p-6 pb-28 sm:pb-8 bg-slate-50/50 dark:bg-slate-900/40 overscroll-contain">
+              <div className="max-w-4xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6 items-start">
+                {/* Left: Input Pad & Controls (7 cols on lg) */}
+                <div className="lg:col-span-7 bg-card rounded-2xl border border-border p-4 sm:p-5 shadow-xs space-y-4">
+                  <div className="flex items-center justify-between border-b border-border/60 pb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-bold">
+                        <Calculator size={18} />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-foreground">Calculator / Quick Billing</h3>
+                        <p className="text-[11px] text-muted-foreground">Enter amount & quantity to add quick items</p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-mono">
+                      Press [Enter] to Add
+                    </span>
+                  </div>
+
+                  {/* Top Row: Item Amount & Quantity side-by-side on all screen sizes */}
+                  <div className="grid grid-cols-12 gap-2 sm:gap-3 items-end">
+                    {/* Main Amount Input */}
+                    <div className="col-span-7 space-y-1 sm:space-y-1.5">
+                      <label className="text-[11px] sm:text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center justify-between">
+                        <span>Item Amount (₹)</span>
+                        <span className="text-[9px] sm:text-[10px] text-muted-foreground font-mono font-normal">Step 1: ↵</span>
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 text-xl sm:text-3xl font-black text-muted-foreground font-mono select-none">
+                          ₹
+                        </span>
+                        <input
+                          ref={calcAmountInputRef}
+                          type="number"
+                          inputMode="decimal"
+                          enterKeyHint="next"
+                          step="any"
+                          min="0"
+                          placeholder="0.00"
+                          value={calcAmount}
+                          onChange={(e) => setCalcAmount(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              const amt = parseFloat(calcAmount);
+                              if (!isNaN(amt) && amt > 0) {
+                                calcQtyInputRef.current?.focus();
+                                calcQtyInputRef.current?.select();
+                              } else {
+                                toast.error('Please enter a valid amount');
+                              }
+                            }
+                          }}
+                          className="w-full pl-8 sm:pl-11 pr-2 sm:pr-4 py-2.5 sm:py-3.5 bg-background border-2 border-border focus:border-primary rounded-xl sm:rounded-2xl text-xl sm:text-3xl font-black text-foreground font-mono focus:ring-4 focus:ring-primary/10 outline-none transition-all shadow-2xs"
+                          autoFocus
+                        />
+                      </div>
+                    </div>
+
+                    {/* Quantity Input */}
+                    <div className="col-span-5 space-y-1 sm:space-y-1.5">
+                      <label className="text-[11px] sm:text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                        <span>Quantity</span>
+                        <span className="text-[9px] sm:text-[10px] text-muted-foreground font-mono font-normal">Step 2: ↵</span>
+                      </label>
+                      <div className="flex items-center bg-background rounded-xl sm:rounded-2xl border-2 border-border focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10 h-[48px] sm:h-[62px] px-1 sm:px-2 shadow-2xs">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCalcQty(prev => Math.max(1, prev - 1));
+                            calcQtyInputRef.current?.focus();
+                          }}
+                          className="w-7 h-7 sm:w-10 sm:h-10 flex items-center justify-center hover:bg-muted rounded-lg sm:rounded-xl text-foreground font-bold text-sm sm:text-base cursor-pointer transition-colors active:scale-95 shrink-0"
+                        >
+                          <Minus size={14} className="sm:w-4 sm:h-4" />
+                        </button>
+                        <input
+                          ref={calcQtyInputRef}
+                          type="number"
+                          inputMode="numeric"
+                          enterKeyHint="next"
+                          min="1"
+                          value={calcQty}
+                          onChange={(e) => setCalcQty(Math.max(1, parseInt(e.target.value) || 1))}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              calcNoteInputRef.current?.focus();
+                              calcNoteInputRef.current?.select();
+                            }
+                          }}
+                          className="w-full text-center text-lg sm:text-2xl font-black font-mono bg-transparent border-none outline-none text-foreground"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCalcQty(prev => prev + 1);
+                            calcQtyInputRef.current?.focus();
+                          }}
+                          className="w-7 h-7 sm:w-10 sm:h-10 flex items-center justify-center hover:bg-muted rounded-lg sm:rounded-xl text-foreground font-bold text-sm sm:text-base cursor-pointer transition-colors active:scale-95 shrink-0"
+                        >
+                          <Plus size={14} className="sm:w-4 sm:h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Item Name / Note Input */}
+                  <div className="space-y-1 sm:space-y-1.5 pt-0.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] sm:text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                        <span>Item Name / Note (Optional)</span>
+                        <span className="text-[9px] sm:text-[10px] text-muted-foreground font-mono font-normal">Step 3: Enter ↵</span>
+                      </label>
+                    </div>
+                    <input
+                      ref={calcNoteInputRef}
+                      type="text"
+                      enterKeyHint="done"
+                      placeholder={`e.g. Item ${Object.values(cart).filter(i => i.isCalculatorItem).length + 1} (or Snacks)`}
+                      value={calcCustomNote}
+                      onChange={(e) => setCalcCustomNote(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddCalculatorItem();
+                        }
+                      }}
+                      className="w-full h-10 sm:h-11 px-3 sm:px-3.5 bg-background border border-border focus:border-primary rounded-xl text-xs sm:text-sm text-foreground focus:ring-2 focus:ring-primary/10 outline-none transition-all shadow-2xs"
+                    />
+                  </div>
+
+                  {/* POS Touch Numpad Grid */}
+                  <div className="pt-2 border-t border-border/60">
+                    <div className="grid grid-cols-4 gap-2">
+                      {[
+                        { label: '7', val: '7' },
+                        { label: '8', val: '8' },
+                        { label: '9', val: '9' },
+                        { label: 'C', val: 'C', className: 'text-red-500 font-black hover:bg-red-50 dark:hover:bg-red-950/50' },
+                        { label: '4', val: '4' },
+                        { label: '5', val: '5' },
+                        { label: '6', val: '6' },
+                        { label: '⌫', val: 'BACK', className: 'hover:bg-amber-50 dark:hover:bg-amber-950/50' },
+                        { label: '1', val: '1' },
+                        { label: '2', val: '2' },
+                        { label: '3', val: '3' },
+                        { label: '+50', val: '+50', className: 'text-primary font-bold bg-primary/5 hover:bg-primary/10' },
+                        { label: '0', val: '0' },
+                        { label: '00', val: '00' },
+                        { label: '.', val: '.' },
+                        { label: '+100', val: '+100', className: 'text-primary font-bold bg-primary/5 hover:bg-primary/10' },
+                      ].map((btn, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => handleNumpadPress(btn.val)}
+                          className={`h-11 sm:h-12 rounded-xl border border-border bg-background hover:bg-muted text-foreground font-black text-sm sm:text-base font-mono transition-all active:scale-95 cursor-pointer shadow-2xs flex items-center justify-center ${btn.className || ''}`}
+                        >
+                          {btn.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Big Add Item Action */}
+                  <Button
+                    type="button"
+                    onClick={handleAddCalculatorItem}
+                    className="w-full h-12 rounded-xl font-black text-sm sm:text-base gap-2 bg-primary hover:bg-primary/90 text-white shadow-md active:scale-98 transition-all cursor-pointer"
+                  >
+                    <Plus size={18} />
+                    <span>Add Item (₹{((parseFloat(calcAmount) || 0) * (calcQty || 1)).toFixed(2)})</span>
+                    <span className="text-xs font-mono bg-white/20 px-2 py-0.5 rounded font-normal ml-1">Enter ↵</span>
+                  </Button>
+                </div>
+
+                {/* Right: Live Current Items in Calculator Mode (5 cols on lg) */}
+                <div className="lg:col-span-5 bg-card rounded-2xl border border-border p-4 sm:p-5 shadow-xs flex flex-col space-y-3">
+                  <div className="flex items-center justify-between border-b border-border/60 pb-3">
+                    <div>
+                      <span className="font-bold text-sm text-foreground">Added Items</span>
+                      <span className="text-xs text-muted-foreground ml-1.5 font-mono font-semibold">({totalCartCount})</span>
+                    </div>
+                    {Object.keys(cart).length > 0 && (
+                      <button
+                        type="button"
+                        onClick={clearCart}
+                        className="text-xs text-red-500 hover:text-red-600 font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                      >
+                        <Trash2 size={13} />
+                        <span>Clear All</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Items List - naturally flow on mobile, scroll inside on large screens */}
+                  <div className="space-y-2 pr-1 lg:max-h-[360px] lg:overflow-y-auto">
+                    {Object.keys(cart).length === 0 ? (
+                      <div className="py-8 sm:py-10 flex flex-col items-center justify-center text-center p-4 border border-dashed border-border rounded-xl text-muted-foreground">
+                        <Calculator size={32} className="opacity-30 mb-2" />
+                        <p className="text-xs font-semibold">No items entered yet</p>
+                        <p className="text-[11px] opacity-70 mt-0.5">Enter an amount on the left and tap Add Item</p>
+                      </div>
+                    ) : (
+                      Object.values(cart).map((item, idx) => (
+                        <div
+                          key={item.id}
+                          className="p-2.5 rounded-xl border border-border/80 bg-background/80 hover:border-primary/40 flex items-center justify-between gap-2.5 transition-all"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-primary/10 text-primary font-mono shrink-0">
+                                #{idx + 1}
+                              </span>
+                              <span className="font-bold text-xs text-foreground truncate">
+                                {item.customName || item.name || item.menuItem?.name || `Item ${idx + 1}`}
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-muted-foreground font-mono mt-0.5">
+                              ₹{item.unitPrice.toFixed(2)} × {item.quantity}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="font-black text-xs sm:text-sm text-foreground font-mono">
+                              ₹{getItemLineTotal(item).toFixed(2)}
+                            </span>
+                            <div className="flex items-center bg-muted rounded-lg border border-border h-6 px-0.5">
+                              <button
+                                type="button"
+                                onClick={() => updateCartItemQuantity(item.id, -1)}
+                                className="w-5 h-5 flex items-center justify-center hover:bg-background rounded text-foreground text-xs font-bold cursor-pointer"
+                              >
+                                -
+                              </button>
+                              <span className="w-5 text-center text-xs font-black font-mono">{item.quantity}</span>
+                              <button
+                                type="button"
+                                onClick={() => updateCartItemQuantity(item.id, 1)}
+                                className="w-5 h-5 flex items-center justify-center hover:bg-background rounded text-foreground text-xs font-bold cursor-pointer"
+                              >
+                                +
+                              </button>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => removeCartItem(item.id)}
+                              className="p-1 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors cursor-pointer"
+                              title="Delete item"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  {/* Quick summary footer inside sidebar */}
+                  <div className="pt-3 border-t border-border/60 space-y-1.5">
+                    <div className="flex justify-between items-center text-xs text-muted-foreground font-mono">
+                      <span>Subtotal ({totalCartCount} items)</span>
+                      <span className="font-bold text-foreground">₹{totalCartAmount.toFixed(2)}</span>
+                    </div>
+                    {isGstEnabled && (
+                      <div className="flex justify-between items-center text-[11px] text-muted-foreground font-mono">
+                        <span>GST ({totalTaxRate}%)</span>
+                        <span>{isExclusiveTax ? `+₹${gstCalculation.totalTax.toFixed(2)}` : `₹${gstCalculation.totalTax.toFixed(2)} incl.`}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between items-center text-sm font-black text-foreground pt-1 border-t border-border/40 font-mono">
+                      <span>Total</span>
+                      <span className="text-primary text-base">₹{gstCalculation.finalTotal.toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* MENU CATALOG MODE */
+            <>
+              {/* Crackers Price Tier Banner */}
+              {isCrackers && (
             <div className="bg-amber-500/10 border-b border-amber-500/20 px-3 sm:px-6 py-2 flex items-center justify-between gap-2 shrink-0">
               <span className="text-xs font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1.5 shrink-0">
                 <Tag size={14} className="text-amber-600 dark:text-amber-400" />
@@ -1777,6 +2254,8 @@ export function CreateOrderModal({
               </div>
             )}
           </div>
+            </>
+          )}
         </div>
       )}
 
@@ -1790,20 +2269,32 @@ export function CreateOrderModal({
                 <div>
                   <span className="font-bold text-foreground">{totalCartCount} Items in Order</span>
                   <div className="text-muted-foreground text-xs truncate max-w-[280px]">
-                    {Object.values(cart).map(i => `${i.menuItem.name} (x${i.quantity})`).join(', ')}
+                    {Object.values(cart).map(i => `${i.customName || i.name || i.menuItem?.name || 'Item'} (x${i.quantity})`).join(', ')}
                   </div>
                 </div>
                 <div className="text-right">
                   <span className="font-black text-base text-primary font-mono">₹{gstCalculation.finalTotal.toFixed(2)}</span>
-                  {isExclusiveTax && totalCartCount > 0 && (
-                    <div className="text-[10px] text-muted-foreground">
-                      ₹{totalCartAmount.toFixed(2)} + ₹{gstCalculation.totalTax.toFixed(2)} GST
+                  {computedManualDiscount > 0 ? (
+                    <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">
+                      ₹{totalCartAmount.toFixed(2)} - ₹{computedManualDiscount.toFixed(2)} Disc {isExclusiveTax && gstCalculation.totalTax > 0 ? `+ ₹${gstCalculation.totalTax.toFixed(2)} GST` : ''}
                     </div>
+                  ) : (
+                    isExclusiveTax && totalCartCount > 0 && (
+                      <div className="text-[10px] text-muted-foreground">
+                        ₹{totalCartAmount.toFixed(2)} + ₹{gstCalculation.totalTax.toFixed(2)} GST
+                      </div>
+                    )
                   )}
                 </div>
               </div>
+              {computedManualDiscount > 0 && (
+                <div className="pt-1.5 border-t border-border/60 flex justify-between items-center text-[11px] text-emerald-600 dark:text-emerald-400 font-mono font-semibold">
+                  <span>Discount Applied ({discountType === 'percentage' ? `${discountValue}%` : 'Flat'})</span>
+                  <span>-₹{computedManualDiscount.toFixed(2)}</span>
+                </div>
+              )}
               {isGstEnabled && totalCartCount > 0 && (
-                <div className="pt-2 border-t border-border/60 flex justify-between items-center text-[11px] text-muted-foreground font-mono">
+                <div className="pt-1.5 border-t border-border/60 flex justify-between items-center text-[11px] text-muted-foreground font-mono">
                   <span>GST ({cgstRate}% CGST + {sgstRate}% SGST)</span>
                   <span className="font-semibold text-foreground">
                     {isExclusiveTax ? `+₹${gstCalculation.totalTax.toFixed(2)} (Exclusive)` : `₹${gstCalculation.totalTax.toFixed(2)} (Included)`}
@@ -1829,10 +2320,52 @@ export function CreateOrderModal({
 
               <div className="bg-card rounded-2xl border border-border divide-y divide-border/60 overflow-hidden shadow-2xs">
                 {Object.values(cart).map((item) => {
+                  if (item.isCalculatorItem || !item.menuItem) {
+                    return (
+                      <div key={item.id} className="p-3 flex items-center justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-bold text-sm text-foreground">{item.customName || item.name || 'Item'}</span>
+                            <span className="text-[10px] font-extrabold bg-blue-500/10 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded-md flex items-center gap-1">
+                              <Calculator size={10} />
+                              <span>Quick Item</span>
+                            </span>
+                          </div>
+                          <div className="text-xs text-muted-foreground font-mono mt-0.5">
+                            ₹{item.unitPrice.toFixed(2)} × {item.quantity}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="font-black text-sm text-foreground font-mono">
+                            ₹{getItemLineTotal(item).toFixed(2)}
+                          </span>
+                          <div className="flex items-center bg-muted rounded-xl border border-border h-7 px-1">
+                            <button
+                              type="button"
+                              onClick={() => updateCartItemQuantity(item.id, -1)}
+                              className="w-5 h-5 flex items-center justify-center hover:bg-background rounded text-foreground text-xs font-bold cursor-pointer"
+                            >
+                              -
+                            </button>
+                            <span className="w-6 text-center text-xs font-black font-mono">{item.quantity}</span>
+                            <button
+                              type="button"
+                              onClick={() => updateCartItemQuantity(item.id, 1)}
+                              className="w-5 h-5 flex items-center justify-center hover:bg-background rounded text-foreground text-xs font-bold cursor-pointer"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+
                   const variant = item.menuItem.variants && item.menuItem.variants.length > 0 
-                    ? item.menuItem.variants[item.selectedVariantIdx] 
+                    ? item.menuItem.variants[item.selectedVariantIdx || 0] 
                     : null;
-                  const addonNames = item.selectedAddons.map(idx => item.menuItem.addons?.[idx]?.name).filter(Boolean);
+                  const addonNames = (item.selectedAddons || []).map(idx => item.menuItem?.addons?.[idx]?.name).filter(Boolean);
 
                   return (
                     <div key={item.id} className="p-3 flex items-center justify-between gap-3">
@@ -1863,7 +2396,7 @@ export function CreateOrderModal({
                           <button
                             type="button"
                             onClick={() => updateCartItemQuantity(item.id, -1)}
-                            className="w-5 h-5 flex items-center justify-center hover:bg-background rounded text-foreground text-xs font-bold"
+                            className="w-5 h-5 flex items-center justify-center hover:bg-background rounded text-foreground text-xs font-bold cursor-pointer"
                           >
                             -
                           </button>
@@ -1871,7 +2404,7 @@ export function CreateOrderModal({
                           <button
                             type="button"
                             onClick={() => updateCartItemQuantity(item.id, 1)}
-                            className="w-5 h-5 flex items-center justify-center hover:bg-background rounded text-foreground text-xs font-bold"
+                            className="w-5 h-5 flex items-center justify-center hover:bg-background rounded text-foreground text-xs font-bold cursor-pointer"
                           >
                             +
                           </button>
@@ -1880,6 +2413,133 @@ export function CreateOrderModal({
                     </div>
                   );
                 })}
+              </div>
+            </div>
+
+            {/* Manual Discount & Offer Section */}
+            <div className="p-3.5 bg-card rounded-2xl border border-border shadow-2xs space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-7 h-7 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                    <Percent size={14} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-foreground">Discount / Offer (Optional)</div>
+                    <p className="text-[11px] text-muted-foreground truncate">Apply custom percentage (%) or flat amount (₹) discount</p>
+                  </div>
+                </div>
+                {computedManualDiscount > 0 && (
+                  <span className="text-xs font-black text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20 font-mono shrink-0">
+                    -₹{computedManualDiscount.toFixed(2)} Off
+                  </span>
+                )}
+              </div>
+
+              {/* Type toggle & Input */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <div className="grid grid-cols-2 p-1 bg-muted rounded-xl border border-border shrink-0 sm:w-56">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDiscountType('percentage');
+                      if (discountType !== 'percentage') setDiscountValue('');
+                    }}
+                    className={`py-1.5 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                      discountType === 'percentage'
+                        ? 'bg-primary text-white shadow-xs'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <Percent size={12} className="shrink-0" />
+                    <span>Percentage</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDiscountType('fixed');
+                      if (discountType !== 'fixed') setDiscountValue('');
+                    }}
+                    className={`py-1.5 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                      discountType === 'fixed'
+                        ? 'bg-primary text-white shadow-xs'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <span className="font-mono text-xs">₹</span>
+                    <span>Flat Amount</span>
+                  </button>
+                </div>
+
+                {/* Discount Input */}
+                <div className="relative flex-1">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-muted-foreground font-mono">
+                    {discountType === 'percentage' ? '%' : '₹'}
+                  </span>
+                  <Input
+                    type="number"
+                    min="0"
+                    max={discountType === 'percentage' ? 100 : totalCartAmount}
+                    step={discountType === 'percentage' ? '0.5' : '1'}
+                    placeholder={discountType === 'percentage' ? 'e.g. 10 (for 10% off)' : 'e.g. 50 (for ₹50 off)'}
+                    value={discountValue}
+                    onChange={(e) => setDiscountValue(e.target.value)}
+                    className="pl-7 pr-8 rounded-xl text-xs font-mono font-bold h-9 bg-background"
+                  />
+                  {discountValue && (
+                    <button
+                      type="button"
+                      onClick={() => setDiscountValue('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs p-0.5 rounded cursor-pointer"
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Quick chip buttons */}
+              <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider mr-1">Quick Apply:</span>
+                {discountType === 'percentage' ? (
+                  [5, 10, 15, 20, 25, 50].map((pct) => (
+                    <button
+                      key={pct}
+                      type="button"
+                      onClick={() => setDiscountValue(String(pct))}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                        discountValue === String(pct)
+                          ? 'border-primary bg-primary text-white font-bold shadow-xs'
+                          : 'border-border bg-background text-muted-foreground hover:text-foreground hover:border-border/80'
+                      }`}
+                    >
+                      {pct}%
+                    </button>
+                  ))
+                ) : (
+                  [10, 20, 50, 100, 200, 500].map((amt) => (
+                    <button
+                      key={amt}
+                      type="button"
+                      onClick={() => setDiscountValue(String(amt))}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                        discountValue === String(amt)
+                          ? 'border-primary bg-primary text-white font-bold shadow-xs'
+                          : 'border-border bg-background text-muted-foreground hover:text-foreground hover:border-border/80'
+                      }`}
+                    >
+                      ₹{amt}
+                    </button>
+                  ))
+                )}
+                {discountValue && (
+                  <button
+                    type="button"
+                    onClick={() => setDiscountValue('')}
+                    className="px-2 py-0.5 rounded-lg text-xs font-semibold text-rose-500 hover:underline cursor-pointer ml-auto"
+                  >
+                    Clear Discount
+                  </button>
+                )}
               </div>
             </div>
 
@@ -1943,8 +2603,8 @@ export function CreateOrderModal({
               </div>
             </div>
 
-            {/* Conditional Dine-in Table choosing (Only for Food Businesses, Hidden for Crackers) */}
-            {orderType === 'dine_in' && !isCrackers && (() => {
+            {/* Conditional Dine-in Table choosing (Only for Food Businesses, Hidden for Crackers or if Table selection is disabled) */}
+            {orderType === 'dine_in' && !isCrackers && (shop?.settings as any)?.dinein_tables_enabled !== false && (() => {
               const totalTables = Number((shop?.settings as any)?.dinein_tables_count || 10);
               const tablesList = Array.from({ length: totalTables }, (_, i) => `Table-${i + 1}`);
 

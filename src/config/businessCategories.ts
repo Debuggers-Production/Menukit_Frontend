@@ -16,6 +16,9 @@ export interface BusinessCategoryConfig {
   categorySelectPlaceholder: string;
   descriptionPlaceholder: string;
   featuredBadgeLabel: string;
+  addonLabel: string;
+  addonDesc: string;
+  addonNamePlaceholder: string;
   
   // Printer & Order Slips
   kotLabel: string;
@@ -101,6 +104,9 @@ export const BUSINESS_CATEGORIES: BusinessCategoryConfig[] = [
     categorySelectPlaceholder: 'Select food category (e.g. Main Course, Starters)',
     descriptionPlaceholder: 'Short description of ingredients, taste or portion...',
     featuredBadgeLabel: "Chef's Special",
+    addonLabel: 'Add-ons (Optional)',
+    addonDesc: 'Optional extras that increase the price (e.g. Extra Cheese +20, Mayo +10)',
+    addonNamePlaceholder: 'e.g. Extra Cheese, With Ice',
     
     kotLabel: 'Kitchen Order Ticket (KOT)',
     kotShort: 'KOT',
@@ -178,6 +184,9 @@ export const BUSINESS_CATEGORIES: BusinessCategoryConfig[] = [
     categorySelectPlaceholder: 'Select product category (e.g. Sparklers, Aerial Shots, Gift Boxes)',
     descriptionPlaceholder: 'Product details, pieces per pack, sound rating or safety instructions...',
     featuredBadgeLabel: 'Featured / Top Brand',
+    addonLabel: 'Add-ons & Accessories (Optional)',
+    addonDesc: 'Optional extras or accessories (e.g. Sparkler Stand +30, Safety Matchbox +10, Gift Packing +50)',
+    addonNamePlaceholder: 'e.g. Sparkler Stand, Safety Matchbox, Gift Wrap',
     
     kotLabel: 'Packing & Dispatch Slip (POT)',
     kotShort: 'Packing Slip',

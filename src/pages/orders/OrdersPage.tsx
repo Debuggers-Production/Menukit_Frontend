@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
-import { RefreshCw, ShoppingBag, Clock, XCircle, ChevronDown, Check, CheckCircle2, List, User, MapPin, Phone, Share2, Copy, ExternalLink, Navigation, Lock, Search, Plus, Filter, X, Calendar, Printer, UtensilsCrossed, Flame, RotateCcw, Eye, FileText } from 'lucide-react';
+import { RefreshCw, ShoppingBag, Clock, XCircle, ChevronDown, Check, CheckCircle2, List, User, MapPin, Phone, Share2, Copy, ExternalLink, Navigation, Lock, Search, Plus, Filter, X, Calendar, Printer, UtensilsCrossed, Flame, RotateCcw, Eye, FileText, Percent } from 'lucide-react';
 
 import { api } from '@/services/api';
 import { useHeaderStore } from '@/store/useHeaderStore';
@@ -681,6 +681,60 @@ export function OrdersPage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [paymentModeModalOrder, setPaymentModeModalOrder] = useState<any | null>(null);
   const [targetOrderForAdd, setTargetOrderForAdd] = useState<any | null>(null);
+
+  // Manual Discount Modal State
+  const [discountModalOrder, setDiscountModalOrder] = useState<any | null>(null);
+  const [discountType, setDiscountType] = useState<'percentage' | 'fixed'>('percentage');
+  const [discountValue, setDiscountValue] = useState<string>('');
+  const [isApplyingDiscount, setIsApplyingDiscount] = useState(false);
+
+  const openDiscountModal = (order: any) => {
+    setDiscountModalOrder(order);
+    const manualCode = (order.applied_discount_codes || []).find((c: string) => 
+      c.startsWith('Discount (') || c.startsWith('Flat Discount (')
+    );
+    if (manualCode) {
+      if (manualCode.startsWith('Discount (')) {
+        setDiscountType('percentage');
+        const match = manualCode.match(/Discount \((\d+(\.\d+)?)%/);
+        setDiscountValue(match ? match[1] : '');
+      } else {
+        setDiscountType('fixed');
+        const match = manualCode.match(/Flat Discount \(₹?(\d+(\.\d+)?)\)/);
+        setDiscountValue(match ? match[1] : '');
+      }
+    } else {
+      setDiscountType('percentage');
+      setDiscountValue('');
+    }
+  };
+
+  const handleSaveOrderDiscount = async (clearDiscount = false) => {
+    if (!discountModalOrder) return;
+    setIsApplyingDiscount(true);
+    try {
+      const payload = {
+        discount_type: discountType,
+        discount_value: clearDiscount ? 0 : (parseFloat(discountValue) || 0)
+      };
+      const res = await api.put(`/orders/${discountModalOrder.id}/discount`, payload);
+      const updatedOrder = res.data;
+      
+      setOrders(prev => prev.map(o => o.id === updatedOrder.id ? updatedOrder : o));
+      if (itemsModalOrder && itemsModalOrder.id === updatedOrder.id) {
+        setItemsModalOrder(updatedOrder);
+      }
+      
+      toast.success(clearDiscount ? 'Discount removed' : 'Discount applied successfully!');
+      setDiscountModalOrder(null);
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error.response?.data?.detail || 'Failed to apply discount');
+    } finally {
+      setIsApplyingDiscount(false);
+    }
+  };
+
   const { setTitle } = useHeaderStore();
   const { shop, menuItems, setMenuItems } = useShopStore();
   const businessCategory = getBusinessCategory(shop?.category);
@@ -1705,8 +1759,8 @@ export function OrdersPage() {
                   {/* Bottom Bar: Clean 2-Tier Financial & Action Controls Layout */}
                   <div className="pt-3 border-t border-border/60 space-y-2.5">
                     {/* Tier 1: Full-Width Financial Summary Card */}
-                    <div className="flex items-center justify-between gap-3 flex-wrap bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-800 rounded-xl px-3.5 py-2">
-                      <div className="space-y-1">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-800 rounded-xl p-3">
+                      <div className="flex items-center justify-between sm:justify-start sm:flex-col sm:items-start gap-1">
                         <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Payment</span>
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <button
@@ -1788,6 +1842,9 @@ export function OrdersPage() {
                         )}
                       </div>
 
+                      {/* Mobile Divider */}
+                      <div className="border-t border-slate-200/60 dark:border-slate-800 sm:hidden" />
+
                       {(() => {
                         const isGstEnabled = Boolean(shop?.settings?.gst_enabled);
                         const cgstRate = Number(shop?.settings?.cgst_rate || 0);
@@ -1844,13 +1901,43 @@ export function OrdersPage() {
                           return acc;
                         }, 0))) : 0;
 
+                        const manualDiscountCode = (order.applied_discount_codes || []).find((c: string) => 
+                          c.startsWith('Discount (') || c.startsWith('Flat Discount (')
+                        );
+                        const otherDiscountCodes = (order.applied_discount_codes || []).filter((c: string) => 
+                          !c.startsWith('Discount (') && !c.startsWith('Flat Discount (')
+                        );
+                        const discountSavings = Math.max(0, itemsSubtotal - (rawTotal > 0 ? rawTotal : (computedTotal > 0 ? computedTotal : itemsSubtotal)));
+
                         return (
-                          <div className="space-y-0.5 text-right">
-                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Total Amount</span>
+                          <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-start gap-1">
+                            <div className="flex items-center gap-1.5 justify-end">
+                              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Total Amount</span>
+                              {(discountSavings > 0 || (order.applied_discount_codes && order.applied_discount_codes.length > 0)) && (
+                                <span className="text-[10px] font-bold text-muted-foreground line-through font-mono">
+                                  {shop?.settings?.currency || '₹'}{itemsSubtotal.toFixed(2)}
+                                </span>
+                              )}
+                            </div>
                             <div className="flex items-baseline gap-1.5 justify-end flex-wrap">
                               <span className="font-black text-base sm:text-lg text-foreground font-mono tracking-tight">
                                 {shop?.settings?.currency || '₹'}{finalTotal.toFixed(2)}
                               </span>
+                              {manualDiscountCode && (
+                                <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded tracking-tight bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 font-mono">
+                                  {manualDiscountCode}
+                                </span>
+                              )}
+                              {otherDiscountCodes.length > 0 && (
+                                <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded tracking-tight bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 font-mono">
+                                  {otherDiscountCodes.join(', ')} {discountSavings > 0 ? `(-${shop?.settings?.currency || '₹'}${discountSavings.toFixed(2)})` : ''}
+                                </span>
+                              )}
+                              {!manualDiscountCode && otherDiscountCodes.length === 0 && discountSavings > 0 && (
+                                <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded tracking-tight bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 font-mono">
+                                  -{shop?.settings?.currency || '₹'}{discountSavings.toFixed(2)} Off
+                                </span>
+                              )}
                               {order.order_type === 'delivery' && deliveryFee > 0 && (
                                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded tracking-tight bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/30">
                                   +{shop?.settings?.currency || '₹'}{deliveryFee.toFixed(2)} Delivery Fee
@@ -1887,10 +1974,13 @@ export function OrdersPage() {
 
                     {/* Tier 2: Operational Action Controls (Evenly Distributed Grid) */}
                     {(() => {
-                      const hasCancelBtn = isCancellable;
+                      const hasCancelBtn = status !== 'COMPLETED' && status !== 'CANCELLED';
                       const isRefundNeeded = order.payment_method === 'online' && (
                         ['refund_pending', 'refund_failed', 'awaiting_refund'].includes((order.payment_status || '').toLowerCase()) ||
                         (status === 'CANCELLED' && ['paid', 'partially_refunded'].includes((order.payment_status || '').toLowerCase()))
+                      );
+                      const manualDiscountCode = (order.applied_discount_codes || []).find((c: string) => 
+                        c.startsWith('Discount (') || c.startsWith('Flat Discount (')
                       );
 
                       return (
@@ -1957,6 +2047,41 @@ export function OrdersPage() {
                             </Button>
                           )}
 
+                          {/* Apply Discount Button for active orders */}
+                          {status !== 'COMPLETED' && status !== 'CANCELLED' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openDiscountModal(order)}
+                              leftIcon={<Percent size={12} className={manualDiscountCode ? 'text-emerald-600 dark:text-emerald-400' : 'text-primary'} />}
+                              className={`text-xs font-bold h-9 px-3.5 justify-center w-full whitespace-nowrap col-span-1 cursor-pointer ${
+                                manualDiscountCode 
+                                  ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-500/20' 
+                                  : 'border-primary/40 text-primary hover:bg-primary/10'
+                              }`}
+                            >
+                              {manualDiscountCode ? 'Edit Discount' : 'Apply Discount'}
+                            </Button>
+                          )}
+
+                          {/* Cancel Button for active orders */}
+                          {hasCancelBtn && (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className="bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 border border-rose-200/60 dark:border-rose-900/40 text-xs font-bold h-9 px-3.5 justify-center w-full whitespace-nowrap col-span-1 cursor-pointer"
+                              onClick={() => {
+                                setCancellingOrderId(order.id);
+                                setSelectedCancelOrderReason(DEFAULT_ORDER_CANCELLATION_REASONS[0].id);
+                                setCancelOrderReason(DEFAULT_ORDER_CANCELLATION_REASONS[0].name);
+                              }}
+                              disabled={updatingOrderId === order.id}
+                              leftIcon={<XCircle size={13} />}
+                            >
+                              Cancel
+                            </Button>
+                          )}
+
                           {/* Bill & Tax Invoice Print Buttons (For completed orders) */}
                           {status === 'COMPLETED' && (
                             <>
@@ -1993,29 +2118,11 @@ export function OrdersPage() {
                             </>
                           )}
 
-                          {/* Cancel Button */}
-                          {hasCancelBtn && (
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              className="bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 border border-rose-200/60 dark:border-rose-900/40 text-xs font-bold h-9 px-3.5 justify-center w-full whitespace-nowrap col-span-1"
-                              onClick={() => {
-                                setCancellingOrderId(order.id);
-                                setSelectedCancelOrderReason(DEFAULT_ORDER_CANCELLATION_REASONS[0].id);
-                                setCancelOrderReason(DEFAULT_ORDER_CANCELLATION_REASONS[0].name);
-                              }}
-                              disabled={updatingOrderId === order.id}
-                              leftIcon={<XCircle size={13} />}
-                            >
-                              Cancel
-                            </Button>
-                          )}
-
                           {/* Primary Order Progress Action: Accept Order */}
                           {isPendingVendor && (
                             <Button
                               size="sm"
-                              className={`text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white h-9 shadow-xs px-4 justify-center w-full whitespace-nowrap ${hasCancelBtn ? 'col-span-1' : 'col-span-2'}`}
+                              className="text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white h-9 shadow-xs px-4 justify-center w-full whitespace-nowrap col-span-2 cursor-pointer"
                               onClick={() => {
                                 const isPaid = (order.payment_status || '').toLowerCase() === 'paid';
                                 const isCash = order.payment_method === 'cash' || order.payment_method === 'cash_on_delivery' || order.payment_method === 'counter';
@@ -2032,19 +2139,19 @@ export function OrdersPage() {
                             </Button>
                           )}
 
-                          {/* Awaiting Customer Payment notice in merchant action area */}
+                          {/* Awaiting Customer Payment notice in merchant action area (Full Width) */}
                           {isPaymentPending && (
-                            <div className={`flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-orange-50 border border-orange-200 text-orange-800 text-xs font-bold h-9 w-full whitespace-nowrap ${hasCancelBtn ? 'col-span-1' : 'col-span-2'}`}>
+                            <div className="flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-orange-50 border border-orange-200 text-orange-800 text-xs font-bold h-9 w-full whitespace-nowrap col-span-2 shadow-2xs">
                               <Clock size={13} className="animate-spin text-orange-600" />
                               <span>Awaiting Payment...</span>
                             </div>
                           )}
 
-                          {/* Complete Order */}
+                          {/* Complete Order (Full Width) */}
                           {(isPreparing || isReady) && (
                             <Button
                               size="sm"
-                              className={`bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold h-9 shadow-xs px-4 justify-center w-full whitespace-nowrap ${hasCancelBtn ? 'col-span-1' : 'col-span-2'}`}
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold h-9 shadow-xs px-4 justify-center w-full whitespace-nowrap col-span-2 cursor-pointer"
                               onClick={() => {
                                 if (!isPaymentPaid) {
                                   toast.error('Order must be marked as Paid before it can be marked as Complete.');
@@ -2432,18 +2539,29 @@ export function OrdersPage() {
                 )}
 
                 {itemsModalOrder.order_status !== 'COMPLETED' && itemsModalOrder.order_status !== 'CANCELLED' ? (
-                  <Button
-                    size="sm"
-                    className="flex-1 sm:flex-initial bg-primary hover:bg-primary/90 text-white font-bold text-xs h-10 sm:h-9 justify-center whitespace-nowrap shadow-xs"
-                    onClick={() => {
-                      const ord = itemsModalOrder;
-                      setItemsModalOrder(null);
-                      setTargetOrderForAdd(ord);
-                    }}
-                    leftIcon={<Plus size={14} className="shrink-0" />}
-                  >
-                    Add Items
-                  </Button>
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 sm:flex-initial border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300 hover:bg-amber-500/20 font-bold text-xs h-10 sm:h-9 justify-center whitespace-nowrap shadow-xs"
+                      onClick={() => openDiscountModal(itemsModalOrder)}
+                      leftIcon={<Percent size={13} className="shrink-0" />}
+                    >
+                      Discount
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="flex-1 sm:flex-initial bg-primary hover:bg-primary/90 text-white font-bold text-xs h-10 sm:h-9 justify-center whitespace-nowrap shadow-xs"
+                      onClick={() => {
+                        const ord = itemsModalOrder;
+                        setItemsModalOrder(null);
+                        setTargetOrderForAdd(ord);
+                      }}
+                      leftIcon={<Plus size={14} className="shrink-0" />}
+                    >
+                      Add Items
+                    </Button>
+                  </>
                 ) : itemsModalOrder.order_status === 'COMPLETED' ? (
                   <>
                     <Button
@@ -3267,6 +3385,246 @@ export function OrdersPage() {
           }
         }}
       />
+
+      {/* Manual Discount Modal for Orders */}
+      {discountModalOrder && (() => {
+        const isGstEnabled = Boolean(shop?.settings?.gst_enabled);
+        const cgstRate = Number(shop?.settings?.cgst_rate || 0);
+        const sgstRate = Number(shop?.settings?.sgst_rate || 0);
+        const totalTaxRate = cgstRate + sgstRate;
+        const isExclusiveTax = isGstEnabled && !shop?.settings?.inclusive_tax;
+
+        const activeItems = (discountModalOrder.items || []).filter((it: any) => !it.is_cancelled);
+        const itemsSubtotal = activeItems.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+
+        const numVal = Math.max(0, parseFloat(discountValue) || 0);
+        let computedDiscount = 0;
+        if (numVal > 0) {
+          if (discountType === 'percentage') {
+            computedDiscount = Math.round(itemsSubtotal * (Math.min(100, numVal) / 100) * 100) / 100;
+          } else {
+            computedDiscount = Math.min(itemsSubtotal, Math.round(numVal * 100) / 100);
+          }
+        }
+
+        const discountedFood = Math.max(0, itemsSubtotal - computedDiscount);
+        const taxAmount = (isExclusiveTax && totalTaxRate > 0)
+          ? Math.round(discountedFood * (totalTaxRate / 100) * 100) / 100
+          : 0;
+
+        const deliveryFee = discountModalOrder.order_type === 'delivery'
+          ? getOrderDeliveryFee(discountModalOrder, shop?.settings, shop?.latitude, shop?.longitude)
+          : 0;
+
+        const calculatedTotal = discountedFood + taxAmount + deliveryFee;
+        const existingManualCode = (discountModalOrder.applied_discount_codes || []).find((c: string) =>
+          c.startsWith('Discount (') || c.startsWith('Flat Discount (')
+        );
+
+        return (
+          <Modal
+            isOpen={!!discountModalOrder}
+            onClose={() => setDiscountModalOrder(null)}
+            title={`Order #${discountModalOrder.daily_order_number || discountModalOrder.id.slice(0, 8).toUpperCase()} — Discount / Offer`}
+            className="max-w-md"
+            footer={
+              <div className="flex items-center justify-between w-full gap-2">
+                {existingManualCode ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => handleSaveOrderDiscount(true)}
+                    disabled={isApplyingDiscount}
+                    className="text-xs font-semibold text-rose-600 hover:text-rose-700 dark:hover:text-rose-400 border-rose-200 dark:border-rose-900/40 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
+                  >
+                    Remove Discount
+                  </Button>
+                ) : (
+                  <div />
+                )}
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setDiscountModalOrder(null)}
+                    disabled={isApplyingDiscount}
+                    className="text-xs font-semibold cursor-pointer"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => handleSaveOrderDiscount(false)}
+                    isLoading={isApplyingDiscount}
+                    disabled={numVal <= 0 && !existingManualCode}
+                    className="text-xs font-bold bg-primary hover:bg-primary/90 text-white shadow-xs px-4 cursor-pointer"
+                  >
+                    {computedDiscount > 0
+                      ? `Apply ₹${computedDiscount.toFixed(2)} Off`
+                      : 'Apply Discount'}
+                  </Button>
+                </div>
+              </div>
+            }
+          >
+            <div className="space-y-4">
+              {/* Order Info & Current Subtotal */}
+              <div className="p-3 bg-muted/50 rounded-xl border border-border/80 flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Order Items</span>
+                  <p className="text-xs font-semibold text-foreground">
+                    {activeItems.length} active item(s) &bull; {discountModalOrder.customer_name || 'Walk-in'}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Items Total</span>
+                  <div className="text-sm font-black text-foreground font-mono">
+                    ₹{itemsSubtotal.toFixed(2)}
+                  </div>
+                </div>
+              </div>
+
+              {/* Segmented Type Toggle & Input */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-foreground block">
+                  Select Discount Type & Value
+                </label>
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  <div className="grid grid-cols-2 p-1 bg-muted rounded-xl border border-border shrink-0 sm:w-56">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDiscountType('percentage');
+                        if (discountType !== 'percentage') setDiscountValue('');
+                      }}
+                      className={`py-1.5 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                        discountType === 'percentage'
+                          ? 'bg-primary text-white shadow-xs'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      <Percent size={12} className="shrink-0" />
+                      <span>Percentage</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDiscountType('fixed');
+                        if (discountType !== 'fixed') setDiscountValue('');
+                      }}
+                      className={`py-1.5 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                        discountType === 'fixed'
+                          ? 'bg-primary text-white shadow-xs'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      <span className="font-mono text-xs">₹</span>
+                      <span>Flat Amount</span>
+                    </button>
+                  </div>
+
+                  {/* Input field */}
+                  <div className="relative flex-1">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-muted-foreground font-mono">
+                      {discountType === 'percentage' ? '%' : '₹'}
+                    </span>
+                    <Input
+                      type="number"
+                      min="0"
+                      max={discountType === 'percentage' ? 100 : itemsSubtotal}
+                      step={discountType === 'percentage' ? '0.5' : '1'}
+                      placeholder={discountType === 'percentage' ? 'e.g. 10 (for 10% off)' : 'e.g. 50 (for ₹50 off)'}
+                      value={discountValue}
+                      onChange={(e) => setDiscountValue(e.target.value)}
+                      className="pl-7 pr-8 rounded-xl text-xs font-mono font-bold h-9 bg-background"
+                      autoFocus
+                    />
+                    {discountValue && (
+                      <button
+                        type="button"
+                        onClick={() => setDiscountValue('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs p-0.5 rounded cursor-pointer"
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick Apply Chips */}
+              <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider mr-1">Quick Apply:</span>
+                {discountType === 'percentage' ? (
+                  [5, 10, 15, 20, 25, 50].map((pct) => (
+                    <button
+                      key={pct}
+                      type="button"
+                      onClick={() => setDiscountValue(String(pct))}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                        discountValue === String(pct)
+                          ? 'border-primary bg-primary text-white font-bold shadow-xs'
+                          : 'border-border bg-background text-muted-foreground hover:text-foreground hover:border-border/80'
+                      }`}
+                    >
+                      {pct}%
+                    </button>
+                  ))
+                ) : (
+                  [10, 20, 50, 100, 200, 500].map((amt) => (
+                    <button
+                      key={amt}
+                      type="button"
+                      onClick={() => setDiscountValue(String(amt))}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                        discountValue === String(amt)
+                          ? 'border-primary bg-primary text-white font-bold shadow-xs'
+                          : 'border-border bg-background text-muted-foreground hover:text-foreground hover:border-border/80'
+                      }`}
+                    >
+                      ₹{amt}
+                    </button>
+                  ))
+                )}
+              </div>
+
+              {/* Live Calculation Preview */}
+              <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200/80 dark:border-slate-800 space-y-2 text-xs">
+                <div className="flex items-center justify-between text-muted-foreground">
+                  <span>Items Subtotal</span>
+                  <span className="font-mono font-semibold">₹{itemsSubtotal.toFixed(2)}</span>
+                </div>
+                {computedDiscount > 0 && (
+                  <div className="flex items-center justify-between text-emerald-600 dark:text-emerald-400 font-bold">
+                    <span>Discount Applied ({discountType === 'percentage' ? `${discountValue}%` : 'Flat'})</span>
+                    <span className="font-mono">-₹{computedDiscount.toFixed(2)}</span>
+                  </div>
+                )}
+                {isGstEnabled && totalTaxRate > 0 && (
+                  <div className="flex items-center justify-between text-muted-foreground">
+                    <span>GST ({totalTaxRate}% {isExclusiveTax ? 'Exclusive' : 'Inclusive'})</span>
+                    <span className="font-mono font-semibold">
+                      {isExclusiveTax ? `+₹${taxAmount.toFixed(2)}` : `incl. ₹${taxAmount.toFixed(2)}`}
+                    </span>
+                  </div>
+                )}
+                {deliveryFee > 0 && (
+                  <div className="flex items-center justify-between text-muted-foreground">
+                    <span>Delivery Fee</span>
+                    <span className="font-mono font-semibold">+₹{deliveryFee.toFixed(2)}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between pt-2 border-t border-border/80 font-black text-sm">
+                  <span className="text-foreground">New Order Total</span>
+                  <span className="text-primary font-mono text-base">
+                    ₹{calculatedTotal.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </Modal>
+        );
+      })()}
 
       {/* Thermal Bill Receipt Modal */}
       <ThermalBillModal

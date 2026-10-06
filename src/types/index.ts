@@ -31,6 +31,8 @@ export interface ShopSettings {
   extra_delivery_charge_per_step?: number;
   takeaway_enabled?: boolean;
   dinein_enabled?: boolean;
+  dinein_tables_enabled?: boolean;
+  dinein_tables_count?: number;
   auto_accept_orders?: boolean;
   cashfree_app_id?: string;
   cashfree_secret_key?: string;
@@ -48,6 +50,14 @@ export interface ShopSettings {
   serial_number_prefix?: string;
   serial_number_digits?: number;
   auto_serial_number_enabled?: boolean;
+  return_allowed?: boolean;
+  return_window_days?: number;
+  return_policy_notes?: string;
+  refund_allowed?: boolean;
+  refund_policy_notes?: string;
+  replacement_allowed?: boolean;
+  replacement_window_days?: number;
+  replacement_policy_notes?: string;
 }
 
 export interface ThemeSettings {
