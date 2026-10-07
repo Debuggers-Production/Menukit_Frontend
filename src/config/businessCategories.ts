@@ -84,6 +84,14 @@ export interface BusinessCategoryConfig {
   prepStatusDesc: string;
   readyStatusLabel: string;
   orderCompletedDesc: string;
+
+  // Reviews & Item Labels
+  aboutItemLabel: string;
+  reviewItemLabel: string;
+  reviewHeaderPrompt: string;
+  reviewSubtextPrompt: string;
+  reviewCommentPlaceholder: string;
+  noReviewsText: string;
 }
 
 export const BUSINESS_CATEGORIES: BusinessCategoryConfig[] = [
@@ -166,6 +174,13 @@ export const BUSINESS_CATEGORIES: BusinessCategoryConfig[] = [
     prepStatusDesc: 'Chef is preparing your order in the kitchen.',
     readyStatusLabel: 'Ready for Serving / Pickup',
     orderCompletedDesc: 'Your food is ready / delivered! Enjoy your meal!',
+
+    aboutItemLabel: 'About this dish',
+    reviewItemLabel: 'dish',
+    reviewHeaderPrompt: 'How was your meal?',
+    reviewSubtextPrompt: 'Share your experience to help others',
+    reviewCommentPlaceholder: 'What did you think of this dish? (optional)',
+    noReviewsText: 'Be the first to review this dish!',
   },
   {
     id: 'fireworks_crackers',
@@ -246,6 +261,13 @@ export const BUSINESS_CATEGORIES: BusinessCategoryConfig[] = [
     prepStatusDesc: 'Staff is packing your items in the godown / dispatch desk.',
     readyStatusLabel: 'Ready for Dispatch / Pickup',
     orderCompletedDesc: 'Your items are ready / delivered! Enjoy your celebrations!',
+
+    aboutItemLabel: 'About this product',
+    reviewItemLabel: 'product',
+    reviewHeaderPrompt: 'How was your experience?',
+    reviewSubtextPrompt: 'Share your experience to help others',
+    reviewCommentPlaceholder: 'What did you think of this product / cracker? (optional)',
+    noReviewsText: 'Be the first to review this product!',
   },
 ];
 

@@ -669,12 +669,14 @@ export function OrdersPage() {
   const [thermalKotOrder, setThermalKotOrder] = useState<any | null>(null);
   const [thermalKotMode, setThermalKotMode] = useState<'full' | 'new_only' | 'cancelled'>('full');
   const [replacingItemOrder, setReplacingItemOrder] = useState<{ order: any; item: any } | null>(null);
-  const [cancellingItemOrder, setCancellingItemOrder] = useState<{ orderId: string; itemId: string; itemName: string; item?: any } | null>(null);
-  const [selectedCancelItemReason, setSelectedCancelItemReason] = useState<string>(DEFAULT_ITEM_CANCELLATION_REASONS[0].id);
-  const [customCancelItemReason, setCustomCancelItemReason] = useState<string>('');
   const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
+  const [cancelOrderWithRefund, setCancelOrderWithRefund] = useState<boolean>(true);
   const [selectedCancelOrderReason, setSelectedCancelOrderReason] = useState<string>(DEFAULT_ORDER_CANCELLATION_REASONS[0].id);
   const [cancelOrderReason, setCancelOrderReason] = useState<string>(DEFAULT_ORDER_CANCELLATION_REASONS[0].name);
+  const [cancellingItemOrder, setCancellingItemOrder] = useState<{ orderId: string; itemId: string; itemName: string; item?: any } | null>(null);
+  const [cancelItemWithRefund, setCancelItemWithRefund] = useState<boolean>(true);
+  const [selectedCancelItemReason, setSelectedCancelItemReason] = useState<string>(DEFAULT_ITEM_CANCELLATION_REASONS[0].id);
+  const [customCancelItemReason, setCustomCancelItemReason] = useState<string>('');
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
   const [refundingOrderId, setRefundingOrderId] = useState<string | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
@@ -999,7 +1001,7 @@ export function OrdersPage() {
     }
   };
 
-  const handleUpdateStatus = async (orderId: string, newStatus: string, reason?: string) => {
+  const handleUpdateStatus = async (orderId: string, newStatus: string, reason?: string, withRefund: boolean = true) => {
     const targetOrder = orders.find(o => o.id === orderId);
     if (targetOrder) {
       const curStatus = (targetOrder.order_status || '').toUpperCase();
@@ -1015,6 +1017,7 @@ export function OrdersPage() {
 
     if (newStatus === 'CANCELLED' && !reason) {
       setCancellingOrderId(orderId);
+      setCancelOrderWithRefund(true);
       return;
     }
     
@@ -1022,6 +1025,7 @@ export function OrdersPage() {
     try {
       const payload: any = { status: newStatus };
       if (reason) payload.cancellation_reason = reason;
+      if (newStatus === 'CANCELLED') payload.with_refund = withRefund;
       const res = await api.put(`/orders/${orderId}/status`, payload);
       toast.success(`Order marked as ${newStatus}`);
       fetchStatusCounts();
@@ -1038,7 +1042,7 @@ export function OrdersPage() {
             return prev.filter(o => o.id !== orderId);
           }
         }
-        return prev.map(o => o.id === orderId ? { ...o, order_status: res.data.order_status, cancellation_reason: res.data.cancellation_reason } : o);
+        return prev.map(o => o.id === orderId ? { ...o, order_status: res.data.order_status, cancellation_reason: res.data.cancellation_reason, payment_status: res.data.payment_status ?? o.payment_status } : o);
       });
 
       // Auto-Print KOT to registered printer stations on order acceptance / preparing / paid
@@ -1118,7 +1122,10 @@ export function OrdersPage() {
       const finalReason = selectedCancelItemReason === 'custom'
         ? (customCancelItemReason.trim() || 'Item Cancelled')
         : (selectedCancelItemReason || 'Item Cancelled');
-      const payload = { reason: finalReason };
+      const payload = { 
+        reason: finalReason,
+        with_refund: cancelItemWithRefund
+      };
       const res = await api.put(`/orders/${orderId}/items/${itemId}/toggle-cancel`, payload);
       const updatedOrder = res.data;
       const allCancelled = (updatedOrder.items || []).length > 0 &&
@@ -1137,9 +1144,17 @@ export function OrdersPage() {
       }
       const isPaidOnline = String(updatedOrder.payment_status || '').toLowerCase() === 'paid' && String(updatedOrder.payment_method || '').toLowerCase() === 'online';
       if (isOrderCancelled) {
-        toast.success(isPaidOnline ? 'All items cancelled. Order cancelled & product total refunded (charges excluded).' : 'All items cancelled. Order moved to Cancelled.');
+        if (cancelItemWithRefund && isPaidOnline) {
+          toast.success('All items cancelled. Order cancelled & product total refunded (charges excluded).');
+        } else {
+          toast.success('All items cancelled. Order moved to Cancelled.');
+        }
       } else {
-        toast.success(isPaidOnline ? 'Item cancelled & product price refunded to customer.' : 'Item cancelled');
+        if (cancelItemWithRefund && isPaidOnline) {
+          toast.success('Item cancelled & product price refunded to customer.');
+        } else {
+          toast.success('Item cancelled');
+        }
       }
 
       const cancelledItem = (updatedOrder.items || []).find((it: any) => it.id === itemId) || {
@@ -1154,6 +1169,7 @@ export function OrdersPage() {
       setCancellingItemOrder(null);
       setSelectedCancelItemReason(DEFAULT_ITEM_CANCELLATION_REASONS[0].id);
       setCustomCancelItemReason('');
+      setCancelItemWithRefund(true);
 
       // Directly send VOID KOT to the cancelled item's station printer only
       await handleDirectPrintKot(updatedOrder, 'cancelled', true, {
@@ -1175,6 +1191,8 @@ export function OrdersPage() {
 
   const submitCancelOrder = async () => {
     if (!cancellingOrderId) return;
+    const targetOrder = orders.find(o => o.id === cancellingOrderId);
+    const isPaid = targetOrder?.payment_status?.toLowerCase() === 'paid';
     const finalReason = cancelOrderReason.trim() || (selectedCancelOrderReason !== 'custom' ? selectedCancelOrderReason : '');
     if (!finalReason) {
       toast.error("Please provide a cancellation reason");
@@ -1182,10 +1200,12 @@ export function OrdersPage() {
     }
     setIsCancelling(true);
     try {
-      await handleUpdateStatus(cancellingOrderId, 'CANCELLED', finalReason);
+      const effectiveRefund = isPaid ? cancelOrderWithRefund : false;
+      await handleUpdateStatus(cancellingOrderId, 'CANCELLED', finalReason, effectiveRefund);
       setCancellingOrderId(null);
       setCancelOrderReason(DEFAULT_ORDER_CANCELLATION_REASONS[0].name);
       setSelectedCancelOrderReason(DEFAULT_ORDER_CANCELLATION_REASONS[0].id);
+      setCancelOrderWithRefund(true);
     } finally {
       setIsCancelling(false);
     }
@@ -3164,110 +3184,188 @@ export function OrdersPage() {
 
 
       {/* Cancellation Modal */}
-      <Modal
-        isOpen={!!cancellingOrderId}
-        onClose={() => { 
-          setCancellingOrderId(null); 
-          setCancelOrderReason(DEFAULT_ORDER_CANCELLATION_REASONS[0].name);
-          setSelectedCancelOrderReason(DEFAULT_ORDER_CANCELLATION_REASONS[0].id);
-        }}
-        title="Cancel Order"
-      >
-        <div className="space-y-4 pt-2">
-          <p className="text-sm text-slate-600 dark:text-slate-400">
-            Please select or provide a reason for cancelling this order. This will be shown to the customer.
-          </p>
+      {(() => {
+        const targetCancellingOrder = orders.find(o => o.id === cancellingOrderId);
+        const currencySymbol = shop?.settings?.currency || '₹';
+        const isPaid = targetCancellingOrder?.payment_status?.toLowerCase() === 'paid';
+        const isOnlinePaid = targetCancellingOrder?.payment_method?.toLowerCase() === 'online' && isPaid;
+        return (
+          <Modal
+            isOpen={!!cancellingOrderId}
+            onClose={() => { 
+              setCancellingOrderId(null); 
+              setCancelOrderReason(DEFAULT_ORDER_CANCELLATION_REASONS[0].name);
+              setSelectedCancelOrderReason(DEFAULT_ORDER_CANCELLATION_REASONS[0].id);
+              setCancelOrderWithRefund(true);
+            }}
+            title="Cancel Order"
+          >
+            <div className="space-y-4 pt-2">
+              {/* Order Info Banner */}
+              {targetCancellingOrder && (
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-1.5 text-xs">
+                  <div className="flex justify-between items-center font-bold text-slate-800 dark:text-slate-100">
+                    <span>Order #{targetCancellingOrder.daily_order_number || targetCancellingOrder.id?.slice(0, 8)}</span>
+                    <span className="text-sm font-black text-rose-600 dark:text-rose-400">
+                      {currencySymbol}{Number(targetCancellingOrder.total_amount || 0).toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-500 dark:text-slate-400">
+                    <span>Payment Mode: <strong className="capitalize text-slate-700 dark:text-slate-200">{targetCancellingOrder.payment_method || 'Cash'}</strong></span>
+                    <Badge variant={isPaid ? 'success' : 'warning'}>
+                      {(targetCancellingOrder.payment_status || 'Pending').toUpperCase()}
+                    </Badge>
+                  </div>
+                </div>
+              )}
 
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                Preset Reason
-              </label>
-              <SearchableSelect
-                options={DEFAULT_ORDER_CANCELLATION_REASONS}
-                value={selectedCancelOrderReason}
-                onChange={(val) => {
-                  setSelectedCancelOrderReason(val);
-                  if (val !== 'custom') {
-                    setCancelOrderReason(val);
-                  } else {
-                    setCancelOrderReason('');
-                  }
-                }}
-                placeholder="Choose a preset cancellation reason..."
-                showSearch={false}
-                className="h-10 rounded-xl text-xs"
-              />
-            </div>
+              {/* Refund Action Selector — Only visible if order was actually paid */}
+              {isPaid && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                    Refund Option
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setCancelOrderWithRefund(true)}
+                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-1.5 ${
+                        cancelOrderWithRefund
+                          ? 'bg-rose-50/80 border-rose-500 text-rose-950 dark:bg-rose-950/40 dark:border-rose-600 dark:text-rose-100 shadow-xs ring-1 ring-rose-500/30'
+                          : 'bg-white hover:bg-slate-50 border-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800/80 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between w-full">
+                        <span className="text-xs font-bold flex items-center gap-1.5">
+                          <RotateCcw size={13} className={cancelOrderWithRefund ? 'text-rose-600 dark:text-rose-400' : 'text-slate-400'} />
+                          Cancel with Refund
+                        </span>
+                        {cancelOrderWithRefund && <CheckCircle2 size={14} className="text-rose-600 dark:text-rose-400" />}
+                      </div>
+                      <p className="text-[11px] leading-tight text-slate-500 dark:text-slate-400">
+                        {isOnlinePaid
+                          ? 'Initiates online refund via Razorpay and sends WhatsApp notification to the customer.'
+                          : 'Deducts order amount from revenue growth reports (no online gateway API call).'}
+                      </p>
+                    </button>
 
-            {/* Quick preset chips */}
-            <div className="flex flex-wrap gap-1.5">
-              {DEFAULT_ORDER_CANCELLATION_REASONS.filter(r => r.id !== 'custom').slice(0, 5).map((preset) => {
-                const isSelected = selectedCancelOrderReason === preset.id;
-                return (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedCancelOrderReason(preset.id);
-                      setCancelOrderReason(preset.name);
+                    <button
+                      type="button"
+                      onClick={() => setCancelOrderWithRefund(false)}
+                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-1.5 ${
+                        !cancelOrderWithRefund
+                          ? 'bg-amber-50/80 border-amber-500 text-amber-950 dark:bg-amber-950/40 dark:border-amber-600 dark:text-amber-100 shadow-xs ring-1 ring-amber-500/30'
+                          : 'bg-white hover:bg-slate-50 border-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800/80 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between w-full">
+                        <span className="text-xs font-bold flex items-center gap-1.5">
+                          <XCircle size={13} className={!cancelOrderWithRefund ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'} />
+                          Cancel without Refund
+                        </span>
+                        {!cancelOrderWithRefund && <CheckCircle2 size={14} className="text-amber-600 dark:text-amber-400" />}
+                      </div>
+                      <p className="text-[11px] leading-tight text-slate-500 dark:text-slate-400">
+                        Cancels the order without initiating any refund or altering collected payment.
+                      </p>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                    Preset Reason
+                  </label>
+                  <SearchableSelect
+                    options={DEFAULT_ORDER_CANCELLATION_REASONS}
+                    value={selectedCancelOrderReason}
+                    onChange={(val) => {
+                      setSelectedCancelOrderReason(val);
+                      if (val !== 'custom') {
+                        setCancelOrderReason(val);
+                      } else {
+                        setCancelOrderReason('');
+                      }
                     }}
-                    className={`text-[11px] px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer border ${
-                      isSelected
-                        ? 'bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800 shadow-2xs'
-                        : 'bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
-                    }`}
-                  >
-                    {preset.name.split('/')[0].trim()}
-                  </button>
-                );
-              })}
-            </div>
+                    placeholder="Choose a preset cancellation reason..."
+                    showSearch={false}
+                    className="h-10 rounded-xl text-xs"
+                  />
+                </div>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center justify-between">
-                <span>Reason Description</span>
-                <span className="text-[10px] text-slate-400 font-normal lowercase">(customizable)</span>
-              </label>
-              <textarea
-                className="w-full min-h-[95px] p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-rose-500 focus:border-rose-500 outline-none transition-all resize-none text-slate-800 dark:text-slate-100 placeholder-slate-400"
-                placeholder="e.g., Item out of stock, Restaurant closed..."
-                value={cancelOrderReason}
-                onChange={(e) => {
-                  setCancelOrderReason(e.target.value);
-                  const matched = DEFAULT_ORDER_CANCELLATION_REASONS.find(r => r.name === e.target.value);
-                  if (matched) {
-                    setSelectedCancelOrderReason(matched.id);
-                  } else {
-                    setSelectedCancelOrderReason('custom');
-                  }
-                }}
-              />
-            </div>
-          </div>
+                {/* Quick preset chips */}
+                <div className="flex flex-wrap gap-1.5">
+                  {DEFAULT_ORDER_CANCELLATION_REASONS.filter(r => r.id !== 'custom').slice(0, 5).map((preset) => {
+                    const isSelected = selectedCancelOrderReason === preset.id;
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedCancelOrderReason(preset.id);
+                          setCancelOrderReason(preset.name);
+                        }}
+                        className={`text-[11px] px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer border ${
+                          isSelected
+                            ? 'bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800 shadow-2xs'
+                            : 'bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                        }`}
+                      >
+                        {preset.name.split('/')[0].trim()}
+                      </button>
+                    );
+                  })}
+                </div>
 
-          <div className="flex gap-3 pt-2">
-            <Button
-              variant="outline"
-              className="flex-1"
-              onClick={() => { 
-                setCancellingOrderId(null); 
-                setCancelOrderReason(DEFAULT_ORDER_CANCELLATION_REASONS[0].name);
-                setSelectedCancelOrderReason(DEFAULT_ORDER_CANCELLATION_REASONS[0].id);
-              }}
-            >
-              Go Back
-            </Button>
-            <Button
-              className="flex-1 bg-rose-600 hover:bg-rose-700 text-white border-0"
-              onClick={submitCancelOrder}
-              isLoading={isCancelling}
-            >
-              Confirm Cancellation
-            </Button>
-          </div>
-        </div>
-      </Modal>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center justify-between">
+                    <span>Reason Description</span>
+                    <span className="text-[10px] text-slate-400 font-normal lowercase">(customizable)</span>
+                  </label>
+                  <textarea
+                    className="w-full min-h-[95px] p-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-rose-500 focus:border-rose-500 outline-none transition-all resize-none text-slate-800 dark:text-slate-100 placeholder-slate-400"
+                    placeholder="e.g., Item out of stock, Restaurant closed..."
+                    value={cancelOrderReason}
+                    onChange={(e) => {
+                      setCancelOrderReason(e.target.value);
+                      const matched = DEFAULT_ORDER_CANCELLATION_REASONS.find(r => r.name === e.target.value);
+                      if (matched) {
+                        setSelectedCancelOrderReason(matched.id);
+                      } else {
+                        setSelectedCancelOrderReason('custom');
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => { 
+                    setCancellingOrderId(null); 
+                    setCancelOrderReason(DEFAULT_ORDER_CANCELLATION_REASONS[0].name);
+                    setSelectedCancelOrderReason(DEFAULT_ORDER_CANCELLATION_REASONS[0].id);
+                    setCancelOrderWithRefund(true);
+                  }}
+                >
+                  Go Back
+                </Button>
+                <Button
+                  className="flex-1 bg-rose-600 hover:bg-rose-700 text-white border-0"
+                  onClick={submitCancelOrder}
+                  isLoading={isCancelling}
+                >
+                  {!isPaid ? 'Cancel Order' : cancelOrderWithRefund ? 'Cancel & Refund' : 'Cancel without Refund'}
+                </Button>
+              </div>
+            </div>
+          </Modal>
+        );
+      })()}
 
       {/* Create Offline Order Modal */}
       <CreateOrderModal
@@ -3298,63 +3396,139 @@ export function OrdersPage() {
       />
 
       {/* Item Cancellation Modal */}
-      <Modal
-        isOpen={!!cancellingItemOrder}
-        onClose={() => { 
-          setCancellingItemOrder(null); 
-          setSelectedCancelItemReason(DEFAULT_ITEM_CANCELLATION_REASONS[0].id);
-          setCustomCancelItemReason(''); 
-        }}
-        title={`Cancel Item: ${cancellingItemOrder?.itemName || 'Item'}`}
-      >
-        <div className="space-y-4 pt-2">
-          <p className="text-sm text-slate-600 dark:text-slate-400">
-            Select a reason for cancelling this item. The item amount will be deducted from the bill and a Void KOT can be printed for the kitchen.
-          </p>
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-              Cancellation Reason
-            </label>
-            <SearchableSelect
-              options={DEFAULT_ITEM_CANCELLATION_REASONS}
-              value={selectedCancelItemReason}
-              onChange={(val) => setSelectedCancelItemReason(val)}
-              placeholder="Select cancellation reason..."
-              showSearch={false}
-              className="h-10 rounded-xl text-xs"
-            />
-            {selectedCancelItemReason === 'custom' && (
-              <Input
-                placeholder="Enter custom cancellation reason..."
-                value={customCancelItemReason}
-                onChange={(e) => setCustomCancelItemReason(e.target.value)}
-                className="text-xs h-10 mt-2"
-                autoFocus
-              />
-            )}
-          </div>
-          <div className="flex gap-3 pt-2">
-            <Button
-              variant="outline"
-              className="flex-1"
-              onClick={() => { 
-                setCancellingItemOrder(null); 
-                setSelectedCancelItemReason(DEFAULT_ITEM_CANCELLATION_REASONS[0].id);
-                setCustomCancelItemReason(''); 
-              }}
-            >
-              Go Back
-            </Button>
-            <Button
-              className="flex-1 bg-rose-600 hover:bg-rose-700 text-white border-0"
-              onClick={submitCancelItem}
-              isLoading={togglingCancelItemId !== null}
-            >
-              Confirm Cancel Item
-            </Button>
-          </div>
-        </div>
-      </Modal>
+      {(() => {
+        const targetParentOrder = orders.find(o => o.id === cancellingItemOrder?.orderId);
+        const currencySymbol = shop?.settings?.currency || '₹';
+        const isOnlinePaid = targetParentOrder?.payment_method?.toLowerCase() === 'online' && targetParentOrder?.payment_status?.toLowerCase() === 'paid';
+        const itemAmount = (cancellingItemOrder?.item?.price || 0) * (cancellingItemOrder?.item?.quantity || 1);
+
+        return (
+          <Modal
+            isOpen={!!cancellingItemOrder}
+            onClose={() => { 
+              setCancellingItemOrder(null); 
+              setSelectedCancelItemReason(DEFAULT_ITEM_CANCELLATION_REASONS[0].id);
+              setCustomCancelItemReason(''); 
+              setCancelItemWithRefund(true);
+            }}
+            title={`Cancel Item: ${cancellingItemOrder?.itemName || 'Item'}`}
+          >
+            <div className="space-y-4 pt-2">
+              {/* Item Info Banner */}
+              {cancellingItemOrder && (
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-1.5 text-xs">
+                  <div className="flex justify-between items-center font-bold text-slate-800 dark:text-slate-100">
+                    <span>{cancellingItemOrder.itemName} {cancellingItemOrder.item?.quantity > 1 ? `(x${cancellingItemOrder.item?.quantity})` : ''}</span>
+                    <span className="text-sm font-black text-rose-600 dark:text-rose-400">
+                      {currencySymbol}{Number(itemAmount || 0).toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-500 dark:text-slate-400">
+                    <span>Order: <strong className="text-slate-700 dark:text-slate-200">#{targetParentOrder?.daily_order_number || targetParentOrder?.id?.slice(0, 8)}</strong></span>
+                    <span>Payment: <strong className="capitalize text-slate-700 dark:text-slate-200">{targetParentOrder?.payment_method || 'Cash'}</strong></span>
+                  </div>
+                </div>
+              )}
+
+              {/* Refund Action Selector */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                  Refund Option
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCancelItemWithRefund(true)}
+                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-1.5 ${
+                      cancelItemWithRefund
+                        ? 'bg-rose-50/80 border-rose-500 text-rose-950 dark:bg-rose-950/40 dark:border-rose-600 dark:text-rose-100 shadow-xs ring-1 ring-rose-500/30'
+                        : 'bg-white hover:bg-slate-50 border-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800/80 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <span className="text-xs font-bold flex items-center gap-1.5">
+                        <RotateCcw size={13} className={cancelItemWithRefund ? 'text-rose-600 dark:text-rose-400' : 'text-slate-400'} />
+                        Cancel with Refund
+                      </span>
+                      {cancelItemWithRefund && <CheckCircle2 size={14} className="text-rose-600 dark:text-rose-400" />}
+                    </div>
+                    <p className="text-[11px] leading-tight text-slate-500 dark:text-slate-400">
+                      {isOnlinePaid
+                        ? 'Initiates partial refund via Razorpay and sends WhatsApp notification to the customer.'
+                        : 'Deducts item amount from bill total and revenue reports.'}
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setCancelItemWithRefund(false)}
+                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-1.5 ${
+                      !cancelItemWithRefund
+                        ? 'bg-amber-50/80 border-amber-500 text-amber-950 dark:bg-amber-950/40 dark:border-amber-600 dark:text-amber-100 shadow-xs ring-1 ring-amber-500/30'
+                        : 'bg-white hover:bg-slate-50 border-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800/80 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <span className="text-xs font-bold flex items-center gap-1.5">
+                        <XCircle size={13} className={!cancelItemWithRefund ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'} />
+                        Cancel without Refund
+                      </span>
+                      {!cancelItemWithRefund && <CheckCircle2 size={14} className="text-amber-600 dark:text-amber-400" />}
+                    </div>
+                    <p className="text-[11px] leading-tight text-slate-500 dark:text-slate-400">
+                      Marks item cancelled in kitchen/KOT without refunding or deducting collected amount.
+                    </p>
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                  Cancellation Reason
+                </label>
+                <SearchableSelect
+                  options={DEFAULT_ITEM_CANCELLATION_REASONS}
+                  value={selectedCancelItemReason}
+                  onChange={(val) => setSelectedCancelItemReason(val)}
+                  placeholder="Select cancellation reason..."
+                  showSearch={false}
+                  className="h-10 rounded-xl text-xs"
+                />
+                {selectedCancelItemReason === 'custom' && (
+                  <Input
+                    placeholder="Enter custom cancellation reason..."
+                    value={customCancelItemReason}
+                    onChange={(e) => setCustomCancelItemReason(e.target.value)}
+                    className="text-xs h-10 mt-2"
+                    autoFocus
+                  />
+                )}
+              </div>
+              <div className="flex gap-3 pt-2">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => { 
+                    setCancellingItemOrder(null); 
+                    setSelectedCancelItemReason(DEFAULT_ITEM_CANCELLATION_REASONS[0].id);
+                    setCustomCancelItemReason(''); 
+                    setCancelItemWithRefund(true);
+                  }}
+                >
+                  Go Back
+                </Button>
+                <Button
+                  className="flex-1 bg-rose-600 hover:bg-rose-700 text-white border-0"
+                  onClick={submitCancelItem}
+                  isLoading={togglingCancelItemId !== null}
+                >
+                  {cancelItemWithRefund ? 'Cancel Item & Refund' : 'Cancel Item without Refund'}
+                </Button>
+              </div>
+            </div>
+          </Modal>
+        );
+      })()}
 
       {/* Item Replacement Modal (Using rich menu selection UI) */}
       <CreateOrderModal

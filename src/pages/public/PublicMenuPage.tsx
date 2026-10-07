@@ -1605,6 +1605,11 @@ export function PublicMenuPage() {
       <div className="pt-16 px-4 max-w-3xl mx-auto">
         <div className="text-center mb-4 flex flex-col items-center gap-2">
           <h1 className="text-3xl font-bold font-heading">{shop.name}</h1>
+          {shop.description && (
+            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 max-w-md line-clamp-2 px-4 -mt-1 font-normal leading-relaxed">
+              {shop.description}
+            </p>
+          )}
           <button
             onClick={() => setIsOrderTypeModalOpen(true)}
             className={`px-3.5 py-1.5 rounded-full text-xs font-bold inline-flex items-center gap-1.5 transition-all shadow-xs cursor-pointer ${
@@ -2349,6 +2354,30 @@ export function PublicMenuPage() {
       {/* Shop Info Modal */}
       <Modal isOpen={isShopInfoOpen} onClose={() => setIsShopInfoOpen(false)} title={`${shop.name} Info`} className="bg-white text-slate-900">
         <div className="space-y-4 mt-4">
+          {shop.description && (
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: `${primaryColor}20`, color: primaryColor }}>
+                <Info size={20} />
+              </div>
+              <div>
+                <h4 className="font-medium text-sm">About</h4>
+                <p className="text-sm opacity-70 whitespace-pre-line mt-1 leading-relaxed">{shop.description}</p>
+              </div>
+            </div>
+          )}
+
+          {shop.welcome_message && (
+            <div className="flex items-start gap-3 mt-4">
+              <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: `${primaryColor}20`, color: primaryColor }}>
+                <Sparkles size={20} />
+              </div>
+              <div>
+                <h4 className="font-medium text-sm">Welcome Note</h4>
+                <p className="text-sm opacity-70 whitespace-pre-line mt-1 leading-relaxed">{shop.welcome_message}</p>
+              </div>
+            </div>
+          )}
+
           {shop.address && (
             <div className="flex items-start gap-3">
               <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: `${primaryColor}20`, color: primaryColor }}>

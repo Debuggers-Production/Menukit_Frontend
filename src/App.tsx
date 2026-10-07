@@ -93,7 +93,6 @@ const BrandLandingPage = lazy(() => import('@/pages/public/BrandLandingPage').th
 const PublicContestPage = lazy(() => import('./pages/public/PublicContestPage').then(m => ({ default: m.PublicContestPage })));
 const CustomerProfilePage = lazy(() => import('./pages/public/CustomerProfilePage').then(m => ({ default: m.CustomerProfilePage })));
 
-import Lenis from 'lenis';
 
 function App() {
   const { fetchUser, isLoading } = useAuthStore();

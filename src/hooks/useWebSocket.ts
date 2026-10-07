@@ -116,7 +116,9 @@ export function useWebSocket() {
               message.type === 'ORDER_STATUS' ||
               message.event === 'ORDER_STATUS' ||
               message.type === 'ORDER_UPDATED' ||
-              message.event === 'ORDER_UPDATED'
+              message.event === 'ORDER_UPDATED' ||
+              message.type === 'ITEMS_ADDED' ||
+              message.event === 'ITEMS_ADDED'
             ) {
               const orderData = message.data || message.order;
               window.dispatchEvent(new CustomEvent('menukit-realtime-update', { 
@@ -130,6 +132,9 @@ export function useWebSocket() {
               if (message.type === 'NEW_ORDER' || message.event === 'NEW_ORDER') {
                 playChimeNotificationSound();
                 toast.success(`New order received! #${orderData?.daily_order_number || String(orderData?.id || '').slice(0, 8).toUpperCase()}`);
+              } else if (message.type === 'ITEMS_ADDED' || message.event === 'ITEMS_ADDED') {
+                playChimeNotificationSound();
+                toast.success(`New items added to #${orderData?.daily_order_number || String(orderData?.id || '').slice(0, 8).toUpperCase()}`);
               }
             }
           } catch (e) {

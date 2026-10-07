@@ -64,6 +64,15 @@ export default defineConfig({
             if (id.includes('@excalidraw')) {
               return 'vendor-excalidraw';
             }
+            if (id.includes('tsparticles') || id.includes('matter-js')) {
+              return 'vendor-physics-canvas';
+            }
+            if (id.includes('html2pdf') || id.includes('jspdf') || id.includes('html2canvas')) {
+              return 'vendor-pdf';
+            }
+            if (id.includes('qr-code-styling') || id.includes('qrcode.react') || id.includes('html5-qrcode')) {
+              return 'vendor-qr';
+            }
             if (id.includes('lucide-react')) {
               return 'vendor-icons';
             }
@@ -76,7 +85,6 @@ export default defineConfig({
             if (id.includes('react') || id.includes('react-dom') || id.includes('react-router')) {
               return 'vendor-react';
             }
-            // Put other heavy libraries here or group them in a general vendor chunk
             return 'vendor';
           }
         }

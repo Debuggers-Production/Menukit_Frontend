@@ -5,7 +5,7 @@ import { triggerHaptic, HAPTIC_PATTERNS } from '@/utils/haptic';
 import { publicCache } from '@/utils/publicCache';
 import { api } from '@/services/api';
 import { Shop, MenuItem, ReviewSummary, Discount } from '@/types';
-import { isFoodBusiness } from '@/config/businessCategories';
+import { getBusinessCategory, isFoodBusiness } from '@/config/businessCategories';
 import { checkShopOpenStatus } from '@/utils/shopTiming';
 import { Lightbox } from '@/components/ui/Lightbox';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -35,6 +35,7 @@ export function PublicItemPage() {
   const [discounts, setDiscounts] = useState<Discount[]>(() => (id ? publicCache.get(`discounts_${id}`) || [] : []));
   const [isLoading, setIsLoading] = useState(() => !(itemId && publicCache.get(`item_${itemId}`)));
   const shopOpenStatus = useMemo(() => checkShopOpenStatus(shop), [shop]);
+  const businessCategory = useMemo(() => getBusinessCategory(shop?.category), [shop?.category]);
 
   // Interaction state
   const [selectedVariantIdx, setSelectedVariantIdx] = useState(0);
@@ -649,7 +650,7 @@ export function PublicItemPage() {
 
         {item.description && (
           <div className="mb-8">
-            <h3 className="font-semibold text-sm mb-2 text-slate-700 dark:text-slate-300">About this dish</h3>
+            <h3 className="font-semibold text-sm mb-2 text-slate-700 dark:text-slate-300">{businessCategory.aboutItemLabel}</h3>
             <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">{item.description}</p>
           </div>
         )}
@@ -722,14 +723,14 @@ export function PublicItemPage() {
               )}
 
               {reviewsSummary.total_reviews === 0 && (
-                <p className="text-sm text-slate-500 text-center py-6">Be the first to review this dish!</p>
+                <p className="text-sm text-slate-500 text-center py-6">{businessCategory.noReviewsText}</p>
               )}
 
               {/* Submit review form */}
               {!reviewSubmitted ? (
                 <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-[0_8px_30px_rgb(0,0,0,0.04)] rounded-2xl p-5 sm:p-6 mt-4">
-                  <h4 className="text-base font-bold text-slate-800 dark:text-slate-100 mb-1">How was your meal?</h4>
-                  <p className="text-sm text-slate-500 dark:text-slate-400 mb-5">Share your experience to help others</p>
+                  <h4 className="text-base font-bold text-slate-800 dark:text-slate-100 mb-1">{businessCategory.reviewHeaderPrompt}</h4>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mb-5">{businessCategory.reviewSubtextPrompt}</p>
 
                   <div className="flex items-center gap-2 mb-6">
                     {[1, 2, 3, 4, 5].map(star => (
@@ -768,7 +769,7 @@ export function PublicItemPage() {
                       maxLength={60}
                     />
                     <textarea
-                      placeholder="What did you think of this dish? (optional)"
+                      placeholder={businessCategory.reviewCommentPlaceholder}
                       value={reviewComment}
                       onChange={e => setReviewComment(e.target.value)}
                       className="w-full text-base px-4 py-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 focus:bg-white dark:focus:bg-slate-900 focus:outline-none focus:border-slate-300 dark:focus:border-slate-600 focus:ring-4 resize-none transition-all text-slate-900 dark:text-slate-100"
@@ -834,7 +835,7 @@ export function PublicItemPage() {
             : 'animate-bounce hover:animate-none'
         } ${isScrollingDown ? 'translate-y-32 opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}
         style={memberStatus !== 'verified-member' ? { backgroundColor: shop?.theme?.primary_color || '#f97316' } : undefined}
-        title={memberStatus === 'verified-member' ? "Hotel Member Active" : "Exclusive Member Offers"}
+        title={memberStatus === 'verified-member' ? (businessCategory.isFood ? "Hotel Member Active" : "Store Member Active") : "Exclusive Member Offers"}
       >
         <Crown size={24} className="text-white" />
         {memberStatus !== 'verified-member' && (
@@ -862,7 +863,7 @@ export function PublicItemPage() {
             ) : !shopOpenStatus.isOpen ? (
               <div className="w-full py-3 px-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-center text-xs sm:text-sm font-semibold flex items-center justify-center gap-2">
                 <Clock size={16} className="text-amber-600 dark:text-amber-400 shrink-0" />
-                <span>Restaurant Closed ({shopOpenStatus.openingFormatted ? `Opens at ${shopOpenStatus.openingFormatted}` : 'Orders Paused'})</span>
+                <span>{businessCategory.isFood ? 'Restaurant Closed' : 'Store Closed'} ({shopOpenStatus.openingFormatted ? `Opens at ${shopOpenStatus.openingFormatted}` : 'Orders Paused'})</span>
               </div>
             ) : existingCartItem ? (
               <>
