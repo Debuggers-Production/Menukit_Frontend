@@ -101,7 +101,7 @@ export function CreateOrderModal({
   // Calculator Mode state
   const [orderInputMode, setOrderInputMode] = useState<'menu' | 'calculator'>('menu');
   const [calcAmount, setCalcAmount] = useState<string>('');
-  const [calcQty, setCalcQty] = useState<number>(1);
+  const [calcQty, setCalcQty] = useState<number>(0);
   const [calcCustomNote, setCalcCustomNote] = useState<string>('');
   const calcAmountInputRef = useRef<HTMLInputElement>(null);
   const calcQtyInputRef = useRef<HTMLInputElement>(null);
@@ -736,7 +736,13 @@ export function CreateOrderModal({
       calcAmountInputRef.current?.focus();
       return;
     }
-    const qty = isNaN(calcQty) || calcQty <= 0 ? 1 : calcQty;
+    const qty = parseInt(String(calcQty), 10);
+    if (isNaN(qty) || qty <= 0) {
+      toast.error('Please enter a valid quantity (greater than 0)');
+      calcQtyInputRef.current?.focus();
+      calcQtyInputRef.current?.select();
+      return;
+    }
     
     // Determine sequential name: "Item 1", "Item 2", or custom note
     const existingCalcItems = Object.values(cart).filter(i => i.isCalculatorItem);
@@ -759,7 +765,7 @@ export function CreateOrderModal({
 
     toast.success(`Added ${finalName} (₹${amt.toFixed(2)} × ${qty})`);
     setCalcAmount('');
-    setCalcQty(1);
+    setCalcQty(0);
     setCalcCustomNote('');
     setTimeout(() => {
       calcAmountInputRef.current?.focus();
@@ -1463,7 +1469,7 @@ export function CreateOrderModal({
                         <button
                           type="button"
                           onClick={() => {
-                            setCalcQty(prev => Math.max(1, prev - 1));
+                            setCalcQty(prev => Math.max(0, prev - 1));
                             calcQtyInputRef.current?.focus();
                           }}
                           className="w-7 h-7 sm:w-10 sm:h-10 flex items-center justify-center hover:bg-muted rounded-lg sm:rounded-xl text-foreground font-bold text-sm sm:text-base cursor-pointer transition-colors active:scale-95 shrink-0"
@@ -1475,9 +1481,12 @@ export function CreateOrderModal({
                           type="number"
                           inputMode="numeric"
                           enterKeyHint="next"
-                          min="1"
+                          min="0"
                           value={calcQty}
-                          onChange={(e) => setCalcQty(Math.max(1, parseInt(e.target.value) || 1))}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            setCalcQty(isNaN(val) ? 0 : Math.max(0, val));
+                          }}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
                               e.preventDefault();

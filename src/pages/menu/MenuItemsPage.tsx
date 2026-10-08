@@ -79,6 +79,7 @@ export function MenuItemsPage() {
  const [skip, setSkip] = useState(0);
  const [hasMore, setHasMore] = useState(true);
  const [isLoadingMore, setIsLoadingMore] = useState(false);
+ const [totalShopItems, setTotalShopItems] = useState<number | null>(null);
  const limit = 100;
  
  // Filters
@@ -241,11 +242,17 @@ export function MenuItemsPage() {
  }
 
  const [catRes, itemRes] = await Promise.all([
- reset ? api.get('/categories') : Promise.resolve(null),
+ reset ? api.get('/categories', { params: { limit: 1000 } }) : Promise.resolve(null),
  api.get(`/menu-items?${queryParams.toString()}`)
  ]);
  
  if (catRes && Array.isArray(catRes.data)) setCategories(catRes.data);
+ 
+ const totalHdr = itemRes?.headers?.['x-total-count'];
+ if (totalHdr !== undefined && totalHdr !== null) {
+   const parsedTotal = parseInt(totalHdr, 10);
+   if (!isNaN(parsedTotal)) setTotalShopItems(parsedTotal);
+ }
  
  const newItems = Array.isArray(itemRes?.data) ? itemRes.data : [];
  if (newItems.length < limit) {
@@ -742,7 +749,7 @@ export function MenuItemsPage() {
  : 'bg-background text-muted-foreground hover:bg-muted border border-border '
  }`}
  >
- All Items ({categories.reduce((acc, cat) => acc + (cat.item_count || 0), 0)})
+ All Items ({totalShopItems !== null ? totalShopItems : categories.reduce((acc, cat) => acc + (cat.item_count || 0), 0)})
  </button>
  {categories.map(cat => (
  <button

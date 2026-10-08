@@ -9,7 +9,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { InfiniteScrollTrigger } from '@/components/ui/InfiniteScrollTrigger';
 import { useCartStore, useShopCart } from '@/store/cartStore';
 import toast from 'react-hot-toast';
-import { useActiveOrders } from '@/hooks/useActiveOrders';
+import { useActiveOrders, getCustomerUserId } from '@/hooks/useActiveOrders';
 import { contestService } from '@/services/contestService';
 import { motion } from 'framer-motion';
 import { BottomSheet } from '@/components/ui/BottomSheet';
@@ -181,6 +181,103 @@ export function PublicOrdersPage() {
     };
   }, []);
 
+  // Customer Live WebSocket Tracking for instant order status synchronization
+  useEffect(() => {
+    if (!id) return;
+    const mobile = localStorage.getItem('customer_mobile') || localStorage.getItem('customer_phone');
+    const tokenStr = token || localStorage.getItem('customer_token');
+    let phoneFromToken: string | null = null;
+    if (tokenStr) {
+      try {
+        const parts = tokenStr.split('.');
+        if (parts.length >= 2) {
+          const payload = JSON.parse(atob(parts[1]));
+          phoneFromToken = payload.mobile_number || payload.phone || payload.sub || null;
+        }
+      } catch {}
+    }
+    const finalMobile = mobile || phoneFromToken;
+    if (!finalMobile) return;
+
+    const userId = getCustomerUserId(finalMobile);
+    const isProd = import.meta.env.MODE === 'production';
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = isProd ? window.location.host : 'localhost:8000';
+    const wsUrl = (APP_CONFIG.API_URL ? APP_CONFIG.API_URL.replace(/^http/, 'ws') : `${protocol}//${host}`) + `/api/v1/public/shop/${id}/ws/customer/${userId}`;
+
+    let socket: WebSocket | null = null;
+    let reconnectTimeout: any = null;
+    let pingInterval: any = null;
+    let isDisposed = false;
+
+    const connect = () => {
+      if (isDisposed) return;
+      if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+
+      try {
+        socket = new WebSocket(wsUrl);
+
+        socket.onopen = () => {
+          if (pingInterval) clearInterval(pingInterval);
+          pingInterval = setInterval(() => {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+              try { socket.send('ping'); } catch {}
+            }
+          }, 25000);
+        };
+
+        socket.onmessage = (event) => {
+          if (typeof event.data !== 'string') return;
+          const trimmed = event.data.trim();
+          if (trimmed === 'ping' || trimmed === 'pong' || !trimmed.startsWith('{')) return;
+          try {
+            const data = JSON.parse(trimmed);
+            if (data.type === 'order_update' || data.event === 'order_update' || data.type === 'ORDER_STATUS' || data.type === 'NEW_ORDER') {
+              if (tokenStr) fetchOrders(tokenStr, true);
+            }
+          } catch (err) {
+            console.error('[PublicOrdersPage WS] Failed to parse message:', err);
+          }
+        };
+
+        socket.onclose = () => {
+          if (pingInterval) clearInterval(pingInterval);
+          if (!isDisposed) {
+            clearTimeout(reconnectTimeout);
+            reconnectTimeout = setTimeout(connect, 3000);
+          }
+        };
+
+        socket.onerror = () => {
+          try { socket?.close(); } catch {}
+        };
+      } catch (err) {
+        if (!isDisposed) {
+          clearTimeout(reconnectTimeout);
+          reconnectTimeout = setTimeout(connect, 4000);
+        }
+      }
+    };
+
+    connect();
+
+    const handleRealtimeLocalEvent = () => {
+      if (tokenStr) fetchOrders(tokenStr, true);
+    };
+    window.addEventListener('menukit-realtime-update', handleRealtimeLocalEvent);
+
+    return () => {
+      isDisposed = true;
+      if (pingInterval) clearInterval(pingInterval);
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (socket) {
+        socket.close();
+        socket = null;
+      }
+      window.removeEventListener('menukit-realtime-update', handleRealtimeLocalEvent);
+    };
+  }, [id, token]);
+
   const [payingOrderId, setPayingOrderId] = useState<string | null>(null);
 
   const loadRazorpaySDK = (): Promise<boolean> => {
@@ -195,6 +292,15 @@ export function PublicOrdersPage() {
   };
 
   const handlePayNow = async (orderId: string) => {
+    const targetOrder = orders.find(o => o.id === orderId);
+    if (targetOrder) {
+      const normStatus = String(targetOrder.order_status || '').toUpperCase();
+      if (['CANCELLED', 'REJECTED', 'VOID'].includes(normStatus)) {
+        toast.error("This order has been cancelled and cannot be paid.");
+        return;
+      }
+    }
+
     setPayingOrderId(orderId);
     try {
       const sdkLoaded = await loadRazorpaySDK();
@@ -214,7 +320,7 @@ export function PublicOrdersPage() {
           razorpay_signature: 'mock_signature'
         });
         toast.success("Payment successful!");
-        if (token) fetchOrders(token);
+        if (token) fetchOrders(token, true);
         return;
       }
 
@@ -248,12 +354,16 @@ export function PublicOrdersPage() {
               razorpay_signature: response.razorpay_signature,
             });
             toast.success("Payment successful!");
-            if (token) fetchOrders(token);
+            if (token) fetchOrders(token, true);
           } catch {
             toast.error("Payment verification failed. Please contact support.");
           }
         },
-        theme: { color: '#f97316' },
+        prefill: {
+          name: targetOrder?.customer_name || '',
+          contact: targetOrder?.customer_phone || ''
+        },
+        theme: { color: shop?.theme?.primary_color || '#f97316' },
       };
 
       const rzp = new (window as any).Razorpay(rzpOptions);
@@ -261,6 +371,7 @@ export function PublicOrdersPage() {
     } catch (err: any) {
       console.error("Failed to initiate payment", err);
       toast.error(err.response?.data?.detail || "Failed to initiate online payment. Please try again.");
+      if (token) fetchOrders(token, true);
     } finally {
       setPayingOrderId(null);
     }
