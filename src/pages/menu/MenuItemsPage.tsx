@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'react-hot-toast';
-import { Plus, Edit2, Trash2, Search, Filter, Image as ImageIcon, Star, Flame, LayoutGrid, List, Sparkles, Wand2, Loader2, MessageSquare, Check, RefreshCw, Code, ChevronLeft, ChevronRight, Store, Globe, Truck, Package, Tag, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
+import { Plus, Edit2, Trash2, Search, Filter, Image as ImageIcon, ImageOff, Star, Flame, LayoutGrid, List, Sparkles, Wand2, Loader2, MessageSquare, Check, RefreshCw, Code, ChevronLeft, ChevronRight, Store, Globe, Truck, Package, Tag, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
 import { api } from '@/services/api';
 import { useShopStore } from '@/store/shopStore';
 import { MenuItem, MenuItemVariant, MenuItemAddon } from '@/types';
@@ -85,7 +85,7 @@ export function MenuItemsPage() {
  // Filters
  const [activeTab, setActiveTab] = useState<string>('all');
  const [searchQuery, setSearchQuery] = useState('');
- const [specialFilter, setSpecialFilter] = useState<'all'| 'available'| 'not_available'| 'bestseller'| 'chef_special'>('all');
+ const [specialFilter, setSpecialFilter] = useState<'all'| 'available'| 'not_available'| 'bestseller'| 'chef_special'| 'contain_image'| 'non_contain_image'>('all');
  const [isFabOpen, setIsFabOpen] = useState(false);
  
  // Modal state
@@ -779,7 +779,7 @@ export function MenuItemsPage() {
  </div>
  
  <div className="flex items-center justify-between sm:justify-end gap-2.5 w-full sm:w-auto shrink-0">
- <div className="w-44 sm:w-48">
+ <div className="w-48 sm:w-52">
  <SearchableSelect
  options={[
  { id: 'all', name: 'All Statuses', icon: <LayoutGrid size={15} className="text-muted-foreground" /> },
@@ -787,6 +787,8 @@ export function MenuItemsPage() {
  { id: 'not_available', name: 'Not Available', icon: <XCircle size={15} className="text-rose-500" /> },
  { id: 'bestseller', name: 'Bestsellers', icon: <Flame size={15} className="text-amber-500" /> },
  { id: 'chef_special', name: businessCategory.featuredBadgeLabel, icon: <Star size={15} className="text-primary" /> },
+ { id: 'contain_image', name: 'Contain Image', icon: <ImageIcon size={15} className="text-blue-500" /> },
+ { id: 'non_contain_image', name: 'Non-Contain Image', icon: <ImageOff size={15} className="text-muted-foreground" /> },
  ]}
  value={specialFilter}
  onChange={(val) => setSpecialFilter(val as any)}

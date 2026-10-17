@@ -43,8 +43,10 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   PanelLeft,
-  Bell
+  Bell,
+  Coins
 } from 'lucide-react';
+import { isSchemeEnabledShop } from '@/config/businessCategories';
 import { useAuthStore } from '@/store/authStore';
 import { useShopStore } from '@/store/shopStore';
 import { cn } from '@/utils/cn';
@@ -101,6 +103,7 @@ export function DashboardLayout() {
     '/orders': { title: 'Orders', subtitle: 'Manage live orders & deliveries' },
     '/categories': { title: 'Categories', subtitle: 'Manage menu categories' },
     '/menu-items': { title: 'Menus', subtitle: 'Manage catalog & items' },
+    '/schemes': { title: 'Savings Schemes (Fund)', subtitle: 'Customer installment schemes, member enrollments & payment tracking' },
     '/discounts': { title: 'Discounts', subtitle: 'Offers and promotional coupons' },
     '/members': { title: 'Members', subtitle: 'Customer loyalty & profiles' },
     '/qr-code': { title: 'QR Code', subtitle: 'Shop QR code & table cards' },
@@ -262,6 +265,12 @@ export function DashboardLayout() {
         border: 'border-amber-200/80 dark:border-amber-800/50',
         text: 'text-amber-950 dark:text-amber-200 font-semibold'
       },
+      '/schemes': {
+        icon: 'text-amber-500 dark:text-amber-400',
+        bg: 'bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/50',
+        border: 'border-amber-200/80 dark:border-amber-800/50',
+        text: 'text-amber-950 dark:text-amber-200 font-semibold'
+      },
       '/campaigns': {
         icon: 'text-purple-500 dark:text-purple-400',
         bg: 'bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/40 dark:hover:bg-purple-900/50',
@@ -363,6 +372,9 @@ export function DashboardLayout() {
     if (path.startsWith('/menu-items')) {
       return { icon: Coffee, iconColor: 'text-amber-500 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-950/40 border-amber-200/80 dark:border-amber-800/50' };
     }
+    if (path.startsWith('/schemes')) {
+      return { icon: Coins, iconColor: 'text-amber-500 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-950/40 border-amber-200/80 dark:border-amber-800/50' };
+    }
     if (path.startsWith('/campaigns')) {
       return { icon: Megaphone, iconColor: 'text-purple-500 dark:text-purple-400', bg: 'bg-purple-50 dark:bg-purple-950/40 border-purple-200/80 dark:border-purple-800/50' };
     }
@@ -420,6 +432,9 @@ export function DashboardLayout() {
         { name: 'Orders', path: '/orders', icon: ShoppingBag, iconColor: 'text-emerald-500', permissionModule: 'orders' },
         { name: 'Categories', path: '/categories', icon: MenuSquare, iconColor: 'text-cyan-500', permissionModule: 'menu_categories' },
         { name: 'Menus', path: '/menu-items', icon: Coffee, iconColor: 'text-amber-500', permissionModule: 'menu_items' },
+        ...(isSchemeEnabledShop(shop?.category) ? [
+          { name: 'Schemes', path: '/schemes', icon: Coins, iconColor: 'text-amber-500', permissionModule: 'schemes' }
+        ] : []),
       ]
     },
     {
@@ -466,6 +481,9 @@ export function DashboardLayout() {
     }
     if (!perms && module === 'chalkboard') {
       perms = shop.employee_permissions ? (shop.employee_permissions['chalkboard'] || shop.employee_permissions['settings']) : undefined;
+    }
+    if (!perms && module === 'schemes') {
+      perms = shop.employee_permissions ? (shop.employee_permissions['schemes'] || shop.employee_permissions['orders'] || shop.employee_permissions['settings']) : undefined;
     }
     return Boolean(perms && (perms.includes('read') || perms.includes('write')));
   };
@@ -587,7 +605,7 @@ export function DashboardLayout() {
                     return (
                       <NavLink
                         key={item.path}
-                        id={item.path === '/chalkboard' ? 'sidebar-nav-chalkboard' : undefined}
+                        id={item.path === '/schemes' ? 'sidebar-nav-schemes' : item.path === '/subscription' ? 'sidebar-nav-subscription' : item.path === '/chalkboard' ? 'sidebar-nav-chalkboard' : undefined}
                         to={item.path}
                         onMouseEnter={() => preloadRoute(item.path)}
                         onFocus={() => preloadRoute(item.path)}
@@ -663,7 +681,7 @@ export function DashboardLayout() {
                             <div className="absolute left-0 top-1/2 w-3.5 h-0.5 bg-slate-200 dark:bg-slate-800 rounded-r" />
                           </div>
 
-                          <NavLink id={item.path === '/chalkboard' ? 'sidebar-nav-chalkboard' : undefined} to={item.path}
+                          <NavLink id={item.path === '/schemes' ? 'sidebar-nav-schemes' : item.path === '/subscription' ? 'sidebar-nav-subscription' : item.path === '/chalkboard' ? 'sidebar-nav-chalkboard' : undefined} to={item.path}
                             onMouseEnter={() => preloadRoute(item.path)}
                             onFocus={() => preloadRoute(item.path)}
                             onTouchStart={() => preloadRoute(item.path)}

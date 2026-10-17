@@ -252,6 +252,7 @@ export interface Discount {
   available_days?: string[] | null;
   available_time_presets?: string[] | null;
   is_active: boolean;
+  is_price_drop?: boolean;
   is_already_used?: boolean;
   visibility_type: 'everyone' | 'unlock_required' | 'members_only_hidden' | 'members_only_visible';
   display_order: number;

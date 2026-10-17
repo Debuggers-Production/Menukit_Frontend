@@ -24,6 +24,9 @@ export function usePermissions(module: string) {
     if ((!p || p.length === 0) && module === 'chalkboard') {
       p = shop.employee_permissions['chalkboard'] || shop.employee_permissions['settings'];
     }
+    if ((!p || p.length === 0) && module === 'schemes') {
+      p = shop.employee_permissions['schemes'] || shop.employee_permissions['orders'] || shop.employee_permissions['settings'];
+    }
 
     return p || [];
   };

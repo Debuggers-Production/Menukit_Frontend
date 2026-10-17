@@ -1,7 +1,7 @@
 import { LinkifiedText } from '../../components/LinkifiedText';
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { ShoppingBag, Plus, Minus, Info, ChevronLeft, ChevronRight, CheckCircle, XCircle, Key, MapPin, Navigation, Map, Armchair, Gift, Sparkles, Percent, Banknote, Truck, Tag, Clock, AlertTriangle, UtensilsCrossed, Gamepad2, History, Trophy, ChefHat, ShieldCheck, RotateCcw, Calendar, Copy, Crown, Lock, CheckCircle2 } from 'lucide-react';
+import { ShoppingBag, Plus, Minus, Info, ChevronLeft, ChevronRight, CheckCircle, XCircle, Key, MapPin, Navigation, Map, Armchair, Gift, Sparkles, Percent, Banknote, Truck, Tag, Clock, AlertTriangle, UtensilsCrossed, Gamepad2, History, Trophy, ChefHat, ShieldCheck, RotateCcw, Calendar, Copy, Crown, Lock, CheckCircle2, TrendingDown, Layers } from 'lucide-react';
 import { useCartStore, useShopCart } from '@/store/cartStore';
 import { api } from '@/services/api';
 import { Shop, Discount } from '@/types';
@@ -883,6 +883,34 @@ export function PublicCartPage() {
         effectivePrice = (op > 0 && op < p) ? op : p;
       }
       
+      // Check for active Price Drop discounts
+      const priceDropDisc = availableDiscounts?.find(d => {
+        if (!d.is_price_drop || d.is_active === false) return false;
+        if (!['percentage', 'flat', 'fixed'].includes(d.discount_type)) return false;
+        if (d.applies_to === 'all') return true;
+        if (d.applies_to === 'category' && d.target_ids?.includes(menuItem.category_id)) return true;
+        if (d.applies_to === 'items' && d.target_ids) {
+          if (d.target_ids.includes(menuItem.id)) return true;
+          if (menuItem.variants && menuItem.variants.length > 0 && selectedVariantIdx !== undefined) {
+            const vName = menuItem.variants[selectedVariantIdx]?.name?.trim()?.toLowerCase();
+            if (vName && d.target_ids.some(tid => tid.startsWith(`${menuItem.id}::`) && tid.split('::')[1]?.trim()?.toLowerCase() === vName)) {
+              return true;
+            }
+          }
+        }
+        return false;
+      });
+
+      if (priceDropDisc) {
+        const v = Number(priceDropDisc.discount_value || 0);
+        const dropPrice = priceDropDisc.discount_type === 'percentage'
+          ? basePrice * (1 - v / 100)
+          : Math.max(0, basePrice - v);
+        if (dropPrice < effectivePrice) {
+          effectivePrice = dropPrice;
+        }
+      }
+      
       let addonsPrice = 0;
       if (menuItem.addons) {
         selectedAddons.forEach(idx => {
@@ -895,7 +923,7 @@ export function PublicCartPage() {
 
       if (basePrice > effectivePrice) {
         autoDiscountTotal += (basePrice - effectivePrice) * quantity;
-        appliedAutoDiscounts.add(`${menuItem.name} Offer`);
+        appliedAutoDiscounts.add(priceDropDisc ? `${menuItem.name} (${priceDropDisc.title})` : `${menuItem.name} Offer`);
       }
     });
 
@@ -1713,8 +1741,16 @@ export function PublicCartPage() {
                             <div className={`w-12 h-14 rounded-[50%_50%_50%_50%_/_45%_45%_55%_55%] ${color.bg} shadow-md flex items-center justify-center relative transition-transform group-hover:scale-110`}>
                               {/* Shiny Light Reflection */}
                               <div className="absolute top-1.5 left-2 w-2.5 h-4 bg-white/30 rounded-full rotate-[30deg]" />
-                              {disc.discount_type === 'percentage' ? (
+                              {disc.is_price_drop ? (
+                                <TrendingDown size={15} className="text-white drop-shadow-xs stroke-[2.5]" />
+                              ) : disc.discount_type === 'percentage' ? (
                                 <Percent size={15} className="text-white drop-shadow-xs" />
+                              ) : disc.discount_type === 'bogo' ? (
+                                <Layers size={15} className="text-white drop-shadow-xs" />
+                              ) : disc.discount_type === 'combo' ? (
+                                <UtensilsCrossed size={15} className="text-white drop-shadow-xs" />
+                              ) : disc.discount_type === 'free_item' ? (
+                                <Gift size={15} className="text-white drop-shadow-xs" />
                               ) : (
                                 <Banknote size={16} className="text-white drop-shadow-xs" />
                               )}
@@ -2544,6 +2580,14 @@ export function PublicCartPage() {
                 </div>
 
                 <h3 className="text-xl font-bold font-heading text-slate-900 dark:text-slate-100">{disc.title}</h3>
+                {disc.is_price_drop && (
+                  <div className="mt-2">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700/60 shadow-2xs">
+                      <TrendingDown size={14} className="stroke-[2.5]" />
+                      Direct Price Drop
+                    </span>
+                  </div>
+                )}
                 {disc.description && (
                   <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-2 max-w-[320px] leading-relaxed">
                     <LinkifiedText text={disc.description} showIcon />
@@ -2599,7 +2643,34 @@ export function PublicCartPage() {
               )}
 
               {/* Status & Code Cards */}
-              {isUsed ? (
+              {disc.is_price_drop ? (
+                <div className="pt-1">
+                  <div className="relative overflow-hidden bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50/80 dark:from-emerald-950/40 dark:via-teal-950/30 dark:to-emerald-950/30 border-2 border-emerald-500/50 dark:border-emerald-600/50 rounded-2xl p-4 shadow-xs">
+                    <div className="flex items-start gap-3.5 relative z-10">
+                      <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center shrink-0 shadow-md shadow-emerald-600/25">
+                        <TrendingDown className="w-6 h-6 stroke-[2.5]" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-black uppercase tracking-wider text-emerald-950 dark:text-emerald-200">
+                            Direct Price Drop
+                          </span>
+                          <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-emerald-600 text-white shadow-2xs">
+                            Always Applied
+                          </span>
+                        </div>
+                        <p className="text-xs text-emerald-900/90 dark:text-emerald-300/90 mt-1.5 font-medium leading-relaxed">
+                          No coupon code needed! This discount is already applied directly to the prices of all eligible items in your cart.
+                        </p>
+                        <div className="mt-2.5 flex items-center gap-1.5 text-[11px] font-bold text-emerald-800 dark:text-emerald-300">
+                          <CheckCircle2 size={13} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                          <span>Automatically reflected in item totals</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : isUsed ? (
                 <div className="space-y-3 pt-1">
                   <div className="bg-amber-50/90 dark:bg-amber-950/40 border border-amber-200/90 dark:border-amber-800/60 rounded-2xl p-4 flex items-start gap-3.5 shadow-xs">
                     <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0 border border-amber-500/20">
@@ -2686,7 +2757,16 @@ export function PublicCartPage() {
 
               {/* Action Button */}
               <div className="pt-2">
-                {isUsed ? (
+                {disc.is_price_drop ? (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedBalloonDiscount(null)}
+                    className="w-full py-3.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-base shadow-lg shadow-emerald-600/20 active:scale-[0.99] transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <CheckCircle2 size={18} />
+                    <span>Already Applied to Cart</span>
+                  </button>
+                ) : isUsed ? (
                   <button
                     disabled={true}
                     className="w-full py-3.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-extrabold text-base border border-slate-300 dark:border-slate-700 cursor-not-allowed"

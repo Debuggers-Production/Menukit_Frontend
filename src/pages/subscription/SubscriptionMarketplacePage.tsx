@@ -16,6 +16,7 @@ import { api } from '@/services/api';
 import menukitLogo from '@/assets/menukit-logo.svg';
 import { CountryFlag } from '@/components/CountryFlag';
 import { Button } from '@/components/ui/Button';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
 
 const CATEGORY_TAG_STYLES: Record<string, string> = {
   'Online Ordering': 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800',
@@ -211,6 +212,9 @@ export function SubscriptionMarketplacePage() {
   const [selectedFeatures, setSelectedFeatures] = useState<Set<string>>(new Set());
   const [isAllAccess, setIsAllAccess] = useState(true);
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
+  const [isAutopay, setIsAutopay] = useState<boolean>(true);
+  const [isTogglingAutopay, setIsTogglingAutopay] = useState<boolean>(false);
+  const [showDisableAutopayModal, setShowDisableAutopayModal] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeSubscription, setActiveSubscription] = useState<any>(null);
   const [showSubscribedDetails, setShowSubscribedDetails] = useState(false);
@@ -231,6 +235,34 @@ export function SubscriptionMarketplacePage() {
     try {
       localStorage.setItem('menukit_selected_country', code);
     } catch {}
+  };
+
+  const handleToggleAutopay = async (newVal: boolean) => {
+    setIsTogglingAutopay(true);
+    try {
+      const res = await api.post('/subscription/toggle-autopay', { auto_renew: newVal });
+      if (res.data.needs_mandate_setup) {
+        toast((_t) => (
+          <div className="flex flex-col gap-1 text-left">
+            <span className="font-bold text-xs text-slate-900 dark:text-white">Auto-Pay Mandate Required</span>
+            <span className="text-[11px] text-slate-500">Your previous bank mandate was cancelled. Please authorize a new recurring mandate to reactivate Auto-Pay.</span>
+          </div>
+        ), { icon: '💳', duration: 5000 });
+        setBillingCycle(activeSubscription?.billing_cycle || 'monthly');
+        setIsAllAccess(activeSubscription?.is_all_access ?? true);
+        setIsAutopay(true);
+        handleTabChange('marketplace');
+        return;
+      }
+      toast.success(res.data.message || (newVal ? 'Autopay enabled' : 'Autopay disabled'));
+      if (activeSubscription) {
+        setActiveSubscription({ ...activeSubscription, auto_renew: newVal });
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || 'Failed to update autopay setting');
+    } finally {
+      setIsTogglingAutopay(false);
+    }
   };
 
   const handleTabChange = (tab: 'my-plan' | 'marketplace' | 'invoices') => {
@@ -461,6 +493,7 @@ export function SubscriptionMarketplacePage() {
         selected_modules: Array.from(selectedFeatures),
         billing_cycle: billingCycle,
         country_code: selectedCountry || undefined,
+        is_autopay: isAutopay,
       });
       
       const orderData = res.data;
@@ -483,22 +516,20 @@ export function SubscriptionMarketplacePage() {
         return;
       }
 
-      const options = {
+      const options: any = {
         key: orderData.key,
-        amount: orderData.amount,
-        currency: orderData.currency,
         name: "Menukit",
-        description: `Subscription: ${isAllAccess ? 'All-Access Pack' : 'Custom Modules'}`,
-        order_id: orderData.order_id,
+        description: `Subscription: ${isAllAccess ? 'All-Access Pack' : 'Custom Modules'} (${billingCycle === 'yearly' ? 'Yearly Auto-Pay' : 'Monthly Auto-Pay'})`,
         handler: async function (response: any) {
           try {
             await api.post('/subscription/verify', {
-              razorpay_order_id: response.razorpay_order_id,
+              razorpay_order_id: response.razorpay_order_id || orderData.order_id,
+              razorpay_subscription_id: response.razorpay_subscription_id || orderData.subscription_id,
               razorpay_payment_id: response.razorpay_payment_id,
               razorpay_signature: response.razorpay_signature,
             });
             confetti({ particleCount: 120, spread: 90, origin: { y: 0.5 } });
-            toast.success("Payment successful! Subscription activated.");
+            toast.success(orderData.subscription_id ? "Auto-Pay mandate approved! Subscription active." : "Payment successful! Subscription activated.");
             setSelectedFeatures(new Set());
             setIsAllAccess(false);
             fetchCurrentSubscription();
@@ -510,6 +541,16 @@ export function SubscriptionMarketplacePage() {
         },
         theme: { color: "#f97316" }
       };
+
+      if (orderData.subscription_id) {
+        // Razorpay Recurring Subscriptions / AutoPay Mandate (UPI Autopay, Card Mandate, e-NACH)
+        options.subscription_id = orderData.subscription_id;
+      } else {
+        // Direct One-Time Payment Order (QR code, UPI, Netbanking)
+        options.order_id = orderData.order_id;
+        options.amount = orderData.amount;
+        options.currency = orderData.currency;
+      }
 
       const paymentObject = new (window as any).Razorpay(options);
       
@@ -857,6 +898,112 @@ export function SubscriptionMarketplacePage() {
                 </div>
               </div>
 
+              {/* Autopay Control Banner */}
+              <div className="pt-4 border-t border-slate-200/60 dark:border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-start sm:items-center gap-3">
+                  <div className={cn(
+                    "w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 border transition-all",
+                    Boolean(activeSubscription?.auto_renew)
+                      ? "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/60"
+                      : "bg-slate-100 dark:bg-slate-800/80 text-slate-400 border-slate-200 dark:border-slate-700"
+                  )}>
+                    <RefreshCw size={18} className={Boolean(activeSubscription?.auto_renew) ? "animate-spin-slow" : ""} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-black text-slate-900 dark:text-white">
+                        Subscription Auto-Pay
+                      </span>
+                      <span className={cn(
+                        "text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1",
+                        Boolean(activeSubscription?.auto_renew)
+                          ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+                          : "bg-slate-200/60 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-300/60 dark:border-slate-700"
+                      )}>
+                        <span className={cn(
+                          "w-1.5 h-1.5 rounded-full",
+                          Boolean(activeSubscription?.auto_renew) ? "bg-emerald-500 animate-pulse" : "bg-slate-400"
+                        )} />
+                        {Boolean(activeSubscription?.auto_renew) ? "AUTOPAY ACTIVE" : "AUTOPAY OFF"}
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-bold uppercase font-mono">
+                        ({activeSubscription?.billing_cycle === 'yearly' ? 'Yearly Cycle' : 'Monthly Cycle'})
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      {Boolean(activeSubscription?.auto_renew)
+                        ? `Automatically renews every ${activeSubscription?.billing_cycle === 'yearly' ? 'year' : 'month'} on ${activeSubscription?.current_period_end ? new Date(activeSubscription.current_period_end).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'renewal date'}. Turn off anytime.`
+                        : `Auto-pay is currently off. Your subscription will pause when the current cycle ends on ${activeSubscription?.current_period_end ? new Date(activeSubscription.current_period_end).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'renewal date'}.`}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 flex-wrap self-end sm:self-center shrink-0">
+                  {/* Cycle Switcher Button */}
+                  {activeSubscription?.billing_cycle === 'monthly' ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBillingCycle('yearly');
+                        setIsAllAccess(true);
+                        setIsAutopay(true);
+                        handleTabChange('marketplace');
+                      }}
+                      className="px-3.5 py-1.5 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 text-orange-600 dark:text-orange-400 text-xs font-bold flex items-center gap-1.5 border border-orange-500/20 transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
+                    >
+                      <Sparkles size={13} className="text-orange-500 fill-current" />
+                      <span>Switch to Yearly (Save 2 Mos)</span>
+                      <ArrowRight size={12} />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBillingCycle('monthly');
+                        setIsAllAccess(true);
+                        setIsAutopay(true);
+                        handleTabChange('marketplace');
+                      }}
+                      className="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
+                    >
+                      <span>Switch to Monthly</span>
+                      <ArrowRight size={12} />
+                    </button>
+                  )}
+
+                  {/* Turn off / Turn on Toggle with Modal Confirmation */}
+                  <div className="flex items-center gap-2 pl-2 border-l border-slate-200 dark:border-slate-700">
+                    <span className="text-xs font-bold text-slate-600 dark:text-slate-400">
+                      {Boolean(activeSubscription?.auto_renew) ? 'Auto-Pay On' : 'Auto-Pay Off'}
+                    </span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={Boolean(activeSubscription?.auto_renew)}
+                      disabled={isTogglingAutopay}
+                      onClick={() => {
+                        if (Boolean(activeSubscription?.auto_renew)) {
+                          setShowDisableAutopayModal(true);
+                        } else {
+                          handleToggleAutopay(true);
+                        }
+                      }}
+                      className={cn(
+                        "w-12 h-6 flex items-center rounded-full p-1 transition-colors duration-200 cursor-pointer disabled:opacity-50",
+                        Boolean(activeSubscription?.auto_renew) ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-700"
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          "bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200",
+                          Boolean(activeSubscription?.auto_renew) ? "translate-x-6" : "translate-x-0"
+                        )}
+                      />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
             </div>
           </div>
 
@@ -1024,7 +1171,9 @@ export function SubscriptionMarketplacePage() {
                       <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">Plan Price</span>
                       <span className="text-3xl font-black text-teal-600 dark:text-teal-400 font-heading">{countryConfig.symbol}0</span>
                     </div>
-                    <span className="text-xs text-slate-400 font-bold">/ forever free</span>
+                    <span className="text-[11px] text-slate-400 font-bold tracking-tight text-right">
+                      * Terms and Conditions applicable
+                    </span>
                   </div>
                 </div>
 
@@ -1410,6 +1559,54 @@ export function SubscriptionMarketplacePage() {
                   </div>
                 </div>
 
+                {/* ── AUTOPAY (AUTO-RENEWAL) OPTION ───────────────────────── */}
+                <div className="p-3.5 rounded-2xl bg-gradient-to-br from-orange-500/[0.06] to-amber-500/[0.04] dark:from-orange-950/30 dark:to-amber-950/20 border border-orange-200/80 dark:border-orange-800/50 space-y-2 transition-all">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-orange-500/10 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400 flex items-center justify-center shrink-0">
+                        <RefreshCw size={15} className={isAutopay ? "animate-spin-slow" : ""} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-black text-slate-900 dark:text-white">
+                            Auto-Pay (Auto-Renew)
+                          </span>
+                          <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-orange-500/15 text-orange-600 dark:text-orange-400 uppercase tracking-wider">
+                            Default
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold block">
+                          {billingCycle === 'yearly' ? 'Renews every year automatically' : 'Renews every month automatically'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Toggle Switch */}
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={isAutopay}
+                      onClick={() => setIsAutopay(!isAutopay)}
+                      className={cn(
+                        "w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-200 cursor-pointer shrink-0",
+                        isAutopay ? "bg-orange-500" : "bg-slate-300 dark:bg-slate-700"
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          "bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200",
+                          isAutopay ? "translate-x-5" : "translate-x-0"
+                        )}
+                      />
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-normal pl-0.5">
+                    {isAutopay 
+                      ? `Enjoy uninterrupted access. Your plan renews ${billingCycle === 'yearly' ? 'yearly' : 'monthly'}. You can cancel or pause anytime from your dashboard.` 
+                      : 'Auto-renewal is turned off. Your features will pause when the current billing cycle expires.'}
+                  </p>
+                </div>
+
                 {/* Action CTA Checkout Button */}
                 <button
                   onClick={handleCheckout}
@@ -1671,6 +1868,22 @@ export function SubscriptionMarketplacePage() {
           </div>
         </div>
       , document.body)}
+
+      {/* ── MODAL: CONFIRM TURNING OFF AUTOPAY ─────────────────────────── */}
+      <ConfirmModal
+        isOpen={showDisableAutopayModal}
+        onClose={() => setShowDisableAutopayModal(false)}
+        onConfirm={async () => {
+          setShowDisableAutopayModal(false);
+          await handleToggleAutopay(false);
+        }}
+        title="Turn Off Subscription Auto-Pay?"
+        message={`Your subscription features will remain active until ${activeSubscription?.current_period_end ? new Date(activeSubscription.current_period_end).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'the end of your current cycle'}. No further recurring deductions will be made, and features will pause after this date unless renewed manually.`}
+        confirmText="Yes, Turn Off Auto-Pay"
+        cancelText="Keep Auto-Pay Enabled"
+        isDestructive={true}
+        isLoading={isTogglingAutopay}
+      />
 
     </div>
   );

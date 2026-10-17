@@ -3,9 +3,9 @@ import { LinkifiedText } from '../../components/LinkifiedText';
 import { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
 import {
- Plus, Tag, Trash2, Edit2, ToggleLeft, ToggleRight, Calendar, Percent,
- ShoppingBag, Layers, Clock, CheckCircle2, AlertCircle, Timer, Sparkles, X, Search, Crown, ChevronLeft, ChevronRight, Gift, Copy, Loader2,
- ShieldCheck, History, User, Phone
+  Plus, Tag, Trash2, Edit2, ToggleLeft, ToggleRight, Calendar, Percent,
+  ShoppingBag, Layers, Clock, CheckCircle2, AlertCircle, Timer, Sparkles, X, Search, Crown, ChevronLeft, ChevronRight, Gift, Copy, Loader2,
+  ShieldCheck, History, User, Phone, TrendingDown
 } from 'lucide-react';
 import { api } from '@/services/api';
 import { Discount, Category, MenuItem } from '@/types';
@@ -143,6 +143,7 @@ const defaultForm = {
  available_days: [] as string[],
  available_time_presets: [] as string[],
  is_active: true,
+ is_price_drop: false,
  visibility_type: 'everyone'as 'everyone'| 'unlock_required'| 'members_only_hidden'| 'members_only_visible',
 };
 
@@ -406,6 +407,7 @@ export function DiscountsPage() {
         available_days: targetDiscount.available_days || [],
         available_time_presets: targetDiscount.available_time_presets || [],
         is_active: targetDiscount.is_active ?? true,
+        is_price_drop: targetDiscount.is_price_drop ?? false,
         visibility_type: targetDiscount.visibility_type || 'everyone',
       });
       const hasRewardTargets = targetDiscount.reward_target_ids && targetDiscount.reward_target_ids.length > 0;
@@ -430,6 +432,7 @@ export function DiscountsPage() {
         ...defaultForm,
         code: '',
         discount_type: type,
+        is_price_drop: false,
         get_quantity: type === 'free_item' ? '1' : '',
         applies_to: (type === 'bogo' || type === 'combo') ? 'items' : 'all'
       });
@@ -930,6 +933,11 @@ export function DiscountsPage() {
  {d.discount_type === 'combo'&& <><Layers size={12} className="text-muted-foreground" /> {currencySymbol}{d.discount_value} Combo</>}
  {d.discount_type === 'free_item'&& <><Gift size={12} className="text-rose-500" /> Free Item {d.discount_value ? `(Min. ${currencySymbol}${d.discount_value})` : ''}</>}
  </span>
+ {d.is_price_drop && (
+  <span className="flex items-center gap-1 sm:gap-1.5 bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 px-2 py-1 rounded-md border border-amber-200 dark:border-amber-800/40 font-bold">
+    <TrendingDown size={12} className="text-amber-600 dark:text-amber-400" /> Price Drop
+  </span>
+ )}
  {d.discount_type === 'bogo' && d.reward_target_ids && d.reward_target_ids.length > 0 && (
  <span className="flex items-center gap-1 sm:gap-1.5 bg-indigo-50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300 px-2 py-1 rounded-md border border-indigo-200 dark:border-indigo-800/40">
  <Gift size={12} /> {d.reward_target_ids.length} reward {categories.some(c => d.reward_target_ids!.includes(c.id)) ? `categor${d.reward_target_ids.length > 1 ? 'ies' : 'y'}` : `item${d.reward_target_ids.length > 1 ? 's' : ''}`}
@@ -1496,6 +1504,60 @@ export function DiscountsPage() {
     </div>
   )}
  </div>
+
+                {/* 🏷️ Use as Price Drop Option */}
+                <div className={`p-4 rounded-2xl border transition-all mt-4 ${formData.is_price_drop ? 'bg-gradient-to-r from-amber-50/90 to-orange-50/80 dark:from-amber-950/40 dark:to-orange-950/30 border-amber-300 dark:border-amber-700/60 shadow-xs ring-1 ring-amber-400/20' : 'bg-muted/40 border-border hover:bg-muted/60'}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors ${formData.is_price_drop ? 'bg-gradient-to-tr from-amber-500 to-amber-400 text-white shadow-xs' : 'bg-muted text-muted-foreground'}`}>
+                        <TrendingDown size={19} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <label 
+                            onClick={() => setFormData({ ...formData, is_price_drop: !formData.is_price_drop })} 
+                            className="text-sm font-bold text-foreground cursor-pointer select-none hover:text-amber-600 transition-colors"
+                          >
+                            Use as Price Drop
+                          </label>
+                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider ${formData.is_price_drop ? 'bg-amber-200 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200' : 'bg-muted text-muted-foreground'}`}>
+                            Always Discounted
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1 leading-snug">
+                          Items directly show a slashed original price and discounted selling price (e.g. <span className="line-through opacity-70">{currencySymbol}50</span> → <span className="font-bold text-amber-600 dark:text-amber-400">{currencySymbol}25</span>). Customers can use this discount unlimited times without entering coupon codes.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Switch Toggle */}
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={formData.is_price_drop}
+                      onClick={() => setFormData({ ...formData, is_price_drop: !formData.is_price_drop })}
+                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 mt-0.5 ${
+                        formData.is_price_drop ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-700'
+                      }`}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                          formData.is_price_drop ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {formData.is_price_drop && (
+                    <div className="mt-3 pt-3 border-t border-amber-200/80 dark:border-amber-800/40 flex items-center gap-2 text-xs text-amber-800 dark:text-amber-300 font-medium">
+                      <CheckCircle2 size={15} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                      <span>
+                        Direct Price Drop Active: Matching items will automatically display discounted prices with unlimited customer redemptions.
+                      </span>
+                    </div>
+                  )}
+                </div>
 
                 {/* Reward Items Selection for BOGO */}
                 {formData.discount_type === 'bogo' && (

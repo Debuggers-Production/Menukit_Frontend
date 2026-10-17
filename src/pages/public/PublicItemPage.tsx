@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { DiscountUnlockPopup } from '@/components/public/DiscountUnlockPopup';
 import { useCartStore, useShopCart } from '@/store/cartStore';
 import { getItemMultiplier } from '@/utils/itemMultiplier';
+import { getRemainingPopupDelayMs, clearPopupTiming } from '@/utils/discountPopupTiming';
 import toast from 'react-hot-toast';
 
 const PRESET_TIMINGS: Record<string, string> = {
@@ -130,7 +131,7 @@ export function PublicItemPage() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Show discount unlock popup every 10 seconds if user hasn't unlocked/registered for this shop
+  // Show discount unlock popup periodically (after initial delay, and increasing intervals on "Maybe Later")
   useEffect(() => {
     const isShopUnlocked = Boolean(
       memberStatus === 'verified-member' ||
@@ -139,6 +140,9 @@ export function PublicItemPage() {
     );
 
     if (!id || isShopUnlocked || isDiscountPopupOpen) return;
+
+    const delayMs = getRemainingPopupDelayMs(id);
+    if (delayMs === null) return;
 
     const timer = setTimeout(() => {
       const stillNotUnlocked = !Boolean(
@@ -150,7 +154,7 @@ export function PublicItemPage() {
       if (stillNotUnlocked) {
         setIsDiscountPopupOpen(true);
       }
-    }, 10000);
+    }, delayMs);
 
     return () => clearTimeout(timer);
   }, [id, memberStatus, isDiscountPopupOpen]);
@@ -525,10 +529,13 @@ export function PublicItemPage() {
 
                 if (!item.offer_price && (!item.variants || !item.variants.length || !item.variants[selectedVariantIdx].offer_price)) {
                   const disc = discounts.find(d => {
-                    if (d.visibility_type === 'members_only_hidden' && memberStatus !== 'verified-member') return false;
-                    if (d.visibility_type === 'members_only_visible' && memberStatus !== 'verified-member') return false;
-                    const isUserExisting = Boolean(localStorage.getItem('customer_token') || localStorage.getItem('customer_is_existing') === 'true');
-                    if (d.visibility_type === 'unlock_required' && (memberStatus === null || isUserExisting)) return false;
+                    // Direct Price Drop discounts apply unconditionally to all visitors
+                    if (!d.is_price_drop) {
+                      if (d.visibility_type === 'members_only_hidden' && memberStatus !== 'verified-member') return false;
+                      if (d.visibility_type === 'members_only_visible' && memberStatus !== 'verified-member') return false;
+                      const isUserExisting = Boolean(localStorage.getItem('customer_token') || localStorage.getItem('customer_is_existing') === 'true');
+                      if (d.visibility_type === 'unlock_required' && (memberStatus === null || isUserExisting)) return false;
+                    }
                     if (d.discount_type === 'bogo' || d.discount_type === 'combo' || d.discount_type === 'free_item') return false;
                     if (d.applies_to === 'all') return true;
                     if (d.applies_to === 'category' && d.target_ids?.includes(item.category_id)) return true;
@@ -818,6 +825,7 @@ export function PublicItemPage() {
           initialStep="intro"
           onClose={() => setIsDiscountPopupOpen(false)}
           onUnlock={(customerId) => {
+            clearPopupTiming(shop.id);
             const status = customerId || 'unlocked';
             setMemberStatus(status as any);
             sessionStorage.setItem(`member_status_${shop.id}`, status);

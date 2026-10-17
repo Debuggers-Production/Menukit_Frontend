@@ -12,11 +12,16 @@ import {
   Plus,
   Star,
   Users,
-  ShoppingBag
+  ShoppingBag,
+  Coins,
+  Sparkles,
+  X
 } from 'lucide-react';
 import { api } from '@/services/api';
 import { membershipService } from '@/services/memberships';
 import { useShopStore } from '@/store/shopStore';
+import { isSchemeEnabledShop } from '@/config/businessCategories';
+import { WhatsNewModal } from '@/components/WhatsNewModal';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Button } from '@/components/ui/Button';
@@ -42,6 +47,23 @@ export function DashboardPage() {
   const [isCreateOrderModalOpen, setIsCreateOrderModalOpen] = useState(false);
   const navigate = useNavigate();
   const { setTitle } = useHeaderStore();
+
+  const isSchemeShop = isSchemeEnabledShop(shop?.category);
+  const [showSchemeBanner, setShowSchemeBanner] = useState(() => {
+    try {
+      return localStorage.getItem('menukit_dismiss_scheme_banner_v2_0_5') !== 'true';
+    } catch {
+      return true;
+    }
+  });
+  const [isWhatsNewOpen, setIsWhatsNewOpen] = useState(false);
+
+  const handleDismissSchemeBanner = () => {
+    setShowSchemeBanner(false);
+    try {
+      localStorage.setItem('menukit_dismiss_scheme_banner_v2_0_5', 'true');
+    } catch {}
+  };
 
 
   useEffect(() => {
@@ -207,6 +229,65 @@ export function DashboardPage() {
           </Button>
         </div>
       </HeaderActions>
+
+      {/* ── VERSION 2.0.5 SCHEMES LOG BANNER (CRACKERS & BAKERIES) ────────────────── */}
+      {isSchemeShop && showSchemeBanner && (
+        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 p-[1.5px] shadow-lg shadow-orange-500/10">
+          <div className="relative rounded-[23px] bg-white/95 dark:bg-slate-900/95 backdrop-blur-md p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 text-white flex items-center justify-center shrink-0 shadow-md shadow-orange-500/25">
+                <Coins size={24} className="animate-pulse" />
+              </div>
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/20">
+                    v2.0.5 NEW FEATURE
+                  </span>
+                  <span className="text-xs sm:text-sm font-black text-slate-800 dark:text-slate-100 flex items-center gap-1">
+                    <span>Customer Savings Schemes (Pandu) Live!</span>
+                    <Sparkles size={13} className="text-amber-500 fill-current" />
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xl leading-relaxed">
+                  Start festive installment clubs (Diwali crackers, festive cakes) with automated WhatsApp due reminders and live customer passbooks.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5 self-end sm:self-center shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsWhatsNewOpen(true)}
+                className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                What's New Log
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/schemes')}
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white text-xs font-bold shadow-md shadow-orange-500/20 transition-all flex items-center gap-1.5 cursor-pointer hover:scale-105 active:scale-95"
+              >
+                <span>Launch Schemes</span>
+                <ArrowRight size={13} />
+              </button>
+              <button
+                type="button"
+                onClick={handleDismissSchemeBanner}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                aria-label="Dismiss banner"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <WhatsNewModal
+        isOpen={isWhatsNewOpen}
+        onClose={() => setIsWhatsNewOpen(false)}
+        forceOpen={isWhatsNewOpen}
+      />
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">

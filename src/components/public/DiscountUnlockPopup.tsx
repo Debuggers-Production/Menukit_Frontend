@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Gift, Phone, ShieldCheck, User, ChevronDown, Crown, Sparkles } from 'lucide-react';
+import { Gift, Phone, ShieldCheck, User, ChevronDown, Crown, Sparkles, X } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { triggerHaptic, HAPTIC_PATTERNS } from '@/utils/haptic';
 import { customerService } from '../../services/customers';
+import { recordPopupDismissal, clearPopupTiming } from '@/utils/discountPopupTiming';
 
 const COUNTRY_CODES = [
   { code: '+91', label: 'India (+91)' },
@@ -43,8 +44,14 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
       }
       return 'intro';
     }
-    return initialStep;
   });
+
+  useEffect(() => {
+    if (initialStep === 'mobile' || initialStep === 'otp') {
+      setStep(initialStep);
+    }
+  }, [initialStep]);
+
   const [mobileNumber, setMobileNumber] = useState(() => {
     try {
       const saved = localStorage.getItem('pending_otp_verification');
@@ -183,10 +190,13 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
 
   const handleClose = () => {
     if (isVerified) {
+      clearPopupTiming(shopId);
       onUnlock(isStrictMember ? 'verified-member' : 'unlocked', isExistingCustomer);
     } else if (step === 'no_offers') {
+      clearPopupTiming(shopId);
       onUnlock(null, isExistingCustomer);
     } else {
+      recordPopupDismissal(shopId);
       onClose();
     }
   };
@@ -416,13 +426,32 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div 
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && step !== 'otp') {
+          handleClose();
+        }
+      }}
+    >
       <motion.div 
         initial={{ opacity: 0, scale: 0.9, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.9, y: 20 }}
         className="bg-white rounded-2xl shadow-2xl w-full max-w-md relative overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
       >
+        {/* Top-right Cancel / Close Button */}
+        <button
+          type="button"
+          onClick={handleClose}
+          className="absolute top-4 right-4 z-40 p-2 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors cursor-pointer"
+          title="Close"
+          aria-label="Close"
+        >
+          <X size={18} />
+        </button>
+
         {/* Tab-switch / exit warning overlay during mobile entry & OTP verification */}
         {tabWarningVisible && (step === 'mobile' || step === 'otp') && (
           <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-900/95 backdrop-blur-md rounded-2xl p-6 text-center">
@@ -488,22 +517,46 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
                   type="button"
                   onClick={() => {
                     handleClose();
-                    window.scrollTo({ top: 350, behavior: 'smooth' });
+                    const isMenuPage = window.location.pathname === `/shop/${shopId}` || window.location.pathname === `/shop/${shopId}/`;
+                    if (isMenuPage) {
+                      const el = document.getElementById('discounts-section');
+                      if (el) {
+                        el.scrollIntoView({ behavior: 'smooth' });
+                      } else {
+                        window.scrollTo({ top: 350, behavior: 'smooth' });
+                      }
+                    } else {
+                      window.location.href = `/shop/${shopId}`;
+                    }
                   }}
                   className="w-full py-3.5 bg-primary text-white rounded-xl font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/25 active:scale-[0.98] text-sm flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <Gift size={16} />
-                  <span>View Discounts & Offers</span>
+                  <span>
+                    {(window.location.pathname === `/shop/${shopId}` || window.location.pathname === `/shop/${shopId}/`) 
+                      ? 'View Discounts & Offers' 
+                      : 'Go to Menu & Offers'}
+                  </span>
                 </button>
 
-                <button 
-                  type="button"
-                  onClick={handleChangeMobileNumber}
-                  className="w-full py-2.5 text-xs font-bold text-gray-500 hover:text-gray-900 hover:bg-gray-100/80 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5"
-                >
-                  <Phone size={13} />
-                  <span>Change Mobile Number</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button 
+                    type="button"
+                    onClick={handleChangeMobileNumber}
+                    className="flex-1 py-2.5 text-xs font-bold text-gray-500 hover:text-gray-900 hover:bg-gray-100/80 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <Phone size={13} />
+                    <span>Change Mobile</span>
+                  </button>
+
+                  <button 
+                    type="button"
+                    onClick={handleClose}
+                    className="flex-1 py-2.5 text-xs font-bold text-gray-600 hover:text-gray-900 bg-gray-100 hover:bg-gray-200/80 rounded-xl transition-all cursor-pointer flex items-center justify-center"
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             </motion.div>
           )}
@@ -616,18 +669,11 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
                   {loading ? 'Sending OTP...' : 'Send OTP'}
                 </button>
 
-                {Boolean(sessionStorage.getItem(`member_status_${shopId}`)) && (
+                {Boolean(sessionStorage.getItem(`member_status_${shopId}`) || localStorage.getItem('customer_token')) && (
                   <button 
                     type="button"
-                    onClick={() => {
-                      const savedMobile = localStorage.getItem('customer_mobile') || '';
-                      if (savedMobile) {
-                        const digits = savedMobile.replace(/\D/g, '');
-                        setMobileNumber(digits.length >= 10 ? digits.slice(-10) : digits);
-                      }
-                      setStep('already_unlocked');
-                    }}
-                    className="w-full py-2 text-xs font-semibold text-gray-500 hover:text-gray-900 transition-colors block text-center cursor-pointer"
+                    onClick={handleClose}
+                    className="w-full py-2.5 text-xs font-bold text-gray-500 hover:text-gray-900 hover:bg-gray-100/60 rounded-xl transition-colors block text-center cursor-pointer"
                   >
                     Cancel & Keep Current Number
                   </button>

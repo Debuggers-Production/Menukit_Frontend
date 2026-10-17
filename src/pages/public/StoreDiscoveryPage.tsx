@@ -4,7 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useLocation } from 'react-router';
 import {
   QrCode, MapPin, Star, ArrowRight,
-  Navigation, Tag, X, Search, Store, Gift, Phone, Clock, ExternalLink, Flame, Crown, Sparkles, Truck
+  Navigation, Tag, X, Search, Store, Gift, Phone, Clock, ExternalLink, Flame, Crown, Sparkles, Truck,
+  Percent, Banknote, Layers, TrendingDown, UtensilsCrossed
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import {
@@ -1384,7 +1385,25 @@ export function StoreDiscoveryPage() {
                         <h3 className="font-extrabold text-slate-800 text-sm sm:text-base leading-tight truncate m-0">
                           {disc.title}
                         </h3>
-                        <Sparkles size={16} className="shrink-0 animate-pulse text-orange-500" />
+                        {(() => {
+                          if (disc.is_price_drop) {
+                            return <TrendingDown size={16} className="shrink-0 stroke-[2.5] text-emerald-600" title="Direct Price Drop" />;
+                          }
+                          switch (disc.discount_type) {
+                            case 'percentage':
+                              return <Percent size={16} className="shrink-0 stroke-[2.5] text-orange-500" title="Percentage Discount" />;
+                            case 'flat':
+                              return <Banknote size={16} className="shrink-0 stroke-[2.5] text-orange-500" title="Flat Discount" />;
+                            case 'bogo':
+                              return <Layers size={16} className="shrink-0 stroke-[2.5] text-orange-500" title="Buy X Get Y (BOGO)" />;
+                            case 'combo':
+                              return <UtensilsCrossed size={16} className="shrink-0 stroke-[2.5] text-orange-500" title="Combo Deal" />;
+                            case 'free_item':
+                              return <Gift size={16} className="shrink-0 stroke-[2.5] text-rose-500" title="Free Item" />;
+                            default:
+                              return <Tag size={16} className="shrink-0 stroke-[2.5] text-orange-500" title="Offer" />;
+                          }
+                        })()}
                       </div>
 
                       {disc.description && (

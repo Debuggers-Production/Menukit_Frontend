@@ -54,6 +54,7 @@ const SubscriptionMarketplacePage = lazyWithPreload(() => import('@/pages/subscr
 const NotificationsPage = lazyWithPreload(() => import('@/pages/notifications/NotificationsPage').then(m => ({ default: m.NotificationsPage })));
 const OrdersPage = lazyWithPreload(() => import('@/pages/orders/OrdersPage').then(m => ({ default: m.OrdersPage })));
 const ChalkboardPage = lazyWithPreload(() => import('@/pages/chalkboard/ChalkboardPage').then(m => ({ default: m.ChalkboardPage })));
+const SchemesPage = lazyWithPreload(() => import('@/pages/schemes/SchemesPage'));
 const ShopSelectionPage = lazyWithPreload(() => import('@/pages/auth/ShopSelectionPage').then(m => ({ default: m.ShopSelectionPage })));
 
 // Register Dashboard Preloaders
@@ -61,6 +62,7 @@ registerPreload('/dashboard', DashboardPage.preload);
 registerPreload('/shop-setup', ShopSetupPage.preload);
 registerPreload('/categories', CategoriesPage.preload);
 registerPreload('/menu-items', MenuItemsPage.preload);
+registerPreload('/schemes', SchemesPage.preload);
 registerPreload('/bulk-upload', BulkUploadPage.preload);
 registerPreload('/json-bulk-upload', JsonBulkUploadPage.preload);
 registerPreload('/customize', CustomizeThemePage.preload);
@@ -91,6 +93,7 @@ const PrivacyPolicyPage = lazy(() => import('@/pages/public/PrivacyPolicyPage').
 const StoreDiscoveryPage = lazy(() => import('@/pages/public/StoreDiscoveryPage').then(m => ({ default: m.StoreDiscoveryPage })));
 const BrandLandingPage = lazy(() => import('@/pages/public/BrandLandingPage').then(m => ({ default: m.BrandLandingPage })));
 const PublicContestPage = lazy(() => import('./pages/public/PublicContestPage').then(m => ({ default: m.PublicContestPage })));
+const PublicSchemesPage = lazy(() => import('./pages/public/PublicSchemesPage').then(m => ({ default: m.PublicSchemesPage })));
 const CustomerProfilePage = lazy(() => import('./pages/public/CustomerProfilePage').then(m => ({ default: m.CustomerProfilePage })));
 
 
@@ -139,6 +142,7 @@ function App() {
           <Route path="/shop-setup" element={<ShopSetupPage />} />
           <Route path="/categories" element={<PermissionGuard module="menu_categories"><CategoriesPage /></PermissionGuard>} />
           <Route path="/menu-items" element={<PermissionGuard module="menu_items"><MenuItemsPage /></PermissionGuard>} />
+          <Route path="/schemes" element={<PermissionGuard module="schemes"><SchemesPage /></PermissionGuard>} />
           <Route path="/bulk-upload" element={<PermissionGuard module="menu_items"><BulkUploadPage /></PermissionGuard>} />
           <Route path="/json-bulk-upload" element={<PermissionGuard module="menu_items"><JsonBulkUploadPage /></PermissionGuard>} />
           <Route path="/customize" element={<PermissionGuard module="settings"><CustomizeThemePage /></PermissionGuard>} />
@@ -171,6 +175,8 @@ function App() {
       <Route path="/shop/:id/cart" element={<PublicCartPage />} />
       <Route path="/shop/:id/contest" element={<PublicContestPage />} />
       <Route path="/shop/:id/contest/:contestId" element={<PublicContestPage />} />
+      <Route path="/shop/:id/schemes" element={<PublicSchemesPage />} />
+      <Route path="/shop/:id/fund" element={<PublicSchemesPage />} />
 
       <Route path="/shop/:id/orders" element={<PublicOrdersPage />} />
       <Route path="/shop/:id/order/:orderId" element={<OrderStatusPage />} />

@@ -269,6 +269,93 @@ export const BUSINESS_CATEGORIES: BusinessCategoryConfig[] = [
     reviewCommentPlaceholder: 'What did you think of this product / cracker? (optional)',
     noReviewsText: 'Be the first to review this product!',
   },
+  {
+    id: 'bakeries_sweets',
+    label: 'Bakeries & Confectionery',
+    shortLabel: 'Bakery & Sweets',
+    description: 'Bakeries, cake shops, patisseries, sweet stalls, and confectioneries.',
+    badgeColor: 'bg-pink-100 text-pink-800 dark:bg-pink-950/60 dark:text-pink-300 border-pink-200 dark:border-pink-800',
+    isFood: true,
+    dietaryEnabled: true,
+    icePreferenceEnabled: false,
+    
+    catalogLabel: 'Bakery & Cake Menu',
+    itemLabel: 'Bakery Items',
+    itemSingular: 'Bakery Item / Cake',
+    itemPlaceholder: 'e.g. Black Forest Cake 1kg, Chocolate Truffle, Plum Cake',
+    categorySelectPlaceholder: 'Select category (e.g. Birthday Cakes, Pastries, Breads, Cookies)',
+    descriptionPlaceholder: 'Flavors, egg/eggless, weight, ingredients, shelf life...',
+    featuredBadgeLabel: "Baker's Special",
+    addonLabel: 'Customizations & Extras (Optional)',
+    addonDesc: 'Optional extras (e.g. Birthday Candle +20, Knife & Plates +15, Gift Box +50)',
+    addonNamePlaceholder: 'e.g. Birthday Candle, Gift Box, Sparkle Candle',
+    
+    kotLabel: 'Bakery Production Slip (BOT)',
+    kotShort: 'BOT',
+    kotSlipTitle: 'BAKERY ORDER TICKET (BOT)',
+    kotTabLabel: 'Bakery BOT',
+    productionStationLabel: 'Baking & Production Printer Stations',
+    productionPrinterDesc: 'Route cake and pastry orders to baking counters (e.g., Cake Decorating Desk, Oven Section).',
+    productionStationPlaceholder: 'e.g. Cake Decorating Desk',
+    routingDesc: 'All Categories (Universal - Prints All Bakery Items)',
+    settingsPrintersTabLabel: 'Baking & Printers',
+    testKotButtonLabel: 'Test Sample BOT',
+    addKotStationButtonLabel: 'Add Station',
+    noKotStationsTitle: 'No Printer Stations Configured',
+    autoPrintKotLabel: 'Auto-Print BOT on Acceptance',
+    autoPrintKotDesc: 'Print bakery production tickets automatically when orders are accepted',
+
+    billingTabLabel: 'Cashier Billing',
+    billingHeaderTitle: 'Customer Bill & Receipt Printers',
+    billingHeaderDesc: 'Configure thermal printers for customer tax bills, invoices, and multiple billing counters.',
+    billingStationBadge: 'Cashier Counter',
+    billingStationLabel: 'Cashier Billing Printers & Counters',
+    billingPrinterDesc: 'Configure one or multiple bill printers (e.g., Main Bakery Counter, Sweet Counter).',
+    billingStationPlaceholder: 'e.g., Main Bakery Counter, Front Desk',
+    testBillButtonLabel: 'Test Print Bill',
+    addBillingPrinterButtonLabel: 'Add Cashier Printer',
+    noBillingPrintersTitle: 'No Cashier Printers Added',
+    autoPrintBillLabel: 'Auto-Print on Completion',
+    autoPrintBillDesc: 'Print bill automatically when order is paid or completed',
+    
+    dineInChannelLabel: 'Enable In-Store / Cafe Seating',
+    dineInChannelDesc: 'Allow customers to order cakes and bakes directly from store tables.',
+    takeawayChannelLabel: 'Enable Pre-Order & Pickup',
+    takeawayChannelDesc: 'Allow customers to pre-order custom cakes & bakes for pickup at the store.',
+    deliveryChannelLabel: 'Enable Cake / Home Delivery',
+    deliveryChannelDesc: 'Allow customers to place orders for safe doorstep cake delivery.',
+    
+    dineInOnlinePaymentTitle: 'In-Store Online Payment',
+    dineInOnlinePaymentDesc: 'Allow table and counter customers to pay online directly from the QR menu.',
+    takeawayOnlinePaymentTitle: 'Pre-Order Online Payment',
+    takeawayOnlinePaymentDesc: 'Allow customers to pay online before collecting their cakes and sweets.',
+    deliveryOnlinePaymentTitle: 'Delivery Online Payment',
+    deliveryOnlinePaymentDesc: 'Allow cake delivery customers to pay online through the gateway.',
+    
+    orderTypeDineInTitle: 'In-Store',
+    orderTypeDineInSubtitle: 'Order and enjoy at the bakery cafe',
+    orderTypeTakeawayTitle: 'Store Pickup',
+    orderTypeTakeawaySubtitle: 'Pre-order cakes & pick up at the shop',
+    orderTypeDeliveryTitle: 'Doorstep Delivery',
+    orderTypeDeliverySubtitle: 'Carefully delivered to your doorstep',
+    tableOrStallLabel: 'Table / Token Number',
+    tableOrStallPlaceholder: 'e.g. Table 3 or Token #',
+    searchPlaceholder: 'Search cakes, pastries, breads, sweets...',
+    welcomePrompt: 'Browse our fresh bakery catalog and order cakes or treats.',
+    
+    prepStatusLabel: 'Baking / Preparing Order',
+    prepStatusTitle: 'Preparing Your Order',
+    prepStatusDesc: 'Our bakers are baking and packaging your order freshly.',
+    readyStatusLabel: 'Ready for Pickup / Dispatch',
+    orderCompletedDesc: 'Your fresh bakes are ready! Enjoy every bite!',
+
+    aboutItemLabel: 'About this bake / cake',
+    reviewItemLabel: 'item',
+    reviewHeaderPrompt: 'How were the treats?',
+    reviewSubtextPrompt: 'Share your sweet experience to help others',
+    reviewCommentPlaceholder: 'What did you think of the taste and freshness? (optional)',
+    noReviewsText: 'Be the first to review this treat!',
+  },
 ];
 
 export const DEFAULT_BUSINESS_CATEGORY = BUSINESS_CATEGORIES[0];
@@ -287,6 +374,19 @@ export function getBusinessCategory(categoryValue?: string | null): BusinessCate
   ) {
     return BUSINESS_CATEGORIES[1];
   }
+
+  // Bakery check
+  if (
+    val === 'bakeries_sweets' ||
+    val === 'bakeries_confectionery' ||
+    val.includes('bakery') ||
+    val.includes('bakeries') ||
+    val.includes('sweet') ||
+    val.includes('confectionery') ||
+    val.includes('cake')
+  ) {
+    return BUSINESS_CATEGORIES[2];
+  }
   
   // Default to Restaurants / Cafes / Hotels
   return BUSINESS_CATEGORIES[0];
@@ -297,5 +397,20 @@ export function isFoodBusiness(categoryValue?: string | null): boolean {
 }
 
 export function isFireworksBusiness(categoryValue?: string | null): boolean {
-  return !isFoodBusiness(categoryValue);
+  if (!categoryValue) return false;
+  const val = categoryValue.toLowerCase().trim();
+  return val === 'fireworks_crackers' || val.includes('firework') || val.includes('cracker') || val.includes('pyro');
+}
+
+export function isBakeryBusiness(categoryValue?: string | null): boolean {
+  if (!categoryValue) return false;
+  const val = categoryValue.toLowerCase().trim();
+  return val === 'bakeries_sweets' || val === 'bakeries_confectionery' || val.includes('bakery') || val.includes('bakeries') || val.includes('sweet') || val.includes('confectionery') || val.includes('cake');
+}
+
+/**
+ * Returns true if the shop is a Bakery or Crackers shop eligible for Savings Schemes (formerly called Pandu).
+ */
+export function isSchemeEnabledShop(categoryValue?: string | null): boolean {
+  return isFireworksBusiness(categoryValue) || isBakeryBusiness(categoryValue);
 }

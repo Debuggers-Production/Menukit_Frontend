@@ -370,6 +370,19 @@ export function CustomerProfilePage() {
                     </div>
 
                     {(() => {
+                      if (r.is_price_drop) {
+                        return (
+                          <div className="flex items-center justify-between pt-2 border-t border-current/10 text-xs">
+                            <div>
+                              <span className="opacity-70 text-[10px] uppercase font-bold block">Offer Type</span>
+                              <span className="font-extrabold text-emerald-700 dark:text-emerald-400">Direct Price Drop</span>
+                            </div>
+                            <span className="px-2.5 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-[11px] font-bold text-emerald-800 dark:text-emerald-300">
+                              Auto-Applied to Menu
+                            </span>
+                          </div>
+                        );
+                      }
                       const codeToDisplay = r.code || getUniqueCustomerDiscountCode(r);
                       const isRedeemed = r.status === 'REDEEMED';
                       return codeToDisplay ? (
