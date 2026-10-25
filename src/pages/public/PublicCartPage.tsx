@@ -1,8 +1,9 @@
 import { LinkifiedText } from '../../components/LinkifiedText';
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { ShoppingBag, Plus, Minus, Info, ChevronLeft, ChevronRight, CheckCircle, XCircle, Key, MapPin, Navigation, Map, Armchair, Gift, Sparkles, Percent, Banknote, Truck, Tag, Clock, AlertTriangle, UtensilsCrossed, Gamepad2, History, Trophy, ChefHat, ShieldCheck, RotateCcw, Calendar, Copy, Crown, Lock, CheckCircle2, TrendingDown, Layers } from 'lucide-react';
+import { ShoppingBag, Plus, Minus, Info, ChevronLeft, ChevronRight, ChevronDown, CheckCircle, XCircle, Key, MapPin, Navigation, Map, Armchair, Gift, Sparkles, Percent, Banknote, Truck, Tag, Clock, AlertTriangle, UtensilsCrossed, Gamepad2, History, Trophy, ChefHat, ShieldCheck, RotateCcw, Calendar, Copy, Crown, Lock, CheckCircle2, TrendingDown, Layers } from 'lucide-react';
 import { useCartStore, useShopCart } from '@/store/cartStore';
+import { OrderTypeModal } from '@/components/public/OrderTypeModal';
 import { api } from '@/services/api';
 import { Shop, Discount } from '@/types';
 import { getBusinessCategory } from '@/config/businessCategories';
@@ -108,6 +109,7 @@ export function PublicCartPage() {
 
   // Ordering & Checkout state
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [isOrderTypeModalOpen, setIsOrderTypeModalOpen] = useState(false);
   const [checkoutStep, setCheckoutStep] = useState<1 | 2>(1);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -241,36 +243,93 @@ export function PublicCartPage() {
       }
     });
 
-    if (disc.min_order_value && applicableSubtotal < Number(disc.min_order_value)) return 0;
+    const minSpend = disc.min_order_value ? Number(disc.min_order_value) : (disc.discount_type === 'free_item' && disc.discount_value ? Number(disc.discount_value) : 0);
+    if (minSpend > 0 && applicableSubtotal < minSpend) return 0;
 
     let savings = 0;
-    const v = Number(disc.discount_value);
+    const v = Number(disc.discount_value || 0);
     if (disc.discount_type === 'percentage') {
       savings = applicableSubtotal * (v / 100);
+      if (disc.max_discount_amount && Number(disc.max_discount_amount) > 0) {
+        savings = Math.min(savings, Number(disc.max_discount_amount));
+      }
     } else if (disc.discount_type === 'flat' || disc.discount_type === 'fixed') {
       savings = Math.min(applicableSubtotal, v);
-    }
-
-    if (disc.max_discount_amount && Number(disc.max_discount_amount) > 0) {
-      savings = Math.min(savings, Number(disc.max_discount_amount));
+    } else if (disc.discount_type === 'bogo') {
+      const qualifyingCount = items.reduce((acc, it) => checkItemMatches(it.menuItem, it.selectedVariantIdx) ? acc + it.quantity : acc, 0);
+      const reqBuy = disc.buy_quantity || 1;
+      if (qualifyingCount >= reqBuy) {
+        const freeQty = disc.get_quantity || 1;
+        const rewardMatches = items.filter(it => {
+          if (!disc.reward_target_ids || disc.reward_target_ids.length === 0) {
+            return checkItemMatches(it.menuItem, it.selectedVariantIdx);
+          }
+          if (disc.reward_target_ids.includes(it.menuItem.id)) return true;
+          if (disc.reward_target_ids.includes(it.menuItem.category_id)) return true;
+          return false;
+        });
+        if (rewardMatches.length > 0) {
+          const prices = rewardMatches.map(it => {
+            const p = Number((isDelivery && it.menuItem.online_price) ? it.menuItem.online_price : it.menuItem.price);
+            return p;
+          }).sort((a, b) => a - b);
+          savings = (prices[0] || 0) * freeQty;
+        }
+      }
+    } else if (disc.discount_type === 'combo') {
+      if (v > 0 && applicableSubtotal > v) {
+        savings = applicableSubtotal - v;
+      }
+    } else if (disc.discount_type === 'free_item') {
+      const rewardMatches = items.filter(it => {
+        if (disc.reward_target_ids && disc.reward_target_ids.length > 0) {
+          if (disc.reward_target_ids.includes(it.menuItem.id)) return true;
+          if (disc.reward_target_ids.includes(it.menuItem.category_id)) return true;
+        }
+        return false;
+      });
+      if (rewardMatches.length > 0) {
+        const freeQty = disc.get_quantity || 1;
+        const prices = rewardMatches.map(it => {
+          const p = Number((isDelivery && it.menuItem.online_price) ? it.menuItem.online_price : it.menuItem.price);
+          return p;
+        }).sort((a, b) => a - b);
+        savings = (prices[0] || 0) * freeQty;
+      }
     }
     return savings;
   }, [items, orderType]);
 
   const isDiscountApplicable = useCallback((disc: Discount) => {
     if (disc.is_already_used) return false;
-    return calculateDiscountSavings(disc) > 0 || (disc.applies_to === 'all' && items.length > 0);
-  }, [calculateDiscountSavings, items.length]);
-
-  // Auto-clear manual discount if it was already used or is no longer available
-  useEffect(() => {
-    if (manualDiscountId && manualDiscountId !== 'none' && availableDiscounts.length > 0) {
-      const activeDisc = availableDiscounts.find(d => d.id === manualDiscountId);
-      if (!activeDisc || activeDisc.is_already_used || activeDisc.is_active === false) {
-        setManualDiscount('none');
+    const minSpend = disc.min_order_value ? Number(disc.min_order_value) : (disc.discount_type === 'free_item' && disc.discount_value ? Number(disc.discount_value) : 0);
+    let applicableSubtotal = 0;
+    const checkItemMatches = (menuItem: any, selectedVariantIdx?: number) => {
+      if (disc.applies_to === 'all') return true;
+      if (disc.applies_to === 'category' && disc.target_ids?.includes(menuItem.category_id)) return true;
+      if (disc.applies_to === 'items' && disc.target_ids) {
+        if (disc.target_ids.includes(menuItem.id)) return true;
+        if (menuItem.variants && menuItem.variants.length > 0 && selectedVariantIdx !== undefined && selectedVariantIdx >= 0) {
+          const vName = menuItem.variants[selectedVariantIdx]?.name?.trim()?.toLowerCase();
+          if (vName) {
+            return disc.target_ids.some(tid => tid.startsWith(`${menuItem.id}::`) && tid.split('::')[1]?.trim()?.toLowerCase() === vName);
+          }
+        }
       }
-    }
-  }, [availableDiscounts, manualDiscountId, setManualDiscount]);
+      return false;
+    };
+    items.forEach(it => {
+      if (checkItemMatches(it.menuItem, it.selectedVariantIdx)) {
+        const p = Number((orderType === 'delivery' && it.menuItem.online_price) ? it.menuItem.online_price : it.menuItem.price);
+        applicableSubtotal += p * it.quantity;
+      }
+    });
+    if (minSpend > 0 && applicableSubtotal < minSpend) return false;
+    if (disc.discount_type === 'free_item') return applicableSubtotal >= minSpend;
+    return calculateDiscountSavings(disc) > 0 || (disc.applies_to === 'all' && items.length > 0);
+  }, [calculateDiscountSavings, items, orderType]);
+
+
 
   const handleVerifyDiscountCode = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -636,6 +695,7 @@ export function PublicCartPage() {
         order_type: orderType,
         table_number: (orderType === 'dine_in' && isTableEnabled) ? tableNumber : null,
         delivery_address: orderType === 'delivery' ? finalAddress : null,
+        delivery_fee: orderType === 'delivery' ? deliveryFee : 0,
         payment_method: apiPaymentMethod,
         total_amount: finalTotal,
         applied_discount_ids: appliedDiscountsList.map(d => d.id),
@@ -886,6 +946,10 @@ export function PublicCartPage() {
       // Check for active Price Drop discounts
       const priceDropDisc = availableDiscounts?.find(d => {
         if (!d.is_price_drop || d.is_active === false) return false;
+        if ((d.min_order_value && Number(d.min_order_value) > 0) || (d.max_order_value && Number(d.max_order_value) > 0)) return false;
+        if (d.visibility_type === 'members_only_hidden' && memberStatus !== 'verified-member') return false;
+        if (d.visibility_type === 'members_only_visible' && memberStatus !== 'verified-member') return false;
+        if (d.visibility_type === 'unlock_required' && !memberStatus) return false;
         if (!['percentage', 'flat', 'fixed'].includes(d.discount_type)) return false;
         if (d.applies_to === 'all') return true;
         if (d.applies_to === 'category' && d.target_ids?.includes(menuItem.category_id)) return true;
@@ -933,11 +997,15 @@ export function PublicCartPage() {
       const disc = availableDiscounts.find(d => d.id === manualDiscountId);
       if (disc && disc.is_active !== false && !disc.is_already_used) {
         const isMemberOk = !((disc.visibility_type === 'members_only_hidden' || disc.visibility_type === 'members_only_visible') && memberStatus !== 'verified-member');
-        const isUnlockOk = !(disc.visibility_type === 'unlock_required' && memberStatus === null);
-        const isTypeOk = ['percentage', 'flat', 'fixed'].includes(disc.discount_type);
+        const isUnlockOk = !(disc.visibility_type === 'unlock_required' && !memberStatus);
+        const isTypeOk = ['percentage', 'flat', 'fixed', 'bogo', 'combo', 'free_item'].includes(disc.discount_type);
         if (isMemberOk && isUnlockOk && isTypeOk) {
           const savings = calculateDiscountSavings(disc);
-          if (savings > 0) {
+          const minSpend = disc.min_order_value 
+            ? Number(disc.min_order_value) 
+            : (disc.discount_type === 'free_item' && disc.discount_value ? Number(disc.discount_value) : 0);
+          const maxSpend = disc.max_order_value && Number(disc.max_order_value) > 0 ? Number(disc.max_order_value) : Infinity;
+          if (subtotal >= minSpend && subtotal <= maxSpend && (savings > 0 || disc.discount_type === 'free_item')) {
             appliedDiscountsList.push({
               id: disc.id,
               title: disc.title,
@@ -995,7 +1063,7 @@ export function PublicCartPage() {
     else if (orderType === 'delivery') isChannelOnline = (shop?.settings as any)?.online_payments_delivery_enabled !== false;
 
     const isOnlineFeeApplicable = paymentMethod === 'online' && isMasterOnline && isChannelOnline;
-    const pricing = calculateOrderPricing(finalTotal, isOnlineFeeApplicable);
+    const pricing = calculateOrderPricing(finalTotal, isOnlineFeeApplicable, foodTotalWithTax);
     const platformFee = pricing.platformFee;
     const pgFee = pricing.gatewayFee;
     const gstOnFee = pricing.gatewayGst;
@@ -1025,6 +1093,72 @@ export function PublicCartPage() {
       isOnlineAllowed: isMasterOnline && isChannelOnline,
     };
   }, [items, availableDiscounts, manualDiscountId, memberStatus, deliveryFee, paymentMethod, orderType, shop?.settings]);
+
+  // Automatically apply the best qualifying discount when cart meets requirements
+  useEffect(() => {
+    if (isLoading || availableDiscounts.length === 0 || items.length === 0) return;
+
+    // If customer explicitly clicked "Remove", respect that decision
+    if (manualDiscountId === 'none') return;
+
+    // Check if the currently applied discount is still valid and meets min_order_value
+    if (manualDiscountId) {
+      const activeDisc = availableDiscounts.find(d => d.id === manualDiscountId);
+      if (activeDisc && activeDisc.is_active !== false && !activeDisc.is_already_used) {
+        const minSpend = activeDisc.min_order_value 
+          ? Number(activeDisc.min_order_value) 
+          : (activeDisc.discount_type === 'free_item' && activeDisc.discount_value ? Number(activeDisc.discount_value) : 0);
+        const maxSpend = activeDisc.max_order_value && Number(activeDisc.max_order_value) > 0 ? Number(activeDisc.max_order_value) : Infinity;
+        const savings = calculateDiscountSavings(activeDisc);
+
+        if (subtotal >= minSpend && subtotal <= maxSpend && (savings > 0 || activeDisc.discount_type === 'free_item')) {
+          // Current discount is still valid and requirements are met
+          return;
+        }
+      }
+    }
+
+    // Current discount is null or no longer valid — evaluate all qualifying discounts
+    const qualifyingDiscounts = availableDiscounts.filter(disc => {
+      if (disc.is_active === false || disc.is_already_used || disc.is_price_drop) return false;
+      if (disc.visibility_type === 'hidden') return false;
+      if ((disc.visibility_type === 'members_only_hidden' || disc.visibility_type === 'members_only_visible') && memberStatus !== 'verified-member') return false;
+      if (disc.visibility_type === 'unlock_required' && !memberStatus) return false;
+      if (!['percentage', 'flat', 'fixed', 'bogo', 'combo', 'free_item'].includes(disc.discount_type)) return false;
+
+      const minSpend = disc.min_order_value 
+        ? Number(disc.min_order_value) 
+        : (disc.discount_type === 'free_item' && disc.discount_value ? Number(disc.discount_value) : 0);
+      const maxSpend = disc.max_order_value && Number(disc.max_order_value) > 0 ? Number(disc.max_order_value) : Infinity;
+      if (minSpend > 0 && subtotal < minSpend) return false;
+      if (maxSpend < Infinity && subtotal > maxSpend) return false;
+
+      if (!isDiscountApplicable(disc)) return false;
+
+      const savings = calculateDiscountSavings(disc);
+      return savings > 0 || disc.discount_type === 'free_item';
+    });
+
+    if (qualifyingDiscounts.length > 0) {
+      // Pick the discount with the maximum savings (break ties by higher discount value)
+      const best = qualifyingDiscounts.reduce((prev, curr) => {
+        const prevSavings = calculateDiscountSavings(prev);
+        const currSavings = calculateDiscountSavings(curr);
+        if (currSavings > prevSavings) return curr;
+        if (currSavings === prevSavings) {
+          return Number(curr.discount_value || 0) > Number(prev.discount_value || 0) ? curr : prev;
+        }
+        return prev;
+      }, qualifyingDiscounts[0]);
+
+      if (best && best.id !== manualDiscountId) {
+        setManualDiscount(best.id);
+      }
+    } else if (manualDiscountId && manualDiscountId !== 'none') {
+      // No discount qualifies anymore (e.g. subtotal fell below min_order_value)
+      setManualDiscount(null as any);
+    }
+  }, [availableDiscounts, items, subtotal, manualDiscountId, memberStatus, isLoading, calculateDiscountSavings, isDiscountApplicable, setManualDiscount]);
 
   const [showAllItemsModal, setShowAllItemsModal] = useState(false);
   const [showAllOffersModal, setShowAllOffersModal] = useState(false);
@@ -1122,6 +1256,9 @@ export function PublicCartPage() {
 
   const renderOffer = (disc: Discount) => {
     const isUsed = disc.is_already_used === true;
+    const minSpend = disc.min_order_value 
+      ? Number(disc.min_order_value) 
+      : (disc.discount_type === 'free_item' && disc.discount_value ? Number(disc.discount_value) : 0);
     return (
       <button
         key={disc.id}
@@ -1142,8 +1279,18 @@ export function PublicCartPage() {
             <span className="font-black text-slate-400">%</span>
           </div>
           <div className="text-left">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="font-bold text-slate-800 leading-tight">{disc.title}</span>
+              {minSpend > 0 && (
+                <span className="text-[10px] font-extrabold text-amber-800 bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300 px-2 py-0.5 rounded-full border border-amber-300 dark:border-amber-800">
+                  Min. {currencySymbol}{minSpend}
+                </span>
+              )}
+              {disc.max_discount_amount && Number(disc.max_discount_amount) > 0 && (
+                <span className="text-[10px] font-extrabold text-blue-800 bg-blue-100 dark:bg-blue-950/40 dark:text-blue-300 px-2 py-0.5 rounded-full border border-blue-300 dark:border-blue-800">
+                  Max Off {currencySymbol}{disc.max_discount_amount}
+                </span>
+              )}
               {isUsed && (
                 <span className="text-[10px] font-extrabold text-amber-700 bg-amber-100 dark:bg-amber-950/40 dark:text-amber-400 px-2 py-0.5 rounded-full border border-amber-300 dark:border-amber-800">
                   Already Used
@@ -1173,7 +1320,7 @@ export function PublicCartPage() {
   const remainingItemsCount = items.length - 3;
 
   const applicableDiscounts = availableDiscounts.filter(d => {
-    if (!['percentage', 'flat'].includes(d.discount_type)) return false;
+    if (!['percentage', 'flat', 'bogo', 'combo', 'free_item'].includes(d.discount_type)) return false;
     if (d.visibility_type === ('hidden' as any)) return false;
     if ((d.visibility_type === 'members_only_hidden' || d.visibility_type === 'members_only_visible') && memberStatus !== 'verified-member') return false;
     return true;
@@ -1282,6 +1429,18 @@ export function PublicCartPage() {
             <p className="text-xs font-medium text-slate-500">{items.length} items</p>
           </div>
         </div>
+
+        {items.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setIsOrderTypeModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all active:scale-95 cursor-pointer shadow-2xs border border-slate-200/60"
+            title="Change fulfillment mode"
+          >
+            <span>{orderType === 'delivery' ? '🚚 Delivery' : orderType === 'takeaway' ? '🛍️ Takeaway' : '🍽️ Dine-In'}</span>
+            <ChevronDown size={13} className="text-slate-400" />
+          </button>
+        )}
       </div>
 
       {/* Main Content */}
@@ -1609,6 +1768,12 @@ export function PublicCartPage() {
                           <p className="text-[11px] text-emerald-700 font-medium">
                             {item.discount.discount_type === 'percentage'
                               ? `${Number(item.discount.discount_value)}% discount (-${currencySymbol}${item.savings.toFixed(2)})`
+                              : item.discount.discount_type === 'free_item'
+                              ? `Complimentary Free Item${item.savings > 0 ? ` (-${currencySymbol}${item.savings.toFixed(2)})` : ' Unlocked'}`
+                              : item.discount.discount_type === 'bogo'
+                              ? `BOGO Deal (-${currencySymbol}${item.savings.toFixed(2)})`
+                              : item.discount.discount_type === 'combo'
+                              ? `Combo Deal (-${currencySymbol}${item.savings.toFixed(2)})`
                               : `${currencySymbol}${Number(item.discount.discount_value)} flat discount (-${currencySymbol}${item.savings.toFixed(2)})`}
                           </p>
                         </div>
@@ -1727,10 +1892,10 @@ export function PublicCartPage() {
                         )}
 
                         {isApplied ? (
-                          /* Popped Balloon Indicator - Sparkles icon */
+                          /* Popped Balloon Indicator - Applied icon */
                           <div className="flex flex-col items-center">
                             <div className="w-10 h-10 rounded-full bg-rose-50 border border-rose-200 flex items-center justify-center shadow-inner animate-pulse text-rose-500">
-                              <Sparkles size={18} />
+                              <CheckCircle2 size={18} />
                             </div>
                             <span className="text-[9px] font-black text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200 mt-1.5 uppercase">Applied</span>
                           </div>
@@ -1761,8 +1926,10 @@ export function PublicCartPage() {
                             <div className={`w-0.5 h-6 ${color.string} opacity-60`} />
                             
                             {/* Coupon Label */}
-                            <span className="text-[9px] font-black text-slate-500 mt-1 uppercase tracking-wider max-w-[65px] truncate text-center">
-                              Offer {idx + 1}
+                            <span className="text-[9px] font-black text-slate-600 dark:text-slate-300 mt-1 uppercase tracking-wider max-w-[75px] truncate text-center">
+                              {disc.min_order_value && Number(disc.min_order_value) > 0 
+                                ? `Min ${currencySymbol}${disc.min_order_value}` 
+                                : (disc.title || `Offer ${idx + 1}`)}
                             </span>
                           </div>
                         )}
@@ -1839,7 +2006,7 @@ export function PublicCartPage() {
                     {appliedDiscountsList && appliedDiscountsList.length > 0 && appliedDiscountsList.map((d) => (
                       <div key={d.id} className="flex justify-between text-xs font-bold text-emerald-600">
                         <span className="flex items-center gap-1">
-                          <Sparkles size={13} className="text-emerald-500 shrink-0" />
+                          <Tag size={13} className="text-emerald-500 shrink-0" />
                           <span>{d.title}</span>
                         </span>
                         <span>-{currencySymbol}{d.savings.toFixed(2)}</span>
@@ -2076,10 +2243,14 @@ export function PublicCartPage() {
             <div className={`flex-1 h-1.5 rounded-full transition-all ${checkoutStep === 2 ? 'bg-primary' : 'bg-slate-200 dark:bg-slate-800'}`} style={{ backgroundColor: checkoutStep === 2 ? primaryColor : undefined }} />
           </div>
 
-          {/* Fulfillment Mode Banner */}
-          <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200/60 dark:border-slate-800">
+          {/* Fulfillment Mode Banner - Changeable */}
+          <div 
+            onClick={() => setIsOrderTypeModalOpen(true)}
+            className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200/60 dark:border-slate-800 cursor-pointer hover:border-primary/40 hover:bg-slate-100/60 dark:hover:bg-slate-800/60 transition-all group shadow-2xs"
+            title="Click to change fulfillment mode"
+          >
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
+              <div className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-bold text-xs group-hover:scale-105 transition-transform">
                 {orderType === 'delivery' ? '🚚' : orderType === 'takeaway' ? '🛍️' : '🍽️'}
               </div>
               <div>
@@ -2089,9 +2260,22 @@ export function PublicCartPage() {
                 </p>
               </div>
             </div>
-            <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/20 uppercase tracking-wider">
-              {orderType === 'delivery' ? businessCategory.orderTypeDeliveryTitle : orderType === 'takeaway' ? businessCategory.orderTypeTakeawayTitle : businessCategory.orderTypeDineInTitle}
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/20 uppercase tracking-wider">
+                {orderType === 'delivery' ? businessCategory.orderTypeDeliveryTitle : orderType === 'takeaway' ? businessCategory.orderTypeTakeawayTitle : businessCategory.orderTypeDineInTitle}
+              </span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsOrderTypeModalOpen(true);
+                }}
+                className="text-xs font-bold text-primary flex items-center gap-0.5 hover:underline px-1.5 py-0.5 rounded-md hover:bg-primary/10 transition-colors cursor-pointer"
+              >
+                <span>Change</span>
+                <ChevronRight size={13} />
+              </button>
+            </div>
           </div>
 
           {/* STEP 1: Customer Contact & Delivery Info */}
@@ -2545,6 +2729,13 @@ export function PublicCartPage() {
           const isOfferUnlockRequired = disc.visibility_type === 'unlock_required' && !memberStatus;
           const isOfferMemberRequired = (disc.visibility_type === 'members_only_visible' || disc.visibility_type === 'members_only_hidden') && memberStatus !== 'verified-member';
 
+          const minSpendVal = disc.min_order_value 
+            ? Number(disc.min_order_value) 
+            : (disc.discount_type === 'free_item' && disc.discount_value ? Number(disc.discount_value) : 0);
+          const hasMinSpend = minSpendVal > 0;
+          const hasMaxCap = Boolean(disc.max_discount_amount && Number(disc.max_discount_amount) > 0);
+          const isMinSpendMet = !hasMinSpend || subtotal >= minSpendVal;
+
           const hasDates = Boolean(disc.start_date || disc.end_date);
           const hasDays = Boolean(disc.available_days && disc.available_days.length > 0);
           const hasTimings = Boolean(disc.available_time_presets && disc.available_time_presets.length > 0);
@@ -2580,14 +2771,26 @@ export function PublicCartPage() {
                 </div>
 
                 <h3 className="text-xl font-bold font-heading text-slate-900 dark:text-slate-100">{disc.title}</h3>
-                {disc.is_price_drop && (
-                  <div className="mt-2">
+                <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
+                  {disc.is_price_drop && (
                     <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700/60 shadow-2xs">
                       <TrendingDown size={14} className="stroke-[2.5]" />
                       Direct Price Drop
                     </span>
-                  </div>
-                )}
+                  )}
+                  {hasMinSpend && (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700/60 shadow-2xs">
+                      <ShoppingBag size={14} className="stroke-[2.5]" />
+                      Min. Order {currencySymbol}{minSpendVal}
+                    </span>
+                  )}
+                  {hasMaxCap && (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 border border-blue-300 dark:border-blue-700/60 shadow-2xs">
+                      <TrendingDown size={14} className="stroke-[2.5]" />
+                      Max Off {currencySymbol}{disc.max_discount_amount}
+                    </span>
+                  )}
+                </div>
                 {disc.description && (
                   <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-2 max-w-[320px] leading-relaxed">
                     <LinkifiedText text={disc.description} showIcon />
@@ -2596,12 +2799,28 @@ export function PublicCartPage() {
               </div>
 
               {/* Availability & Terms */}
-              {(hasDates || hasDays || hasTimings || hasAppliesTo) && (
+              {(hasDates || hasDays || hasTimings || hasAppliesTo || hasMinSpend || hasMaxCap) && (
                 <div className="pt-1">
                   <h4 className="text-xs font-bold text-slate-400 dark:text-slate-500 mb-2 uppercase tracking-wider flex items-center gap-2">
                     <Clock size={14} className="text-blue-500" /> Availability & Terms
                   </h4>
                   <div className="bg-slate-50 dark:bg-slate-850 rounded-2xl p-3.5 border border-slate-100 dark:border-slate-800 flex flex-col gap-2.5">
+                    {hasMinSpend && (
+                      <div className="flex items-start gap-2.5 text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">
+                        <ShoppingBag size={15} className="text-amber-500 shrink-0 mt-0.5" />
+                        <span className="leading-snug">
+                          Minimum order value of <strong className="font-bold text-slate-900 dark:text-slate-100">{currencySymbol}{minSpendVal}</strong> required
+                        </span>
+                      </div>
+                    )}
+                    {hasMaxCap && (
+                      <div className="flex items-start gap-2.5 text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">
+                        <TrendingDown size={15} className="text-blue-500 shrink-0 mt-0.5" />
+                        <span className="leading-snug">
+                          Maximum discount capped up to <strong className="font-bold text-slate-900 dark:text-slate-100">{currencySymbol}{disc.max_discount_amount}</strong>
+                        </span>
+                      </div>
+                    )}
                     {hasDates && (
                       <div className="flex items-start gap-2.5 text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">
                         <Calendar size={15} className="text-slate-400 shrink-0 mt-0.5" />
@@ -2643,7 +2862,45 @@ export function PublicCartPage() {
               )}
 
               {/* Status & Code Cards */}
-              {disc.is_price_drop ? (
+              {isOfferMemberRequired ? (
+                <div className="pt-1">
+                  <div className="bg-gradient-to-r from-amber-50 to-orange-50/70 dark:from-amber-950/30 dark:to-orange-950/20 border border-amber-200/90 dark:border-amber-800/50 rounded-2xl p-4 flex items-center gap-3.5 shadow-xs">
+                    <div className="w-11 h-11 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 shadow-xs border border-amber-500/20">
+                      <Crown className="w-6 h-6 text-amber-600 dark:text-amber-400" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-black uppercase tracking-wider text-amber-900 dark:text-amber-200">Member Exclusive</span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 dark:bg-amber-800 text-amber-900 dark:text-amber-100">Locked</span>
+                      </div>
+                      <p className="text-xs text-amber-800/85 dark:text-amber-300/80 mt-1 leading-snug">
+                        {disc.is_price_drop 
+                          ? 'This price drop discount is reserved exclusively for registered members.'
+                          : 'This discount code is reserved exclusively for registered members.'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : isOfferUnlockRequired ? (
+                <div className="pt-1">
+                  <div className="bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 flex items-center gap-3.5">
+                    <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/20">
+                      <Lock className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">Unlock Required</h4>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">Locked</span>
+                      </div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-snug">
+                        {disc.is_price_drop
+                          ? 'Verify your mobile number to unlock and apply this price drop discount to your cart.'
+                          : 'Verify your mobile number to unlock and view the discount code.'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : disc.is_price_drop ? (
                 <div className="pt-1">
                   <div className="relative overflow-hidden bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50/80 dark:from-emerald-950/40 dark:via-teal-950/30 dark:to-emerald-950/30 border-2 border-emerald-500/50 dark:border-emerald-600/50 rounded-2xl p-4 shadow-xs">
                     <div className="flex items-start gap-3.5 relative z-10">
@@ -2656,7 +2913,7 @@ export function PublicCartPage() {
                             Direct Price Drop
                           </span>
                           <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-emerald-600 text-white shadow-2xs">
-                            Always Applied
+                            {disc.visibility_type === 'everyone' ? 'Always Applied' : 'Unlocked & Applied'}
                           </span>
                         </div>
                         <p className="text-xs text-emerald-900/90 dark:text-emerald-300/90 mt-1.5 font-medium leading-relaxed">
@@ -2700,37 +2957,6 @@ export function PublicCartPage() {
                     </div>
                   </div>
                 </div>
-              ) : isOfferMemberRequired ? (
-                <div className="pt-1">
-                  <div className="bg-gradient-to-r from-amber-50 to-orange-50/70 dark:from-amber-950/30 dark:to-orange-950/20 border border-amber-200/90 dark:border-amber-800/50 rounded-2xl p-4 flex items-center gap-3.5 shadow-xs">
-                    <div className="w-11 h-11 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 shadow-xs border border-amber-500/20">
-                      <Crown className="w-6 h-6 text-amber-600 dark:text-amber-400" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-black uppercase tracking-wider text-amber-900 dark:text-amber-200">Member Exclusive</span>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 dark:bg-amber-800 text-amber-900 dark:text-amber-100">Locked</span>
-                      </div>
-                      <p className="text-xs text-amber-800/85 dark:text-amber-300/80 mt-1 leading-snug">
-                        This discount code is reserved exclusively for registered members.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ) : isOfferUnlockRequired ? (
-                <div className="pt-1">
-                  <div className="bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 flex items-center gap-3.5">
-                    <div className="w-10 h-10 rounded-xl bg-slate-200 dark:bg-slate-750 text-slate-600 dark:text-slate-300 flex items-center justify-center shrink-0">
-                      <Lock className="w-5 h-5 text-slate-600 dark:text-slate-300" />
-                    </div>
-                    <div className="min-w-0">
-                      <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">Unlock Required</h4>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                        Verify your mobile number to unlock and view the discount code.
-                      </p>
-                    </div>
-                  </div>
-                </div>
               ) : (
                 <div className="pt-1">
                   <div className="bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200/90 dark:border-amber-800/50 rounded-2xl p-3.5 flex items-center justify-between gap-3 shadow-xs">
@@ -2757,7 +2983,31 @@ export function PublicCartPage() {
 
               {/* Action Button */}
               <div className="pt-2">
-                {disc.is_price_drop ? (
+                {isOfferMemberRequired ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedBalloonDiscount(null);
+                      navigate(`/shop/${id}?member=true`);
+                    }}
+                    className="w-full py-3.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-black text-base shadow-lg shadow-amber-500/20 active:scale-[0.99] transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Crown size={18} />
+                    <span>Become a Member to Unlock</span>
+                  </button>
+                ) : isOfferUnlockRequired ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedBalloonDiscount(null);
+                      setShowVerifyPopup(true);
+                    }}
+                    className="w-full py-3.5 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-black text-base shadow-lg shadow-amber-600/20 active:scale-[0.99] transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Lock size={18} />
+                    <span>Verify Mobile to Unlock</span>
+                  </button>
+                ) : disc.is_price_drop ? (
                   <button
                     type="button"
                     onClick={() => setSelectedBalloonDiscount(null)}
@@ -2776,6 +3026,14 @@ export function PublicCartPage() {
                 ) : (
                   <button
                     onClick={() => {
+                      const minSpend = disc.min_order_value 
+                        ? Number(disc.min_order_value) 
+                        : (disc.discount_type === 'free_item' && disc.discount_value ? Number(disc.discount_value) : 0);
+                      if (!isApplied && minSpend > 0 && subtotal < minSpend) {
+                        toast.error(`Add ${currencySymbol}${(minSpend - subtotal).toFixed(0)} more to unlock this offer!`);
+                        triggerHaptic(HAPTIC_PATTERNS.error);
+                        return;
+                      }
                       if (!isApplied && !isDiscountApplicable(disc)) {
                         toast.error('This discount is not applicable to any items in your cart');
                         triggerHaptic(HAPTIC_PATTERNS.error);
@@ -2784,15 +3042,23 @@ export function PublicCartPage() {
                       setManualDiscount(isApplied ? 'none' : disc.id);
                       setSelectedBalloonDiscount(null);
                       if (!isApplied) {
-                        toast.success(`Discount applied successfully!`);
+                        triggerHaptic(HAPTIC_PATTERNS.successUnlock);
+                        confetti({ particleCount: 50, spread: 60, origin: { y: 0.8 } });
+                        toast.success(`Offer "${disc.title}" applied!`);
                       } else {
                         toast.success('Discount removed.');
                       }
                     }}
-                    className="w-full py-3.5 px-4 rounded-2xl text-white font-extrabold text-base shadow-lg transition-all hover:brightness-110 active:scale-[0.98] cursor-pointer"
-                    style={{ backgroundColor: primaryColor }}
+                    className={`w-full py-3.5 px-4 rounded-2xl text-white font-extrabold text-base shadow-lg transition-all active:scale-[0.98] cursor-pointer ${
+                      !isApplied && !isMinSpendMet ? 'opacity-90 hover:opacity-100' : 'hover:brightness-110'
+                    }`}
+                    style={{ backgroundColor: !isApplied && !isMinSpendMet ? '#f59e0b' : primaryColor }}
                   >
-                    {isApplied ? 'Remove Discount' : 'Apply Discount'}
+                    {isApplied 
+                      ? 'Remove Discount' 
+                      : !isMinSpendMet 
+                      ? `Add ${currencySymbol}${(minSpendVal - subtotal).toFixed(0)} More to Apply` 
+                      : 'Apply Discount'}
                   </button>
                 )}
               </div>
@@ -2926,6 +3192,23 @@ export function PublicCartPage() {
           100% { transform: translate(calc(-50% + var(--tx, 0px)), calc(-50% + var(--ty, 0px))) scale(0) rotate(var(--rot, 0deg)); opacity: 0; }
         }
       `}</style>
+
+      {/* Order Type Modal for changing fulfillment mode */}
+      <OrderTypeModal
+        isOpen={isOrderTypeModalOpen}
+        onClose={() => setIsOrderTypeModalOpen(false)}
+        selectedType={orderType}
+        onSelectType={(type) => {
+          setOrderType(type, true);
+          setIsOrderTypeModalOpen(false);
+        }}
+        availableTypes={{
+          dine_in: (shop?.settings as any)?.dinein_enabled !== false,
+          takeaway: (shop?.settings as any)?.takeaway_enabled !== false,
+          delivery: Boolean((shop?.settings as any)?.delivery_enabled)
+        }}
+        shop={shop}
+      />
     </div>
   );
 }

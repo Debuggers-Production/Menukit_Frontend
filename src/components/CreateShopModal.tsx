@@ -291,13 +291,13 @@ export function CreateShopModal({ isOpen, onClose, ownedShops = [], onSuccess }:
             <SearchableSelect
               options={BUSINESS_CATEGORIES.map((cat) => ({
                 id: cat.id,
-                name: cat.label,
-                subtext: cat.shortLabel ? `(${cat.shortLabel})` : undefined
+                name: `${cat.label} (${cat.shortLabel})`,
+                subtext: cat.description
               }))}
               value={category}
               onChange={(val) => setCategory(val)}
               placeholder="Select business category"
-              showSearch={false}
+              showSearch={true}
             />
           </div>
 

@@ -80,7 +80,11 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
             {...props}
           />
         </div>
-        {error && <p className="text-xs font-medium text-destructive mt-1">{error}</p>}
+        {error && (
+          <p className="text-xs font-medium text-destructive mt-1">
+            {typeof error === 'string' ? error : (error as any)?.msg || (error as any)?.message || JSON.stringify(error)}
+          </p>
+        )}
       </div>
     );
   }

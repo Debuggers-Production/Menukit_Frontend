@@ -56,12 +56,14 @@ import { LanguageSelectorModal } from '@/components/LanguageSelectorModal';
 import { useHeaderStore } from '@/store/useHeaderStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { NotificationBell } from '@/components/ui/NotificationBell';
+import { WsConnectionTracker } from '@/components/common/WsConnectionTracker';
 import { api } from '@/services/api';
 import logo from "@/assets/menukit-logo.svg";
 import { ShopSwitcherDropdown } from '@/components/ShopSwitcherDropdown';
 import { usePWAInstall } from '@/hooks/usePWAInstall';
 import { DesktopInstallModal } from '@/components/DesktopInstallModal';
 import { WhatsNewModal } from '@/components/WhatsNewModal';
+import { NotificationTopBanner } from '@/components/NotificationPermissionAlert';
 
 export function DashboardLayout() {
   const navigate = useNavigate();
@@ -177,6 +179,29 @@ export function DashboardLayout() {
   };
 
   useWebSocket();
+
+  // Auto-register / refresh FCM device token for shop notifications if permission already granted
+  useEffect(() => {
+    if (!shop?.id) return;
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      import('@/services/fcm').then(({ requestFCMToken }) => {
+        requestFCMToken(shop.id).catch((err) => {
+          console.debug('[FCM] Auto-sync token notice:', err);
+        });
+      });
+    }
+  }, [shop?.id]);
+
+  // Listen for FCM push notifications across all pages of the merchant portal
+  useEffect(() => {
+    let cleanup: (() => void) | undefined;
+    import('@/services/fcm').then(({ setupFCMForegroundListener }) => {
+      cleanup = setupFCMForegroundListener();
+    });
+    return () => {
+      if (cleanup) cleanup();
+    };
+  }, []);
 
   useEffect(() => {
     if (!mainRef.current) return;
@@ -820,6 +845,7 @@ export function DashboardLayout() {
                   <span>Install Desktop App</span>
                 </button>
               )}
+              <WsConnectionTracker />
               <NotificationBell />
               <button
                 onClick={() => setIsLanguageModalOpen(true)}
@@ -861,6 +887,7 @@ export function DashboardLayout() {
                 <Download size={15} />
               </button>
             )}
+            <WsConnectionTracker />
             <NotificationBell />
             <button
               onClick={() => setIsLanguageModalOpen(true)}
@@ -878,6 +905,9 @@ export function DashboardLayout() {
             </button>
           </div>
         </div>
+
+        {/* TOP NOTIFICATION PERMISSION ALERT BANNER */}
+        <NotificationTopBanner />
 
         {/* TOP APP BAR SUBSCRIPTION ALERT BANNER */}
         {subStatus && subStatus.is_expired && (

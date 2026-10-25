@@ -722,12 +722,13 @@ export function ShopSetupPage() {
    <SearchableSelect
      options={BUSINESS_CATEGORIES.map((cat) => ({
        id: cat.id,
-       name: `${cat.label} (${cat.shortLabel})`
+       name: `${cat.label} (${cat.shortLabel})`,
+       subtext: cat.description
      }))}
      value={formData.category || 'restaurants_cafes_hotels'}
      onChange={(val) => setFormData(prev => ({ ...prev, category: val }))}
      placeholder="Select business / shop category"
-     showSearch={false}
+     showSearch={true}
    />
    <p className="text-xs text-muted-foreground mt-1">
      Choose your category to automatically adapt food/product terminology, dietary options, public filters, and printer tickets.

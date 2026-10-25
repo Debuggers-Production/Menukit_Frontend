@@ -160,6 +160,7 @@ export const OrderTypeModal: React.FC<OrderTypeModalProps> = ({
       isOpen={isOpen}
       onClose={() => allowClose && onClose()}
       title=""
+      containerClassName="z-[160]"
     >
       <div className="text-center pb-2 pt-1">
         <div className="w-12 h-12 rounded-2xl bg-orange-500/10 text-orange-600 flex items-center justify-center mx-auto mb-3">

@@ -12,11 +12,12 @@ interface ModalProps {
   children: React.ReactNode;
   footer?: React.ReactNode;
   className?: string;
+  containerClassName?: string;
   closeOnBackdropClick?: boolean;
   hideCloseButton?: boolean;
 }
 
-export function Modal({ isOpen, onClose, title, description, children, footer, className, closeOnBackdropClick = false, hideCloseButton = false }: ModalProps) {
+export function Modal({ isOpen, onClose, title, description, children, footer, className, containerClassName, closeOnBackdropClick = false, hideCloseButton = false }: ModalProps) {
   const [mounted, setMounted] = React.useState(false);
 
   React.useEffect(() => {
@@ -37,7 +38,7 @@ export function Modal({ isOpen, onClose, title, description, children, footer, c
   const modalContent = (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4">
+        <div className={cn("fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4", containerClassName)}>
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}

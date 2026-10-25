@@ -63,11 +63,16 @@ export function useActiveOrders(shopId: string | undefined) {
     }
     try {
       const res = await api.get(`/public/shop/${shopId}/my-orders`, {
-        params: { token }
+        params: {
+          token,
+          limit: 10,
+          offset: 0,
+          status: 'active'
+        }
       });
       const orders = res.data || [];
       const active = orders.filter((o: any) => 
-        (o.order_status === 'pending' || o.order_status === 'accepted') &&
+        (o.order_status === 'pending' || o.order_status === 'accepted' || o.order_status === 'preparing' || o.order_status === 'cooking') &&
         o.order_status !== 'payment_pending' &&
         !(o.payment_method === 'online' && o.payment_status !== 'paid')
       );
@@ -176,8 +181,27 @@ export function useActiveOrders(shopId: string | undefined) {
 
     connect();
 
+    const handleWakeup = () => {
+      if (document.visibilityState === 'visible' || navigator.onLine) {
+        fetchActiveOrders();
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+          try { socket?.close(); } catch {}
+          connect();
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleWakeup);
+    window.addEventListener('pageshow', handleWakeup);
+    window.addEventListener('focus', handleWakeup);
+    window.addEventListener('online', handleWakeup);
+
     return () => {
       isDisposed = true;
+      document.removeEventListener('visibilitychange', handleWakeup);
+      window.removeEventListener('pageshow', handleWakeup);
+      window.removeEventListener('focus', handleWakeup);
+      window.removeEventListener('online', handleWakeup);
       if (pingInterval) clearInterval(pingInterval);
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
       if (socket) {

@@ -54,10 +54,12 @@ export function CartModal({ isOpen, onClose, shop, availableDiscounts, memberSta
         } else {
           const disc = availableDiscounts.find(d => {
             if (d.id === manualDiscountId) return false; // Skip if it's the manual one
+            if (!d.is_price_drop || d.is_active === false) return false;
+            if ((d.min_order_value && Number(d.min_order_value) > 0) || (d.max_order_value && Number(d.max_order_value) > 0)) return false;
             if (d.visibility_type === 'members_only_hidden' && memberStatus !== 'verified-member') return false;
             if (d.visibility_type === 'members_only_visible' && memberStatus !== 'verified-member') return false;
             if (d.visibility_type === 'unlock_required' && memberStatus === null) return false;
-            if (d.discount_type === 'bogo' || d.discount_type === 'combo') return false;
+            if (d.discount_type === 'bogo' || d.discount_type === 'combo' || d.discount_type === 'free_item') return false;
             if (d.applies_to === 'all') return true;
             if (d.applies_to === 'category' && d.target_ids?.includes(menuItem.category_id)) return true;
             if (d.applies_to === 'items' && d.target_ids?.includes(menuItem.id)) return true;
@@ -118,10 +120,15 @@ export function CartModal({ isOpen, onClose, shop, availableDiscounts, memberSta
           });
         }
         
-        if (applicableSubtotal > 0) {
+        const minSpend = manualDisc.min_order_value ? Number(manualDisc.min_order_value) : 0;
+        const maxSpend = manualDisc.max_order_value && Number(manualDisc.max_order_value) > 0 ? Number(manualDisc.max_order_value) : Infinity;
+        if (applicableSubtotal >= minSpend && applicableSubtotal <= maxSpend && applicableSubtotal > 0) {
           const v = Number(manualDisc.discount_value);
           if (manualDisc.discount_type === 'percentage') {
             manualDiscountAmount = applicableSubtotal * (v / 100);
+            if (manualDisc.max_discount_amount && Number(manualDisc.max_discount_amount) > 0) {
+              manualDiscountAmount = Math.min(manualDiscountAmount, Number(manualDisc.max_discount_amount));
+            }
           } else if (manualDisc.discount_type === 'flat') {
             manualDiscountAmount = Math.min(v, applicableSubtotal);
           }
@@ -143,17 +150,26 @@ export function CartModal({ isOpen, onClose, shop, availableDiscounts, memberSta
   // Auto-apply matching discount if not manually selected
   useEffect(() => {
     if (items.length === 0 || availableDiscounts.length === 0) return;
+    if (manualDiscountId === 'none') return;
     if (manualDiscountId) {
       const activeDisc = availableDiscounts.find(d => d.id === manualDiscountId);
-      if (activeDisc) return;
+      if (activeDisc && activeDisc.is_active !== false && !activeDisc.is_already_used) {
+        const minSpend = activeDisc.min_order_value ? Number(activeDisc.min_order_value) : 0;
+        if (subtotal >= minSpend) return;
+      }
     }
 
-    // Pick the best discount
-    const bestDisc = availableDiscounts.find(disc => {
+    // Pick the best discount that meets min_order_value
+    const qualifying = availableDiscounts.filter(disc => {
+      if (disc.is_active === false || disc.is_already_used) return false;
       if ((disc.visibility_type === 'members_only_hidden' || disc.visibility_type === 'members_only_visible') && memberStatus !== 'verified-member') return false;
       if (disc.visibility_type === 'unlock_required' && memberStatus === null) return false;
       if (disc.visibility_type === ('hidden' as any)) return false;
-      if (!['percentage', 'flat', 'fixed'].includes(disc.discount_type)) return false;
+      if (!['percentage', 'flat', 'fixed', 'bogo', 'combo', 'free_item'].includes(disc.discount_type)) return false;
+
+      const minSpend = disc.min_order_value ? Number(disc.min_order_value) : 0;
+      if (minSpend > 0 && subtotal < minSpend) return false;
+
       if (disc.applies_to === 'all') return true;
       return items.some(item => {
         if (disc.applies_to === 'category' && disc.target_ids?.includes(item.menuItem.category_id)) return true;
@@ -162,10 +178,12 @@ export function CartModal({ isOpen, onClose, shop, availableDiscounts, memberSta
       });
     });
 
-    if (bestDisc) {
-      setManualDiscount(bestDisc.id);
+    if (qualifying.length > 0) {
+      setManualDiscount(qualifying[0].id);
+    } else if (manualDiscountId && manualDiscountId !== 'none') {
+      setManualDiscount(null);
     }
-  }, [items, availableDiscounts, manualDiscountId, memberStatus, setManualDiscount]);
+  }, [items, availableDiscounts, manualDiscountId, memberStatus, subtotal, setManualDiscount]);
 
   if (!isOpen) return null;
 
@@ -311,7 +329,14 @@ export function CartModal({ isOpen, onClose, shop, availableDiscounts, memberSta
                           <span className="text-xs font-bold">%</span>
                         </div>
                         <div className="text-left">
-                          <div className="font-semibold text-sm dark:text-slate-200">{disc.title}</div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-sm dark:text-slate-200">{disc.title}</span>
+                            {disc.min_order_value && Number(disc.min_order_value) > 0 && (
+                              <span className="text-[10px] font-bold text-amber-700 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-300 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800">
+                                Min. {shop.settings?.currency || '₹'}{disc.min_order_value}
+                              </span>
+                            )}
+                          </div>
                           <div className="text-xs text-slate-500"><LinkifiedText text={disc.description || 'Tap to apply'} /></div>
                         </div>
                       </div>

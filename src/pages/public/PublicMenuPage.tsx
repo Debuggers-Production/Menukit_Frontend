@@ -1,8 +1,8 @@
 import { LinkifiedText } from '../../components/LinkifiedText';
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback, Fragment, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useParams, useSearchParams, useNavigate } from 'react-router';
-import { Search, Flame, MapPin, Phone, Info, UtensilsCrossed, X, Star, LayoutGrid, List as ListIcon, Clock, Sparkles, ExternalLink, SlidersHorizontal, Check, Languages, Tag, Crown, Calendar, ShoppingBag, ArrowUpRight, ChevronDown, QrCode, Download, History, Trophy, ChefHat, User, Truck, CheckCircle2, XCircle, Lock, Copy, RefreshCw, AlertCircle, ShieldCheck, Store, TrendingDown, Percent, Banknote, Gift, Layers } from 'lucide-react';
+import { Search, Flame, MapPin, Phone, Info, UtensilsCrossed, X, Star, LayoutGrid, List as ListIcon, Clock, Sparkles, ExternalLink, SlidersHorizontal, Check, Languages, Tag, Crown, Calendar, ShoppingBag, ArrowUpRight, ChevronDown, QrCode, Download, History, Trophy, ChefHat, User, Truck, CheckCircle2, XCircle, Lock, Unlock, Copy, RefreshCw, AlertCircle, ShieldCheck, Store, TrendingDown, Percent, Banknote, Gift, Layers } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { api } from '@/services/api';
 import { APP_CONFIG } from '@/config';
@@ -15,7 +15,7 @@ import { Modal } from '@/components/ui/Modal';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { GoogleTranslate } from '@/components/GoogleTranslate';
 import { LanguageSelectorModal } from '@/components/LanguageSelectorModal';
-import { EntertainmentHub } from '@/components/games/EntertainmentHub';
+const EntertainmentHub = lazy(() => import('@/components/games/EntertainmentHub').then(m => ({ default: m.EntertainmentHub })));
 import { Gamepad2 } from 'lucide-react';
 import { DiscountUnlockPopup } from '@/components/public/DiscountUnlockPopup';
 import { OrderTypeModal } from '@/components/public/OrderTypeModal';
@@ -33,6 +33,7 @@ import { getUniqueCustomerDiscountCode, getCustomerIdentifier, getClaimedDiscoun
 import { FloatingChalkboard } from '@/components/chalkboard/FloatingChalkboard';
 import { getRemainingPopupDelayMs, clearPopupTiming } from '@/utils/discountPopupTiming';
 import { resolveChalkboardMessage } from '@/components/chalkboard/chalkboardUtils';
+import { ControlledGoogleAd } from '@/components/public/ControlledGoogleAd';
 
 const triggerWelcomeEffect = () => {
   triggerHaptic(HAPTIC_PATTERNS.successUnlock);
@@ -123,6 +124,11 @@ export function PublicMenuPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [shop, setShop] = useState<Shop | null>(() => (id ? publicCache.get<Shop>(`shop_${id}`) : null));
+  const isAdsActive = Boolean(
+    shop?.show_ads ||
+    import.meta.env.VITE_FORCE_SHOW_ADS === 'true' ||
+    import.meta.env.VITE_SIMULATE_SUBSCRIPTION_ENDED === 'true'
+  );
   const shopOpenStatus = useMemo(() => checkShopOpenStatus(shop), [shop]);
   const businessCategory = getBusinessCategory(shop?.category);
   const { currentOrder, totalActiveCount } = useActiveOrders(id);
@@ -147,7 +153,8 @@ export function PublicMenuPage() {
 
   const [activeCategories, setActiveCategories] = useState<string[]>(['all']);
   const [foodFilter, setFoodFilter] = useState<'all' | 'veg' | 'non-veg' | 'egg' | 'drink' | 'dessert'>('all');
-  const [sortOrder, setSortOrder] = useState<'default' | 'price_asc' | 'price_desc'>('default');
+  const [sortOrder, setSortOrder] = useState<'default' | 'price_asc' | 'price_desc' | 'a-z' | 'z-a' | 'new_to_old' | 'old_to_new'>('default');
+  const [categorySortOrder, setCategorySortOrder] = useState<'default' | 'a-z' | 'z-a' | 'new_to_old' | 'old_to_new'>('default');
   const [extraFilters, setExtraFilters] = useState<string[]>([]);
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [publicSchemes, setPublicSchemes] = useState<Scheme[]>([]);
@@ -601,7 +608,7 @@ export function PublicMenuPage() {
       case 'free_item':
         return <Gift size={size} className="shrink-0 stroke-[2.5]" style={{ color: primaryColor }} title="Free Item" />;
       default:
-        return <Sparkles size={size} className="shrink-0 animate-pulse" style={{ color: primaryColor }} title="Special Offer" />;
+        return <Tag size={size} className="shrink-0" style={{ color: primaryColor }} title="Special Offer" />;
     }
   };
 
@@ -637,16 +644,18 @@ export function PublicMenuPage() {
           if (res.data?.mobile_number) {
             localStorage.setItem('customer_mobile', res.data.mobile_number);
           }
-        } else if (res.data?.is_member) {
-          setMemberStatus('unlocked');
-          sessionStorage.setItem(`member_status_${id}`, 'unlocked');
-          if (res.data?.mobile_number) {
-            localStorage.setItem('customer_mobile', res.data.mobile_number);
-          }
         } else {
-          // User has customer token, but is not registered for THIS shop yet!
-          sessionStorage.removeItem(`member_status_${id}`);
-          setMemberStatus(null);
+          // If customer is not a strict member, do not auto-unlock 'unlock_required' offers.
+          // Only preserve 'unlocked' if the customer explicitly unlocked in the current session.
+          const currentStatus = sessionStorage.getItem(`member_status_${id}`);
+          if (currentStatus === 'verified-member') {
+            sessionStorage.removeItem(`member_status_${id}`);
+            setMemberStatus(null);
+          } else if (currentStatus === 'unlocked') {
+            setMemberStatus('unlocked');
+          } else {
+            setMemberStatus(null);
+          }
         }
       } catch (err) {
         // Silent catch
@@ -809,11 +818,12 @@ export function PublicMenuPage() {
     }
   }, [id, searchParams]);
 
-  const fetchCategories = async (retryCount = 0) => {
+  const fetchCategories = async (retryCount = 0, catSort = categorySortOrder) => {
     try {
+      const sortParam = catSort !== 'default' ? `&sort_by=${catSort}` : '';
       const [shopRes, catRes] = await Promise.all([
         api.get(`/public/shop/${id}`),
-        api.get(`/public/shop/${id}/categories?limit=100`)
+        api.get(`/public/shop/${id}/categories?limit=100${sortParam}`)
       ]);
       setShop(shopRes.data);
       setCategories(catRes.data);
@@ -990,6 +1000,12 @@ export function PublicMenuPage() {
       window.removeEventListener('focus', handleSettingsUpdated);
     };
   }, [id]);
+
+  useEffect(() => {
+    if (id) {
+      fetchCategories(0, categorySortOrder);
+    }
+  }, [id, categorySortOrder]);
 
   useEffect(() => {
     if (id && activeCategories.length > 0 && !activeCategories.includes('all')) {
@@ -1185,6 +1201,18 @@ export function PublicMenuPage() {
         if (sortOrder === 'price_desc') {
           return Number(b.offer_price || b.price) - Number(a.offer_price || a.price);
         }
+        if (sortOrder === 'a-z') {
+          return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+        }
+        if (sortOrder === 'z-a') {
+          return b.name.localeCompare(a.name, undefined, { sensitivity: 'base' });
+        }
+        if (sortOrder === 'new_to_old') {
+          return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+        }
+        if (sortOrder === 'old_to_new') {
+          return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+        }
         if (a.is_highlighted && !b.is_highlighted) return -1;
         if (!a.is_highlighted && b.is_highlighted) return 1;
         return 0;
@@ -1194,8 +1222,24 @@ export function PublicMenuPage() {
         ...cat,
         items: filteredItems
       };
-    }).filter(cat => cat.items.length > 0 && (activeCategories.includes('all') || activeCategories.includes(cat.id)));
-  }, [categories, items, debouncedSearchQuery, activeCategories, foodFilter, sortOrder, extraFilters, activeDiscountFilter, activeDiscounts]);
+    })
+    .filter(cat => cat.items.length > 0 && (activeCategories.includes('all') || activeCategories.includes(cat.id)))
+    .sort((a, b) => {
+      if (categorySortOrder === 'a-z') {
+        return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+      }
+      if (categorySortOrder === 'z-a') {
+        return b.name.localeCompare(a.name, undefined, { sensitivity: 'base' });
+      }
+      if (categorySortOrder === 'new_to_old') {
+        return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+      }
+      if (categorySortOrder === 'old_to_new') {
+        return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+      }
+      return (a.display_order || 0) - (b.display_order || 0);
+    });
+  }, [categories, items, debouncedSearchQuery, activeCategories, foodFilter, sortOrder, categorySortOrder, extraFilters, activeDiscountFilter, activeDiscounts]);
 
   const chalkboardMessage = useMemo(() => {
     return resolveChalkboardMessage(shop?.chalkboard?.message);
@@ -1356,9 +1400,7 @@ export function PublicMenuPage() {
                 </div>
 
                 <div className="flex items-center justify-center gap-2 mb-2">
-                  <Sparkles size={16} style={{ color: primaryColor }} className="opacity-60" />
                   <span className="text-xs font-semibold uppercase tracking-widest opacity-50">Welcome to</span>
-                  <Sparkles size={16} style={{ color: primaryColor }} className="opacity-60" />
                 </div>
                 <h2 className="text-2xl sm:text-3xl font-bold font-heading mb-4" style={{ color: '#1e293b' }}>
                   {shop.name}
@@ -1420,8 +1462,12 @@ export function PublicMenuPage() {
         }
       `}</style>
 
+      {/* 📢 Fixed Top of Screen Google Ad (strictly for unpaid/unsubscribed shops) */}
+      <ControlledGoogleAd position="topbar" showAds={shop?.show_ads} />
+      {isAdsActive && <div className="h-11 w-full shrink-0" />}
+
       {/* Sticky Header */}
-      <div className={`fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md shadow-xs border-b border-slate-200/80 transition-all duration-300 transform ${isScrolled ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 pointer-events-none'
+      <div className={`fixed ${isAdsActive ? 'top-11' : 'top-0'} left-0 right-0 z-50 bg-white/95 backdrop-blur-md shadow-xs border-b border-slate-200/80 transition-all duration-300 transform ${isScrolled ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 pointer-events-none'
         }`}>
         <div className="max-w-3xl mx-auto px-4 py-2.5 flex items-center gap-2 sm:gap-3 transition-all w-full">
           <div className="w-9 h-9 rounded-xl overflow-hidden shrink-0 border border-slate-200 bg-white flex items-center justify-center shadow-xs transition-all">
@@ -1644,20 +1690,24 @@ export function PublicMenuPage() {
               {shop.description}
             </p>
           )}
-          <button
-            onClick={() => setIsOrderTypeModalOpen(true)}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-bold inline-flex items-center gap-1.5 transition-all shadow-xs cursor-pointer ${
-              orderType === 'dine_in'
-                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100'
-                : orderType === 'delivery'
-                ? 'bg-blue-600 text-white hover:bg-blue-700 ring-2 ring-blue-200'
-                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-50'
-            }`}
-            title="Click to switch order mode"
-          >
-            {orderType === 'dine_in' ? (
-              <>
-                {businessCategory.isFood ? <UtensilsCrossed size={14} className="text-emerald-600 dark:text-emerald-400" /> : <Store size={14} className="text-emerald-600 dark:text-emerald-400" />}
+          <div className="flex flex-col items-center gap-1.5 mt-0.5">
+            <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+              Choose your fulfillment mode
+            </span>
+            <button
+              onClick={() => setIsOrderTypeModalOpen(true)}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold inline-flex items-center gap-1.5 transition-all shadow-xs cursor-pointer ${
+                orderType === 'dine_in'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100'
+                  : orderType === 'delivery'
+                  ? 'bg-blue-600 text-white hover:bg-blue-700 ring-2 ring-blue-200'
+                  : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+              }`}
+              title="Click to switch order mode"
+            >
+              {orderType === 'dine_in' ? (
+                <>
+                  {businessCategory.isFood ? <UtensilsCrossed size={14} className="text-emerald-600 dark:text-emerald-400" /> : <Store size={14} className="text-emerald-600 dark:text-emerald-400" />}
                 <span>{businessCategory.orderTypeDineInTitle}</span>
               </>
             ) : orderType === 'delivery' ? (
@@ -1673,6 +1723,7 @@ export function PublicMenuPage() {
             )}
             <ChevronDown size={12} className="opacity-70" />
           </button>
+        </div>
 
           {/* Shop Closed Alert Banner */}
           {!shopOpenStatus.isOpen && (
@@ -1743,8 +1794,6 @@ export function PublicMenuPage() {
             </div>
           )}
         </div>
-
-        {/* ❌ REMOVED: `<ContestHub/>` component was successfully pulled from top layout context */}
 
         {/* Search Bar - Dedicated full width row */}
         <div className="relative w-full mb-3">
@@ -1864,8 +1913,16 @@ export function PublicMenuPage() {
             )}
             {sortOrder !== 'default' && (
               <span className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full bg-blue-50 text-blue-700 ring-1 ring-blue-200">
-                Sorted: {sortOrder === 'price_asc' ? 'Low to High' : 'High to Low'}
+                Sorted: {sortOrder === 'price_asc' ? 'Low to High' : sortOrder === 'price_desc' ? 'High to Low' : sortOrder === 'a-z' ? 'A to Z' : sortOrder === 'z-a' ? 'Z to A' : sortOrder === 'new_to_old' ? 'New to Old' : 'Old to New'}
                 <button onClick={() => setSortOrder('default')} className="ml-1 opacity-60 hover:opacity-100">
+                  <X size={12} />
+                </button>
+              </span>
+            )}
+            {categorySortOrder !== 'default' && (
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
+                Categories: {categorySortOrder === 'a-z' ? 'A to Z' : categorySortOrder === 'z-a' ? 'Z to A' : categorySortOrder === 'new_to_old' ? 'New to Old' : 'Old to New'}
+                <button onClick={() => setCategorySortOrder('default')} className="ml-1 opacity-60 hover:opacity-100">
                   <X size={12} />
                 </button>
               </span>
@@ -1880,7 +1937,7 @@ export function PublicMenuPage() {
             ))}
             {activeDiscountFilter && (
               <span className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full bg-purple-50 text-purple-700 ring-1 ring-purple-200 shadow-sm animate-pulse-slow">
-                <Sparkles size={12} className="text-purple-500" /> Offer Applied
+                <Tag size={12} className="text-purple-500" /> Offer Applied
                 <button onClick={() => setActiveDiscountFilter(null)} className="ml-1 opacity-60 hover:opacity-100">
                   <X size={12} />
                 </button>
@@ -1931,10 +1988,18 @@ export function PublicMenuPage() {
                       {disc.discount_type === 'free_item' && 'FREE'}
                     </div>
                     <div className="text-[10px] sm:text-xs font-bold uppercase tracking-widest mt-0.5 opacity-90 text-center">
-                      {['percentage', 'flat'].includes(disc.discount_type) && 'Off'}
-                      {disc.discount_type === 'bogo' && `Buy ${disc.buy_quantity} Get ${disc.get_quantity}`}
-                      {disc.discount_type === 'combo' && `${settings?.currency || '₹'}${Number(disc.discount_value)}`}
-                      {disc.discount_type === 'free_item' && (disc.discount_value ? `On ₹${Number(disc.discount_value)}+` : 'Gift Item')}
+                      {['percentage', 'flat'].includes(disc.discount_type) && (
+                        disc.min_order_value && disc.max_order_value
+                          ? `On ${settings?.currency || '₹'}${Number(disc.min_order_value)}-${Number(disc.max_order_value)}`
+                          : disc.min_order_value
+                          ? `On ${settings?.currency || '₹'}${Number(disc.min_order_value)}+`
+                          : disc.max_order_value
+                          ? `Up to ${settings?.currency || '₹'}${Number(disc.max_order_value)}`
+                          : 'Off'
+                      )}
+                      {disc.discount_type === 'bogo' && (disc.min_order_value ? `On ${settings?.currency || '₹'}${Number(disc.min_order_value)}+` : `Buy ${disc.buy_quantity} Get ${disc.get_quantity}`)}
+                      {disc.discount_type === 'combo' && (disc.min_order_value ? `On ${settings?.currency || '₹'}${Number(disc.min_order_value)}+` : `${settings?.currency || '₹'}${Number(disc.discount_value)}`)}
+                      {disc.discount_type === 'free_item' && (disc.min_order_value ? `On ${settings?.currency || '₹'}${Number(disc.min_order_value)}+` : (disc.discount_value ? `On ${settings?.currency || '₹'}${Number(disc.discount_value)}+` : 'Gift Item'))}
                     </div>
                   </div>
 
@@ -1990,7 +2055,7 @@ export function PublicMenuPage() {
                             </span>
                           ) : disc.visibility_type === 'unlock_required' ? (
                             <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md shadow-sm flex items-center gap-1 bg-amber-100 text-amber-800 min-w-0">
-                              {memberStatus ? <Sparkles size={10} className="shrink-0" /> : <Lock size={10} className="shrink-0" />}
+                              {memberStatus ? <Unlock size={10} className="shrink-0" /> : <Lock size={10} className="shrink-0" />}
                               <span className="truncate">{memberStatus ? 'Unlocked' : 'Unlock Required'}</span>
                             </span>
                           ) : (
@@ -2124,8 +2189,9 @@ export function PublicMenuPage() {
               <p className="text-sm opacity-60 mt-1">Try a different search term</p>
             </div>
           ) : (
-            filteredCategories.map(cat => (
-              <div key={cat.id} className="animate-slide-up">
+            filteredCategories.map((cat, catIdx) => (
+              <Fragment key={cat.id}>
+                <div className="animate-slide-up">
                 <h2 className="text-xl font-bold font-heading mb-4 flex items-center">
                   {cat.name}
                   <span className="ml-2 text-xs font-medium px-2 py-0.5 rounded-full bg-slate-200/50 opacity-70">
@@ -2279,15 +2345,11 @@ export function PublicMenuPage() {
 
                               if (!offerPrice && activeDiscounts.length > 0) {
                                 const disc = activeDiscounts.find(d => {
-                                  // Direct Price Drop discounts apply unconditionally to all visitors
-                                  if (!d.is_price_drop) {
-                                    if (d.visibility_type === 'members_only_hidden' && memberStatus !== 'verified-member') return false;
-                                    if (d.visibility_type === 'members_only_visible' && memberStatus !== 'verified-member') return false;
-                                    if (d.visibility_type === 'unlock_required') {
-                                      if (isUserExisting) return false;
-                                      if (!memberStatus) return false;
-                                    }
-                                  }
+                                  if (!d.is_price_drop || d.is_active === false) return false;
+                                  if ((d.min_order_value && Number(d.min_order_value) > 0) || (d.max_order_value && Number(d.max_order_value) > 0)) return false;
+                                  if (d.visibility_type === 'members_only_hidden' && memberStatus !== 'verified-member') return false;
+                                  if (d.visibility_type === 'members_only_visible' && memberStatus !== 'verified-member') return false;
+                                  if (d.visibility_type === 'unlock_required' && !memberStatus) return false;
                                   if (d.discount_type === 'bogo' || d.discount_type === 'combo' || d.discount_type === 'free_item') return false;
                                   if (d.applies_to === 'all') return true;
                                   if (d.applies_to === 'category' && d.target_ids?.includes(item.category_id)) return true;
@@ -2348,8 +2410,9 @@ export function PublicMenuPage() {
                   })}
                 </div>
               </div>
-            ))
-          )}
+            </Fragment>
+          ))
+        )}
 
           <InfiniteScrollTrigger 
             onIntersect={handleLoadMoreItems} 
@@ -2386,6 +2449,9 @@ export function PublicMenuPage() {
             )}
           </div>
         )}
+
+        {/* Bottom Spacing so content is never covered by floating dock or fixed bottom ad */}
+        <div className={isAdsActive ? "h-28" : "h-16"} />
       </div>
 
       {/* Shop Info Modal */}
@@ -2406,7 +2472,7 @@ export function PublicMenuPage() {
           {shop.welcome_message && (
             <div className="flex items-start gap-3 mt-4">
               <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: `${primaryColor}20`, color: primaryColor }}>
-                <Sparkles size={20} />
+                <Store size={20} />
               </div>
               <div>
                 <h4 className="font-medium text-sm">Welcome Note</h4>
@@ -2636,13 +2702,17 @@ export function PublicMenuPage() {
         </button>
       </div>
 
-      <EntertainmentHub
-        isOpen={isEntertainmentHubOpen}
-        onClose={() => setIsEntertainmentHubOpen(false)}
-        primaryColor={primaryColor}
-        menuItems={categories.flatMap(c => c.items).filter(i => i.is_available && (i.image_url || i.thumbnail_url))}
-        currency={settings?.currency || '₹'}
-      />
+      {isEntertainmentHubOpen && (
+        <Suspense fallback={null}>
+          <EntertainmentHub
+            isOpen={isEntertainmentHubOpen}
+            onClose={() => setIsEntertainmentHubOpen(false)}
+            primaryColor={primaryColor}
+            menuItems={categories.flatMap(c => c.items).filter(i => i.is_available && (i.image_url || i.thumbnail_url))}
+            currency={settings?.currency || '₹'}
+          />
+        </Suspense>
+      )}
 
       <BottomSheet
         isOpen={isFilterModalOpen}
@@ -2695,6 +2765,34 @@ export function PublicMenuPage() {
                 </div>
                 <input type="radio" className="hidden" checked={sortOrder === 'price_desc'} onChange={() => setSortOrder('price_desc')} />
                 <span className="text-sm font-medium">Price: High to Low</span>
+              </label>
+              <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/50 cursor-pointer hover:bg-slate-50 transition-colors">
+                <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${sortOrder === 'a-z' ? 'border-primary' : 'border-slate-300'}`} style={{ borderColor: sortOrder === 'a-z' ? primaryColor : undefined }}>
+                  {sortOrder === 'a-z' && <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: primaryColor }} />}
+                </div>
+                <input type="radio" className="hidden" checked={sortOrder === 'a-z'} onChange={() => setSortOrder('a-z')} />
+                <span className="text-sm font-medium">Name: A to Z (A-Z)</span>
+              </label>
+              <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/50 cursor-pointer hover:bg-slate-50 transition-colors">
+                <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${sortOrder === 'z-a' ? 'border-primary' : 'border-slate-300'}`} style={{ borderColor: sortOrder === 'z-a' ? primaryColor : undefined }}>
+                  {sortOrder === 'z-a' && <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: primaryColor }} />}
+                </div>
+                <input type="radio" className="hidden" checked={sortOrder === 'z-a'} onChange={() => setSortOrder('z-a')} />
+                <span className="text-sm font-medium">Name: Z to A (Z-A)</span>
+              </label>
+              <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/50 cursor-pointer hover:bg-slate-50 transition-colors">
+                <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${sortOrder === 'new_to_old' ? 'border-primary' : 'border-slate-300'}`} style={{ borderColor: sortOrder === 'new_to_old' ? primaryColor : undefined }}>
+                  {sortOrder === 'new_to_old' && <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: primaryColor }} />}
+                </div>
+                <input type="radio" className="hidden" checked={sortOrder === 'new_to_old'} onChange={() => setSortOrder('new_to_old')} />
+                <span className="text-sm font-medium">Newest First (New to Old)</span>
+              </label>
+              <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/50 cursor-pointer hover:bg-slate-50 transition-colors">
+                <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${sortOrder === 'old_to_new' ? 'border-primary' : 'border-slate-300'}`} style={{ borderColor: sortOrder === 'old_to_new' ? primaryColor : undefined }}>
+                  {sortOrder === 'old_to_new' && <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: primaryColor }} />}
+                </div>
+                <input type="radio" className="hidden" checked={sortOrder === 'old_to_new'} onChange={() => setSortOrder('old_to_new')} />
+                <span className="text-sm font-medium">Oldest First (Old to New)</span>
               </label>
             </div>
           </div>
@@ -2831,8 +2929,11 @@ export function PublicMenuPage() {
 
 
 
+      {/* 📢 Controlled Bottombar Google Ad (only shown if shop is unpaid/unsubscribed) */}
+      <ControlledGoogleAd position="bottombar" showAds={shop?.show_ads} />
+
       {/* 🧱 Premium Floating Bottom Asymmetric Sized Navigation Dock Frame */}
-      <div className={`fixed bottom-4 left-4 right-4 sm:bottom-6 sm:left-1/2 sm:-translate-x-1/2 sm:w-[480px] z-40 transition-transform duration-300 ${isScrollingDown ? 'translate-y-32 opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}>
+      <div className={`fixed ${isAdsActive ? 'bottom-14 sm:bottom-16' : 'bottom-4 sm:bottom-6'} left-4 right-4 sm:left-1/2 sm:-translate-x-1/2 sm:w-[480px] z-40 transition-transform duration-300 ${isScrollingDown ? 'translate-y-32 opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}>
         <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl rounded-[32px] shadow-[0_12px_45px_rgba(0,0,0,0.15)] border border-slate-100 dark:border-slate-800 p-2">
           {/* Configured grid cols structure layout mapping to give dynamic wider room weight */}
           <div className="grid grid-cols-6 gap-1 items-center text-center">
@@ -2973,9 +3074,13 @@ export function PublicMenuPage() {
                 );
               })()}
               {selectedDiscountForModal.is_price_drop && (
-                <div className="mb-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 text-xs font-black uppercase tracking-wider shadow-2xs">
-                  <TrendingDown size={14} className="stroke-[2.5]" />
-                  <span>Direct Price Drop</span>
+                <div className={`mb-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider shadow-2xs ${
+                  (selectedDiscountForModal.visibility_type === 'unlock_required' && !memberStatus)
+                    ? 'bg-amber-500/10 border border-amber-500/30 text-amber-700'
+                    : 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-700'
+                }`}>
+                  {(selectedDiscountForModal.visibility_type === 'unlock_required' && !memberStatus) ? <Lock size={14} /> : <TrendingDown size={14} className="stroke-[2.5]" />}
+                  <span>{(selectedDiscountForModal.visibility_type === 'unlock_required' && !memberStatus) ? 'Unlock Required Price Drop' : 'Direct Price Drop'}</span>
                 </div>
               )}
               <h3 className="text-2xl font-bold font-heading text-slate-900">{selectedDiscountForModal.title}</h3>
@@ -3024,6 +3129,22 @@ export function PublicMenuPage() {
                         </span>
                       </div>
                     )}
+                    {selectedDiscountForModal.min_order_value && Number(selectedDiscountForModal.min_order_value) > 0 && (
+                      <div className="flex items-start gap-2.5 text-xs sm:text-sm font-medium text-slate-700">
+                        <ShoppingBag size={15} className="text-amber-500 shrink-0 mt-0.5" />
+                        <span className="leading-snug">
+                          Minimum order value of <strong>{settings?.currency || '₹'}{selectedDiscountForModal.min_order_value}</strong> required
+                        </span>
+                      </div>
+                    )}
+                    {selectedDiscountForModal.max_discount_amount && Number(selectedDiscountForModal.max_discount_amount) > 0 && (
+                      <div className="flex items-start gap-2.5 text-xs sm:text-sm font-medium text-slate-700">
+                        <TrendingDown size={15} className="text-blue-500 shrink-0 mt-0.5" />
+                        <span className="leading-snug">
+                          Maximum discount capped up to <strong>{settings?.currency || '₹'}{selectedDiscountForModal.max_discount_amount}</strong>
+                        </span>
+                      </div>
+                    )}
                     {hasAppliesTo && (
                       <div className="flex items-start gap-2.5 text-xs sm:text-sm font-medium text-slate-700">
                         <ShoppingBag size={15} className="text-slate-400 shrink-0 mt-0.5" />
@@ -3042,6 +3163,55 @@ export function PublicMenuPage() {
             })()}
 
             {(() => {
+              const isOfferUnlockRequired = selectedDiscountForModal.visibility_type === 'unlock_required' && !memberStatus;
+              const isOfferMemberRequired = (selectedDiscountForModal.visibility_type === 'members_only_visible' || selectedDiscountForModal.visibility_type === 'members_only_hidden') && memberStatus !== 'verified-member';
+
+              if (isOfferMemberRequired) {
+                return (
+                  <div className="pt-2">
+                    <div className="bg-gradient-to-r from-amber-50 to-orange-50/70 border border-amber-200/90 rounded-2xl p-4 flex items-center gap-3.5 shadow-xs">
+                      <div className="w-11 h-11 rounded-xl bg-amber-500/15 text-amber-600 flex items-center justify-center shrink-0 shadow-xs border border-amber-500/20">
+                        <Crown className="w-6 h-6 text-amber-600" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-black uppercase tracking-wider text-amber-900">Member Exclusive</span>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 text-amber-900">Locked</span>
+                        </div>
+                        <p className="text-xs text-amber-800/85 mt-1 leading-snug">
+                          {selectedDiscountForModal.is_price_drop 
+                            ? 'This price drop discount is reserved exclusively for registered members. Become a member to activate these special prices.'
+                            : 'This discount code is reserved exclusively for registered members. Become a member to reveal and copy your unique code.'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
+              if (isOfferUnlockRequired) {
+                return (
+                  <div className="pt-2">
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex items-center gap-3.5">
+                      <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-600 flex items-center justify-center shrink-0 border border-amber-500/20">
+                        <Lock className="w-5 h-5 text-amber-600" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-bold text-slate-900">Unlock Required</h4>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">Locked</span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1 leading-snug">
+                          {selectedDiscountForModal.is_price_drop
+                            ? 'Verify your mobile number to unlock and activate this price drop discount on the menu.'
+                            : 'Verify your mobile number to unlock and view the discount code.'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
               if (selectedDiscountForModal.is_price_drop) {
                 return (
                   <div className="pt-2">
@@ -3056,7 +3226,7 @@ export function PublicMenuPage() {
                               Direct Price Drop
                             </span>
                             <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-emerald-600 text-white shadow-2xs">
-                              Always Applied
+                              {selectedDiscountForModal.visibility_type === 'everyone' ? 'Always Applied' : 'Unlocked & Applied'}
                             </span>
                           </div>
                           <p className="text-xs text-emerald-900/90 mt-1.5 font-medium leading-relaxed">
@@ -3108,48 +3278,6 @@ export function PublicMenuPage() {
                 );
               }
 
-              const isOfferUnlockRequired = selectedDiscountForModal.visibility_type === 'unlock_required' && !memberStatus;
-              const isOfferMemberRequired = (selectedDiscountForModal.visibility_type === 'members_only_visible' || selectedDiscountForModal.visibility_type === 'members_only_hidden') && memberStatus !== 'verified-member';
-
-              if (isOfferMemberRequired) {
-                return (
-                  <div className="pt-2">
-                    <div className="bg-gradient-to-r from-amber-50 to-orange-50/70 border border-amber-200/90 rounded-2xl p-4 flex items-center gap-3.5 shadow-xs">
-                      <div className="w-11 h-11 rounded-xl bg-amber-500/15 text-amber-600 flex items-center justify-center shrink-0 shadow-xs border border-amber-500/20">
-                        <Crown className="w-6 h-6 text-amber-600" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-black uppercase tracking-wider text-amber-900">Member Exclusive</span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 text-amber-900">Locked</span>
-                        </div>
-                        <p className="text-xs text-amber-800/85 mt-1 leading-snug">
-                          This discount code is reserved exclusively for registered members. Become a member to reveal and copy your unique code.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              }
-
-              if (isOfferUnlockRequired) {
-                return (
-                  <div className="pt-2">
-                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex items-center gap-3.5">
-                      <div className="w-10 h-10 rounded-xl bg-slate-200 text-slate-600 flex items-center justify-center shrink-0">
-                        <Lock className="w-5 h-5 text-slate-600" />
-                      </div>
-                      <div className="min-w-0">
-                        <h4 className="text-sm font-bold text-slate-900">Unlock Required</h4>
-                        <p className="text-xs text-slate-500 mt-0.5 leading-snug">
-                          Verify your mobile number to unlock and view the discount code.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              }
-
               const uniqueCode = getUniqueCustomerDiscountCode(selectedDiscountForModal);
               return (
                 <div className="pt-2">
@@ -3182,7 +3310,7 @@ export function PublicMenuPage() {
                 const isOfferUnlockRequired = selectedDiscountForModal.visibility_type === 'unlock_required' && !memberStatus;
                 const isOfferMemberRequired = (selectedDiscountForModal.visibility_type === 'members_only_visible' || selectedDiscountForModal.visibility_type === 'members_only_hidden') && memberStatus !== 'verified-member';
 
-                if (!isAlreadyUsed && !selectedDiscountForModal.is_price_drop && isOfferMemberRequired) {
+                if (!isAlreadyUsed && isOfferMemberRequired) {
                   return (
                     <button
                       type="button"
@@ -3197,7 +3325,7 @@ export function PublicMenuPage() {
                   );
                 }
 
-                if (!isAlreadyUsed && !selectedDiscountForModal.is_price_drop && isOfferUnlockRequired) {
+                if (!isAlreadyUsed && isOfferUnlockRequired) {
                   return (
                     <button
                       onClick={() => {
@@ -3432,7 +3560,7 @@ export function PublicMenuPage() {
             {/* Action Buttons */}
             <div className="flex gap-2">
               <button
-                onClick={() => { setActiveCategories(['all']); setCategorySearchQuery(''); }}
+                onClick={() => { setActiveCategories(['all']); setCategorySearchQuery(''); setCategorySortOrder('default'); }}
                 className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-semibold transition-all hover:bg-slate-50"
               >
                 Clear All
@@ -3450,7 +3578,69 @@ export function PublicMenuPage() {
           </div>
         }
       >
-        <div className="pb-2">
+        <div className="pb-2 space-y-3">
+          {/* Quick Category Sorting: Default, A-Z, Z-A */}
+          <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100">
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Sort Categories</span>
+            <div className="inline-flex rounded-xl p-0.5 bg-slate-100 border border-slate-200/80">
+              <button
+                type="button"
+                onClick={() => setCategorySortOrder('default')}
+                className={`px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  categorySortOrder === 'default'
+                    ? 'bg-white text-slate-900 shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                Default
+              </button>
+              <button
+                type="button"
+                onClick={() => setCategorySortOrder('a-z')}
+                className={`px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  categorySortOrder === 'a-z'
+                    ? 'bg-white text-primary shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                A-Z
+              </button>
+              <button
+                type="button"
+                onClick={() => setCategorySortOrder('z-a')}
+                className={`px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  categorySortOrder === 'z-a'
+                    ? 'bg-white text-primary shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                Z-A
+              </button>
+              <button
+                type="button"
+                onClick={() => setCategorySortOrder('new_to_old')}
+                className={`px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  categorySortOrder === 'new_to_old'
+                    ? 'bg-white text-primary shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                New
+              </button>
+              <button
+                type="button"
+                onClick={() => setCategorySortOrder('old_to_new')}
+                className={`px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  categorySortOrder === 'old_to_new'
+                    ? 'bg-white text-primary shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                Old
+              </button>
+            </div>
+          </div>
+
           <div className="flex flex-wrap gap-2">
             {/* All Menu pill */}
             <button
@@ -3488,6 +3678,11 @@ export function PublicMenuPage() {
             {/* Category pills */}
             {categories
               .filter(c => c.name.toLowerCase().includes(categorySearchQuery.toLowerCase()))
+              .sort((a, b) => {
+                if (categorySortOrder === 'a-z') return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+                if (categorySortOrder === 'z-a') return b.name.localeCompare(a.name, undefined, { sensitivity: 'base' });
+                return (a.display_order || 0) - (b.display_order || 0);
+              })
               .map((cat, idx) => {
                 const isSelected = activeCategories.includes(cat.id);
                 const itemCount = cat.item_count || 0;

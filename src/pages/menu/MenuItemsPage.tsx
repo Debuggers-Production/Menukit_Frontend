@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'react-hot-toast';
-import { Plus, Edit2, Trash2, Search, Filter, Image as ImageIcon, ImageOff, Star, Flame, LayoutGrid, List, Sparkles, Wand2, Loader2, MessageSquare, Check, RefreshCw, Code, ChevronLeft, ChevronRight, Store, Globe, Truck, Package, Tag, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
+import { Plus, Edit2, Trash2, Search, Filter, Image as ImageIcon, ImageOff, Star, Flame, LayoutGrid, List, Sparkles, Wand2, Loader2, MessageSquare, Check, RefreshCw, Code, ChevronLeft, ChevronRight, Store, Globe, Truck, Package, Tag, CheckCircle2, XCircle, AlertCircle, ArrowDownAZ, ArrowUpZA, ArrowUpNarrowWide, ArrowDownWideNarrow, Clock, History } from 'lucide-react';
 import { api } from '@/services/api';
 import { useShopStore } from '@/store/shopStore';
 import { MenuItem, MenuItemVariant, MenuItemAddon } from '@/types';
@@ -86,6 +86,7 @@ export function MenuItemsPage() {
  const [activeTab, setActiveTab] = useState<string>('all');
  const [searchQuery, setSearchQuery] = useState('');
  const [specialFilter, setSpecialFilter] = useState<'all'| 'available'| 'not_available'| 'bestseller'| 'chef_special'| 'contain_image'| 'non_contain_image'>('all');
+ const [sortBy, setSortBy] = useState<'default' | 'a-z' | 'z-a' | 'new_to_old' | 'old_to_new' | 'price_asc' | 'price_desc'>('default');
  const [isFabOpen, setIsFabOpen] = useState(false);
  
  // Modal state
@@ -189,7 +190,7 @@ export function MenuItemsPage() {
 
  useEffect(() => {
  fetchData(true);
- }, [activeTab, searchQuery, specialFilter]);
+ }, [activeTab, searchQuery, specialFilter, sortBy]);
 
  const { setTitle } = useHeaderStore();
 
@@ -239,6 +240,9 @@ export function MenuItemsPage() {
  }
  if (specialFilter !== 'all') {
  queryParams.append('status', specialFilter);
+ }
+ if (sortBy !== 'default') {
+ queryParams.append('sort_by', sortBy);
  }
 
  const [catRes, itemRes] = await Promise.all([
@@ -410,6 +414,26 @@ export function MenuItemsPage() {
   const filteredItems = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const items = [...safeMenuItems];
+
+    if (sortBy === 'a-z') {
+      return items.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+    }
+    if (sortBy === 'z-a') {
+      return items.sort((a, b) => b.name.localeCompare(a.name, undefined, { sensitivity: 'base' }));
+    }
+    if (sortBy === 'new_to_old') {
+      return items.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+    }
+    if (sortBy === 'old_to_new') {
+      return items.sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
+    }
+    if (sortBy === 'price_asc') {
+      return items.sort((a, b) => Number(a.offer_price || a.price || 0) - Number(b.offer_price || b.price || 0));
+    }
+    if (sortBy === 'price_desc') {
+      return items.sort((a, b) => Number(b.offer_price || b.price || 0) - Number(a.offer_price || a.price || 0));
+    }
+
     if (!q) {
       return items.sort((a, b) => {
         if (a.is_highlighted && !b.is_highlighted) return -1;
@@ -436,7 +460,7 @@ export function MenuItemsPage() {
       if (scoreA !== scoreB) return scoreA - scoreB;
       return (a.display_order || 0) - (b.display_order || 0);
     });
-  }, [safeMenuItems, searchQuery]);
+  }, [safeMenuItems, searchQuery, sortBy]);
   const openModal = (item?: MenuItem) => {
     if (categories.length === 0) {
       toast.error('Please create a category first');
@@ -778,8 +802,26 @@ export function MenuItemsPage() {
  />
  </div>
  
- <div className="flex items-center justify-between sm:justify-end gap-2.5 w-full sm:w-auto shrink-0">
- <div className="w-48 sm:w-52">
+ <div className="flex items-center justify-between sm:justify-end gap-2.5 w-full sm:w-auto shrink-0 flex-wrap">
+ <div className="w-36 sm:w-44">
+ <SearchableSelect
+ options={[
+   { id: 'default', name: 'Default Order', icon: <LayoutGrid size={15} className="text-muted-foreground" /> },
+   { id: 'a-z', name: 'A to Z (A-Z)', icon: <ArrowDownAZ size={15} className="text-primary" /> },
+   { id: 'z-a', name: 'Z to A (Z-A)', icon: <ArrowUpZA size={15} className="text-primary" /> },
+   { id: 'new_to_old', name: 'Newest First (New to Old)', icon: <Clock size={15} className="text-primary" /> },
+   { id: 'old_to_new', name: 'Oldest First (Old to New)', icon: <History size={15} className="text-primary" /> },
+   { id: 'price_asc', name: 'Price: Low to High', icon: <ArrowUpNarrowWide size={15} className="text-emerald-500" /> },
+   { id: 'price_desc', name: 'Price: High to Low', icon: <ArrowDownWideNarrow size={15} className="text-rose-500" /> },
+ ]}
+ value={sortBy}
+ onChange={(val) => setSortBy(val as any)}
+ showSearch={false}
+ placeholder="Sort by"
+ className="h-10 border-border bg-background text-foreground text-sm font-medium rounded-lg shadow-sm"
+ />
+ </div>
+ <div className="w-44 sm:w-48">
  <SearchableSelect
  options={[
  { id: 'all', name: 'All Statuses', icon: <LayoutGrid size={15} className="text-muted-foreground" /> },

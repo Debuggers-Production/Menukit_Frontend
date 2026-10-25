@@ -261,6 +261,25 @@ export function PublicOrdersPage() {
 
     connect();
 
+    let lastHiddenAt = 0;
+    const handleWakeup = () => {
+      if (document.visibilityState === 'hidden') {
+        lastHiddenAt = Date.now();
+      } else if (document.visibilityState === 'visible' || navigator.onLine) {
+        const asleep = Date.now() - (lastHiddenAt || 0);
+        if (asleep > 3000 || !socket || socket.readyState !== WebSocket.OPEN) {
+          try { socket?.close(); } catch {}
+          connect();
+        }
+        if (tokenStr) fetchOrders(tokenStr, true);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleWakeup);
+    window.addEventListener('pageshow', handleWakeup);
+    window.addEventListener('online', handleWakeup);
+    window.addEventListener('focus', handleWakeup);
+
     const handleRealtimeLocalEvent = () => {
       if (tokenStr) fetchOrders(tokenStr, true);
     };
@@ -268,6 +287,10 @@ export function PublicOrdersPage() {
 
     return () => {
       isDisposed = true;
+      document.removeEventListener('visibilitychange', handleWakeup);
+      window.removeEventListener('pageshow', handleWakeup);
+      window.removeEventListener('online', handleWakeup);
+      window.removeEventListener('focus', handleWakeup);
       if (pingInterval) clearInterval(pingInterval);
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
       if (socket) {
@@ -881,7 +904,9 @@ export function PublicOrdersPage() {
                           else if (order.order_type === 'delivery') isChannelOnline = (shop?.settings as any)?.online_payments_delivery_enabled !== false;
 
                           const isOnlineFeeApplicable = Boolean(order.payment_method === 'online' && isMasterOnline && isChannelOnline);
-                          const pricing = calculateOrderPricing(computedBase, isOnlineFeeApplicable);
+                          const deliveryFee = Number(order.delivery_fee || 0);
+                          const itemsBase = Math.max(0, computedBase - deliveryFee);
+                          const pricing = calculateOrderPricing(computedBase, isOnlineFeeApplicable, itemsBase);
                           const finalDisplayTotal = pricing.totalPayable;
 
                           return (

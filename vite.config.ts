@@ -56,7 +56,8 @@ export default defineConfig({
     }
   },
   build: {
-    chunkSizeWarningLimit: 1500, // Increase warning limit to 1.5MB
+    cssCodeSplit: true,
+    chunkSizeWarningLimit: 1200,
     rollupOptions: {
       output: {
         manualChunks(id) {
@@ -64,7 +65,7 @@ export default defineConfig({
             if (id.includes('@excalidraw')) {
               return 'vendor-excalidraw';
             }
-            if (id.includes('tsparticles') || id.includes('matter-js')) {
+            if (id.includes('tsparticles') || id.includes('matter-js') || id.includes('canvas-confetti')) {
               return 'vendor-physics-canvas';
             }
             if (id.includes('html2pdf') || id.includes('jspdf') || id.includes('html2canvas')) {
@@ -72,6 +73,15 @@ export default defineConfig({
             }
             if (id.includes('qr-code-styling') || id.includes('qrcode.react') || id.includes('html5-qrcode')) {
               return 'vendor-qr';
+            }
+            if (id.includes('firebase')) {
+              return 'vendor-firebase';
+            }
+            if (id.includes('@dnd-kit')) {
+              return 'vendor-dnd';
+            }
+            if (id.includes('@tanstack') || id.includes('axios')) {
+              return 'vendor-network';
             }
             if (id.includes('lucide-react')) {
               return 'vendor-icons';
@@ -85,7 +95,7 @@ export default defineConfig({
             if (id.includes('react') || id.includes('react-dom') || id.includes('react-router')) {
               return 'vendor-react';
             }
-            return 'vendor';
+            return 'vendor-core';
           }
         }
       }

@@ -5,7 +5,7 @@ import {
   Coins, Truck, ShoppingBag, QrCode, Tag, MapPin, Zap, CheckCircle2, Lock, Info, AlertCircle,
   CreditCard, Printer, Plus, Trash2, Edit2, UtensilsCrossed, FileText, Check, RotateCcw,
   Wifi, Usb, Bluetooth, Volume2, Terminal, Copy, Receipt, Search, X, Tags, Layers, Sparkles, Eye, EyeOff, Loader2, Save,
-  Laptop, Download, ArrowLeft, LayoutGrid, PackageCheck
+  Laptop, Download, ArrowLeft, LayoutGrid, PackageCheck, Clock, Timer
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { toast } from 'react-hot-toast';
@@ -695,6 +695,7 @@ export function SettingsPage() {
     base_delivery_distance: shop?.settings?.base_delivery_distance ?? 0,
     extra_delivery_distance_step: shop?.settings?.extra_delivery_distance_step ?? 1,
     extra_delivery_charge_per_step: shop?.settings?.extra_delivery_charge_per_step ?? 0,
+    max_delivery_distance: (shop?.settings as any)?.max_delivery_distance ?? 0,
     takeaway_enabled: shop?.settings?.takeaway_enabled || false,
     dinein_enabled: shop?.settings?.dinein_enabled || false,
     dinein_tables_enabled: (shop?.settings as any)?.dinein_tables_enabled !== false,
@@ -705,6 +706,7 @@ export function SettingsPage() {
     online_payments_takeaway_enabled: shop?.settings?.online_payments_takeaway_enabled !== false,
     online_payments_delivery_enabled: shop?.settings?.online_payments_delivery_enabled !== false,
     accept_after_payment: shop?.settings?.accept_after_payment || false,
+    payment_timeout_minutes: (shop?.settings as any)?.payment_timeout_minutes ?? 15,
     bank_account_number: '',
     ifsc_code: shop?.settings?.ifsc_code || '',
     beneficiary_name: shop?.settings?.beneficiary_name || '',
@@ -729,6 +731,29 @@ export function SettingsPage() {
     replacement_window_days: shop?.settings?.replacement_window_days ?? 0,
     replacement_policy_notes: shop?.settings?.replacement_policy_notes || (shop?.settings?.replacement_allowed !== false ? 'Free replacement available for damaged or incorrect delivered items.' : 'Item replacements are not accepted on public orders.'),
   });
+
+  const [timeoutMode, setTimeoutMode] = useState<string>(() => {
+    const initialMins = Number((shop?.settings as any)?.payment_timeout_minutes ?? 15);
+    return [5, 10, 15, 20, 30, 45, 60].includes(initialMins) ? String(initialMins) : 'custom';
+  });
+
+  // Sync settingsData when shop settings load or change from server
+  useEffect(() => {
+    if (shop?.settings) {
+      setSettingsData(prev => ({
+        ...prev,
+        ...shop.settings,
+        payment_timeout_minutes: (shop.settings as any).payment_timeout_minutes ?? 15,
+        max_delivery_distance: (shop.settings as any).max_delivery_distance ?? 0,
+        dinein_tables_enabled: (shop.settings as any).dinein_tables_enabled !== false,
+        dinein_tables_count: (shop.settings as any).dinein_tables_count ?? 10,
+        refund_allowed: shop.settings.refund_allowed === true,
+        replacement_allowed: shop.settings.replacement_allowed !== false,
+      }));
+      const serverMins = Number((shop.settings as any).payment_timeout_minutes ?? 15);
+      setTimeoutMode([5, 10, 15, 20, 30, 45, 60].includes(serverMins) ? String(serverMins) : 'custom');
+    }
+  }, [shop?.id, (shop?.settings as any)?.id, (shop?.settings as any)?.max_delivery_distance, (shop?.settings as any)?.payment_timeout_minutes]);
 
   const discoveryModInfo = subscriptionStatus?.module_expirations?.['hide-discovery-badge'];
   const discoveryDaysLeft = discoveryModInfo?.days_left ?? subscriptionStatus?.days_left ?? 0;
@@ -759,57 +784,6 @@ export function SettingsPage() {
     fetchShop();
   }, [shop, setShop]);
 
-  useEffect(() => {
-    if (shop?.settings) {
-      setSettingsData({
-        currency: shop.settings.currency || '₹',
-        language: shop.settings.language || 'en',
-        show_prices: shop.settings.show_prices !== false,
-        show_offers: shop.settings.show_offers !== false,
-        is_discoverable: shop.settings.is_discoverable !== false,
-        show_menus_in_discovery: shop.settings.show_menus_in_discovery !== false,
-        hide_discovery_badge: shop.settings.hide_discovery_badge || false,
-        delivery_enabled: shop.settings.delivery_enabled || false,
-        base_delivery_charge: shop.settings.base_delivery_charge ?? 0,
-        base_delivery_distance: shop.settings.base_delivery_distance ?? 0,
-        extra_delivery_distance_step: shop.settings.extra_delivery_distance_step ?? 1,
-        extra_delivery_charge_per_step: shop.settings.extra_delivery_charge_per_step ?? 0,
-        takeaway_enabled: shop.settings.takeaway_enabled || false,
-        dinein_enabled: shop.settings.dinein_enabled || false,
-        dinein_tables_enabled: (shop.settings as any).dinein_tables_enabled !== false,
-        dinein_tables_count: (shop.settings as any).dinein_tables_count ?? 10,
-        auto_accept_orders: shop.settings.auto_accept_orders || false,
-        online_payments_enabled: shop.settings.online_payments_enabled !== false,
-        online_payments_dinein_enabled: shop.settings.online_payments_dinein_enabled !== false,
-        online_payments_takeaway_enabled: shop.settings.online_payments_takeaway_enabled !== false,
-        online_payments_delivery_enabled: shop.settings.online_payments_delivery_enabled !== false,
-        accept_after_payment: shop.settings.accept_after_payment || false,
-        bank_account_number: '',
-        ifsc_code: shop.settings.ifsc_code || '',
-        beneficiary_name: shop.settings.beneficiary_name || '',
-        upi_id: shop.settings.upi_id || '',
-        gst_enabled: shop.settings.gst_enabled || false,
-        gstin: shop.settings.gstin || '',
-        legal_name: shop.settings.legal_name || '',
-        fssai_license: shop.settings.fssai_license || '',
-        cgst_rate: shop.settings.cgst_rate ?? 2.5,
-        sgst_rate: shop.settings.sgst_rate ?? 2.5,
-        inclusive_tax: shop.settings.inclusive_tax || false,
-        tax_invoice_notes: shop.settings.tax_invoice_notes || '',
-        serial_number_prefix: shop.settings.serial_number_prefix || '',
-        serial_number_digits: shop.settings.serial_number_digits || 3,
-        auto_serial_number_enabled: shop.settings.auto_serial_number_enabled || false,
-        return_allowed: shop.settings.return_allowed || false,
-        return_window_days: shop.settings.return_window_days ?? 0,
-        return_policy_notes: shop.settings.return_policy_notes || '',
-        refund_allowed: shop.settings.refund_allowed === true,
-        refund_policy_notes: shop.settings.refund_policy_notes || (shop.settings.refund_allowed === true ? 'If any item is cancelled, 100% of the food item price is refunded to your account within 5-7 business days.' : 'This store operates under a strict no-refund policy. Orders cannot be refunded upon cancellation.'),
-        replacement_allowed: shop.settings.replacement_allowed !== false,
-        replacement_window_days: shop.settings.replacement_window_days ?? 0,
-        replacement_policy_notes: shop.settings.replacement_policy_notes || (shop.settings.replacement_allowed !== false ? 'Free replacement available for damaged or incorrect delivered items.' : 'Item replacements are not accepted on public orders.'),
-      });
-    }
-  }, [shop]);
 
   useEffect(() => {
     // Auto-sync Razorpay Route activation status if an account exists
@@ -843,6 +817,12 @@ export function SettingsPage() {
       
       const payload = {
         ...settingsData,
+        base_delivery_charge: parseFloat(String(settingsData.base_delivery_charge)) || 0,
+        base_delivery_distance: parseFloat(String(settingsData.base_delivery_distance)) || 0,
+        extra_delivery_distance_step: Math.max(0.1, parseFloat(String(settingsData.extra_delivery_distance_step)) || 1),
+        extra_delivery_charge_per_step: parseFloat(String(settingsData.extra_delivery_charge_per_step)) || 0,
+        max_delivery_distance: Math.max(0, parseFloat(String((settingsData as any).max_delivery_distance)) || 0),
+        payment_timeout_minutes: Math.max(1, parseInt(String((settingsData as any).payment_timeout_minutes)) || 15),
         // Forcefully disable if not verified to prevent backend 400 errors if it was previously enabled
         online_payments_enabled: isVerified ? settingsData.online_payments_enabled : false,
         dinein_enabled: isVerified ? settingsData.dinein_enabled : false,
@@ -861,6 +841,14 @@ export function SettingsPage() {
         const freshShop = await api.get('/shops/me');
         setShop(freshShop.data);
       }
+      setSettingsData(prev => ({
+        ...prev,
+        ...res.data,
+        max_delivery_distance: res.data.max_delivery_distance ?? 0,
+        payment_timeout_minutes: res.data.payment_timeout_minutes ?? 15,
+      }));
+      const savedMins = Number(res.data.payment_timeout_minutes ?? 15);
+      setTimeoutMode([5, 10, 15, 20, 30, 45, 60].includes(savedMins) ? String(savedMins) : 'custom');
       toast.success('Shop settings updated successfully!');
     } catch (error: any) {
       toast.error(error.response?.data?.detail || 'Failed to update shop settings');
@@ -1700,6 +1688,85 @@ export function SettingsPage() {
               </CardContent>
             </Card>
 
+            {/* Payment Awaiting Timeframe Card */}
+            <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs animate-in fade-in duration-300">
+              <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-slate-50/50 dark:bg-slate-900/50">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                    <Clock size={20} />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base font-bold">Payment Awaiting Timeframe</CardTitle>
+                    <CardDescription className="text-xs">
+                      Time allowed for customers to complete online payment on the public menu before orders automatically cancel.
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="p-4 sm:p-6 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl bg-slate-50/60 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
+                  <div className="space-y-1 max-w-md">
+                    <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                      <span>Order Cancellation Timer</span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300">
+                        Default: 15 Mins
+                      </span>
+                    </label>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                      A live countdown timer will display on the customer's public order page. If online payment is not completed within this timeframe, the order is automatically cancelled and inventory is restored.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <div className="w-52">
+                      <SearchableSelect
+                        options={[
+                          { id: '5', name: '5 Minutes' },
+                          { id: '10', name: '10 Minutes' },
+                          { id: '15', name: '15 Minutes (Default)' },
+                          { id: '20', name: '20 Minutes' },
+                          { id: '30', name: '30 Minutes' },
+                          { id: '45', name: '45 Minutes' },
+                          { id: '60', name: '60 Minutes (1 Hour)' },
+                          { id: 'custom', name: 'Custom Minutes...' },
+                        ]}
+                        value={timeoutMode}
+                        onChange={(val) => {
+                          setTimeoutMode(val);
+                          if (val !== 'custom') {
+                            setSettingsData(prev => ({ ...prev, payment_timeout_minutes: parseInt(val) || 15 }));
+                          }
+                        }}
+                        showSearch={false}
+                        className="bg-white dark:bg-slate-900"
+                      />
+                    </div>
+
+                    {timeoutMode === 'custom' && (
+                      <div className="flex items-center gap-1.5 animate-in fade-in duration-200">
+                        <input
+                          type="number"
+                          min="1"
+                          max="180"
+                          value={(settingsData as any).payment_timeout_minutes !== undefined && (settingsData as any).payment_timeout_minutes !== null ? (settingsData as any).payment_timeout_minutes : ''}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            setSettingsData(prev => ({
+                              ...prev,
+                              payment_timeout_minutes: raw === '' ? ('' as any) : Math.max(1, Math.min(180, parseInt(raw) || 1))
+                            }));
+                          }}
+                          className="w-20 px-2.5 py-2 text-xs font-bold text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-amber-500 text-slate-900 dark:text-white shadow-2xs"
+                          placeholder="Mins"
+                        />
+                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400">mins</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             {/* Product Serial Number & SKU Configuration */}
             <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs animate-in fade-in duration-300">
               <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-slate-50/50 dark:bg-slate-900/50">
@@ -1960,8 +2027,11 @@ export function SettingsPage() {
                               </label>
                               <input
                                 type="number" min="0" step="1"
-                                value={settingsData.base_delivery_charge}
-                                onChange={(e) => setSettingsData(prev => ({ ...prev, base_delivery_charge: parseFloat(e.target.value) || 0 }))}
+                                value={settingsData.base_delivery_charge !== undefined && settingsData.base_delivery_charge !== null ? settingsData.base_delivery_charge : ''}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setSettingsData(prev => ({ ...prev, base_delivery_charge: val === '' ? ('' as any) : Math.max(0, parseFloat(val) || 0) }));
+                                }}
                                 className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-amber-500 font-semibold text-slate-900 dark:text-white"
                               />
                             </div>
@@ -1971,8 +2041,11 @@ export function SettingsPage() {
                               </label>
                               <input
                                 type="number" min="0" step="0.5"
-                                value={settingsData.base_delivery_distance}
-                                onChange={(e) => setSettingsData(prev => ({ ...prev, base_delivery_distance: parseFloat(e.target.value) || 0 }))}
+                                value={settingsData.base_delivery_distance !== undefined && settingsData.base_delivery_distance !== null ? settingsData.base_delivery_distance : ''}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setSettingsData(prev => ({ ...prev, base_delivery_distance: val === '' ? ('' as any) : Math.max(0, parseFloat(val) || 0) }));
+                                }}
                                 className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-amber-500 font-semibold text-slate-900 dark:text-white"
                               />
                             </div>
@@ -1982,8 +2055,11 @@ export function SettingsPage() {
                               </label>
                               <input
                                 type="number" min="0.1" step="0.5"
-                                value={settingsData.extra_delivery_distance_step}
-                                onChange={(e) => setSettingsData(prev => ({ ...prev, extra_delivery_distance_step: Math.max(0.1, parseFloat(e.target.value) || 1) }))}
+                                value={settingsData.extra_delivery_distance_step !== undefined && settingsData.extra_delivery_distance_step !== null ? settingsData.extra_delivery_distance_step : ''}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setSettingsData(prev => ({ ...prev, extra_delivery_distance_step: val === '' ? ('' as any) : Math.max(0.1, parseFloat(val) || 0.1) }));
+                                }}
                                 className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-amber-500 font-semibold text-slate-900 dark:text-white"
                               />
                             </div>
@@ -1993,8 +2069,11 @@ export function SettingsPage() {
                               </label>
                               <input
                                 type="number" min="0" step="1"
-                                value={settingsData.extra_delivery_charge_per_step}
-                                onChange={(e) => setSettingsData(prev => ({ ...prev, extra_delivery_charge_per_step: parseFloat(e.target.value) || 0 }))}
+                                value={settingsData.extra_delivery_charge_per_step !== undefined && settingsData.extra_delivery_charge_per_step !== null ? settingsData.extra_delivery_charge_per_step : ''}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setSettingsData(prev => ({ ...prev, extra_delivery_charge_per_step: val === '' ? ('' as any) : Math.max(0, parseFloat(val) || 0) }));
+                                }}
                                 className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-amber-500 font-semibold text-slate-900 dark:text-white"
                               />
                             </div>
@@ -2006,8 +2085,14 @@ export function SettingsPage() {
                               <input
                                 type="number" min="0" step="0.5"
                                 placeholder="0"
-                                value={(settingsData as any).max_delivery_distance ?? 0}
-                                onChange={(e) => setSettingsData(prev => ({ ...prev, max_delivery_distance: Math.max(0, parseFloat(e.target.value) || 0) }))}
+                                value={(settingsData as any).max_delivery_distance !== undefined && (settingsData as any).max_delivery_distance !== null ? (settingsData as any).max_delivery_distance : ''}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setSettingsData(prev => ({
+                                    ...prev,
+                                    max_delivery_distance: val === '' ? ('' as any) : Math.max(0, parseFloat(val) || 0)
+                                  }));
+                                }}
                                 className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-amber-500 font-semibold text-slate-900 dark:text-white"
                               />
                             </div>
@@ -2106,6 +2191,18 @@ export function SettingsPage() {
                     />
                   </CardContent>
                 </Card>
+
+                {/* Bottom Action Save */}
+                <div className="flex justify-end pt-2">
+                  <Button
+                    onClick={handleSaveShopSettings}
+                    disabled={isSavingSettings}
+                    className="font-bold bg-primary text-white rounded-xl shadow-md hover:shadow-lg transition-all px-6 py-2.5 cursor-pointer"
+                  >
+                    <Save className="w-4 h-4 mr-2" />
+                    {isSavingSettings ? 'Saving...' : 'Save Ordering Settings'}
+                  </Button>
+                </div>
               </div>
             );
           })()}

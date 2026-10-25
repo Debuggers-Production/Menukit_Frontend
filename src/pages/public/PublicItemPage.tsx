@@ -91,12 +91,16 @@ export function PublicItemPage() {
         if (res.data?.is_strict_member) {
           setMemberStatus('verified-member');
           sessionStorage.setItem(`member_status_${id}`, 'verified-member');
-        } else if (res.data?.is_member) {
-          setMemberStatus('unlocked');
-          sessionStorage.setItem(`member_status_${id}`, 'unlocked');
         } else {
-          sessionStorage.removeItem(`member_status_${id}`);
-          setMemberStatus(null);
+          const currentStatus = sessionStorage.getItem(`member_status_${id}`);
+          if (currentStatus === 'verified-member') {
+            sessionStorage.removeItem(`member_status_${id}`);
+            setMemberStatus(null);
+          } else if (currentStatus === 'unlocked') {
+            setMemberStatus('unlocked');
+          } else {
+            setMemberStatus(null);
+          }
         }
       } catch (err) {}
     };
@@ -529,13 +533,11 @@ export function PublicItemPage() {
 
                 if (!item.offer_price && (!item.variants || !item.variants.length || !item.variants[selectedVariantIdx].offer_price)) {
                   const disc = discounts.find(d => {
-                    // Direct Price Drop discounts apply unconditionally to all visitors
-                    if (!d.is_price_drop) {
-                      if (d.visibility_type === 'members_only_hidden' && memberStatus !== 'verified-member') return false;
-                      if (d.visibility_type === 'members_only_visible' && memberStatus !== 'verified-member') return false;
-                      const isUserExisting = Boolean(localStorage.getItem('customer_token') || localStorage.getItem('customer_is_existing') === 'true');
-                      if (d.visibility_type === 'unlock_required' && (memberStatus === null || isUserExisting)) return false;
-                    }
+                    if (!d.is_price_drop || d.is_active === false) return false;
+                    if ((d.min_order_value && Number(d.min_order_value) > 0) || (d.max_order_value && Number(d.max_order_value) > 0)) return false;
+                    if (d.visibility_type === 'members_only_hidden' && memberStatus !== 'verified-member') return false;
+                    if (d.visibility_type === 'members_only_visible' && memberStatus !== 'verified-member') return false;
+                    if (d.visibility_type === 'unlock_required' && !memberStatus) return false;
                     if (d.discount_type === 'bogo' || d.discount_type === 'combo' || d.discount_type === 'free_item') return false;
                     if (d.applies_to === 'all') return true;
                     if (d.applies_to === 'category' && d.target_ids?.includes(item.category_id)) return true;

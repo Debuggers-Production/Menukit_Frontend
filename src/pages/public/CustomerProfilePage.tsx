@@ -338,7 +338,7 @@ export function CustomerProfilePage() {
                   Claimed Customer Rewards ({discounts.length})
                 </h3>
                 <span className="text-xs font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                  <Sparkles size={14} /> Available Now
+                  <Gift size={14} /> Available Now
                 </span>
               </div>
 

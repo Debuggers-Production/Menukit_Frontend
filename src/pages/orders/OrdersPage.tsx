@@ -921,7 +921,17 @@ export function OrdersPage() {
     const handleRealtimeUpdate = async (e: any) => {
       const notif = e.detail;
       if (!notif) return;
-      if (notif.type === 'NEW_ORDER' || notif.type === 'ORDER_STATUS' || notif.type === 'ORDER_PAID') {
+      if (
+        notif.type === 'NEW_ORDER' ||
+        notif.type === 'ORDER_STATUS' ||
+        notif.type === 'ORDER_PAID' ||
+        notif.type === 'ORDER_UPDATED' ||
+        notif.type === 'ITEMS_ADDED' ||
+        notif.event === 'NEW_ORDER' ||
+        notif.event === 'ORDER_STATUS' ||
+        notif.event === 'ORDER_UPDATED' ||
+        notif.event === 'ORDER_PAID'
+      ) {
         fetchStatusCounts();
         fetchOrdersData(0, true);
 

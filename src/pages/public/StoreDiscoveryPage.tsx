@@ -1369,10 +1369,10 @@ export function StoreDiscoveryPage() {
                         {disc.discount_type === 'free_item' && 'FREE'}
                       </div>
                       <div className="text-[10px] sm:text-xs font-bold uppercase tracking-widest mt-0.5 opacity-90 text-center">
-                        {['percentage', 'flat'].includes(disc.discount_type) && 'Off'}
-                        {disc.discount_type === 'bogo' && `Buy ${disc.buy_quantity} Get ${disc.get_quantity}`}
-                        {disc.discount_type === 'combo' && `₹${Number(disc.discount_value)}`}
-                        {disc.discount_type === 'free_item' && (disc.discount_value ? `On ₹${Number(disc.discount_value)}+` : 'Gift Item')}
+                        {['percentage', 'flat'].includes(disc.discount_type) && (disc.min_order_value ? `On ₹${Number(disc.min_order_value)}+` : 'Off')}
+                        {disc.discount_type === 'bogo' && (disc.min_order_value ? `On ₹${Number(disc.min_order_value)}+` : `Buy ${disc.buy_quantity} Get ${disc.get_quantity}`)}
+                        {disc.discount_type === 'combo' && (disc.min_order_value ? `On ₹${Number(disc.min_order_value)}+` : `₹${Number(disc.discount_value)}`)}
+                        {disc.discount_type === 'free_item' && (disc.min_order_value ? `On ₹${Number(disc.min_order_value)}+` : (disc.discount_value ? `On ₹${Number(disc.discount_value)}+` : 'Gift Item'))}
                       </div>
                     </div>
 

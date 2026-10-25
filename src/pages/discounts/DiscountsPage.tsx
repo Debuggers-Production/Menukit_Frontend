@@ -131,8 +131,11 @@ const defaultForm = {
  title: '',
  description: '',
  code: '',
- discount_type: 'percentage' as 'percentage' | 'flat' | 'bogo' | 'combo' | 'free_item',
- discount_value: '',
+  discount_type: 'percentage' as 'percentage' | 'flat' | 'bogo' | 'combo' | 'free_item',
+  discount_value: '',
+  min_order_value: '',
+  max_order_value: '',
+  max_discount_amount: '',
  buy_quantity: '',
  get_quantity: '',
  reward_target_ids: [] as string[],
@@ -397,6 +400,9 @@ export function DiscountsPage() {
         code: targetDiscount.code || '',
         discount_type: targetDiscount.discount_type || 'percentage',
         discount_value: targetDiscount.discount_value !== null && targetDiscount.discount_value !== undefined ? targetDiscount.discount_value.toString() : '',
+        min_order_value: targetDiscount.min_order_value !== null && targetDiscount.min_order_value !== undefined ? targetDiscount.min_order_value.toString() : '',
+        max_order_value: targetDiscount.max_order_value !== null && targetDiscount.max_order_value !== undefined ? targetDiscount.max_order_value.toString() : '',
+        max_discount_amount: targetDiscount.max_discount_amount !== null && targetDiscount.max_discount_amount !== undefined ? targetDiscount.max_discount_amount.toString() : '',
         buy_quantity: targetDiscount.buy_quantity !== null && targetDiscount.buy_quantity !== undefined ? targetDiscount.buy_quantity.toString() : '',
         get_quantity: targetDiscount.get_quantity !== null && targetDiscount.get_quantity !== undefined ? targetDiscount.get_quantity.toString() : (targetDiscount.discount_type === 'free_item' ? '1' : ''),
         reward_target_ids: targetDiscount.reward_target_ids || [],
@@ -411,11 +417,11 @@ export function DiscountsPage() {
         visibility_type: targetDiscount.visibility_type || 'everyone',
       });
       const hasRewardTargets = targetDiscount.reward_target_ids && targetDiscount.reward_target_ids.length > 0;
-      if (hasRewardTargets && targetDiscount.discount_type === 'bogo') {
+      if (hasRewardTargets && (targetDiscount.discount_type === 'bogo' || targetDiscount.discount_type === 'free_item')) {
         const isCat = categories.some(c => targetDiscount.reward_target_ids!.includes(c.id));
         setRewardAppliesTo(isCat ? 'category' : 'items');
       } else {
-        setRewardAppliesTo('same');
+        setRewardAppliesTo(targetDiscount.discount_type === 'free_item' ? 'items' : 'same');
       }
     } else {
       const type = typeof defaultType === 'string' ? defaultType : 'percentage';
@@ -427,7 +433,7 @@ export function DiscountsPage() {
           : 'combo'
       );
       setEditingDiscount(null);
-      setRewardAppliesTo('same');
+      setRewardAppliesTo(type === 'free_item' ? 'items' : 'same');
       setFormData({
         ...defaultForm,
         code: '',
@@ -457,13 +463,25 @@ export function DiscountsPage() {
       toast.error('Please specify buy and get quantities');
       return;
     }
+    if (formData.discount_type === 'free_item' && (!formData.reward_target_ids || formData.reward_target_ids.length === 0)) {
+      toast.error('Please select at least one free reward item');
+      return;
+    }
 
     setIsSubmitting(true);
     try {
+      const hasSpendThreshold = Boolean(
+        (formData.min_order_value && parseFloat(formData.min_order_value) > 0) ||
+        (formData.max_order_value && parseFloat(formData.max_order_value) > 0)
+      );
       const payload = {
         ...formData,
         code: formData.code?.trim().toUpperCase() || null,
         discount_value: formData.discount_value ? parseFloat(formData.discount_value) : null,
+        min_order_value: formData.min_order_value ? parseFloat(formData.min_order_value) : null,
+        max_order_value: formData.max_order_value ? parseFloat(formData.max_order_value) : null,
+        is_price_drop: hasSpendThreshold ? false : formData.is_price_drop,
+        max_discount_amount: formData.max_discount_amount ? parseFloat(formData.max_discount_amount) : null,
         buy_quantity: formData.buy_quantity ? parseInt(formData.buy_quantity) : null,
         get_quantity: formData.get_quantity ? parseInt(formData.get_quantity) : (formData.discount_type === 'free_item' ? 1 : null),
         reward_target_ids: (formData.reward_target_ids && formData.reward_target_ids.length > 0) ? formData.reward_target_ids : null,
@@ -931,16 +949,25 @@ export function DiscountsPage() {
  {d.discount_type === 'flat'&& <><span className="text-muted-foreground text-[12px]">{currencySymbol}</span>{d.discount_value} off</>}
  {d.discount_type === 'bogo'&& <><Sparkles size={12} className="text-muted-foreground" /> Buy {d.buy_quantity} Get {d.get_quantity}</>}
  {d.discount_type === 'combo'&& <><Layers size={12} className="text-muted-foreground" /> {currencySymbol}{d.discount_value} Combo</>}
- {d.discount_type === 'free_item'&& <><Gift size={12} className="text-rose-500" /> Free Item {d.discount_value ? `(Min. ${currencySymbol}${d.discount_value})` : ''}</>}
+ {d.discount_type === 'free_item'&& <><Gift size={12} className="text-rose-500" /> Free Item</>}
  </span>
+ {((d.min_order_value && Number(d.min_order_value) > 0) || (d.max_order_value && Number(d.max_order_value) > 0)) && (
+  <span className="flex items-center gap-1 sm:gap-1.5 bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 px-2 py-1 rounded-md border border-amber-200 dark:border-amber-800/40 font-bold">
+    {d.min_order_value && d.max_order_value
+      ? `Spend ${currencySymbol}${d.min_order_value} - ${currencySymbol}${d.max_order_value}`
+      : d.min_order_value
+      ? `Min. ${currencySymbol}${d.min_order_value}`
+      : `Up to ${currencySymbol}${d.max_order_value}`}
+  </span>
+ )}
  {d.is_price_drop && (
   <span className="flex items-center gap-1 sm:gap-1.5 bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 px-2 py-1 rounded-md border border-amber-200 dark:border-amber-800/40 font-bold">
     <TrendingDown size={12} className="text-amber-600 dark:text-amber-400" /> Price Drop
   </span>
  )}
- {d.discount_type === 'bogo' && d.reward_target_ids && d.reward_target_ids.length > 0 && (
+ {(d.discount_type === 'bogo' || d.discount_type === 'free_item') && d.reward_target_ids && d.reward_target_ids.length > 0 && (
  <span className="flex items-center gap-1 sm:gap-1.5 bg-indigo-50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300 px-2 py-1 rounded-md border border-indigo-200 dark:border-indigo-800/40">
- <Gift size={12} /> {d.reward_target_ids.length} reward {categories.some(c => d.reward_target_ids!.includes(c.id)) ? `categor${d.reward_target_ids.length > 1 ? 'ies' : 'y'}` : `item${d.reward_target_ids.length > 1 ? 's' : ''}`}
+ <Gift size={12} /> {d.reward_target_ids.length} {d.discount_type === 'free_item' ? 'gift' : 'reward'} {categories.some(c => d.reward_target_ids!.includes(c.id)) ? `categor${d.reward_target_ids.length > 1 ? 'ies' : 'y'}` : `item${d.reward_target_ids.length > 1 ? 's' : ''}`}
  </span>
  )}
  <span className="flex items-center gap-1 sm:gap-1.5 bg-muted/50 px-2 py-1 rounded-md border border-border">
@@ -1254,44 +1281,123 @@ export function DiscountsPage() {
             {currentStep === 2 && (
               <>
                 {['percentage', 'flat'].includes(formData.discount_type) && (
-                  <Input
-                    label={formData.discount_type === 'percentage' ? 'Percentage (%) *' : `Amount (${currencySymbol}) *`}
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    max={formData.discount_type === 'percentage' ? '100' : undefined}
-                    value={formData.discount_value}
-                    onChange={e => setFormData({ ...formData, discount_value: e.target.value.replace(/[eE]/g, '') })}
-                    placeholder={formData.discount_type === 'percentage' ? '10' : '50'}
-                    required={['percentage', 'flat'].includes(formData.discount_type)}
-                  />
+                  <div className="space-y-3.5">
+                    {/* Discount Value & Max Savings Cap */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <Input
+                        label={formData.discount_type === 'percentage' ? 'Percentage (%) *' : `Flat Amount (${currencySymbol}) *`}
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max={formData.discount_type === 'percentage' ? '100' : undefined}
+                        value={formData.discount_value}
+                        onChange={e => setFormData({ ...formData, discount_value: e.target.value.replace(/[eE]/g, '') })}
+                        placeholder={formData.discount_type === 'percentage' ? 'e.g. 10' : 'e.g. 50'}
+                        required={['percentage', 'flat'].includes(formData.discount_type)}
+                      />
+                      {formData.discount_type === 'percentage' ? (
+                        <Input
+                          label={`Max Savings Cap (${currencySymbol})`}
+                          type="number"
+                          step="1"
+                          min="0"
+                          value={formData.max_discount_amount}
+                          onChange={e => setFormData({ ...formData, max_discount_amount: e.target.value.replace(/[eE]/g, '') })}
+                          placeholder="e.g. 100 (Optional savings cap)"
+                        />
+                      ) : (
+                        <div className="hidden sm:block" />
+                      )}
+                    </div>
+
+                    {/* Spend Range (Min to Max) */}
+                    <div className="p-3.5 bg-muted/30 rounded-2xl border border-border/80 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-foreground flex items-center gap-1.5 uppercase tracking-wider">
+                          <span>Spend Range ({currencySymbol})</span>
+                          <span className="text-[10px] font-normal text-muted-foreground lowercase">(optional)</span>
+                        </label>
+                        {formData.min_order_value && formData.max_order_value ? (
+                          <span className="text-[11px] font-bold text-primary">
+                            Applies on {currencySymbol}{formData.min_order_value} - {currencySymbol}{formData.max_order_value}
+                          </span>
+                        ) : formData.min_order_value ? (
+                          <span className="text-[11px] font-bold text-primary">
+                            Applies on {currencySymbol}{formData.min_order_value}+
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <Input
+                          label={`Min Spend (${currencySymbol})`}
+                          type="number"
+                          step="1"
+                          min="0"
+                          value={formData.min_order_value}
+                          onChange={e => setFormData({ ...formData, min_order_value: e.target.value.replace(/[eE]/g, '') })}
+                          placeholder="e.g. 100"
+                        />
+                        <Input
+                          label={`Max Spend (${currencySymbol})`}
+                          type="number"
+                          step="1"
+                          min="0"
+                          value={formData.max_order_value}
+                          onChange={e => setFormData({ ...formData, max_order_value: e.target.value.replace(/[eE]/g, '') })}
+                          placeholder="e.g. 500 (Leave empty for no upper limit)"
+                        />
+                      </div>
+                    </div>
+                  </div>
                 )}
 
                 {formData.discount_type === 'bogo' && (
-                  <div className="grid grid-cols-2 gap-3 p-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/30 rounded-xl">
+                  <div className="space-y-3 p-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/30 rounded-xl">
+                    <div className="grid grid-cols-2 gap-3">
+                      <Input
+                        label="Buy Quantity *"
+                        type="number"
+                        min="1"
+                        value={formData.buy_quantity}
+                        onChange={e => setFormData({ ...formData, buy_quantity: e.target.value.replace(/[eE]/g, '') })}
+                        placeholder="e.g. 2"
+                        required={formData.discount_type === 'bogo'}
+                      />
+                      <Input
+                        label="Get Quantity (Free) *"
+                        type="number"
+                        min="1"
+                        value={formData.get_quantity}
+                        onChange={e => setFormData({ ...formData, get_quantity: e.target.value.replace(/[eE]/g, '') })}
+                        placeholder="e.g. 1"
+                        required={formData.discount_type === 'bogo'}
+                      />
+                    </div>
                     <Input
-                      label="Buy Quantity *"
+                      label={`Min. Purchase / Spend (${currencySymbol})`}
                       type="number"
-                      min="1"
-                      value={formData.buy_quantity}
-                      onChange={e => setFormData({ ...formData, buy_quantity: e.target.value.replace(/[eE]/g, '') })}
-                      placeholder="e.g. 2"
-                      required={formData.discount_type === 'bogo'}
-                    />
-                    <Input
-                      label="Get Quantity (Free) *"
-                      type="number"
-                      min="1"
-                      value={formData.get_quantity}
-                      onChange={e => setFormData({ ...formData, get_quantity: e.target.value.replace(/[eE]/g, '') })}
-                      placeholder="e.g. 1"
-                      required={formData.discount_type === 'bogo'}
+                      step="1"
+                      min="0"
+                      value={formData.min_order_value}
+                      onChange={e => setFormData({ ...formData, min_order_value: e.target.value.replace(/[eE]/g, '') })}
+                      placeholder="e.g. 500 (Spend ₹500+ to unlock BOGO)"
                     />
                   </div>
                 )}
 
                 {formData.discount_type === 'free_item' && (
-                  <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800/30 rounded-xl">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800/30 rounded-xl">
+                    <Input
+                      label={`Min. Purchase / Spend (${currencySymbol}) *`}
+                      type="number"
+                      step="1"
+                      min="0"
+                      value={formData.min_order_value}
+                      onChange={e => setFormData({ ...formData, min_order_value: e.target.value.replace(/[eE]/g, '') })}
+                      placeholder="e.g. 500 (Spend ₹500 get this item)"
+                      required={formData.discount_type === 'free_item'}
+                    />
                     <Input
                       label="Quantity of Free Items to Give *"
                       type="number"
@@ -1305,7 +1411,7 @@ export function DiscountsPage() {
                 )}
 
                 {formData.discount_type === 'combo' && (
-                  <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800/30 rounded-xl">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800/30 rounded-xl">
                     <Input
                       label={`Combo Price (${currencySymbol}) *`}
                       type="number"
@@ -1315,6 +1421,15 @@ export function DiscountsPage() {
                       onChange={e => setFormData({ ...formData, discount_value: e.target.value.replace(/[eE]/g, '') })}
                       placeholder="e.g. 499"
                       required={formData.discount_type === 'combo'}
+                    />
+                    <Input
+                      label={`Min. Purchase / Spend (${currencySymbol})`}
+                      type="number"
+                      step="1"
+                      min="0"
+                      value={formData.min_order_value}
+                      onChange={e => setFormData({ ...formData, min_order_value: e.target.value.replace(/[eE]/g, '') })}
+                      placeholder="e.g. 500 (Spend ₹500+ to unlock Combo)"
                     />
                   </div>
                 )}
@@ -1506,66 +1621,110 @@ export function DiscountsPage() {
  </div>
 
                 {/* 🏷️ Use as Price Drop Option */}
-                <div className={`p-4 rounded-2xl border transition-all mt-4 ${formData.is_price_drop ? 'bg-gradient-to-r from-amber-50/90 to-orange-50/80 dark:from-amber-950/40 dark:to-orange-950/30 border-amber-300 dark:border-amber-700/60 shadow-xs ring-1 ring-amber-400/20' : 'bg-muted/40 border-border hover:bg-muted/60'}`}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-start gap-3">
-                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors ${formData.is_price_drop ? 'bg-gradient-to-tr from-amber-500 to-amber-400 text-white shadow-xs' : 'bg-muted text-muted-foreground'}`}>
-                        <TrendingDown size={19} />
+                {(() => {
+                  const hasSpendThreshold = Boolean(
+                    (formData.min_order_value && parseFloat(formData.min_order_value) > 0) ||
+                    (formData.max_order_value && parseFloat(formData.max_order_value) > 0)
+                  );
+                  const isChecked = !hasSpendThreshold && Boolean(formData.is_price_drop);
+                  return (
+                    <div className={`p-4 rounded-2xl border transition-all mt-4 ${
+                      hasSpendThreshold 
+                        ? 'bg-muted/20 border-border opacity-70' 
+                        : isChecked 
+                        ? 'bg-gradient-to-r from-amber-50/90 to-orange-50/80 dark:from-amber-950/40 dark:to-orange-950/30 border-amber-300 dark:border-amber-700/60 shadow-xs ring-1 ring-amber-400/20' 
+                        : 'bg-muted/40 border-border hover:bg-muted/60'
+                    }`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+                            isChecked ? 'bg-gradient-to-tr from-amber-500 to-amber-400 text-white shadow-xs' : 'bg-muted text-muted-foreground'
+                          }`}>
+                            <TrendingDown size={19} />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <label 
+                                onClick={() => {
+                                  if (!hasSpendThreshold) setFormData({ ...formData, is_price_drop: !formData.is_price_drop });
+                                }} 
+                                className={`text-sm font-bold transition-colors select-none ${
+                                  hasSpendThreshold ? 'text-muted-foreground cursor-not-allowed' : 'text-foreground cursor-pointer hover:text-amber-600'
+                                }`}
+                              >
+                                Use as Price Drop
+                              </label>
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                                hasSpendThreshold
+                                  ? 'bg-muted text-muted-foreground'
+                                  : isChecked 
+                                  ? 'bg-amber-200 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200' 
+                                  : 'bg-muted text-muted-foreground'
+                              }`}>
+                                {hasSpendThreshold ? 'Unavailable with Spend Range' : 'Always Discounted'}
+                              </span>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1 leading-snug">
+                              {hasSpendThreshold ? (
+                                <span className="text-amber-600 dark:text-amber-400 font-medium">
+                                  Disabled because Spend Range ({formData.min_order_value && formData.max_order_value ? `${currencySymbol}${formData.min_order_value} - ${currencySymbol}${formData.max_order_value}` : `${currencySymbol}${formData.min_order_value || formData.max_order_value}`}) is set. Price drops apply to individual items directly on the menu, whereas spend range discounts apply automatically at checkout when the total cart falls within the range.
+                                </span>
+                              ) : (
+                                <>Items directly show a slashed original price and discounted selling price (e.g. <span className="line-through opacity-70">{currencySymbol}50</span> → <span className="font-bold text-amber-600 dark:text-amber-400">{currencySymbol}25</span>). Customers can use this discount unlimited times without entering coupon codes.</>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Switch Toggle */}
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={isChecked}
+                          disabled={hasSpendThreshold}
+                          onClick={() => {
+                            if (!hasSpendThreshold) setFormData({ ...formData, is_price_drop: !formData.is_price_drop });
+                          }}
+                          className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 mt-0.5 ${
+                            hasSpendThreshold 
+                              ? 'bg-slate-200 dark:bg-slate-800 cursor-not-allowed opacity-50' 
+                              : isChecked 
+                              ? 'bg-amber-500 cursor-pointer' 
+                              : 'bg-slate-300 dark:bg-slate-700 cursor-pointer'
+                          }`}
+                        >
+                          <span
+                            aria-hidden="true"
+                            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                              isChecked ? 'translate-x-5' : 'translate-x-0'
+                            }`}
+                          />
+                        </button>
                       </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <label 
-                            onClick={() => setFormData({ ...formData, is_price_drop: !formData.is_price_drop })} 
-                            className="text-sm font-bold text-foreground cursor-pointer select-none hover:text-amber-600 transition-colors"
-                          >
-                            Use as Price Drop
-                          </label>
-                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider ${formData.is_price_drop ? 'bg-amber-200 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200' : 'bg-muted text-muted-foreground'}`}>
-                            Always Discounted
+
+                      {isChecked && (
+                        <div className="mt-3 pt-3 border-t border-amber-200/80 dark:border-amber-800/40 flex items-center gap-2 text-xs text-amber-800 dark:text-amber-300 font-medium">
+                          <CheckCircle2 size={15} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                          <span>
+                            Direct Price Drop Active: Matching items will automatically display discounted prices with unlimited customer redemptions.
                           </span>
                         </div>
-                        <p className="text-xs text-muted-foreground mt-1 leading-snug">
-                          Items directly show a slashed original price and discounted selling price (e.g. <span className="line-through opacity-70">{currencySymbol}50</span> → <span className="font-bold text-amber-600 dark:text-amber-400">{currencySymbol}25</span>). Customers can use this discount unlimited times without entering coupon codes.
-                        </p>
-                      </div>
+                      )}
                     </div>
+                  );
+                })()}
 
-                    {/* Switch Toggle */}
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={formData.is_price_drop}
-                      onClick={() => setFormData({ ...formData, is_price_drop: !formData.is_price_drop })}
-                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 mt-0.5 ${
-                        formData.is_price_drop ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-700'
-                      }`}
-                    >
-                      <span
-                        aria-hidden="true"
-                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
-                          formData.is_price_drop ? 'translate-x-5' : 'translate-x-0'
-                        }`}
-                      />
-                    </button>
-                  </div>
-
-                  {formData.is_price_drop && (
-                    <div className="mt-3 pt-3 border-t border-amber-200/80 dark:border-amber-800/40 flex items-center gap-2 text-xs text-amber-800 dark:text-amber-300 font-medium">
-                      <CheckCircle2 size={15} className="text-amber-600 dark:text-amber-400 shrink-0" />
-                      <span>
-                        Direct Price Drop Active: Matching items will automatically display discounted prices with unlimited customer redemptions.
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Reward Items Selection for BOGO */}
-                {formData.discount_type === 'bogo' && (
+                {/* Reward Items Selection for BOGO & Free Item */}
+                {(formData.discount_type === 'bogo' || formData.discount_type === 'free_item') && (
                   <div className="space-y-3 pt-3 border-t border-border mt-4">
                     <div className="flex items-center justify-between">
                       <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
                         <Gift size={15} className="text-indigo-500" />
-                        <span>Get these items (Reward / Free Item) *</span>
+                        <span>
+                          {formData.discount_type === 'free_item'
+                            ? 'Select Complimentary / Free Item(s) *'
+                            : 'Get these items (Reward / Free Item) *'}
+                        </span>
                       </label>
                       <span className="text-[11px] text-muted-foreground font-medium">
                         {rewardAppliesTo === 'same'
@@ -1576,24 +1735,26 @@ export function DiscountsPage() {
                       </span>
                     </div>
 
-                    {/* Mode Toggle: Same Item vs Category vs Choose Free Item(s) */}
-                    <div className="grid grid-cols-3 bg-muted/60 p-1 rounded-xl gap-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setRewardAppliesTo('same');
-                          setFormData({ ...formData, reward_target_ids: [] });
-                        }}
-                        className={cn(
-                          "py-2 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer",
-                          rewardAppliesTo === 'same'
-                            ? "bg-background shadow-sm text-foreground ring-1 ring-border dark:bg-slate-700"
-                            : "text-muted-foreground hover:text-foreground"
-                        )}
-                      >
-                        <Sparkles size={13} className="text-indigo-500" />
-                        <span>Same Item</span>
-                      </button>
+                    {/* Mode Toggle: Same Item (BOGO only) vs Category vs Choose Free Item(s) */}
+                    <div className={cn("grid p-1 rounded-xl gap-1 bg-muted/60", formData.discount_type === 'free_item' ? "grid-cols-2" : "grid-cols-3")}>
+                      {formData.discount_type !== 'free_item' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRewardAppliesTo('same');
+                            setFormData({ ...formData, reward_target_ids: [] });
+                          }}
+                          className={cn(
+                            "py-2 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer",
+                            rewardAppliesTo === 'same'
+                              ? "bg-background shadow-sm text-foreground ring-1 ring-border dark:bg-slate-700"
+                              : "text-muted-foreground hover:text-foreground"
+                          )}
+                        >
+                          <Sparkles size={13} className="text-indigo-500" />
+                          <span>Same Item</span>
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => {
@@ -1632,7 +1793,7 @@ export function DiscountsPage() {
                       </button>
                     </div>
 
-                    {rewardAppliesTo === 'same' && (
+                    {formData.discount_type !== 'free_item' && rewardAppliesTo === 'same' && (
                       <div className="p-3 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-800/30 flex items-center gap-2.5 text-xs text-indigo-900 dark:text-indigo-300 font-medium">
                         <CheckCircle2 size={16} className="text-indigo-600 dark:text-indigo-400 shrink-0" />
                         <span>

@@ -10,6 +10,9 @@ import { useAuthStore } from '@/store/authStore';
 import { useHeaderStore } from '@/store/useHeaderStore';
 import { HeaderActions } from '@/components/HeaderActions';
 
+import { useShopStore } from '@/store/shopStore';
+import { isSchemeEnabledShop } from '@/config/businessCategories';
+
 type TabType = 'members' | 'invitations';
 type PermissionLevel = 'none' | 'read' | 'write';
 
@@ -19,21 +22,27 @@ interface ServiceAccess {
   level: PermissionLevel;
 }
 
-export const DEFAULT_SERVICES: ServiceAccess[] = [
-  { id: 'menu_categories', label: 'Categories', level: 'none' },
-  { id: 'menu_items', label: 'Menus', level: 'none' },
-  { id: 'orders', label: 'Orders Management', level: 'none' },
-  { id: 'discounts', label: 'Discounts & Offers', level: 'none' },
-  { id: 'contests', label: 'Contests & Rewards', level: 'none' },
-  { id: 'customers', label: 'Members & Customers', level: 'none' },
-  { id: 'campaigns', label: 'Campaigns & Marketing', level: 'none' },
-  { id: 'chalkboard', label: 'Chalkboard Sign', level: 'none' },
-  { id: 'analytics', label: 'Analytics & Reports', level: 'none' },
-  { id: 'team', label: 'Team Management', level: 'none' },
-  { id: 'subscription', label: 'Subscriptions', level: 'none' },
-  { id: 'settlements', label: 'Settlements & Payouts', level: 'none' },
-  { id: 'settings', label: 'Shop Settings', level: 'none' },
-];
+export const getAvailableServices = (shopCategory?: string | null): ServiceAccess[] => {
+  const isScheme = isSchemeEnabledShop(shopCategory);
+  return [
+    { id: 'menu_categories', label: 'Categories', level: 'none' },
+    { id: 'menu_items', label: 'Menus', level: 'none' },
+    { id: 'orders', label: 'Orders Management', level: 'none' },
+    ...(isScheme ? [{ id: 'schemes', label: 'Schemes', level: 'none' as PermissionLevel }] : []),
+    { id: 'discounts', label: 'Discounts & Offers', level: 'none' },
+    { id: 'contests', label: 'Contests & Rewards', level: 'none' },
+    { id: 'customers', label: 'Members & Customers', level: 'none' },
+    { id: 'campaigns', label: 'Campaigns & Marketing', level: 'none' },
+    { id: 'chalkboard', label: 'Chalkboard Sign', level: 'none' },
+    { id: 'analytics', label: 'Analytics & Reports', level: 'none' },
+    { id: 'team', label: 'Team Management', level: 'none' },
+    { id: 'subscription', label: 'Subscriptions', level: 'none' },
+    { id: 'settlements', label: 'Settlements & Payouts', level: 'none' },
+    { id: 'settings', label: 'Shop Settings', level: 'none' },
+  ];
+};
+
+export const DEFAULT_SERVICES: ServiceAccess[] = getAvailableServices();
 
 export function TeamPage() {
   const [employees, setEmployees] = useState<any[]>([]);
@@ -42,10 +51,21 @@ export function TeamPage() {
   const [expandedMember, setExpandedMember] = useState<string | null>(null);
   
   const { user } = useAuthStore();
+  const { shop } = useShopStore();
   
   // New employee state
   const [email, setEmail] = useState('');
-  const [services, setServices] = useState<ServiceAccess[]>(DEFAULT_SERVICES);
+  const [services, setServices] = useState<ServiceAccess[]>(() => getAvailableServices(shop?.category));
+
+  useEffect(() => {
+    setServices(prev => {
+      const available = getAvailableServices(shop?.category);
+      return available.map(s => {
+        const existing = prev.find(p => p.id === s.id);
+        return existing ? { ...s, level: existing.level } : s;
+      });
+    });
+  }, [shop?.category]);
 
   const [editingPermissions, setEditingPermissions] = useState<Record<string, Record<string, string[]>>>({});
   const [isUpdating, setIsUpdating] = useState(false);
@@ -116,7 +136,7 @@ export function TeamPage() {
       });
       toast.success('Invitation link created successfully!');
       setEmail('');
-      setServices(DEFAULT_SERVICES.map(s => ({ ...s, level: 'none' })));
+      setServices(getAvailableServices(shop?.category));
       setActiveTab('invitations');
       fetchEmployees();
     } catch (error: any) {

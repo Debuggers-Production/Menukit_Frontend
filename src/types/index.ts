@@ -29,11 +29,13 @@ export interface ShopSettings {
   base_delivery_distance?: number;
   extra_delivery_distance_step?: number;
   extra_delivery_charge_per_step?: number;
+  max_delivery_distance?: number;
   takeaway_enabled?: boolean;
   dinein_enabled?: boolean;
   dinein_tables_enabled?: boolean;
   dinein_tables_count?: number;
   auto_accept_orders?: boolean;
+  payment_timeout_minutes?: number;
   cashfree_app_id?: string;
   cashfree_secret_key?: string;
   cashfree_sandbox: boolean;
@@ -242,6 +244,9 @@ export interface Discount {
   description: string | null;
   discount_type: 'percentage' | 'flat' | 'bogo' | 'combo' | 'free_item';
   discount_value: string | null;
+  min_order_value?: string | number | null;
+  max_order_value?: string | number | null;
+  max_discount_amount?: string | number | null;
   buy_quantity?: number | null;
   get_quantity?: number | null;
   reward_target_ids?: string[] | null;

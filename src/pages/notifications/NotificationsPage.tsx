@@ -1,12 +1,15 @@
 import { useEffect } from 'react';
-import { Check, Trash2, Clock, Bell, ShoppingBag, CreditCard, Star, UserPlus, CheckCircle2, Trophy } from 'lucide-react';
+import { useNavigate } from 'react-router';
+import { Check, Trash2, Clock, Bell, ShoppingBag, CreditCard, Star, UserPlus, CheckCircle2, Trophy, Coins } from 'lucide-react';
 import { useNotificationStore } from '@/store/notificationStore';
 import { useHeaderStore } from '@/store/useHeaderStore';
 import { HeaderActions } from '@/components/HeaderActions';
+import { FCMPushPrompt } from '@/components/FCMPushPrompt';
 
 export function NotificationsPage() {
   const { notifications, markAsRead, clearAll } = useNotificationStore();
   const { setTitle } = useHeaderStore();
+  const navigate = useNavigate();
 
   useEffect(() => {
     setTitle('Notifications', 'Shop alerts and updates.');
@@ -19,6 +22,26 @@ export function NotificationsPage() {
 
   const handleMarkAllRead = () => {
     markAsRead();
+  };
+
+  const handleNotificationClick = (notif: any) => {
+    if (!notif.is_read) {
+      markAsRead([notif.id]);
+    }
+    const meta = notif.metadata || {};
+    if (meta.target_url) {
+      navigate(meta.target_url);
+      return;
+    }
+    const type = (notif.type || '').toLowerCase();
+    const title = (notif.title || '').toLowerCase();
+    if (type.includes('scheme') || title.includes('scheme')) {
+      navigate('/schemes');
+    } else if (type.includes('customer') || title.includes('customer')) {
+      navigate('/customers');
+    } else if (type.includes('order') || title.includes('order')) {
+      navigate('/orders');
+    }
   };
 
   const getNotificationDetails = (title: string, message: string, type: string) => {
@@ -84,6 +107,13 @@ export function NotificationsPage() {
         bgClass: 'bg-yellow-100 dark:bg-yellow-950/50 text-yellow-600 dark:text-yellow-400',
       };
     }
+    if (lowerTitle.includes('scheme') || lowerType.includes('scheme') || lowerMsg.includes('scheme')) {
+      return {
+        title: cleanTitle || 'Savings Scheme',
+        Icon: Coins,
+        bgClass: 'bg-amber-100 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400',
+      };
+    }
 
     return {
       title: cleanTitle || 'Shop Notification',
@@ -117,6 +147,9 @@ export function NotificationsPage() {
       </HeaderActions>
 
 
+      {/* Push Notification Permission & Status Banner */}
+      <FCMPushPrompt />
+
       <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
         {notifications.length === 0 ? (
           <div className="py-20 text-center text-slate-500">
@@ -134,7 +167,8 @@ export function NotificationsPage() {
               return (
                 <div 
                   key={notif.id} 
-                  className={`p-4 sm:p-5 transition-colors flex items-start gap-3.5 sm:gap-4 ${notif.is_read ? 'bg-white dark:bg-slate-900' : 'bg-primary/5 dark:bg-primary/10'}`}
+                  onClick={() => handleNotificationClick(notif)}
+                  className={`p-4 sm:p-5 transition-colors flex items-start gap-3.5 sm:gap-4 cursor-pointer hover:bg-slate-50/80 dark:hover:bg-slate-800/60 ${notif.is_read ? 'bg-white dark:bg-slate-900' : 'bg-primary/5 dark:bg-primary/10'}`}
                 >
                   <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center flex-shrink-0 shadow-sm ${bgClass}`}>
                     <Icon className="w-5 h-5 sm:w-6 sm:h-6" />

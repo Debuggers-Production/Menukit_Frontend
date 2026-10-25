@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'react-hot-toast';
-import { Plus, Edit2, Trash2, GripVertical, MenuSquare, Search, Loader2, LayoutGrid, CheckCircle2, XCircle } from 'lucide-react';
+import { Plus, Edit2, Trash2, GripVertical, MenuSquare, Search, Loader2, LayoutGrid, CheckCircle2, XCircle, ArrowDownAZ, ArrowUpZA, Clock, History } from 'lucide-react';
 import { api } from '@/services/api';
 import { useShopStore } from '@/store/shopStore';
 import { Category } from '@/types';
@@ -143,6 +143,7 @@ export function CategoriesPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [sortBy, setSortBy] = useState<'default' | 'a-z' | 'z-a' | 'new_to_old' | 'old_to_new'>('default');
 
   // Debounce search query input (350ms)
   useEffect(() => {
@@ -151,6 +152,20 @@ export function CategoriesPage() {
     }, 350);
     return () => clearTimeout(handler);
   }, [searchQuery]);
+
+  const displayedCategories = useMemo(() => {
+    let list = [...categories];
+    if (sortBy === 'a-z') {
+      list.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+    } else if (sortBy === 'z-a') {
+      list.sort((a, b) => b.name.localeCompare(a.name, undefined, { sensitivity: 'base' }));
+    } else if (sortBy === 'new_to_old') {
+      list.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+    } else if (sortBy === 'old_to_new') {
+      list.sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
+    }
+    return list;
+  }, [categories, sortBy]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -192,6 +207,9 @@ export function CategoriesPage() {
       } else if (statusFilter === 'inactive') {
         params.is_active = false;
       }
+      if (sortBy !== 'default') {
+        params.sort_by = sortBy;
+      }
 
       const res = await api.get('/categories', { params });
       const newItems: Category[] = Array.isArray(res.data) ? res.data : (res.data?.items || res.data?.categories || []);
@@ -211,11 +229,11 @@ export function CategoriesPage() {
       setIsLoading(false);
       setIsLoadingMore(false);
     }
-  }, [debouncedSearch, statusFilter, setCategories]);
+  }, [debouncedSearch, statusFilter, sortBy, setCategories]);
 
   useEffect(() => {
     fetchCategories(0, true);
-  }, [debouncedSearch, statusFilter, fetchCategories]);
+  }, [debouncedSearch, statusFilter, sortBy, fetchCategories]);
 
   const handleLoadMore = () => {
     if (hasMore && !isLoadingMore && !isLoading) {
@@ -413,8 +431,25 @@ export function CategoriesPage() {
             />
           </div>
 
-          <div className="flex items-center justify-between sm:justify-end gap-2.5 w-full sm:w-auto shrink-0">
-            <div className="w-40 sm:w-48">
+          <div className="flex items-center justify-between sm:justify-end gap-2.5 w-full sm:w-auto shrink-0 flex-wrap">
+            <div className="w-36 sm:w-44">
+              <SearchableSelect
+                options={[
+                  { id: 'default', name: 'Default Order', icon: <LayoutGrid size={15} className="text-muted-foreground" /> },
+                  { id: 'a-z', name: 'A to Z (A-Z)', icon: <ArrowDownAZ size={15} className="text-primary" /> },
+                  { id: 'z-a', name: 'Z to A (Z-A)', icon: <ArrowUpZA size={15} className="text-primary" /> },
+                  { id: 'new_to_old', name: 'Newest First (New to Old)', icon: <Clock size={15} className="text-primary" /> },
+                  { id: 'old_to_new', name: 'Oldest First (Old to New)', icon: <History size={15} className="text-primary" /> },
+                ]}
+                value={sortBy}
+                onChange={(val) => setSortBy(val as any)}
+                showSearch={false}
+                placeholder="Sort by"
+                className="h-10 border-input bg-background text-foreground text-sm font-medium rounded-xl shadow-xs"
+              />
+            </div>
+
+            <div className="w-36 sm:w-44">
               <SearchableSelect
                 options={[
                   { id: 'all', name: 'All Status', icon: <LayoutGrid size={15} className="text-muted-foreground" /> },
@@ -447,7 +482,7 @@ export function CategoriesPage() {
           <div className="space-y-3">
             {[1, 2, 3].map(i => <Skeleton key={i} className="h-20 w-full rounded-2xl" />)}
           </div>
-        ) : categories.length === 0 ? (
+        ) : displayedCategories.length === 0 ? (
           <EmptyState
             icon={<MenuSquare size={24} />}
             title={searchQuery || statusFilter !== 'all' ? 'No categories found' : 'No Categories Yet'}
@@ -468,10 +503,10 @@ export function CategoriesPage() {
             onDragEnd={handleDragEnd}
           >
             <SortableContext
-              items={(categories || []).map(c => c.id)}
+              items={(displayedCategories || []).map(c => c.id)}
               strategy={verticalListSortingStrategy}
             >
-              {(categories || []).map((cat) => (
+              {(displayedCategories || []).map((cat) => (
                 <SortableCategoryItem
                   key={cat.id}
                   cat={cat}

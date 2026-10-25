@@ -111,6 +111,7 @@ export function CreateOrderModal({
   const [availableDiscounts, setAvailableDiscounts] = useState<any[]>([]);
   const [discountType, setDiscountType] = useState<'percentage' | 'fixed'>('percentage');
   const [discountValue, setDiscountValue] = useState<string>('');
+  const [selectedDiscountId, setSelectedDiscountId] = useState<string | null>(null);
 
   // Item Customization state (Variants & Add-ons)
   const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
@@ -263,6 +264,7 @@ export function CreateOrderModal({
       setPriceTier('retail');
       setDiscountType('percentage');
       setDiscountValue('');
+      setSelectedDiscountId(null);
       setSplitPayments([
         { method: 'cash', amount: '' },
         { method: 'upi', amount: '' },
@@ -421,6 +423,10 @@ export function CreateOrderModal({
     const disc = availableDiscounts.find((d: any) => {
       if (d.is_active === false) return false;
       if (usedDiscountIds.includes(String(d.id))) return false;
+      // If discount has minimum order value or spend range, it can only apply at the order level, not per item
+      if ((d.min_order_value && Number(d.min_order_value) > 0) || (d.max_order_value && Number(d.max_order_value) > 0)) return false;
+      // Only direct price drops apply directly to item unit prices
+      if (!d.is_price_drop) return false;
       if (d.discount_type === 'bogo' || d.discount_type === 'combo' || d.discount_type === 'free_item') return false;
       if (d.applies_to === 'all') return true;
       if (d.applies_to === 'category' && d.target_ids?.includes(item.category_id)) return true;
@@ -822,6 +828,58 @@ export function CreateOrderModal({
     }, 0);
   }, [cart]);
 
+  // Order-level store discount (e.g. 10% Flat on orders >= ₹100)
+  const storeOrderDiscount = useMemo(() => {
+    if (!availableDiscounts || availableDiscounts.length === 0 || totalCartAmount <= 0) return null;
+
+    // Filter discounts that apply at the order level (not direct price drops, active, valid type)
+    const storeDiscs = availableDiscounts.filter((d: any) => {
+      if (d.is_active === false) return false;
+      if (customerUsedDiscountIds.includes(String(d.id))) return false;
+      if (d.is_price_drop) return false;
+      if (!['percentage', 'flat', 'fixed'].includes(d.discount_type)) return false;
+      return true;
+    });
+
+    if (storeDiscs.length === 0) return null;
+
+    // Only apply if order total falls within the spend range [min_order_value, max_order_value]
+    const eligible = storeDiscs.filter((d: any) => {
+      const minSpend = Number(d.min_order_value || 0);
+      const maxSpend = d.max_order_value && Number(d.max_order_value) > 0 ? Number(d.max_order_value) : Infinity;
+      return totalCartAmount >= minSpend && totalCartAmount <= maxSpend;
+    });
+
+    if (eligible.length === 0) return null;
+
+    let targetDisc = null;
+    if (selectedDiscountId && selectedDiscountId !== 'none') {
+      targetDisc = eligible.find((d: any) => String(d.id) === selectedDiscountId) || null;
+    }
+    // If not found in eligible (e.g. cart amount changed outside its range), auto-switch to the newly qualifying tier
+    if (!targetDisc && selectedDiscountId !== 'none' && !discountValue) {
+      targetDisc = eligible[0];
+    }
+
+    if (!targetDisc) return null;
+
+    const val = Number(targetDisc.discount_value || 0);
+    let amount = 0;
+    if (targetDisc.discount_type === 'percentage') {
+      amount = Math.round((totalCartAmount * (val / 100)) * 100) / 100;
+      if (targetDisc.max_discount_amount && Number(targetDisc.max_discount_amount) > 0) {
+        amount = Math.min(amount, Number(targetDisc.max_discount_amount));
+      }
+    } else {
+      amount = Math.min(totalCartAmount, Math.round(val * 100) / 100);
+    }
+
+    return {
+      discount: targetDisc,
+      amount
+    };
+  }, [availableDiscounts, customerUsedDiscountIds, totalCartAmount, selectedDiscountId, discountValue]);
+
   // Manual Discount Calculation (Percentage or Flat Amount)
   const computedManualDiscount = useMemo(() => {
     const numVal = parseFloat(discountValue);
@@ -834,9 +892,16 @@ export function CreateOrderModal({
     }
   }, [discountType, discountValue, totalCartAmount]);
 
+  // Effective order discount amount (Manual overrides store auto discount)
+  const effectiveDiscountAmount = useMemo(() => {
+    if (computedManualDiscount > 0) return computedManualDiscount;
+    if (storeOrderDiscount && storeOrderDiscount.amount > 0) return storeOrderDiscount.amount;
+    return 0;
+  }, [computedManualDiscount, storeOrderDiscount]);
+
   const netSubtotalAfterDiscount = useMemo(() => {
-    return Math.max(0, Math.round((totalCartAmount - computedManualDiscount) * 100) / 100);
-  }, [totalCartAmount, computedManualDiscount]);
+    return Math.max(0, Math.round((totalCartAmount - effectiveDiscountAmount) * 100) / 100);
+  }, [totalCartAmount, effectiveDiscountAmount]);
 
   // GST Calculation (Applied on post-discount subtotal)
   const cgstRate = Number(shop?.settings?.cgst_rate || 0);
@@ -1150,6 +1215,11 @@ export function CreateOrderModal({
           ? `Discount (${discountValue}% - ₹${computedManualDiscount.toFixed(2)})`
           : `Flat Discount (₹${computedManualDiscount.toFixed(2)})`;
         appliedDiscCodes.push(discLabel);
+      } else if (storeOrderDiscount && storeOrderDiscount.amount > 0) {
+        if (!appliedDiscIds.includes(String(storeOrderDiscount.discount.id))) {
+          appliedDiscIds.push(String(storeOrderDiscount.discount.id));
+        }
+        appliedDiscCodes.push(`${storeOrderDiscount.discount.title} (-₹${storeOrderDiscount.amount.toFixed(2)})`);
       }
 
       const validSplitPayments = paymentMethod === 'split' 
@@ -2283,9 +2353,9 @@ export function CreateOrderModal({
                 </div>
                 <div className="text-right">
                   <span className="font-black text-base text-primary font-mono">₹{gstCalculation.finalTotal.toFixed(2)}</span>
-                  {computedManualDiscount > 0 ? (
+                  {effectiveDiscountAmount > 0 ? (
                     <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">
-                      ₹{totalCartAmount.toFixed(2)} - ₹{computedManualDiscount.toFixed(2)} Disc {isExclusiveTax && gstCalculation.totalTax > 0 ? `+ ₹${gstCalculation.totalTax.toFixed(2)} GST` : ''}
+                      ₹{totalCartAmount.toFixed(2)} - ₹{effectiveDiscountAmount.toFixed(2)} Disc {isExclusiveTax && gstCalculation.totalTax > 0 ? `+ ₹${gstCalculation.totalTax.toFixed(2)} GST` : ''}
                     </div>
                   ) : (
                     isExclusiveTax && totalCartCount > 0 && (
@@ -2296,10 +2366,14 @@ export function CreateOrderModal({
                   )}
                 </div>
               </div>
-              {computedManualDiscount > 0 && (
+              {effectiveDiscountAmount > 0 && (
                 <div className="pt-1.5 border-t border-border/60 flex justify-between items-center text-[11px] text-emerald-600 dark:text-emerald-400 font-mono font-semibold">
-                  <span>Discount Applied ({discountType === 'percentage' ? `${discountValue}%` : 'Flat'})</span>
-                  <span>-₹{computedManualDiscount.toFixed(2)}</span>
+                  <span>
+                    {computedManualDiscount > 0
+                      ? `Discount Applied (${discountType === 'percentage' ? `${discountValue}%` : 'Flat'})`
+                      : `Store Offer: ${storeOrderDiscount?.discount?.title || 'Discount'}`}
+                  </span>
+                  <span>-₹{effectiveDiscountAmount.toFixed(2)}</span>
                 </div>
               )}
               {isGstEnabled && totalCartCount > 0 && (
@@ -2437,9 +2511,9 @@ export function CreateOrderModal({
                     <p className="text-[11px] text-muted-foreground truncate">Apply custom percentage (%) or flat amount (₹) discount</p>
                   </div>
                 </div>
-                {computedManualDiscount > 0 && (
+                {effectiveDiscountAmount > 0 && (
                   <span className="text-xs font-black text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20 font-mono shrink-0">
-                    -₹{computedManualDiscount.toFixed(2)} Off
+                    -₹{effectiveDiscountAmount.toFixed(2)} Off
                   </span>
                 )}
               </div>
@@ -2506,15 +2580,89 @@ export function CreateOrderModal({
                 </div>
               </div>
 
+              {/* Store Offers Selector */}
+              {availableDiscounts && availableDiscounts.filter((d: any) => !d.is_price_drop && d.is_active !== false && ['percentage', 'flat', 'fixed'].includes(d.discount_type)).length > 0 && (
+                <div className="space-y-1.5 pt-0.5 pb-1 border-b border-border/60">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">
+                      Store Offers:
+                    </span>
+                    {storeOrderDiscount && !discountValue && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDiscountId('none')}
+                        className="text-[10px] font-semibold text-rose-500 hover:underline cursor-pointer"
+                      >
+                        Remove Offer
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {availableDiscounts
+                      .filter((d: any) => !d.is_price_drop && d.is_active !== false && ['percentage', 'flat', 'fixed'].includes(d.discount_type))
+                      .map((d: any) => {
+                        const minSpend = Number(d.min_order_value || 0);
+                        const maxSpend = d.max_order_value && Number(d.max_order_value) > 0 ? Number(d.max_order_value) : Infinity;
+                        const isEligible = totalCartAmount >= minSpend && totalCartAmount <= maxSpend;
+                        const isApplied = storeOrderDiscount?.discount?.id === d.id && !discountValue;
+
+                        return (
+                          <button
+                            key={d.id}
+                            type="button"
+                            onClick={() => {
+                              if (!isEligible) return;
+                              if (isApplied) {
+                                setSelectedDiscountId('none');
+                              } else {
+                                setSelectedDiscountId(String(d.id));
+                                setDiscountValue('');
+                              }
+                            }}
+                            disabled={!isEligible}
+                            className={`px-2.5 py-1 rounded-xl text-xs font-semibold border transition-all flex items-center gap-1.5 ${
+                              isApplied
+                                ? 'border-emerald-500 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold shadow-xs cursor-pointer'
+                                : isEligible
+                                ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300 hover:border-amber-500 cursor-pointer'
+                                : 'border-border bg-muted/40 text-muted-foreground opacity-70 cursor-not-allowed'
+                            }`}
+                          >
+                            <span>{d.title}</span>
+                            <span className="font-mono text-[10px] opacity-80">
+                              ({d.discount_type === 'percentage' ? `${d.discount_value}%` : `₹${d.discount_value}`})
+                            </span>
+                            {((minSpend > 0) || (maxSpend < Infinity)) && (
+                              <span className={`text-[10px] px-1 py-0.2 rounded font-mono ${isEligible ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-bold' : 'bg-muted text-muted-foreground'}`}>
+                                {isEligible 
+                                  ? (maxSpend < Infinity ? `✓ ₹${minSpend}-₹${maxSpend} active` : `✓ Min ₹${minSpend} reached`) 
+                                  : (totalCartAmount < minSpend ? `Min ₹${minSpend} (Add ₹${(minSpend - totalCartAmount).toFixed(0)})` : `Max ₹${maxSpend} exceeded`)}
+                              </span>
+                            )}
+                            {isApplied && (
+                              <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                                (-₹{storeOrderDiscount?.amount?.toFixed(2)})
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
+
               {/* Quick chip buttons */}
               <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
-                <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider mr-1">Quick Apply:</span>
+                <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider mr-1">Quick Custom:</span>
                 {discountType === 'percentage' ? (
                   [5, 10, 15, 20, 25, 50].map((pct) => (
                     <button
                       key={pct}
                       type="button"
-                      onClick={() => setDiscountValue(String(pct))}
+                      onClick={() => {
+                        setDiscountValue(String(pct));
+                        setSelectedDiscountId(null);
+                      }}
                       className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
                         discountValue === String(pct)
                           ? 'border-primary bg-primary text-white font-bold shadow-xs'
@@ -2529,7 +2677,10 @@ export function CreateOrderModal({
                     <button
                       key={amt}
                       type="button"
-                      onClick={() => setDiscountValue(String(amt))}
+                      onClick={() => {
+                        setDiscountValue(String(amt));
+                        setSelectedDiscountId(null);
+                      }}
                       className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
                         discountValue === String(amt)
                           ? 'border-primary bg-primary text-white font-bold shadow-xs'
@@ -2546,7 +2697,7 @@ export function CreateOrderModal({
                     onClick={() => setDiscountValue('')}
                     className="px-2 py-0.5 rounded-lg text-xs font-semibold text-rose-500 hover:underline cursor-pointer ml-auto"
                   >
-                    Clear Discount
+                    Clear Custom
                   </button>
                 )}
               </div>

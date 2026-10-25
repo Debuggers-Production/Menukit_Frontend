@@ -71,8 +71,10 @@ export const SearchableSelect = forwardRef<HTMLDivElement, SearchableSelectProps
 
   const filteredOptions = useMemo(() => {
     if (isAsync || !showSearch || !deferredSearch.trim()) return options;
-    const query = deferredSearch.toLowerCase();
-    return options.filter(opt => opt.name.toLowerCase().includes(query));
+    return options.filter(opt => 
+      opt.name.toLowerCase().includes(query) || 
+      (opt.subtext && opt.subtext.toLowerCase().includes(query))
+    );
   }, [options, showSearch, deferredSearch, isAsync]);
 
   const selectedOption = useMemo(() => {

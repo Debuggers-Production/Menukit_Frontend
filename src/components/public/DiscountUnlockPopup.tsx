@@ -6,6 +6,18 @@ import { triggerHaptic, HAPTIC_PATTERNS } from '@/utils/haptic';
 import { customerService } from '../../services/customers';
 import { recordPopupDismissal, clearPopupTiming } from '@/utils/discountPopupTiming';
 
+function formatApiError(err: any, fallback: string): string {
+  const detail = err?.response?.data?.detail || err?.detail;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail) && detail.length > 0) {
+    const first = detail[0];
+    if (typeof first === 'string') return first;
+    if (first && typeof first === 'object' && first.msg) return first.msg;
+  }
+  if (detail && typeof detail === 'object' && detail.msg) return detail.msg;
+  return err?.message || fallback;
+}
+
 const COUNTRY_CODES = [
   { code: '+91', label: 'India (+91)' },
   { code: '+1', label: 'USA/Canada (+1)' },
@@ -283,7 +295,7 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
         setStep('otp');
       }
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to send OTP');
+      setError(formatApiError(err, 'Failed to send OTP'));
     } finally {
       setLoading(false);
     }
@@ -306,7 +318,7 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
       setResendTimer(30);
       setResendCount(prev => prev + 1);
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to resend OTP. Please try again.');
+      setError(formatApiError(err, 'Failed to resend OTP. Please try again.'));
     } finally {
       setIsResending(false);
     }
@@ -354,7 +366,7 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
         setStep('success');
       }
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Invalid OTP code');
+      setError(formatApiError(err, 'Invalid OTP code'));
     } finally {
       setLoading(false);
     }
@@ -390,7 +402,7 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
       setIsVerified(true);
       setStep('success');
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to register');
+      setError(formatApiError(err, 'Failed to register'));
     } finally {
       setLoading(false);
     }
@@ -658,7 +670,7 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
                       required
                     />
                   </div>
-                  {error && <p className="text-red-500 text-sm mt-1">{error}</p>}
+                  {error && <p className="text-red-500 text-sm mt-1">{typeof error === 'string' ? error : formatApiError(error, 'An error occurred')}</p>}
                 </div>
                 
                 <button 
@@ -716,7 +728,7 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
                     autoFocus
                     required
                   />
-                  {error && <p className="text-red-500 text-sm mt-1 text-center">{error}</p>}
+                  {error && <p className="text-red-500 text-sm mt-1 text-center">{typeof error === 'string' ? error : formatApiError(error, 'An error occurred')}</p>}
                 </div>
                 
                 <div className="space-y-3">
@@ -797,7 +809,7 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
                       className="block w-full pl-[95px] pr-4 py-3 bg-gray-100 border border-gray-200 rounded-xl text-gray-500 outline-none text-base cursor-not-allowed"
                     />
                   </div>
-                  {error && <p className="text-red-500 text-sm mt-1">{error}</p>}
+                  {error && <p className="text-red-500 text-sm mt-1">{typeof error === 'string' ? error : formatApiError(error, 'An error occurred')}</p>}
                 </div>
                 
                 <button 

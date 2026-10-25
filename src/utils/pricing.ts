@@ -53,8 +53,9 @@ export function roundStrictTwoDecimals(val: number): number {
   }
 }
 
-export function calculateOrderPricing(subtotal: number, isOnline = true): OrderPricingResult {
+export function calculateOrderPricing(subtotal: number, isOnline = true, itemsTotal?: number): OrderPricingResult {
   const cleanSub = Math.max(0, Number(subtotal) || 0);
+  const platformBase = itemsTotal !== undefined ? Math.max(0, Number(itemsTotal) || 0) : cleanSub;
 
   if (!isOnline) {
     const roundedSub = roundStrictTwoDecimals(cleanSub);
@@ -74,8 +75,8 @@ export function calculateOrderPricing(subtotal: number, isOnline = true): OrderP
     };
   }
 
-  // 1. 2% Platform Fee
-  const platformFeeUnrounded = cleanSub * 0.02;
+  // 1. 2% Platform Fee (calculated purely on item total, excluding delivery charges)
+  const platformFeeUnrounded = platformBase * 0.02;
 
   // 2. 3% Payment Gateway Fee
   const gatewayFeeUnrounded = cleanSub * 0.03;

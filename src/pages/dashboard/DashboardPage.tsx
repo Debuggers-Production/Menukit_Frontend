@@ -86,6 +86,32 @@ export function DashboardPage() {
     return () => clearTimeout(timer);
   }, [activitySearch, shop]);
 
+  // Automatically trigger the browser's native notification prompt on page visit or first click
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    if (Notification.permission === 'default' && shop?.id) {
+      const triggerNativePrompt = async () => {
+        try {
+          const res = await Notification.requestPermission();
+          if (res === 'granted') {
+            import('@/services/fcm').then(({ requestFCMToken }) => {
+              requestFCMToken(shop.id);
+            });
+          }
+        } catch (e) {
+          console.debug('[FCM] Native prompt notice:', e);
+        }
+      };
+
+      // Attempt immediate trigger
+      triggerNativePrompt();
+
+      // Also listen on first user interaction to satisfy browser gesture requirement
+      window.addEventListener('click', triggerNativePrompt, { once: true });
+      return () => window.removeEventListener('click', triggerNativePrompt);
+    }
+  }, [shop?.id]);
+
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {

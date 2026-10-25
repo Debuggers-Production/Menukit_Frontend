@@ -485,9 +485,14 @@ export function OrderStatusPage() {
 
     connect();
 
+    let lastHiddenAt = 0;
     const handleVisibility = () => {
-      if (document.visibilityState === 'visible' || navigator.onLine) {
-        if (!socket || socket.readyState === WebSocket.CLOSED || socket.readyState === WebSocket.CLOSING) {
+      if (document.visibilityState === 'hidden') {
+        lastHiddenAt = Date.now();
+      } else if (document.visibilityState === 'visible' || navigator.onLine) {
+        const asleep = Date.now() - (lastHiddenAt || 0);
+        if (asleep > 3000 || !socket || socket.readyState !== WebSocket.OPEN) {
+          try { socket?.close(); } catch {}
           connect();
         }
         fetchOrderStatus();
@@ -495,6 +500,7 @@ export function OrderStatusPage() {
     };
 
     document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('pageshow', handleVisibility);
     window.addEventListener('online', handleVisibility);
     window.addEventListener('focus', handleVisibility);
 
@@ -503,6 +509,7 @@ export function OrderStatusPage() {
       if (pingInterval) clearInterval(pingInterval);
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
       document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('pageshow', handleVisibility);
       window.removeEventListener('online', handleVisibility);
       window.removeEventListener('focus', handleVisibility);
       if (socket) socket.close();
@@ -705,7 +712,9 @@ export function OrderStatusPage() {
   else if (order?.order_type === 'delivery') isChannelOnline = (shop?.settings as any)?.online_payments_delivery_enabled !== false;
 
   const isOnlineFeeApplicable = Boolean(order?.payment_method === 'online' && isMasterOnline && isChannelOnline);
-  const pricing = calculateOrderPricing(netPayableBase, isOnlineFeeApplicable);
+  const deliveryFee = Number(order?.delivery_fee || 0);
+  const itemsBase = Math.max(0, netPayableBase - deliveryFee);
+  const pricing = calculateOrderPricing(netPayableBase, isOnlineFeeApplicable, itemsBase);
   const platformFee = pricing.platformFee;
   const totalPgFee = pricing.totalPgFee;
   const grandTotal = pricing.totalPayable;
