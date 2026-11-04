@@ -928,6 +928,7 @@ export function PublicMenuPage() {
       } else if (extraFilters.includes('in_stock') || extraFilters.includes('available')) {
         queryParams.append('status', 'available');
       }
+      queryParams.append('_t', Date.now().toString());
 
       const res = await api.get(`/public/shop/${id}/items?${queryParams.toString()}`);
       const data = res.data || [];
@@ -983,6 +984,7 @@ export function PublicMenuPage() {
             queryParams.append('status', 'available');
           }
 
+          queryParams.append('_t', Date.now().toString());
           return api.get(`/public/shop/${id}/items?${queryParams.toString()}`).then(r => r.data || []);
         })
       );

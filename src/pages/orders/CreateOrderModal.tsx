@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, Plus, Minus, ShoppingBag, ArrowRight, ArrowLeft, User, Phone, Check, X, ChevronDown, LayoutGrid, RotateCcw, UtensilsCrossed, Armchair, AlertCircle, CornerDownLeft, Keyboard, Banknote, QrCode, CreditCard, Tag, Split as SplitIcon, CheckCircle2, Clock, Store, Package, UserCheck, Star, Flame, Layers, Percent, Calculator, Trash2, Delete, Truck, Receipt, MapPin } from 'lucide-react';
+import { Search, Plus, Minus, ShoppingBag, ArrowRight, ArrowLeft, User, Phone, Check, X, ChevronDown, LayoutGrid, RotateCcw, UtensilsCrossed, Armchair, AlertCircle, CornerDownLeft, Keyboard, Banknote, QrCode, CreditCard, Tag, Split as SplitIcon, CheckCircle2, Clock, Store, Package, UserCheck, Star, Flame, Layers, Percent, Calculator, Trash2, Delete, Truck, Receipt, MapPin, Lock } from 'lucide-react';
 
 
 
@@ -70,6 +70,7 @@ export function CreateOrderModal({
   const { menuItems, setMenuItems, categories, setCategories, shop } = useShopStore();
   const businessCategory = getBusinessCategory(shop?.category);
   const isCrackers = isFireworksBusiness(shop?.category) || !businessCategory.isFood;
+  const isExistingOrder = Boolean(targetOrder || replacingItem);
   
   const [step, setStep] = useState<1 | 2>(1);
   const [mobileTab, setMobileTab] = useState<"catalog" | "bill">("catalog");
@@ -312,21 +313,57 @@ export function CreateOrderModal({
       setIsConfirmingReplacement(false);
       setReplacementReason('Customer changed item preference');
       setCustomReplacementReason('');
-      setCustomerName('');
-      setCustomerPhone('');
-      setOrderType(isCrackers ? 'takeaway' : 'dine_in');
-      setTableNumber('');
-      setDeliveryAddress('');
-      setPaymentMethod('cash');
-      setPaymentStatus('pending');
-      setPriceTier('retail');
-      setDiscountType('percentage');
-      setDiscountValue('');
-      setSelectedDiscountId(null);
-      setSplitPayments([
-        { method: 'cash', amount: '' },
-        { method: 'upi', amount: '' },
-      ]);
+
+      const sourceOrder = targetOrder || replacingItem?.order;
+      if (sourceOrder) {
+        // Autofill all existing order fields
+        let p = String(sourceOrder.customer_phone || '').trim();
+        let code = '+91';
+        if (p.startsWith('+')) {
+          const match = p.match(/^(\+\d{1,4})(.*)$/);
+          if (match) {
+            code = match[1];
+            p = match[2];
+          }
+        }
+        setCustomerCountryCode(code);
+        setCustomerPhone(p);
+        const rawName = sourceOrder.customer_name || '';
+        setCustomerName(rawName === 'Walk-in' || rawName === 'Walk-in Customer' ? '' : rawName);
+        setOrderType(sourceOrder.order_type || (isCrackers ? 'takeaway' : 'dine_in'));
+        setTableNumber(sourceOrder.table_number || '');
+        setDeliveryAddress(sourceOrder.delivery_address || '');
+        setPaymentMethod(sourceOrder.payment_method || 'cash');
+        setPaymentStatus(sourceOrder.payment_status || 'pending');
+        setPriceTier(sourceOrder.price_tier || 'retail');
+        setDiscountType('percentage');
+        setDiscountValue('');
+        setSelectedDiscountId(null);
+        if (Array.isArray(sourceOrder.split_payments) && sourceOrder.split_payments.length > 0) {
+          setSplitPayments(sourceOrder.split_payments);
+        } else {
+          setSplitPayments([
+            { method: 'cash', amount: '' },
+            { method: 'upi', amount: '' },
+          ]);
+        }
+      } else {
+        setCustomerName('');
+        setCustomerPhone('');
+        setOrderType(isCrackers ? 'takeaway' : 'dine_in');
+        setTableNumber('');
+        setDeliveryAddress('');
+        setPaymentMethod('cash');
+        setPaymentStatus('pending');
+        setPriceTier('retail');
+        setDiscountType('percentage');
+        setDiscountValue('');
+        setSelectedDiscountId(null);
+        setSplitPayments([
+          { method: 'cash', amount: '' },
+          { method: 'upi', amount: '' },
+        ]);
+      }
       setSearchQuery('');
       setDebouncedSearch('');
       setActiveCategory('all');
@@ -356,7 +393,7 @@ export function CreateOrderModal({
       }, 70);
       return () => clearTimeout(timer);
     }
-  }, [isOpen, shop?.id, isCrackers]);
+  }, [isOpen, targetOrder, replacingItem, shop?.id, isCrackers]);
 
   // Auto-focus appropriate input on Step change
   useEffect(() => {
@@ -1173,6 +1210,19 @@ export function CreateOrderModal({
       });
 
       const res = await api.post(`/orders/${targetOrder.id}/items`, { items: itemsPayload });
+
+      if (paymentStatus !== targetOrder.payment_status || paymentMethod !== targetOrder.payment_method) {
+        try {
+          await api.put(`/orders/${targetOrder.id}/payment`, {
+            payment_status: paymentStatus,
+            payment_method: paymentMethod,
+            split_payments: paymentMethod === 'split' ? splitPayments : undefined,
+          });
+        } catch (e) {
+          console.warn('Failed to update payment status on append', e);
+        }
+      }
+
       toast.success(`Added ${totalCartCount} item(s) to Order #${String(targetOrder.daily_order_number || (targetOrder.daily_order_number || targetOrder.id.slice(0, 8))).toUpperCase()}`);
       
       const updatedOrder = res.data;
@@ -2250,7 +2300,7 @@ export function CreateOrderModal({
           {/* Section A: Fulfillment & Customer Info Card */}
           <div className="p-3 sm:p-3.5 border-b border-border bg-card/60 space-y-2.5 shrink-0">
             {/* Fulfillment Channel Pills (Dine-in, Takeaway, Delivery) */}
-            <div className="grid grid-cols-3 gap-1.5 bg-muted/70 p-1 rounded-xl border border-border/80">
+            <div className={`grid grid-cols-3 gap-1.5 bg-muted/70 p-1 rounded-xl border border-border/80 ${isExistingOrder ? 'opacity-90' : ''}`}>
               {(() => {
                 const currentOrderTypes = isCrackers 
                   ? [
@@ -2272,15 +2322,19 @@ export function CreateOrderModal({
                       key={opt.id}
                       ref={(el) => { orderTypeRefs.current[opt.id] = el; }}
                       type="button"
-                      onClick={() => setOrderType(opt.id as any)}
-                      className={`py-1.5 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                      disabled={isExistingOrder}
+                      onClick={() => !isExistingOrder && setOrderType(opt.id as any)}
+                      className={`py-1.5 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
                         isSelected
                           ? 'bg-primary text-white shadow-xs'
-                          : 'text-muted-foreground hover:text-foreground'
-                      }`}
+                          : isExistingOrder
+                            ? 'text-muted-foreground/40 cursor-not-allowed'
+                            : 'text-muted-foreground hover:text-foreground cursor-pointer'
+                      } ${isExistingOrder ? 'cursor-not-allowed' : ''}`}
                     >
                       <Icon size={13} />
                       <span>{opt.label}</span>
+                      {isExistingOrder && isSelected && <Lock size={10} className="ml-0.5 opacity-80" />}
                     </button>
                   );
                 });
@@ -2290,12 +2344,13 @@ export function CreateOrderModal({
             {/* Customer & Fulfillment Information - Professional POS Structured Layout */}
             <div className="space-y-2">
               {/* Row 1: Unified Country Code + Mobile Number Input Bar */}
-              <div className="flex items-center rounded-xl border border-input bg-background focus-within:ring-2 focus-within:ring-primary/30 focus-within:border-primary transition-all h-8.5 shadow-2xs overflow-hidden">
+              <div className={`flex items-center rounded-xl border border-input bg-background focus-within:ring-2 focus-within:ring-primary/30 focus-within:border-primary transition-all h-8.5 shadow-2xs overflow-hidden ${isExistingOrder ? 'bg-muted/40 opacity-90 cursor-not-allowed' : ''}`}>
                 <CountryCodeSelect
                   value={customerCountryCode}
                   onChange={setCustomerCountryCode}
                   heightClass="h-full"
-                  className="border-0 bg-transparent rounded-none px-2.5 text-xs hover:bg-muted/60 focus:ring-0 shadow-none border-r border-border/70"
+                  disabled={isExistingOrder}
+                  className={`border-0 bg-transparent rounded-none px-2.5 text-xs focus:ring-0 shadow-none border-r border-border/70 ${isExistingOrder ? 'cursor-not-allowed pointer-events-none' : 'hover:bg-muted/60'}`}
                   autoDetect
                 />
                 <div className="relative flex-1 min-w-0 flex items-center h-full">
@@ -2304,12 +2359,20 @@ export function CreateOrderModal({
                     type="tel"
                     placeholder="Customer mobile number"
                     value={customerPhone}
+                    disabled={isExistingOrder}
+                    readOnly={isExistingOrder}
                     onChange={(e) => setCustomerPhone(e.target.value)}
-                    className="w-full h-full px-2.5 bg-transparent text-xs font-semibold text-foreground placeholder:text-muted-foreground/60 outline-none border-0"
+                    className={`w-full h-full px-2.5 bg-transparent text-xs font-semibold text-foreground placeholder:text-muted-foreground/60 outline-none border-0 ${isExistingOrder ? 'cursor-not-allowed text-muted-foreground' : ''}`}
                   />
                   {customerLookupState.found && (
                     <span className="pr-2.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 shrink-0 flex items-center gap-1">
                       ★ Saved
+                    </span>
+                  )}
+                  {isExistingOrder && (
+                    <span className="pr-2 text-[10px] text-muted-foreground font-medium shrink-0 flex items-center gap-1">
+                      <Lock size={10} />
+                      Fixed
                     </span>
                   )}
                 </div>
@@ -2325,8 +2388,10 @@ export function CreateOrderModal({
                     <Input
                       placeholder="Table #"
                       value={tableNumber}
+                      disabled={isExistingOrder}
+                      readOnly={isExistingOrder}
                       onChange={(e) => setTableNumber(e.target.value)}
-                      className="h-8.5 rounded-xl bg-background text-xs font-bold pl-7.5 shadow-2xs"
+                      className={`h-8.5 rounded-xl bg-background text-xs font-bold pl-7.5 shadow-2xs ${isExistingOrder ? 'cursor-not-allowed bg-muted/40 text-muted-foreground opacity-90' : ''}`}
                     />
                     {tableNumber && occupiedTables.some((t: any) => String(t.table_number || '').toLowerCase() === tableNumber.toLowerCase()) && (
                       <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-amber-600 dark:text-amber-400 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded shrink-0">
@@ -2343,8 +2408,10 @@ export function CreateOrderModal({
                       ref={customerNameInputRef}
                       placeholder="Walk-in Customer"
                       value={customerName}
+                      disabled={isExistingOrder}
+                      readOnly={isExistingOrder}
                       onChange={(e) => setCustomerName(e.target.value)}
-                      className="h-8.5 rounded-xl bg-background text-xs font-semibold pl-7.5 shadow-2xs"
+                      className={`h-8.5 rounded-xl bg-background text-xs font-semibold pl-7.5 shadow-2xs ${isExistingOrder ? 'cursor-not-allowed bg-muted/40 text-muted-foreground opacity-90' : ''}`}
                     />
                   </div>
                 </div>
@@ -2358,8 +2425,10 @@ export function CreateOrderModal({
                       ref={customerNameInputRef}
                       placeholder="Customer Name"
                       value={customerName}
+                      disabled={isExistingOrder}
+                      readOnly={isExistingOrder}
                       onChange={(e) => setCustomerName(e.target.value)}
-                      className="h-8.5 rounded-xl bg-background text-xs font-semibold pl-7.5 shadow-2xs"
+                      className={`h-8.5 rounded-xl bg-background text-xs font-semibold pl-7.5 shadow-2xs ${isExistingOrder ? 'cursor-not-allowed bg-muted/40 text-muted-foreground opacity-90' : ''}`}
                     />
                   </div>
                   <div className="relative">
@@ -2369,8 +2438,10 @@ export function CreateOrderModal({
                     <Input
                       placeholder="Delivery address / landmark"
                       value={deliveryAddress}
+                      disabled={isExistingOrder}
+                      readOnly={isExistingOrder}
                       onChange={(e) => setDeliveryAddress(e.target.value)}
-                      className="h-8.5 rounded-xl bg-background text-xs pl-7.5 shadow-2xs"
+                      className={`h-8.5 rounded-xl bg-background text-xs pl-7.5 shadow-2xs ${isExistingOrder ? 'cursor-not-allowed bg-muted/40 text-muted-foreground opacity-90' : ''}`}
                     />
                   </div>
                 </div>
@@ -2383,8 +2454,10 @@ export function CreateOrderModal({
                     ref={customerNameInputRef}
                     placeholder="Walk-in Customer"
                     value={customerName}
+                    disabled={isExistingOrder}
+                    readOnly={isExistingOrder}
                     onChange={(e) => setCustomerName(e.target.value)}
-                    className="h-8.5 rounded-xl bg-background text-xs font-semibold pl-7.5 shadow-2xs"
+                    className={`h-8.5 rounded-xl bg-background text-xs font-semibold pl-7.5 shadow-2xs ${isExistingOrder ? 'cursor-not-allowed bg-muted/40 text-muted-foreground opacity-90' : ''}`}
                   />
                 </div>
               )}
@@ -2558,65 +2631,67 @@ export function CreateOrderModal({
               </div>
             </div>
 
-            {/* Payment Tender Pills */}
-            <div className="space-y-1.5">
-              <div className="grid grid-cols-4 gap-1.5">
-                {[
-                  { id: 'cash', label: 'Cash', icon: Banknote },
-                  { id: 'upi', label: 'UPI / QR', icon: QrCode },
-                  { id: 'card', label: 'Card', icon: CreditCard },
-                  { id: 'split', label: 'Split', icon: SplitIcon },
-                ].map(pm => {
-                  const Icon = pm.icon;
-                  const isSelected = paymentMethod === pm.id;
-                  return (
-                    <button
-                      key={pm.id}
-                      ref={(el) => { paymentMethodRefs.current[pm.id] = el; }}
-                      type="button"
-                      onClick={() => setPaymentMethod(pm.id as any)}
-                      className={`py-1.5 px-1 rounded-xl border text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1 ${
-                        isSelected
-                          ? 'border-primary bg-primary text-white shadow-xs'
-                          : 'border-border bg-background hover:bg-muted text-foreground'
-                      }`}
-                    >
-                      <Icon size={12} />
-                      <span>{pm.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Split Mode Inputs (if Split selected) */}
-              {paymentMethod === 'split' && (
-                <div className="p-2 rounded-xl bg-muted/60 border border-border space-y-1.5">
-                  <div className="grid grid-cols-2 gap-2">
-                    {splitPayments.map((sp, sIdx) => (
-                      <div key={sp.method} className="flex items-center gap-1 bg-background rounded-lg border border-border px-2 py-1">
-                        <span className="text-[10px] font-bold uppercase text-muted-foreground w-10">
-                          {sp.method}
-                        </span>
-                        <input
-                          type="number"
-                          placeholder="0.00"
-                          value={sp.amount}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setSplitPayments(prev => {
-                              const next = [...prev];
-                              next[sIdx] = { ...next[sIdx], amount: val };
-                              return next;
-                            });
-                          }}
-                          className="w-full text-right text-xs font-bold bg-transparent outline-none"
-                        />
-                      </div>
-                    ))}
-                  </div>
+            {/* Payment Tender Pills (hidden when adding to an existing order) */}
+            {!isExistingOrder && (
+              <div className="space-y-1.5">
+                <div className="grid grid-cols-4 gap-1.5">
+                  {[
+                    { id: 'cash', label: 'Cash', icon: Banknote },
+                    { id: 'upi', label: 'UPI / QR', icon: QrCode },
+                    { id: 'card', label: 'Card', icon: CreditCard },
+                    { id: 'split', label: 'Split', icon: SplitIcon },
+                  ].map(pm => {
+                    const Icon = pm.icon;
+                    const isSelected = paymentMethod === pm.id;
+                    return (
+                      <button
+                        key={pm.id}
+                        ref={(el) => { paymentMethodRefs.current[pm.id] = el; }}
+                        type="button"
+                        onClick={() => setPaymentMethod(pm.id as any)}
+                        className={`py-1.5 px-1 rounded-xl border text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                          isSelected
+                            ? 'border-primary bg-primary text-white shadow-xs'
+                            : 'border-border bg-background hover:bg-muted text-foreground'
+                        }`}
+                      >
+                        <Icon size={12} />
+                        <span>{pm.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
-              )}
-            </div>
+
+                {/* Split Mode Inputs (if Split selected) */}
+                {paymentMethod === 'split' && (
+                  <div className="p-2 rounded-xl bg-muted/60 border border-border space-y-1.5">
+                    <div className="grid grid-cols-2 gap-2">
+                      {splitPayments.map((sp, sIdx) => (
+                        <div key={sp.method} className="flex items-center gap-1 bg-background rounded-lg border border-border px-2 py-1">
+                          <span className="text-[10px] font-bold uppercase text-muted-foreground w-10">
+                            {sp.method}
+                          </span>
+                          <input
+                            type="number"
+                            placeholder="0.00"
+                            value={sp.amount}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setSplitPayments(prev => {
+                                const next = [...prev];
+                                next[sIdx] = { ...next[sIdx], amount: val };
+                                return next;
+                              });
+                            }}
+                            className="w-full text-right text-xs font-bold bg-transparent outline-none"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Calculations Breakdown */}
             <div className="pt-2 border-t border-border/60 space-y-1 text-xs">
