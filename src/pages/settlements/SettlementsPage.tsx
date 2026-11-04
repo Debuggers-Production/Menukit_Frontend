@@ -1,3 +1,4 @@
+import { cn } from '@/utils/cn';
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { 
@@ -180,194 +181,183 @@ export function SettlementsPage() {
   };
 
   return (
-    <div className="space-y-4 max-w-6xl mx-auto animate-fade-in pb-24 lg:pb-12">
+    <div className="space-y-4 w-full animate-fade-in pb-20 lg:pb-12">
       {/* KPI METRIC CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         {/* Total Pending Settlement */}
-        <Card className="border-amber-200/60 dark:border-amber-900/30 bg-amber-50/30 dark:bg-amber-950/10">
-          <CardContent className="p-3.5 space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black text-amber-800 dark:text-amber-300 uppercase tracking-wider">Pending Settlement</span>
-              <div className="w-7 h-7 rounded-lg bg-amber-100 dark:bg-amber-900/50 text-amber-600 flex items-center justify-center">
-                <Clock size={14} />
-              </div>
+        <div className="bg-card border border-border/80 rounded-lg p-3 shadow-2xs space-y-1">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Pending Payout</span>
+            <div className="w-7 h-7 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center border border-amber-500/20 shadow-2xs">
+              <Clock size={13} />
             </div>
-            {isLoading && settlementsList.length === 0 ? (
-              <Skeleton className="h-6 w-24" />
-            ) : (
-              <div>
-                <h3 className="text-xl font-black text-slate-900 dark:text-white">
-                  {currency}{summary?.total_pending_settlement.toFixed(2) || '0.00'}
-                </h3>
-                <p className="text-[10px] text-amber-700 dark:text-amber-400 font-semibold mt-0.5">
-                  {summary?.pending_count || 0} order(s) pending payout
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+          </div>
+          {isLoading && settlementsList.length === 0 ? (
+            <Skeleton className="h-6 w-20 rounded-md" />
+          ) : (
+            <div>
+              <h3 className="text-xl font-black text-foreground font-heading">
+                {currency}{summary?.total_pending_settlement.toFixed(2) || '0.00'}
+              </h3>
+              <p className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold">
+                {summary?.pending_count || 0} order(s) pending
+              </p>
+            </div>
+          )}
+        </div>
 
         {/* Total Amount Settled */}
-        <Card className="border-emerald-200/60 dark:border-emerald-900/30 bg-emerald-50/30 dark:bg-emerald-950/10">
-          <CardContent className="p-3.5 space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black text-emerald-800 dark:text-emerald-300 uppercase tracking-wider">Total Settled</span>
-              <div className="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 flex items-center justify-center">
-                <CheckCircle2 size={14} />
-              </div>
+        <div className="bg-card border border-border/80 rounded-lg p-3 shadow-2xs space-y-1">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Total Settled</span>
+            <div className="w-7 h-7 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-500/20 shadow-2xs">
+              <CheckCircle2 size={13} />
             </div>
-            {isLoading && settlementsList.length === 0 ? (
-              <Skeleton className="h-6 w-24" />
-            ) : (
-              <div>
-                <h3 className="text-xl font-black text-slate-900 dark:text-white">
-                  {currency}{summary?.total_settled_amount.toFixed(2) || '0.00'}
-                </h3>
-                <p className="text-[10px] text-emerald-700 dark:text-emerald-400 font-semibold mt-0.5">
-                  {summary?.settled_count || 0} payout(s) completed
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+          </div>
+          {isLoading && settlementsList.length === 0 ? (
+            <Skeleton className="h-6 w-20 rounded-md" />
+          ) : (
+            <div>
+              <h3 className="text-xl font-black text-foreground font-heading">
+                {currency}{summary?.total_settled_amount.toFixed(2) || '0.00'}
+              </h3>
+              <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">
+                {summary?.settled_count || 0} payout(s) completed
+              </p>
+            </div>
+          )}
+        </div>
 
         {/* Gross Online Sales */}
-        <Card className="border-blue-200/60 dark:border-blue-900/30 bg-blue-50/30 dark:bg-blue-950/10">
-          <CardContent className="p-3.5 space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black text-blue-800 dark:text-blue-300 uppercase tracking-wider">Gross Online Sales</span>
-              <div className="w-7 h-7 rounded-lg bg-blue-100 dark:bg-blue-900/50 text-blue-600 flex items-center justify-center">
-                <Wallet size={14} />
-              </div>
+        <div className="bg-card border border-border/80 rounded-lg p-3 shadow-2xs space-y-1">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Gross Online Sales</span>
+            <div className="w-7 h-7 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center border border-blue-500/20 shadow-2xs">
+              <Wallet size={13} />
             </div>
-            {isLoading && settlementsList.length === 0 ? (
-              <Skeleton className="h-6 w-24" />
-            ) : (
-              <div>
-                <h3 className="text-xl font-black text-slate-900 dark:text-white">
-                  {currency}{summary?.total_online_sales.toFixed(2) || '0.00'}
-                </h3>
-                <p className="text-[10px] text-blue-700 dark:text-blue-400 font-semibold mt-0.5">
-                  {summary?.total_transactions_count || 0} online payments
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+          </div>
+          {isLoading && settlementsList.length === 0 ? (
+            <Skeleton className="h-6 w-20 rounded-md" />
+          ) : (
+            <div>
+              <h3 className="text-xl font-black text-foreground font-heading">
+                {currency}{summary?.total_online_sales.toFixed(2) || '0.00'}
+              </h3>
+              <p className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold">
+                {summary?.total_transactions_count || 0} online payments
+              </p>
+            </div>
+          )}
+        </div>
 
         {/* Contest Settlements */}
-        <Card className="border-fuchsia-200/60 dark:border-fuchsia-900/30 bg-fuchsia-50/30 dark:bg-fuchsia-950/10">
-          <CardContent className="p-3.5 space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black text-fuchsia-800 dark:text-fuchsia-300 uppercase tracking-wider">Contest Bonus</span>
-              <div className="w-7 h-7 rounded-lg bg-fuchsia-100 dark:bg-fuchsia-900/50 text-fuchsia-600 flex items-center justify-center">
-                <Trophy size={14} />
-              </div>
+        <div className="bg-card border border-border/80 rounded-lg p-3 shadow-2xs space-y-1">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Contest Bonus</span>
+            <div className="w-7 h-7 rounded-md bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400 flex items-center justify-center border border-fuchsia-500/20 shadow-2xs">
+              <Trophy size={13} />
             </div>
-            {isLoading && settlementsList.length === 0 ? (
-              <Skeleton className="h-6 w-24" />
-            ) : (
-              <div>
-                <h3 className="text-xl font-black text-slate-900 dark:text-white">
-                  {currency}{(summary?.contest_settlement_amount || 0).toFixed(2)}
-                </h3>
-                <p className="text-[10px] text-fuchsia-700 dark:text-fuchsia-400 font-semibold mt-0.5">
-                  {summary?.contest_participants_count || 0} participant(s)
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+          </div>
+          {isLoading && settlementsList.length === 0 ? (
+            <Skeleton className="h-6 w-20 rounded-md" />
+          ) : (
+            <div>
+              <h3 className="text-xl font-black text-foreground font-heading">
+                {currency}{(summary?.contest_settlement_amount || 0).toFixed(2)}
+              </h3>
+              <p className="text-[10px] text-fuchsia-600 dark:text-fuchsia-400 font-semibold">
+                {summary?.contest_participants_count || 0} participant(s)
+              </p>
+            </div>
+          )}
+        </div>
 
         {/* Payout Target */}
-        <Card className="border-purple-200/60 dark:border-purple-900/30 bg-purple-50/30 dark:bg-purple-950/10">
-          <CardContent className="p-3.5 space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black text-purple-800 dark:text-purple-300 uppercase tracking-wider">Payout Target</span>
-              <div className="w-7 h-7 rounded-lg bg-purple-100 dark:bg-purple-900/50 text-purple-600 flex items-center justify-center">
-                <Building2 size={14} />
-              </div>
+        <div className="bg-card border border-border/80 rounded-lg p-3 shadow-2xs space-y-1">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Payout Target</span>
+            <div className="w-7 h-7 rounded-md bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center border border-purple-500/20 shadow-2xs">
+              <Building2 size={13} />
             </div>
-            {isLoading && settlementsList.length === 0 ? (
-              <Skeleton className="h-6 w-24" />
-            ) : (
-              <div>
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-extrabold text-slate-900 dark:text-white truncate" title={summary?.bank_account_last4 ? `•••• ${summary.bank_account_last4}` : ''}>
-                    {summary?.bank_account_last4 ? `•••• ${summary.bank_account_last4}` : 'Not Configured'}
-                  </h3>
-                  <CheckCircle2 size={16} className={summary?.bank_account_last4 ? "text-emerald-500" : "text-slate-300"} />
-                </div>
-                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
-                  {summary?.bank_account_last4 ? 'Direct Bank Settlement active' : 'Click settings to configure'}
-                </p>
+          </div>
+          {isLoading && settlementsList.length === 0 ? (
+            <Skeleton className="h-6 w-20 rounded-md" />
+          ) : (
+            <div>
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold text-foreground truncate" title={summary?.bank_account_last4 ? `•••• ${summary.bank_account_last4}` : ''}>
+                  {summary?.bank_account_last4 ? `•••• ${summary.bank_account_last4}` : 'Not Configured'}
+                </h3>
+                <CheckCircle2 size={14} className={summary?.bank_account_last4 ? "text-emerald-500" : "text-muted-foreground"} />
               </div>
-            )}
-          </CardContent>
-        </Card>
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                {summary?.bank_account_last4 ? 'Direct Bank Settlement active' : 'Click settings to configure'}
+              </p>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* FILTER CONTROLS & TRANSACTION LIST TABLE */}
-      <Card className="overflow-visible">
+      <div className="bg-card border border-border/80 rounded-lg shadow-2xs overflow-hidden">
         {/* Sticky Header Bar on Scroll */}
-        <div className="sticky -top-4 sm:-top-6 lg:-top-8 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 p-3 sm:p-4 rounded-t-2xl shadow-md space-y-3">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <div className="sticky -top-4 sm:-top-6 lg:-top-8 z-30 bg-card border-b border-border/80 p-3 sm:p-3.5 space-y-2.5">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5">
             <div>
-              <CardTitle className="text-sm sm:text-base font-extrabold flex items-center gap-2">
-                <CreditCard size={18} className="text-primary shrink-0" />
+              <h3 className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                <CreditCard size={15} className="text-primary shrink-0" />
                 Settlement Transactions
-              </CardTitle>
-              <CardDescription className="text-[11px] text-slate-500">
-                Date-wise breakdown of online payments, platform charges, net amounts, and settlement status.
-              </CardDescription>
+              </h3>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
               {/* Date Filter Buttons */}
-              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl text-xs font-bold shrink-0">
+              <div className="flex items-center gap-0.5 bg-muted p-0.5 rounded-md text-xs font-bold shrink-0">
                 {[
-                  { label: '7 Days', val: '7' },
-                  { label: '30 Days', val: '30' },
-                  { label: '90 Days', val: '90' },
+                  { label: '7D', val: '7' },
+                  { label: '30D', val: '30' },
+                  { label: '90D', val: '90' },
                 ].map(item => (
                   <button
                     key={item.val}
                     onClick={() => setDateFilter(item.val as any)}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] transition-all cursor-pointer ${
+                    className={cn(
+                      "px-2.5 h-7 rounded-md text-xs font-bold transition-all cursor-pointer",
                       dateFilter === item.val
-                        ? 'bg-white dark:bg-slate-900 text-primary shadow-xs font-black'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 font-semibold'
-                    }`}
+                        ? "bg-card text-foreground shadow-2xs"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
                   >
                     {item.label}
                   </button>
                 ))}
                 <button
                   onClick={() => setDateFilter('custom')}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] transition-all cursor-pointer ${
+                  className={cn(
+                    "flex items-center gap-1 px-2.5 h-7 rounded-md text-xs font-bold transition-all cursor-pointer",
                     dateFilter === 'custom'
-                      ? 'bg-white dark:bg-slate-900 text-primary shadow-xs font-black'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 font-semibold'
-                  }`}
+                      ? "bg-card text-foreground shadow-2xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
                 >
-                  <Calendar size={12} />
+                  <Calendar size={11} />
                   <span>Custom</span>
                 </button>
               </div>
 
-              {/* Styled Status Select Dropdown */}
-              <div className="w-40 sm:w-44 shrink-0">
+              {/* Status Select Dropdown */}
+              <div className="w-36 sm:w-42 shrink-0">
                 <SearchableSelect
                   options={[
                     { id: 'all', name: 'All Status' },
-                    { id: 'pending', name: 'Pending Settlement' },
+                    { id: 'pending', name: 'Pending' },
                     { id: 'settled', name: 'Settled' }
                   ]}
                   value={statusFilter}
                   onChange={(val) => setStatusFilter(val)}
                   showSearch={false}
                   placeholder="Filter Status"
-                  className="bg-white dark:bg-slate-900 font-semibold"
+                  className="h-8 rounded-md font-semibold text-xs"
                 />
               </div>
 
@@ -375,32 +365,32 @@ export function SettlementsPage() {
                 variant="outline"
                 size="sm"
                 onClick={() => loadSettlementsData(0, true)}
-                className="rounded-xl h-9 px-2.5 shrink-0"
+                className="rounded-md h-8 px-2.5 shrink-0 border-border shadow-2xs cursor-pointer"
                 title="Refresh Settlements"
               >
-                <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
+                <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} />
               </Button>
             </div>
           </div>
 
           {/* Backend Search Box */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" size={13} />
             <input
               type="text"
-              placeholder="Search by Customer name, Phone, Invoice No, or Order ID..."
+              placeholder="Search by customer name, phone, invoice, or order ID..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-primary font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400"
+              className="w-full pl-8 pr-3 h-8 text-xs bg-muted/40 border border-border rounded-md focus:outline-none focus:border-primary text-foreground placeholder:text-muted-foreground transition-all"
             />
           </div>
 
           {/* Custom Date Inputs Picker */}
           {dateFilter === 'custom' && (
-            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2 sm:space-y-0 sm:flex sm:items-center sm:gap-3 text-xs animate-fade-in relative z-30">
+            <div className="pt-2 border-t border-border/80 space-y-2 sm:space-y-0 sm:flex sm:items-center sm:gap-3 text-xs animate-fade-in relative z-30">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 flex-1">
                 <div className="flex items-center gap-1.5 relative z-20">
-                  <span className="font-bold text-slate-500 text-[11px] shrink-0">From:</span>
+                  <span className="font-bold text-muted-foreground text-[10.5px] shrink-0">From:</span>
                   <DatePicker
                     value={customStart}
                     maxDate={customEnd || undefined}
@@ -414,7 +404,7 @@ export function SettlementsPage() {
                   />
                 </div>
                 <div className="flex items-center gap-1.5 relative z-10">
-                  <span className="font-bold text-slate-500 text-[11px] shrink-0">To:</span>
+                  <span className="font-bold text-muted-foreground text-[10.5px] shrink-0">To:</span>
                   <DatePicker
                     value={customEnd}
                     minDate={customStart || undefined}
@@ -432,93 +422,93 @@ export function SettlementsPage() {
           )}
         </div>
 
-        <CardContent className="p-0">
+        <div>
           {isLoading && settlementsList.length === 0 ? (
-            <div className="p-8 space-y-4">
+            <div className="p-6 space-y-3">
               {[1, 2, 3, 4].map(i => (
-                <Skeleton key={i} className="h-12 w-full rounded-xl" />
+                <Skeleton key={i} className="h-10 w-full rounded-md" />
               ))}
             </div>
           ) : settlementsList.length === 0 ? (
-            <div className="p-12 text-center space-y-3">
-              <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center mx-auto">
-                <Wallet size={24} />
+            <div className="p-10 text-center space-y-2">
+              <div className="w-10 h-10 rounded-md bg-muted text-muted-foreground flex items-center justify-center mx-auto border border-border">
+                <Wallet size={18} />
               </div>
-              <h4 className="font-bold text-slate-800 dark:text-slate-200 text-sm">No Settlement Transactions Found</h4>
-              <p className="text-xs text-slate-500 max-w-sm mx-auto">
+              <h4 className="font-bold text-foreground text-xs sm:text-sm">No Settlement Transactions Found</h4>
+              <p className="text-xs text-muted-foreground max-w-sm mx-auto">
                 {debouncedSearch 
                   ? `No records match "${debouncedSearch}".` 
-                  : 'Online payments received from customer orders will automatically show here date-wise.'}
+                  : 'Online payments received from customer orders will automatically appear here.'}
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto no-scrollbar">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
-                  <tr className="bg-slate-50 dark:bg-slate-800/50 text-[10px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800">
-                    <th className="py-3 px-4">Date & Time</th>
-                    <th className="py-3 px-4">Invoice / Ref ID</th>
-                    <th className="py-3 px-4">Customer</th>
-                    <th className="py-3 px-4">Method</th>
-                    <th className="py-3 px-4 text-right">Gross Amount</th>
-                    <th className="py-3 px-4 text-right">Gateway Fee</th>
-                    <th className="py-3 px-4 text-right">Net Settlement</th>
-                    <th className="py-3 px-4">Settlement Status</th>
-                    <th className="py-3 px-4 text-center">Payout Date</th>
+                  <tr className="bg-muted/50 text-[10px] font-bold uppercase tracking-wider text-muted-foreground border-b border-border/80">
+                    <th className="py-2.5 px-3.5">Date & Time</th>
+                    <th className="py-2.5 px-3.5">Invoice / Ref ID</th>
+                    <th className="py-2.5 px-3.5">Customer</th>
+                    <th className="py-2.5 px-3.5">Method</th>
+                    <th className="py-2.5 px-3.5 text-right">Gross Amount</th>
+                    <th className="py-2.5 px-3.5 text-right">Gateway Fee</th>
+                    <th className="py-2.5 px-3.5 text-right">Net Settlement</th>
+                    <th className="py-2.5 px-3.5">Settlement Status</th>
+                    <th className="py-2.5 px-3.5 text-center">Payout Date</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 font-medium">
+                <tbody className="divide-y divide-border/60 font-medium">
                   {settlementsList.map((item, index) => {
                     const dt = formatSettlementDateTime(item.created_at);
                     return (
-                      <tr key={`${item.order_id}-${index}`} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
-                        <td className="py-3 px-4 text-slate-700 dark:text-slate-300 font-mono text-[11px]">
-                          <div className="font-semibold text-slate-900 dark:text-slate-100">{dt.date}</div>
-                          {dt.time && <div className="text-[10px] text-slate-400">{dt.time}</div>}
+                      <tr key={`${item.order_id}-${index}`} className="hover:bg-muted/30 transition-colors">
+                        <td className="py-2.5 px-3.5 text-foreground font-mono text-[11px]">
+                          <div className="font-semibold">{dt.date}</div>
+                          {dt.time && <div className="text-[10px] text-muted-foreground">{dt.time}</div>}
                         </td>
-                        <td className="py-3 px-4">
-                          <span className="font-mono font-bold text-slate-900 dark:text-slate-100">{item.invoice_no}</span>
-                          <span className="text-[10px] text-slate-400 block font-mono">Ref: {item.payment_reference}</span>
+                        <td className="py-2.5 px-3.5">
+                          <span className="font-mono font-bold text-foreground">{item.invoice_no}</span>
+                          <span className="text-[10px] text-muted-foreground block font-mono">Ref: {item.payment_reference}</span>
                         </td>
-                        <td className="py-3 px-4">
-                          <span className="font-bold text-slate-800 dark:text-slate-200">{item.customer_name}</span>
+                        <td className="py-2.5 px-3.5">
+                          <span className="font-bold text-foreground">{item.customer_name}</span>
                           {item.customer_phone && (
-                            <span className="text-[10px] text-slate-400 block font-mono">{item.customer_phone}</span>
+                            <span className="text-[10px] text-muted-foreground block font-mono">{item.customer_phone}</span>
                           )}
                         </td>
-                        <td className="py-3 px-4">
-                          <span className="capitalize px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 font-bold text-[10px] text-slate-600 dark:text-slate-300">
+                        <td className="py-2.5 px-3.5">
+                          <span className="capitalize px-2 py-0.5 rounded-md bg-muted font-bold text-[9.5px] text-foreground border border-border/60">
                             {item.payment_method}
                           </span>
                         </td>
-                        <td className="py-3 px-4 text-right font-mono font-bold text-slate-700 dark:text-slate-300">
+                        <td className="py-2.5 px-3.5 text-right font-mono font-bold text-foreground">
                           {currency}{item.gross_amount.toFixed(2)}
                         </td>
-                        <td className="py-3 px-4 text-right font-mono text-slate-400">
+                        <td className="py-2.5 px-3.5 text-right font-mono text-muted-foreground">
                           {item.platform_fee > 0 ? `-${currency}${item.platform_fee.toFixed(2)}` : `${currency}0.00`}
                         </td>
-                        <td className="py-3 px-4 text-right font-mono font-extrabold text-emerald-600 dark:text-emerald-400">
+                        <td className="py-2.5 px-3.5 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
                           {currency}{item.net_settlement_amount.toFixed(2)}
                         </td>
 
-                        <td className="py-3 px-4">
+                        <td className="py-2.5 px-3.5">
                           {item.settlement_status === 'settled' ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9.5px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                               <CheckCircle2 size={11} /> Settled
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9.5px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
                               <Clock size={11} className="animate-pulse" /> Pending
                             </span>
                           )}
                         </td>
-                        <td className="py-3 px-4 text-center">
+                        <td className="py-2.5 px-3.5 text-center">
                           {item.settlement_status === 'settled' && item.actual_settled_date ? (
-                            <span className="font-mono text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
+                            <span className="font-mono text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
                               {formatSettlementDate(item.actual_settled_date)}
                             </span>
                           ) : (
-                            <span className="font-mono text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                            <span className="font-mono text-[11px] font-medium text-muted-foreground">
                               Est: {formatSettlementDate(item.estimated_payout_date)}
                             </span>
                           )}
@@ -537,8 +527,8 @@ export function SettlementsPage() {
               />
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }

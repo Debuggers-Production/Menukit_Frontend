@@ -10,6 +10,6 @@ interface HeaderState {
 export const useHeaderStore = create<HeaderState>((set) => ({
   title: '',
   subtitle: '',
-  setTitle: (title, subtitle = '') => set({ title, subtitle }),
-  setHeaderTitle: (title, subtitle = '') => set({ title, subtitle }),
+  setTitle: (title) => set({ title, subtitle: '' }),
+  setHeaderTitle: (title) => set({ title, subtitle: '' }),
 }));

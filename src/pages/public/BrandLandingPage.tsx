@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router';
+import { useParams, useNavigate, Link } from 'react-router';
 import { api } from '@/services/api';
-import { Store, MapPin, Navigation } from 'lucide-react';
+import { Store, MapPin, Navigation, ExternalLink } from 'lucide-react';
 
 interface Branch {
   id: string;
@@ -155,6 +155,33 @@ export function BrandLandingPage() {
           )}
         </div>
       </div>
+
+      {/* Brand Footer */}
+      <footer className="py-8 border-t border-slate-200 bg-white text-center">
+        <div className="max-w-2xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
+          <div className="flex items-center gap-1.5 font-medium">
+            <span>Powered by</span>
+            <a
+              href="https://debuggerstechnologies.com/menukit/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-extrabold hover:opacity-80 transition-opacity flex items-center gap-1"
+            >
+              <span className="text-orange-600">Menukit</span> <ExternalLink size={11} className="text-orange-500" />
+            </a>
+          </div>
+
+          <div className="flex items-center gap-4 font-semibold text-slate-600">
+            <Link to="/terms" className="hover:text-primary transition-colors">
+              Terms of Service
+            </Link>
+            <span className="text-slate-300">•</span>
+            <Link to="/privacy" className="hover:text-primary transition-colors">
+              Privacy Policy
+            </Link>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

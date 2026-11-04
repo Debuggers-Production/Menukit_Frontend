@@ -34,6 +34,10 @@ export function ThermalKotModal({
   const stations = usePrinterStore((s) => s.stations);
   const menuItems = useShopStore((s) => s.menuItems);
   const businessCategory = getBusinessCategory(shop?.category);
+  const customSlipTitle = shop?.settings?.kot_slip_title || shop?.settings?.kot_title;
+  const slipTitle = (customSlipTitle || businessCategory.kotSlipTitle || 'ORDER TICKET').toUpperCase();
+  const shortCode = (shop?.settings?.kot_short || businessCategory.kotShort || 'KOT').toUpperCase();
+
   const [paperWidth, setPaperWidth] = useState<'80mm' | '58mm'>(storePaperWidth || '80mm');
   const [invocationMode, setInvocationMode] = useState<'full' | 'new_only' | 'cancelled'>(initialMode);
   const [isPrinting, setIsPrinting] = useState(false);
@@ -42,9 +46,14 @@ export function ThermalKotModal({
   if (!order) return null;
 
   const rawId = order.id ? String(order.daily_order_number || (order.daily_order_number || order.id.slice(0, 8))).toUpperCase() : '00000000';
-  const prefix = businessCategory.isFood ? 'KOT' : 'POT';
-  const kotNo = `${prefix}-${new Date(order.created_at || Date.now()).getFullYear()}-${rawId}`;
-  const { full: formattedDateTime } = formatReceiptDateTime(order.created_at);
+  const kotNo = `${shortCode}-${new Date(order.created_at || Date.now()).getFullYear()}-${rawId}`;
+  const { full: formattedDateTime, kotTimeStr } = formatReceiptDateTime(order.created_at);
+
+  const rawCustomer = (order.customer_name || '').trim();
+  const isCustWalkIn = !rawCustomer || 
+    ['walk-in', 'walk-in customer', 'walk in', 'walk in customer', 'walkin', 'walkin customer', 'guest', 'customer'].includes(
+      rawCustomer.toLowerCase()
+    );
 
   const allItems = order.items || [];
   const activeItems = allItems.filter((it: any) => !it.is_cancelled);
@@ -120,7 +129,7 @@ export function ThermalKotModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={businessCategory.kotLabel}
+      title={shop?.settings?.kot_slip_title || businessCategory.kotLabel}
       className="max-w-xl"
       footer={
         <div className="flex flex-wrap items-center justify-between gap-3 w-full">
@@ -168,7 +177,7 @@ export function ThermalKotModal({
               }`}
               leftIcon={<Printer size={15} />}
             >
-              {invocationMode === 'cancelled' ? 'Print Void Slip' : 'Print KOT to Kitchen'}
+              {invocationMode === 'cancelled' ? 'Print Void Slip' : `Print ${shortCode}`}
             </Button>
           </div>
         </div>
@@ -188,7 +197,7 @@ export function ThermalKotModal({
               }`}
             >
               <UtensilsCrossed size={13} />
-              <span>Full KOT ({activeItems.length})</span>
+              <span>Full {shortCode} ({activeItems.length})</span>
             </button>
 
             <button
@@ -268,14 +277,14 @@ export function ThermalKotModal({
                   : 'bg-black text-white'
             }`}>
               {invocationMode === 'cancelled' 
-                ? '*** KOT: VOID / CANCELLED ***' 
+                ? `*** ${shortCode}: VOID / CANCELLED ***` 
                 : invocationMode === 'new_only' 
-                  ? '*** KOT: RUNNING (NEW ITEMS) ***' 
-                  : '*** KITCHEN ORDER TICKET (KOT) ***'}
+                  ? `*** ${shortCode}: RUNNING (NEW ITEMS) ***` 
+                  : `*** ${slipTitle} ***`}
             </div>
 
             <div className="text-center font-black text-sm mt-2">
-              {(shop?.name || 'RESTAURANT KITCHEN').toUpperCase()}
+              {(shop?.name || 'ORDER DISPATCH').toUpperCase()}
             </div>
 
             {/* Big Table / Type Banner */}
@@ -286,16 +295,24 @@ export function ThermalKotModal({
             {/* Metadata */}
             <div className="text-[11px] space-y-0.5 border-b border-dashed border-slate-400 pb-2">
               <div className="flex justify-between font-bold">
-                <span>KOT: {kotNo}</span>
+                <span>{shortCode}: {kotNo}</span>
                 <span>Inv: #{rawId}</span>
               </div>
               <div className="flex justify-between text-slate-700">
-                <span>Time: {formattedDateTime}</span>
+                <span>Time: {kotTimeStr}</span>
               </div>
-              <div className="flex justify-between text-slate-700">
-                <span>Guest: {order.customer_name || 'Walk-in'}</span>
-                {order.table_number && <span>Table: {order.table_number}</span>}
-              </div>
+              {!isCustWalkIn ? (
+                <div className="flex justify-between text-slate-700">
+                  <span>Customer: {order.customer_name}{order.customer_phone ? ` (${order.customer_phone})` : ''}</span>
+                  {order.table_number && <span>Table: {order.table_number}</span>}
+                </div>
+              ) : (
+                order.table_number ? (
+                  <div className="flex justify-between text-slate-700">
+                    <span>Table: {order.table_number}</span>
+                  </div>
+                ) : null
+              )}
             </div>
 
             {/* Column Header */}
@@ -379,7 +396,7 @@ export function ThermalKotModal({
             )}
 
             <div className="text-center text-[10px] text-slate-500 mt-3 pt-1 border-t border-slate-200">
-              *** END OF KOT ***
+              *** END OF {shortCode} ***
             </div>
           </div>
         </div>

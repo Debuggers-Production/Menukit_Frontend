@@ -1,8 +1,9 @@
+import { cn } from '@/utils/cn';
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
 import { loadGoogleFont } from '@/utils/fontLoader';
 import { 
-  Palette, Check, Save, Smartphone, Monitor, Layers, Sliders, Sparkles, X, Minimize2, Maximize2, Flame, AppWindow, ZoomIn, ZoomOut, Lock, RotateCcw
+  Palette, Check, Save, Smartphone, Monitor, Layers, Sliders, X, Minimize2, Maximize2, Flame, AppWindow, ZoomIn, ZoomOut, Lock, RotateCcw
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { useShopStore } from '@/store/shopStore';
@@ -20,7 +21,7 @@ export function CustomizeThemePage() {
   const { setTitle: setHeaderTitle } = useHeaderStore();
 
   useEffect(() => {
-    setHeaderTitle('Customize Theme', 'Digital menu design & brand theme.');
+    setHeaderTitle('Customize Theme');
     api.get('/subscription/current').then(res => setSubStatus(res.data)).catch(console.error);
     
     if (!shop) {
@@ -49,7 +50,7 @@ export function CustomizeThemePage() {
   });
 
   // Customization Configuration States
-  const [themeScope, setThemeScope] = useState<'public' | 'app' | 'all'>('public');
+  const [themeScope, setThemeScope] = useState<'public' | 'app' | 'all'>('all');
   const [primaryColor, setPrimaryColor] = useState('#f97316');
   const [discountCardStyle, setDiscountCardStyle] = useState<'modern' | 'minimal' | 'gradient' | 'solid'>('modern');
   const [menuItemStyle, setMenuItemStyle] = useState<'default' | 'elevated' | 'flat'>('default');
@@ -58,7 +59,7 @@ export function CustomizeThemePage() {
 
   useEffect(() => {
     if (shop?.theme) {
-      setThemeScope(shop.theme.theme_scope || 'public');
+      setThemeScope(shop.theme.theme_scope || 'all');
       setPrimaryColor(shop.theme.primary_color || '#f97316');
       setDiscountCardStyle(shop.theme.discount_card_style || 'modern');
       setMenuItemStyle((shop.theme.menu_item_style || 'default') as any);
@@ -140,7 +141,7 @@ export function CustomizeThemePage() {
         discount_card_style: discountCardStyle,
         menu_item_style: menuItemStyle,
         font_family: fontFamily,
-        /* border_radius: borderRadius */
+        border_radius: borderRadius,
       });
       toast.success('Theme updated successfully!');
     } catch {
@@ -153,13 +154,10 @@ export function CustomizeThemePage() {
   const handleReset = () => {
     setPrimaryColor('#f97316');
     setFontFamily('Inter');
-    setBorderRadius('0.75rem');
-    setButtonStyle('rounded');
-    setCardStyle('shadow');
-    setShowItemImages(true);
-    setShowDescriptions(true);
-    setShowPrice(true);
-    setShowBadges(true);
+    setBorderRadius('smooth');
+    setThemeScope('all');
+    setDiscountCardStyle('modern');
+    setMenuItemStyle('default');
     toast.success('Reset to default brand theme!');
   };
 
@@ -168,43 +166,43 @@ export function CustomizeThemePage() {
   const radiusClasses: Record<string, string> = {
     sharp: 'rounded-none',
     smooth: 'rounded-lg',
-    pill: 'rounded-2xl',
+    pill: 'rounded-full',
     '0rem': 'rounded-none',
     '0.5rem': 'rounded-md',
     '0.75rem': 'rounded-xl',
-    '1rem': 'rounded-2xl',
+    '1rem': 'rounded-full',
   };
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto pb-24 animate-fade-in relative">
+    <div className="space-y-4 w-full pb-20 animate-fade-in relative">
       {/* Module Lock Banner */}
       {isLocked && (
-        <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/40 dark:to-orange-950/40 border-2 border-amber-200 dark:border-amber-800/80 p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0">
-              <Lock size={20} />
+        <div className="bg-amber-500/10 border border-amber-500/30 p-3.5 rounded-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/20">
+              <Lock size={16} />
             </div>
             <div>
-              <h4 className="font-black text-sm text-slate-900 dark:text-white">Custom Theme Studio Module Locked</h4>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Subscribe to the Custom Theme module or renew your subscription to save brand themes.</p>
+              <h4 className="font-bold text-xs sm:text-sm text-foreground">Custom Theme Studio Module Locked</h4>
+              <p className="text-xs text-muted-foreground">Subscribe to the Custom Theme module or renew your subscription to save brand themes.</p>
             </div>
           </div>
-          <Button onClick={() => navigate('/subscription')} className="bg-primary hover:bg-primary/90 text-white shrink-0 text-xs font-bold">
+          <Button onClick={() => navigate('/subscription')} className="bg-primary hover:bg-primary/90 text-white shrink-0 text-xs font-bold h-8 px-3 rounded-md shadow-2xs">
             Unlock Module →
           </Button>
         </div>
       )}
 
-      {/* ================= HEADER APPLICATION HEADER CONTROLS ================= */}
+      {/* Header Actions */}
       <HeaderActions>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <Button 
             variant="outline"
             onClick={handleReset}
             size="sm"
-            className="border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 gap-1.5 font-bold hover:bg-slate-50 dark:hover:bg-slate-900"
+            className="h-8 px-3 rounded-md border-border text-foreground gap-1.5 text-xs font-semibold cursor-pointer shadow-2xs"
           >
-            <RotateCcw size={14} />
+            <RotateCcw size={13} />
             Reset
           </Button>
           {!isPiPOpen && (
@@ -212,9 +210,9 @@ export function CustomizeThemePage() {
               variant="outline" 
               size="sm"
               onClick={() => { setIsPiPOpen(true); setIsPiPMinimized(false); }}
-              className="gap-1.5 font-bold"
+              className="h-8 px-3 rounded-md gap-1.5 text-xs font-semibold cursor-pointer shadow-2xs"
             >
-              <Smartphone size={14} />
+              <Smartphone size={13} />
               Preview Theme
             </Button>
           )}
@@ -222,34 +220,34 @@ export function CustomizeThemePage() {
             onClick={handleSave} 
             disabled={isSaving} 
             size="sm"
-            className="gap-1.5 font-bold shadow-xs"
+            className="h-8 px-3 rounded-md gap-1.5 text-xs font-bold shadow-2xs cursor-pointer"
           >
-            <Save size={14} />
+            <Save size={13} />
             {isSaving ? 'Saving...' : 'Publish Theme'}
           </Button>
         </div>
       </HeaderActions>
 
       {/* Mobile-Only Action Bar */}
-      <div className="flex lg:hidden items-center justify-between gap-2 p-3 mb-3 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm shrink-0">
+      <div className="flex lg:hidden items-center justify-between gap-2 p-2.5 bg-card rounded-lg border border-border/80 shadow-2xs shrink-0">
         <Button 
           variant="outline"
           onClick={handleReset}
           size="sm"
-          className="border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 gap-1.5 font-bold"
+          className="h-8 px-3 rounded-md text-xs font-semibold border-border text-foreground gap-1.5"
         >
-          <RotateCcw size={14} />
+          <RotateCcw size={13} />
           Reset
         </Button>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           {!isPiPOpen && (
             <Button 
               variant="outline" 
               size="sm"
               onClick={() => { setIsPiPOpen(true); setIsPiPMinimized(false); }}
-              className="gap-1.5 font-bold"
+              className="h-8 px-3 rounded-md text-xs font-semibold gap-1.5"
             >
-              <Smartphone size={14} />
+              <Smartphone size={13} />
               Preview
             </Button>
           )}
@@ -257,147 +255,191 @@ export function CustomizeThemePage() {
             onClick={handleSave} 
             disabled={isSaving} 
             size="sm"
-            className="gap-1.5 font-bold shadow-xs"
+            className="h-8 px-3 rounded-md text-xs font-bold shadow-2xs"
           >
-            <Save size={14} />
+            <Save size={13} />
             {isSaving ? 'Saving...' : 'Publish Theme'}
           </Button>
         </div>
       </div>
 
-      {/* ================= SYSTEM WORKSPACE TABS STRUCTURE ================= */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 items-start">
+      {/* System Workspace Tabs Structure */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-start">
         
         {/* Navigation Sidebar Controls */}
-        <div className="sticky top-0 z-20 md:static py-1 bg-slate-50/95 dark:bg-slate-950/95 backdrop-blur-md rounded-xl">
-          <div className="flex flex-row md:flex-col gap-1 p-1 bg-slate-100 dark:bg-slate-900 rounded-xl overflow-x-auto md:overflow-x-visible shrink-0 shadow-xs">
+        <div className="sticky top-0 z-20 md:static py-0.5">
+          <div className="flex flex-row md:flex-col gap-1 p-1 bg-card rounded-lg border border-border/80 shadow-2xs overflow-x-auto md:overflow-x-visible shrink-0">
             <button
-            type="button"
-            onClick={() => setActiveTab('branding')}
-            className={`flex items-center justify-center md:justify-start gap-2 px-4 py-2.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap flex-1 md:flex-none ${
-              activeTab === 'branding' 
-                ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs' 
-                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
-            }`}
-          >
-            <Palette size={14} />
-            Identity & Branding
-          </button>
-          
-          <button
-            type="button"
-            onClick={() => setActiveTab('geometry')}
-            className={`flex items-center justify-center md:justify-start gap-2 px-4 py-2.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap flex-1 md:flex-none ${
-              activeTab === 'geometry' 
-                ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs' 
-                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
-            }`}
-          >
-            <Sliders size={14} />
-            Visual Geometry
-          </button>
-          
-          <button
-            type="button"
-            onClick={() => setActiveTab('visibility')}
-            className={`flex items-center justify-center md:justify-start gap-2 px-4 py-2.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap flex-1 md:flex-none ${
-              activeTab === 'visibility' 
-                ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs' 
-                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
-            }`}
-          >
-            <Layers size={14} />
-            Scope Visibility
-          </button>
+              type="button"
+              onClick={() => setActiveTab('branding')}
+              className={cn(
+                "flex items-center justify-center md:justify-start gap-2 px-3 h-8.5 rounded-md text-xs font-bold transition-all whitespace-nowrap flex-1 md:flex-none cursor-pointer",
+                activeTab === 'branding' 
+                  ? "bg-primary text-white shadow-2xs" 
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Palette size={13} />
+              Identity & Branding
+            </button>
+            
+            <button
+              type="button"
+              onClick={() => setActiveTab('geometry')}
+              className={cn(
+                "flex items-center justify-center md:justify-start gap-2 px-3 h-8.5 rounded-md text-xs font-bold transition-all whitespace-nowrap flex-1 md:flex-none cursor-pointer",
+                activeTab === 'geometry' 
+                  ? "bg-primary text-white shadow-2xs" 
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Sliders size={13} />
+              Visual Geometry
+            </button>
+            
+            <button
+              type="button"
+              onClick={() => setActiveTab('visibility')}
+              className={cn(
+                "flex items-center justify-center md:justify-start gap-2 px-3 h-8.5 rounded-md text-xs font-bold transition-all whitespace-nowrap flex-1 md:flex-none cursor-pointer",
+                activeTab === 'visibility' 
+                  ? "bg-primary text-white shadow-2xs" 
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Layers size={13} />
+              Scope Visibility
+            </button>
+          </div>
         </div>
-      </div>
 
         {/* Dynamic Context Card Content Panes */}
         <div className="md:col-span-3">
           
           {/* TAB 1: BRANDING & TYPOGRAPHY */}
           {activeTab === 'branding' && (
-            <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs animate-fade-in">
-              <CardHeader>
-                <CardTitle className="text-sm font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-                  <Palette size={16} /> Identity & Core Branding
-                </CardTitle>
-                <CardDescription>Adjust font hierarchies and primary actionable visual styles.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="space-y-3">
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Primary Brand Accent</label>
-                  <div className="flex flex-wrap gap-3 items-center">
+            <div className="bg-card border border-border/80 rounded-lg p-5 shadow-2xs space-y-5 animate-fade-in">
+              <div className="pb-3 border-b border-border/80">
+                <h3 className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                  <Palette size={15} className="text-primary" /> Identity & Core Branding
+                </h3>
+                <p className="text-xs text-muted-foreground">Adjust font hierarchies and primary brand colors.</p>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-foreground block">Primary Brand Accent</label>
+                  <div className="flex flex-wrap gap-2.5 items-center">
                     {colorPresets.map(color => (
                       <button
                         key={color}
                         type="button"
                         onClick={() => setPrimaryColor(color)}
-                        className={`w-10 h-10 rounded-full transition-transform hover:scale-105 flex items-center justify-center ${primaryColor === color ? 'ring-4 ring-slate-900 dark:ring-slate-100 ring-offset-2 shadow-sm' : 'border border-slate-200 dark:border-slate-800'}`}
+                        className={cn(
+                          "w-8 h-8 rounded-md transition-transform hover:scale-105 flex items-center justify-center cursor-pointer shadow-2xs",
+                          primaryColor === color ? "ring-2 ring-primary ring-offset-2 ring-offset-card" : "border border-border"
+                        )}
                         style={{ backgroundColor: color }}
+                        title={color}
                       >
-                        {primaryColor === color && <Check size={16} className="text-white drop-shadow-xs" />}
+                        {primaryColor === color && <Check size={14} className="text-white drop-shadow-xs" strokeWidth={3} />}
                       </button>
                     ))}
-                    <div className="relative w-10 h-10 rounded-full border border-dashed border-slate-300 dark:border-slate-700 flex items-center justify-center bg-slate-50 dark:bg-slate-900 group cursor-pointer overflow-hidden">
+                    <div className="relative w-8 h-8 rounded-md border border-dashed border-border flex items-center justify-center bg-muted/40 group cursor-pointer overflow-hidden shadow-2xs" title="Custom color">
                       <input type="color" value={primaryColor} onChange={(e) => setPrimaryColor(e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer scale-150" />
-                      <Palette size={16} className="text-slate-400 group-hover:text-slate-600" />
+                      <Palette size={14} className="text-muted-foreground group-hover:text-foreground" />
                     </div>
-                    <span className="text-xs font-mono uppercase tracking-widest text-slate-400 ml-auto bg-slate-100 dark:bg-slate-900 px-2.5 py-1 rounded">
+                    <span className="text-xs font-mono uppercase tracking-widest text-muted-foreground ml-auto bg-muted px-2.5 py-1 rounded-md border border-border/60">
                       {primaryColor}
                     </span>
                   </div>
                 </div>
 
-                <div className="space-y-3">
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Global Font Layout Family</label>
-                  <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-2 pt-2 border-t border-border/80">
+                  <label className="text-xs font-bold text-foreground block">Global Font Family</label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                     {fontOptions.map(font => (
                       <button
                         key={font}
                         type="button"
                         onClick={() => setFontFamily(font)}
-                        className={`p-3 text-left border rounded-xl text-xs font-medium flex items-center justify-between ${fontFamily === font ? 'border-slate-900 dark:border-slate-100 bg-slate-50/50 dark:bg-slate-900' : 'border-slate-200 dark:border-slate-800'}`}
+                        className={cn(
+                          "p-2.5 text-left border rounded-md text-xs font-semibold flex items-center justify-between transition-all cursor-pointer",
+                          fontFamily === font 
+                            ? "border-primary bg-primary/10 text-primary ring-1 ring-primary/30" 
+                            : "border-border/80 bg-card text-foreground hover:border-border hover:bg-muted/30"
+                        )}
                         style={{ fontFamily: font }}
                       >
-                        <span>{font}</span>
-                        <span className="text-[10px] opacity-40">Aa</span>
+                        <span className="truncate">{font}</span>
+                        <span className="text-[10px] opacity-40 shrink-0 ml-1">Aa</span>
                       </button>
                     ))}
                   </div>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           )}
 
           {/* TAB 2: VISUAL GEOMETRY */}
           {activeTab === 'geometry' && (
-            <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs animate-fade-in">
-              <CardHeader>
-                <CardTitle className="text-sm font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-                  <Sliders size={16} /> Visual Geometry Models
-                </CardTitle>
-                <CardDescription>Determine layout architectures and component spacing contours.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="space-y-3">
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Card Edge Contour (Border Radius)</label>
+            <div className="bg-card border border-border/80 rounded-lg p-5 shadow-2xs space-y-5 animate-fade-in">
+              <div className="pb-3 border-b border-border/80">
+                <h3 className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                  <Sliders size={15} className="text-primary" /> Visual Geometry Models
+                </h3>
+                <p className="text-xs text-muted-foreground">Determine component spacing and layout contours.</p>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-foreground block">Card Edge Contour (Border Radius)</label>
                   <div className="grid grid-cols-3 gap-2">
                     {(['sharp', 'smooth', 'pill'] as const).map(radius => (
                       <button
                         key={radius}
                         type="button"
                         onClick={() => setBorderRadius(radius)}
-                        className={`py-2 px-3 text-xs font-medium border capitalize rounded-lg ${borderRadius === radius ? 'border-slate-900 dark:border-slate-100 bg-slate-50/50 dark:bg-slate-900 font-bold' : 'border-slate-200 dark:border-slate-800 text-slate-500'}`}
+                        className={cn(
+                          "h-8.5 px-3 text-xs font-bold border capitalize rounded-md transition-all cursor-pointer",
+                          borderRadius === radius 
+                            ? "border-primary bg-primary/10 text-primary ring-1 ring-primary/30" 
+                            : "border-border/80 bg-card text-muted-foreground hover:text-foreground hover:bg-muted/30"
+                        )}
                       >
                         {radius}
-                  </button>
+                      </button>
                     ))}
                   </div>
                 </div>
 
-                <div className="space-y-3">
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Discount Feed Layout Theme</label>
+                <div className="space-y-2 pt-2 border-t border-border/80">
+                  <label className="text-xs font-bold text-foreground block">Menu Item Card Style</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { id: 'default', label: 'Default' },
+                      { id: 'elevated', label: 'Elevated' },
+                      { id: 'flat', label: 'Flat Clean' }
+                    ].map(item => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setMenuItemStyle(item.id as any)}
+                        className={cn(
+                          "h-8.5 px-3 text-xs font-bold border capitalize rounded-md transition-all cursor-pointer",
+                          menuItemStyle === item.id 
+                            ? "border-primary bg-primary/10 text-primary ring-1 ring-primary/30" 
+                            : "border-border/80 bg-card text-muted-foreground hover:text-foreground hover:bg-muted/30"
+                        )}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2 pt-2 border-t border-border/80">
+                  <label className="text-xs font-bold text-foreground block">Discount Card Style</label>
                   <div className="grid grid-cols-2 gap-2">
                     {[
                       { id: 'modern', label: 'Modern Blend' },
@@ -409,62 +451,74 @@ export function CustomizeThemePage() {
                         key={style.id}
                         type="button"
                         onClick={() => setDiscountCardStyle(style.id as any)}
-                        className={`p-3 border rounded-xl text-xs font-medium text-center ${discountCardStyle === style.id ? 'border-slate-900 dark:border-slate-100 bg-slate-50/50 dark:bg-slate-900 font-bold' : 'border-slate-200 dark:border-slate-800 text-slate-500'}`}
+                        className={cn(
+                          "p-2.5 border rounded-md text-xs font-semibold text-center transition-all cursor-pointer",
+                          discountCardStyle === style.id 
+                            ? "border-primary bg-primary/10 text-primary ring-1 ring-primary/30" 
+                            : "border-border/80 bg-card text-muted-foreground hover:text-foreground hover:bg-muted/30"
+                        )}
                       >
                         {style.label}
                       </button>
                     ))}
                   </div>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           )}
 
           {/* TAB 3: SCOPE ENVIRONMENT VISIBILITY */}
           {activeTab === 'visibility' && (
-            <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs animate-fade-in">
-              <CardHeader>
-                <CardTitle className="text-sm font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-                  <Layers size={16} /> Client Environment Scope Visibility
-                </CardTitle>
-                <CardDescription>Determine which app viewports deploy these styles.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-col gap-2">
-                  {[
-                    { id: 'public', title: 'Public Storefront', desc: 'Customer digital menu systems', icon: Smartphone },
-                    { id: 'app', title: 'Management Hub', desc: 'Internal workplace admin pages', icon: Monitor },
-                    { id: 'all', title: 'Universal Mirror Sync', desc: 'Global configuration across both layers', icon: AppWindow }
-                  ].map(scope => {
-                    const Icon = scope.icon;
-                    const isSelected = themeScope === scope.id;
-                    return (
-                      <button
-                        key={scope.id}
-                        type="button"
-                        onClick={() => setThemeScope(scope.id as any)}
-                        className={`p-4 border text-left rounded-xl transition-all flex items-start gap-3 relative ${isSelected ? 'border-slate-900 bg-slate-50/40 dark:border-slate-100 dark:bg-slate-900 ring-2 ring-slate-950/5' : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50/30'}`}
-                      >
-                        <div className={`p-2 rounded-lg shrink-0 ${isSelected ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>
-                          <Icon size={16} />
-                        </div>
-                        <div>
-                          <h4 className="text-xs font-bold text-slate-900 dark:text-white mb-0.5">{scope.title}</h4>
-                          <p className="text-[11px] text-slate-400 leading-tight">{scope.desc}</p>
-                        </div>
-                        {isSelected && <div className="absolute top-3 right-3 w-1.5 h-1.5 rounded-full bg-slate-900 dark:bg-white" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
+            <div className="bg-card border border-border/80 rounded-lg p-5 shadow-2xs space-y-5 animate-fade-in">
+              <div className="pb-3 border-b border-border/80">
+                <h3 className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                  <Layers size={15} className="text-primary" /> Scope Visibility
+                </h3>
+                <p className="text-xs text-muted-foreground">Select viewports where this theme is deployed.</p>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                {[
+                  { id: 'public', title: 'Public Storefront', desc: 'Customer digital menu systems', icon: Smartphone },
+                  { id: 'app', title: 'Management Hub', desc: 'Internal workplace admin pages', icon: Monitor },
+                  { id: 'all', title: 'Universal Mirror Sync', desc: 'Global configuration across both layers', icon: AppWindow }
+                ].map(scope => {
+                  const Icon = scope.icon;
+                  const isSelected = themeScope === scope.id;
+                  return (
+                    <button
+                      key={scope.id}
+                      type="button"
+                      onClick={() => setThemeScope(scope.id as any)}
+                      className={cn(
+                        "p-3.5 border text-left rounded-md transition-all flex items-start gap-3 relative cursor-pointer",
+                        isSelected 
+                          ? "border-primary bg-primary/[0.04] dark:bg-primary/[0.08] ring-1 ring-primary/30" 
+                          : "border-border/80 bg-card hover:bg-muted/30"
+                      )}
+                    >
+                      <div className={cn(
+                        "p-2 rounded-md shrink-0 border",
+                        isSelected ? "bg-primary text-white border-primary" : "bg-muted text-muted-foreground border-border"
+                      )}>
+                        <Icon size={15} />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-foreground mb-0.5">{scope.title}</h4>
+                        <p className="text-[11px] text-muted-foreground leading-tight">{scope.desc}</p>
+                      </div>
+                      {isSelected && <div className="absolute top-3.5 right-3.5 w-2 h-2 rounded-full bg-primary" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           )}
 
         </div>
       </div>
 
-      {/* ================= MICRO-SIZED DRAGGABLE PiP PREVIEW OVERLAY ================= */}
+      {/* Micro-Sized Draggable PiP Preview Overlay */}
       {isPiPOpen && (
         <div 
           onMouseDown={startDrag}
@@ -477,13 +531,14 @@ export function CustomizeThemePage() {
             transform: `scale(${!isPiPMinimized && isPiPLarge ? 2 : 1})`,
             transformOrigin: 'top left'
           }}
-          className={`z-50 bg-slate-950 rounded-[18px] border-2 border-slate-900 dark:border-slate-800 shadow-xl flex flex-col overflow-hidden ring-2 ring-black/5 select-none transition-shadow ${
+          className={cn(
+            "z-50 bg-card rounded-lg border border-border shadow-2xl flex flex-col overflow-hidden select-none transition-shadow",
             isPiPMinimized ? 'w-32 h-9' : 'w-[160px] h-[270px]'
-          }`}
+          )}
         >
           {/* Top Micro Drag Bar */}
-          <div className="h-7 bg-slate-900 px-2 flex items-center justify-between shrink-0 cursor-grab active:cursor-grabbing border-b border-slate-950">
-            <span className="text-[8px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-0.5">
+          <div className="h-7 bg-muted/60 px-2 flex items-center justify-between shrink-0 cursor-grab active:cursor-grabbing border-b border-border">
+            <span className="text-[8px] text-foreground font-bold uppercase tracking-wider flex items-center gap-0.5">
               <Smartphone size={8} className="text-primary" /> Live
             </span>
             <div className="flex items-center gap-0.5">
@@ -491,7 +546,7 @@ export function CustomizeThemePage() {
                 <button 
                   type="button" 
                   onClick={() => setIsPiPLarge(!isPiPLarge)}
-                  className="p-0.5 rounded text-slate-400 hover:text-white hover:bg-slate-800"
+                  className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
                   title={isPiPLarge ? "Zoom Out" : "Zoom In"}
                 >
                   {isPiPLarge ? <ZoomOut size={8} /> : <ZoomIn size={8} />}
@@ -500,7 +555,7 @@ export function CustomizeThemePage() {
               <button 
                 type="button" 
                 onClick={() => setIsPiPMinimized(!isPiPMinimized)}
-                className="p-0.5 rounded text-slate-400 hover:text-white hover:bg-slate-800"
+                className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
                 title={isPiPMinimized ? "Expand Mini-View" : "Minimize Window"}
               >
                 {isPiPMinimized ? <Maximize2 size={8} /> : <Minimize2 size={8} />}
@@ -508,7 +563,7 @@ export function CustomizeThemePage() {
               <button 
                 type="button" 
                 onClick={() => setIsPiPOpen(false)}
-                className="p-0.5 rounded text-slate-400 hover:text-rose-400 hover:bg-slate-800"
+                className="p-0.5 rounded text-muted-foreground hover:text-rose-500 hover:bg-muted"
               >
                 <X size={8} />
               </button>
@@ -517,25 +572,26 @@ export function CustomizeThemePage() {
 
           {/* Miniaturized Application Canvas */}
           <div 
-            className={`flex-1 overflow-y-auto no-scrollbar p-2 space-y-2 bg-slate-50 dark:bg-slate-950 ${
+            className={cn(
+              "flex-1 overflow-y-auto no-scrollbar p-2 space-y-2 bg-background",
               isPiPMinimized ? 'hidden' : 'block'
-            }`}
+            )}
             style={{ fontFamily: fontFamily }}
           >
             {/* Logo Bar Header */}
-            <div className={`p-1.5 border border-slate-100 dark:border-slate-900 bg-white dark:bg-slate-900 shadow-3xs ${radiusClasses[borderRadius]}`}>
+            <div className={cn("p-1.5 border border-border bg-card shadow-3xs", radiusClasses[borderRadius])}>
               <div className="flex items-center gap-1">
                 <div className="w-4 h-4 flex items-center justify-center text-white font-black text-[6px] shrink-0 transition-all" style={{ backgroundColor: primaryColor, borderRadius: borderRadius === 'sharp' ? '0px' : borderRadius === 'pill' ? '999px' : '4px' }}>
                   {shop?.name?.slice(0, 2).toUpperCase() || 'MK'}
                 </div>
-                <h3 className="text-[7px] font-bold text-slate-800 dark:text-slate-100 truncate">{shop?.name || 'Menukit'}</h3>
+                <h3 className="text-[7px] font-bold text-foreground truncate">{shop?.name || 'Menukit'}</h3>
               </div>
             </div>
 
             {/* Simulated CTA Layout */}
             <button
               type="button"
-              className={`w-full py-1 text-[7px] font-bold text-white shadow-3xs flex items-center justify-center gap-0.5 transition-all ${radiusClasses[borderRadius]}`}
+              className={cn("w-full py-1 text-[7px] font-bold text-white shadow-3xs flex items-center justify-center gap-0.5 transition-all", radiusClasses[borderRadius])}
               style={{ backgroundColor: primaryColor }}
             >
               <Flame size={7} />
@@ -544,11 +600,11 @@ export function CustomizeThemePage() {
 
             {/* Custom Promo Architecture Selector */}
             <div
-              className={`p-1.5 border text-[7px] font-semibold transition-all ${radiusClasses[borderRadius]} ${
-                discountCardStyle === 'modern' ? 'bg-white dark:bg-slate-900 shadow-3xs border-slate-100/60 dark:border-slate-900' :
-                discountCardStyle === 'minimal' ? 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700' :
+              className={cn("p-1.5 border text-[7px] font-semibold transition-all", radiusClasses[borderRadius],
+                discountCardStyle === 'modern' ? 'bg-card shadow-3xs border-border/60' :
+                discountCardStyle === 'minimal' ? 'bg-card border-border' :
                 discountCardStyle === 'gradient' ? 'border-transparent' : 'text-white'
-              }`}
+              )}
               style={{
                 backgroundColor: discountCardStyle === 'solid' ? primaryColor : undefined,
                 backgroundImage: discountCardStyle === 'gradient' ? `linear-gradient(135deg, ${primaryColor}15, ${primaryColor}05)` : undefined,
@@ -559,10 +615,10 @@ export function CustomizeThemePage() {
             </div>
 
             {/* Simulated Food Matrix Nodes */}
-            <div className={`p-1 flex items-center gap-1.5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 shadow-3xs ${radiusClasses[borderRadius]}`}>
-              <div className="w-6 h-6 rounded bg-slate-200 dark:bg-slate-800 shrink-0 flex items-center justify-center text-[5px] text-slate-400">Img</div>
+            <div className={cn("p-1 flex items-center gap-1.5 bg-card border border-border shadow-3xs", radiusClasses[borderRadius])}>
+              <div className="w-5 h-5 rounded bg-muted shrink-0 flex items-center justify-center text-[5px] text-muted-foreground">Img</div>
               <div className="flex-1 min-w-0 flex flex-col justify-between">
-                <h5 className="text-[7px] font-bold text-slate-800 dark:text-slate-200 truncate">Combo Dish</h5>
+                <h5 className="text-[7px] font-bold text-foreground truncate">Combo Dish</h5>
                 <span className="text-[7px] font-black" style={{ color: primaryColor }}>₹199</span>
               </div>
             </div>

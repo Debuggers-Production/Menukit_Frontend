@@ -41,7 +41,9 @@ export function AuthLayout() {
               <img src={logo} alt="MenuKit-Logo" className="w-full h-full" />
             </div>
           </div>
-          <h1 className="text-3xl font-heading font-bold text-slate-900 dark:text-white tracking-tight">Menukit</h1>
+          <h1 className="text-3xl font-heading font-bold tracking-tight">
+            <span className="text-orange-600 dark:text-orange-500">Menukit</span>
+          </h1>
           <p className="text-slate-500 dark:text-slate-400 mt-2 text-center">Digital menus for modern restaurants</p>
           <div className="mt-4 px-3 py-1 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 text-xs font-bold rounded-full border border-primary-200 dark:border-primary-800 flex items-center gap-1.5">
             <Languages size={14} className="animate-pulse" />

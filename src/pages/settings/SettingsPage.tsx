@@ -1,17 +1,27 @@
-import { useState, useEffect, useMemo } from 'react';
-import { useNavigate, useSearchParams } from 'react-router';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { SettingsNavRail, SettingsTabId } from './components/SettingsNavRail';
+import { GeneralSettingsTab } from './tabs/GeneralSettingsTab';
+import { OrderingSettingsTab } from './tabs/OrderingSettingsTab';
+import { PoliciesSettingsTab } from './tabs/PoliciesSettingsTab';
+import { DiscoverySettingsTab } from './tabs/DiscoverySettingsTab';
+import { PaymentsSettingsTab } from './tabs/PaymentsSettingsTab';
+import { TaxSettingsTab } from './tabs/TaxSettingsTab';
+import { PrinterSettingsTab } from './tabs/PrinterSettingsTab';
+import { AccountSettingsTab } from './tabs/AccountSettingsTab';
+import { SupportSettingsTab } from './tabs/SupportSettingsTab';
+import { useNavigate, useSearchParams, Link } from 'react-router';
 import { 
   Mail, Store, Shield, ShieldCheck, Smartphone, Phone, ChevronRight, ChevronDown, ArrowRight, Sliders, Globe, 
   Coins, Truck, ShoppingBag, QrCode, Tag, MapPin, Zap, CheckCircle2, Lock, Info, AlertCircle,
   CreditCard, Printer, Plus, Trash2, Edit2, UtensilsCrossed, FileText, Check, RotateCcw,
-  Wifi, Usb, Bluetooth, Volume2, Terminal, Copy, Receipt, Search, X, Tags, Layers, Sparkles, Eye, EyeOff, Loader2, Save,
-  Laptop, Download, ArrowLeft, LayoutGrid, PackageCheck, Clock, Timer
+  Wifi, Usb, Bluetooth, Volume2, Terminal, Copy, Receipt, Search, X, Tags, Layers, Eye, EyeOff, Loader2, Save,
+  Laptop, Download, ArrowLeft, LayoutGrid, PackageCheck, Package, Clock, Timer, Scissors, Hash, Lightbulb
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { toast } from 'react-hot-toast';
 import { useAuthStore } from '@/store/authStore';
 import { useShopStore } from '@/store/shopStore';
-import { getBusinessCategory } from '@/config/businessCategories';
+import { getBusinessCategory, isFireworksBusiness } from '@/config/businessCategories';
 import { usePrinterStore, PrinterStation, BillingPrinterConfig, BillingPrinter } from '@/store/usePrinterStore';
 import { 
   printThermalKot, 
@@ -28,6 +38,8 @@ import {
 } from '@/utils/webBluetoothPrinter';
 import { buildKotEscPos } from '@/utils/escpos';
 import { api } from '@/services/api';
+import { BILL_LANGUAGES } from '@/utils/billTranslations';
+import { getActiveSystemLanguage, setSystemLanguage } from '@/utils/language';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -122,47 +134,134 @@ export function SettingsPage() {
   const tabFromUrl = searchParams.get('tab');
   const { isInstalled, promptInstall } = usePWAInstall();
 
+  // Account Deletion OTP State
+  const [isLicensesModalOpen, setIsLicensesModalOpen] = useState(false);
+  const [isDeleteAccountModalOpen, setIsDeleteAccountModalOpen] = useState(false);
+  const [accountOtpSent, setAccountOtpSent] = useState(false);
+  const [accountOtpCode, setAccountOtpCode] = useState('');
+  const [isSendingAccountOtp, setIsSendingAccountOtp] = useState(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+
+  // Shop Deletion OTP State
+  const [isDeleteShopModalOpen, setIsDeleteShopModalOpen] = useState(false);
+  const [shopOtpSent, setShopOtpSent] = useState(false);
+  const [shopOtpCode, setShopOtpCode] = useState('');
+  const [isSendingShopOtp, setIsSendingShopOtp] = useState(false);
+  const [isDeletingShop, setIsDeletingShop] = useState(false);
+
   // Tab & Module State
-  const [activeTab, setActiveTab] = useState<'overview' | 'general' | 'ordering' | 'policies' | 'discovery' | 'payments' | 'gst' | 'printers' | 'account'>(
-    (tabFromUrl as any) || 'overview'
+  const [activeTab, setActiveTab] = useState<SettingsTabId>(
+    (tabFromUrl && tabFromUrl !== 'overview' ? tabFromUrl : 'general') as SettingsTabId
   );
   const [moduleSearchQuery, setModuleSearchQuery] = useState('');
   const [printerSection, setPrinterSection] = useState<'all' | 'kot' | 'billing'>('all');
 
   useEffect(() => {
-    if (tabFromUrl && tabFromUrl !== activeTab) {
+    if (tabFromUrl && tabFromUrl !== activeTab && tabFromUrl !== 'overview') {
       setActiveTab(tabFromUrl as any);
+    } else if (!tabFromUrl || tabFromUrl === 'overview') {
+      setActiveTab('general');
     }
   }, [tabFromUrl]);
 
   useEffect(() => {
-    if (activeTab === 'overview') {
-      setHeaderTitle('Account and Shop Settings', 'Select a module to configure ordering channels, payment accounts, taxes, printers, and preferences.');
-    } else {
-      const moduleTitles: Record<string, { title: string; desc: string }> = {
-        general: { title: 'General Settings', desc: 'Manage currency, display languages, and app installation' },
-        ordering: { title: 'Ordering Channels', desc: 'Set up table dine-in, takeaway counters, and deliveries' },
-        policies: { title: 'Cancellation & Replacement Policy', desc: 'Configure order cancellation refund processing and item replacement rules' },
-        discovery: { title: 'Public Discovery & SEO', desc: 'Boost public search visibility and customer store discovery' },
-        payments: { title: 'Payments & Bank Accounts', desc: 'Manage bank settlement account, online UPI and card gateways' },
-        gst: { title: 'GST & Tax Compliances', desc: 'Manage business legal entity, GSTIN, and FSSAI licenses' },
-        printers: { title: businessCategory.settingsPrintersTabLabel || 'Dispatch & Thermal Printers', desc: 'Configure KOT station routing and USB / LAN receipt printers' },
-        account: { title: 'Security & Account', desc: 'Account credentials, session devices, and deletion rules' },
-      };
-      const info = moduleTitles[activeTab] || { title: 'Shop Settings', desc: 'Shop preferences & rules' };
-      setHeaderTitle(info.title, info.desc);
-    }
+    const moduleTitles: Record<string, { title: string; desc: string }> = {
+      general: { title: 'General Settings', desc: 'Manage currency, display languages, and app installation' },
+      ordering: { title: 'Ordering Channels', desc: 'Set up table dine-in, takeaway counters, and deliveries' },
+      policies: { title: 'Cancellation & Replacement Policy', desc: 'Configure order cancellation refund processing and item replacement rules' },
+      discovery: { title: 'Public Discovery & SEO', desc: 'Boost public search visibility and customer store discovery' },
+      payments: { title: 'Payments & Bank Accounts', desc: 'Manage bank settlement account, online UPI and card gateways' },
+      gst: { title: 'GST & Tax Compliances', desc: 'Manage business legal entity, GSTIN, and FSSAI licenses' },
+      printers: { title: businessCategory.settingsPrintersTabLabel || 'Dispatch & Thermal Printers', desc: 'Configure KOT station routing and USB / LAN receipt printers' },
+      account: { title: 'Security & Account', desc: 'Account credentials, session devices, and deletion rules' },
+      support: { title: 'Merchant Care & Support', desc: 'Direct WhatsApp, phone and email assistance by Debuggers Technologies' },
+    };
+    const info = moduleTitles[activeTab] || { title: 'Shop Settings', desc: 'Shop preferences & rules' };
+    setHeaderTitle(info.title, info.desc);
   }, [activeTab, setHeaderTitle, businessCategory]);
 
-  const handleSelectModule = (tabId: string) => {
-    setActiveTab(tabId as any);
-    if (tabId === 'overview') {
-      const nextParams = new URLSearchParams(searchParams);
-      nextParams.delete('tab');
-      setSearchParams(nextParams);
-    } else {
-      setSearchParams({ tab: tabId });
+  const handleRequestAccountDeletionOtp = async () => {
+    setIsSendingAccountOtp(true);
+    try {
+      await api.post('/auth/delete-account/request-otp');
+      toast.success(`Verification OTP sent to ${user?.email || 'your email'}`);
+      setAccountOtpSent(true);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Failed to send deletion OTP. Please try again.');
+    } finally {
+      setIsSendingAccountOtp(false);
     }
+  };
+
+  const handleConfirmDeleteAccount = async () => {
+    if (!accountOtpCode.trim() || accountOtpCode.trim().length < 4) {
+      toast.error('Please enter the verification OTP sent to your email.');
+      return;
+    }
+    setIsDeletingAccount(true);
+    try {
+      await api.delete(`/auth/me?code=${encodeURIComponent(accountOtpCode.trim())}`);
+      toast.success('Your account and shops have been deactivated. Contact debuggerstechs@gmail.com to restore anytime.');
+      setIsDeleteAccountModalOpen(false);
+      await useAuthStore.getState().logout();
+      navigate('/login');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Failed to deactivate account. Please contact debuggerstechs@gmail.com');
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  };
+
+  const handleRequestShopDeletionOtp = async () => {
+    if (!shop?.id) return;
+    setIsSendingShopOtp(true);
+    try {
+      await api.post(`/shops/${shop.id}/delete/request-otp`);
+      toast.success(`Verification OTP sent to ${user?.email || 'your email'}`);
+      setShopOtpSent(true);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Failed to send shop deletion OTP. Please try again.');
+    } finally {
+      setIsSendingShopOtp(false);
+    }
+  };
+
+  const handleConfirmDeleteShop = async () => {
+    if (!shop?.id) return;
+    if (!shopOtpCode.trim() || shopOtpCode.trim().length < 4) {
+      toast.error('Please enter the verification OTP sent to your email.');
+      return;
+    }
+    setIsDeletingShop(true);
+    try {
+      await api.delete(`/shops/${shop.id}?code=${encodeURIComponent(shopOtpCode.trim())}`);
+      toast.success(`Shop "${shop.name}" has been deactivated. Data is preserved and can be restored anytime via debuggerstechs@gmail.com.`);
+      setIsDeleteShopModalOpen(false);
+      setShopOtpSent(false);
+      setShopOtpCode('');
+      
+      // Refresh user and switch to another shop if available
+      await fetchUser();
+      const updatedUser = useAuthStore.getState().user;
+      const remainingShops = (updatedUser?.shops || []).filter((s: any) => s.id !== shop.id && !s.is_deleted);
+      if (remainingShops.length > 0) {
+        setShop(remainingShops[0]);
+        navigate('/settings?tab=general');
+      } else {
+        setShop(null);
+        navigate('/');
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Failed to deactivate shop. Please contact debuggerstechs@gmail.com');
+    } finally {
+      setIsDeletingShop(false);
+    }
+  };
+
+  const handleSelectModule = (tabId: string) => {
+    const target = (tabId === 'overview' ? 'general' : tabId) as SettingsTabId;
+    setActiveTab(target);
+    setSearchParams({ tab: target });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -451,6 +550,7 @@ export function SettingsPage() {
     port: number;
     enabled: boolean;
     isDefault: boolean;
+    language: string;
   }>({
     name: '',
     paperWidth: '80mm',
@@ -459,6 +559,7 @@ export function SettingsPage() {
     port: 9100,
     enabled: true,
     isDefault: false,
+    language: 'store',
   });
 
   // Check Local Print Bridge health when printer settings or modals are opened
@@ -478,6 +579,7 @@ export function SettingsPage() {
       port: 9100,
       enabled: true,
       isDefault: billingPrinters.length === 0,
+      language: 'store',
     });
     setIsBillingModalOpen(true);
   };
@@ -492,6 +594,7 @@ export function SettingsPage() {
       port: printer.port || 9100,
       enabled: printer.enabled !== false,
       isDefault: Boolean(printer.isDefault),
+      language: printer.language || 'store',
     });
     setIsBillingModalOpen(true);
   };
@@ -722,6 +825,9 @@ export function SettingsPage() {
     serial_number_prefix: shop?.settings?.serial_number_prefix || '',
     serial_number_digits: shop?.settings?.serial_number_digits || 3,
     auto_serial_number_enabled: shop?.settings?.auto_serial_number_enabled || false,
+    wholesale_pricing_enabled: shop?.settings?.wholesale_pricing_enabled !== undefined && shop?.settings?.wholesale_pricing_enabled !== null
+      ? Boolean(shop.settings.wholesale_pricing_enabled)
+      : isFireworksBusiness(shop?.category),
     return_allowed: shop?.settings?.return_allowed || false,
     return_window_days: shop?.settings?.return_window_days ?? 0,
     return_policy_notes: shop?.settings?.return_policy_notes || '',
@@ -743,17 +849,45 @@ export function SettingsPage() {
       setSettingsData(prev => ({
         ...prev,
         ...shop.settings,
+        show_prices: shop.settings.show_prices !== false,
         payment_timeout_minutes: (shop.settings as any).payment_timeout_minutes ?? 15,
         max_delivery_distance: (shop.settings as any).max_delivery_distance ?? 0,
         dinein_tables_enabled: (shop.settings as any).dinein_tables_enabled !== false,
         dinein_tables_count: (shop.settings as any).dinein_tables_count ?? 10,
         refund_allowed: shop.settings.refund_allowed === true,
         replacement_allowed: shop.settings.replacement_allowed !== false,
+        wholesale_pricing_enabled: shop.settings.wholesale_pricing_enabled !== undefined && shop.settings.wholesale_pricing_enabled !== null
+          ? Boolean(shop.settings.wholesale_pricing_enabled)
+          : isFireworksBusiness(shop?.category),
       }));
       const serverMins = Number((shop.settings as any).payment_timeout_minutes ?? 15);
       setTimeoutMode([5, 10, 15, 20, 30, 45, 60].includes(serverMins) ? String(serverMins) : 'custom');
     }
   }, [shop?.id, (shop?.settings as any)?.id, (shop?.settings as any)?.max_delivery_distance, (shop?.settings as any)?.payment_timeout_minutes]);
+
+  // Dirty state tracking for Smart Floating Save Bar
+  const initialSettingsRef = useRef<string>('');
+  useEffect(() => {
+    if (shop?.settings && !initialSettingsRef.current && settingsData) {
+      initialSettingsRef.current = JSON.stringify(settingsData);
+    }
+  }, [shop?.settings, settingsData]);
+
+  const isDirty = useMemo(() => {
+    if (!initialSettingsRef.current || !settingsData) return false;
+    return JSON.stringify(settingsData) !== initialSettingsRef.current;
+  }, [settingsData]);
+
+  const handleResetSettings = () => {
+    if (initialSettingsRef.current) {
+      try {
+        setSettingsData(JSON.parse(initialSettingsRef.current));
+        toast('Settings reset to saved state', { icon: '🔄' });
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  };
 
   const discoveryModInfo = subscriptionStatus?.module_expirations?.['hide-discovery-badge'];
   const discoveryDaysLeft = discoveryModInfo?.days_left ?? subscriptionStatus?.days_left ?? 0;
@@ -850,6 +984,14 @@ export function SettingsPage() {
       const savedMins = Number(res.data.payment_timeout_minutes ?? 15);
       setTimeoutMode([5, 10, 15, 20, 30, 45, 60].includes(savedMins) ? String(savedMins) : 'custom');
       toast.success('Shop settings updated successfully!');
+
+      // Synchronize system language across the application
+      if (settingsData.language) {
+        const currentActive = getActiveSystemLanguage();
+        if (currentActive !== settingsData.language) {
+          setSystemLanguage(settingsData.language, true);
+        }
+      }
     } catch (error: any) {
       toast.error(error.response?.data?.detail || 'Failed to update shop settings');
     } finally {
@@ -863,8 +1005,8 @@ export function SettingsPage() {
         ...settingsData,
         is_discoverable: false,
         hide_discovery_badge: true,
-        show_prices: false,
-        show_offers: false,
+        show_prices: settingsData.show_prices !== false,
+        show_offers: settingsData.show_offers !== false,
         show_menus_in_discovery: false,
       };
       setSettingsData(updated);
@@ -1322,2382 +1464,185 @@ export function SettingsPage() {
     );
   };
 
-  const SETTING_MODULES = useMemo(() => [
-    {
-      id: 'general',
-      title: 'General & Regional',
-      description: 'Configure desktop app, currency, and language preferences',
-      icon: Sliders,
-      badgeColor: 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200/70 dark:border-blue-800/60',
-      items: [
-        'Desktop Web App',
-        'Currency Symbol & Format',
-        'Menu Display Language',
-        'App Version & Release Notes'
-      ]
-    },
-    {
-      id: 'ordering',
-      title: 'Ordering Channels',
-      description: 'Set up table dine-in, takeaway counters, and deliveries',
-      icon: ShoppingBag,
-      badgeColor: 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200/70 dark:border-emerald-800/60',
-      items: [
-        businessCategory.dineInChannelLabel,
-        businessCategory.takeawayChannelLabel,
-        businessCategory.deliveryChannelLabel,
-        'Minimum Order Values & Auto-Accept',
-        'Custom Delivery Fees'
-      ]
-    },
-    {
-      id: 'policies',
-      title: 'Cancellation & Replacement Policy',
-      description: 'Configure order cancellation refund processing and item replacement rules',
-      icon: RotateCcw,
-      badgeColor: 'bg-teal-50 dark:bg-teal-950/60 text-teal-600 dark:text-teal-400 border border-teal-200/70 dark:border-teal-800/60',
-      items: [
-        'Automatic Food Refund on Cancel',
-        'Customer Cancellation Terms',
-        'Item Replacement Rules & Windows',
-        'Customer Storefront Policy Badges'
-      ]
-    },
-    {
-      id: 'discovery',
-      title: 'Public Discovery & SEO',
-      description: 'Boost public search visibility and customer store discovery',
-      icon: MapPin,
-      badgeColor: 'bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 border border-purple-200/70 dark:border-purple-800/60',
-      items: [
-        'Store Discovery & Nearby Listing',
-        'Public Operating Hours & Days',
-        'Physical Address & Map Geolocation',
-        'Social Media & Public Profile'
-      ]
-    },
-    {
-      id: 'payments',
-      title: 'Payments & Bank Accounts',
-      description: 'Manage bank settlement account, online UPI and card gateways',
-      icon: CreditCard,
-      badgeColor: 'bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 border border-sky-200/70 dark:border-sky-800/60',
-      items: [
-        'Settlement Bank Account',
-        'Online Payment Gateway (UPI / Cards)',
-        'Cash Payment at Counter',
-        'Instant Razorpay Route Verification',
-        'Live Settlement Status'
-      ]
-    },
-    {
-      id: 'gst',
-      title: 'GST & Tax Compliances',
-      description: 'Manage business legal entity, GSTIN, and FSSAI licenses',
-      icon: Receipt,
-      badgeColor: 'bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border border-amber-200/70 dark:border-amber-800/60',
-      items: [
-        'GSTIN Number & Tax Identification',
-        'Legal Business Entity Name',
-        'FSSAI Food Safety License',
-        'Menu Inclusive / Exclusive Tax Mode',
-        'CGST & SGST Rate Calculations'
-      ]
-    },
-    {
-      id: 'printers',
-      title: businessCategory.settingsPrintersTabLabel || 'Dispatch & Thermal Printers',
-      description: 'Configure KOT station routing and USB / LAN receipt printers',
-      icon: Printer,
-      badgeColor: 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200/70 dark:border-indigo-800/60',
-      items: [
-        'Production Station Printers',
-        'Billing & Receipt Thermal Printers',
-        'Auto-Print on Order Acceptance',
-        'Network LAN & WebUSB Hardware Setup',
-        'Sample Test Print'
-      ]
-    },
-    {
-      id: 'account',
-      title: 'Security & Account',
-      description: 'Account credentials, session devices, and deletion rules',
-      icon: Shield,
-      badgeColor: 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-200/70 dark:border-rose-800/60',
-      items: [
-        'Merchant Profile & Email',
-        'Active Browser Sessions & Devices',
-        'Employee Roles & Permissions',
-        'Danger Zone & Catalog Purge'
-      ]
-    }
-  ], [businessCategory]);
-
-  const filteredModules = useMemo(() => {
-    if (!moduleSearchQuery.trim()) return SETTING_MODULES;
-    const q = moduleSearchQuery.toLowerCase();
-    return SETTING_MODULES.filter(m => 
-      m.title.toLowerCase().includes(q) ||
-      m.description.toLowerCase().includes(q) ||
-      m.items.some(item => item.toLowerCase().includes(q))
-    );
-  }, [SETTING_MODULES, moduleSearchQuery]);
-
   return (
     <div className="space-y-6 max-w-6xl mx-auto animate-fade-in pb-24 lg:pb-12">
-      
       {/* Desktop Header Actions (Portals to Desktop Top Bar) */}
       <HeaderActions>
-        {activeTab !== 'overview' && (
-          <Button
-            onClick={handleSaveShopSettings}
-            disabled={isSavingSettings}
-            className="font-bold bg-primary text-white rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer"
-          >
-            {isSavingSettings ? 'Saving...' : 'Save Settings'}
-          </Button>
-        )}
+        <Button
+          onClick={handleSaveShopSettings}
+          disabled={isSavingSettings}
+          isLoading={isSavingSettings}
+          size="sm"
+          leftIcon={<Save size={13} className="shrink-0" />}
+          className="h-8 px-3 rounded-md text-xs font-semibold shadow-2xs cursor-pointer"
+        >
+          Save Settings
+        </Button>
       </HeaderActions>
 
-      {/* =========================================
-          MODULES OVERVIEW HUB (Grid Layout like Stripe / Razorpay)
-      ========================================= */}
-      {activeTab === 'overview' ? (
-        <div className="space-y-4 animate-in fade-in duration-300">
-          {/* Sticky Left-Aligned Search Bar */}
-          <div className="sticky top-[-16px] sm:top-[-24px] lg:top-[-32px] z-20 bg-background/95 backdrop-blur-md py-2.5 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 border-b border-border/80 mb-4 flex items-center justify-start">
-            <div className="relative w-full sm:w-80">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                value={moduleSearchQuery}
-                onChange={(e) => setModuleSearchQuery(e.target.value)}
-                placeholder="Search settings & features..."
-                className="w-full pl-8 pr-8 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-medium focus:outline-none focus:border-primary transition-colors shadow-xs"
-              />
-              {moduleSearchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setModuleSearchQuery('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                >
-                  <X size={13} />
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Grid of Settings Modules */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
-            {filteredModules.map((module) => {
-              const IconComponent = module.icon;
-              return (
-                <div
-                  key={module.id}
-                  onClick={() => handleSelectModule(module.id)}
-                  className="group bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-primary/50 dark:hover:border-primary/50 rounded-2xl p-5 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between"
-                >
-                  <div>
-                    <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-xs ${module.badgeColor}`}>
-                          <IconComponent size={20} />
-                        </div>
-                        <div>
-                          <h3 className="font-bold text-sm text-slate-900 dark:text-white group-hover:text-primary transition-colors">
-                            {module.title}
-                          </h3>
-                        </div>
-                      </div>
-                      <ChevronRight size={16} className="text-slate-400 group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0" />
-                    </div>
-
-                    <ul className="mt-3.5 space-y-2">
-                      {module.items.map((item, idx) => (
-                        <li
-                          key={idx}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleSelectModule(module.id);
-                          }}
-                          className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1.5 transition-colors"
-                        >
-                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500/60 shrink-0" />
-                          <span className="truncate">{item}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  <div className="pt-4 mt-4 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between text-[11px] text-slate-400">
-                    <span>Open full configuration</span>
-                    <span className="font-bold text-primary flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform">
-                      Configure →
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+      {/* Two-Column Modern Settings Layout (Shopify / Stripe style) */}
+      <div className="flex flex-col lg:flex-row items-start gap-6 lg:gap-8">
+        {/* Left Settings Navigation Rail (Fixed / Sticky on Desktop) */}
+        <div className="w-full lg:w-72 shrink-0 lg:sticky lg:top-4 lg:self-start z-10">
+          <SettingsNavRail
+            activeTab={activeTab}
+            onSelectTab={handleSelectModule}
+            searchQuery={moduleSearchQuery}
+            onSearchChange={setModuleSearchQuery}
+            gstActive={Boolean(settingsData.gst_enabled)}
+            printersCount={stations.length + billingPrinters.length}
+            isDiscoverable={Boolean(settingsData.is_discoverable)}
+            businessCategory={businessCategory}
+          />
         </div>
-      ) : (
-        <div className="space-y-4 animate-in fade-in duration-300">
-          {/* Sticky Back to Modules Header Bar */}
-          <div className="sticky top-[-16px] sm:top-[-24px] lg:top-[-32px] z-20 bg-background/95 backdrop-blur-md py-2.5 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 border-b border-border/80 mb-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 sm:p-3.5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => handleSelectModule('overview')}
-                  className="w-9 h-9 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center transition-all active:scale-95 cursor-pointer shrink-0"
-                  title="Back to All Modules"
-                >
-                  <ArrowLeft size={18} />
-                </button>
-                <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-0.5 hidden sm:block" />
-                <div>
-                  <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white leading-tight">
-                    {SETTING_MODULES.find(m => m.id === activeTab)?.title || 'Shop Settings'}
-                  </h2>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:block">
-                    {SETTING_MODULES.find(m => m.id === activeTab)?.description}
-                  </p>
-                </div>
-              </div>
 
-              <Button
-                onClick={handleSaveShopSettings}
-                disabled={isSavingSettings}
-                size="sm"
-                className="font-bold bg-primary hover:bg-primary-600 text-white rounded-xl shadow-xs transition-all px-4 py-2 gap-1.5 shrink-0 cursor-pointer self-end sm:self-auto"
-              >
-                {isSavingSettings ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                {isSavingSettings ? 'Saving...' : 'Save Settings'}
-              </Button>
-            </div>
-          </div>
-
-          <div className="space-y-6 pt-1">
-            {/* =========================================
-                GENERAL SETTINGS TAB
-            ========================================= */}
-            {activeTab === 'general' && (
-              <>
-              {/* Desktop Web App Installation Card */}
-              <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs animate-in fade-in duration-300">
-                <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-slate-50/50 dark:bg-slate-900/50">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                      <Laptop size={20} />
-                    </div>
-                    <div>
-                      <CardTitle className="text-base font-bold">Desktop Web App</CardTitle>
-                      <CardDescription className="text-xs">Run Menukit as a native desktop application on Windows, Mac, or Linux.</CardDescription>
-                    </div>
-                  </div>
-                  {isInstalled ? (
-                    <span className="text-[11px] font-bold px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 flex items-center gap-1.5 w-fit">
-                      <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
-                      App Installed
-                    </span>
-                  ) : (
-                    <Button
-                      type="button"
-                      onClick={promptInstall}
-                      size="sm"
-                      className="font-bold bg-primary hover:bg-primary-600 text-white rounded-xl shadow-xs gap-1.5 cursor-pointer shrink-0 w-fit"
-                    >
-                      <Download size={14} />
-                      Install on Desktop
-                    </Button>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent className="p-4 sm:p-6">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
-                    <p className="font-bold text-slate-800 dark:text-slate-200 mb-1">⚡ Dedicated Window</p>
-                    <p className="text-slate-500 dark:text-slate-400 text-[11px]">Opens like a native software without browser tabs and search bars.</p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
-                    <p className="font-bold text-slate-800 dark:text-slate-200 mb-1">🖨️ POS & Receipt Printers</p>
-                    <p className="text-slate-500 dark:text-slate-400 text-[11px]">Direct integration with local USB and Wi-Fi thermal receipt printers.</p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
-                    <p className="font-bold text-slate-800 dark:text-slate-200 mb-1">🔔 Live Order Ringing</p>
-                    <p className="text-slate-500 dark:text-slate-400 text-[11px]">Desktop notifications and continuous bell sound on incoming orders.</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs animate-in fade-in duration-300">
-              <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-slate-50/50 dark:bg-slate-900/50">
-                <CardTitle className="text-base font-bold">Regional & Currency</CardTitle>
-                <CardDescription className="text-xs">Configure how prices and language are displayed.</CardDescription>
-              </CardHeader>
-              <CardContent className="p-4 sm:p-6 space-y-6">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50/60 dark:bg-slate-800/40 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                      <Coins size={14} className="text-amber-500" /> Currency Symbol
-                    </label>
-                    <SearchableSelect
-                      options={[
-                        { id: '₹', name: 'Indian Rupee (₹)' },
-                        { id: '$', name: 'US Dollar ($)' },
-                        { id: '€', name: 'Euro (€)' },
-                        { id: '£', name: 'British Pound (£)' },
-                        { id: '¥', name: 'Japanese Yen (¥)' },
-                        { id: 'AED', name: 'Emirati Dirham (AED)' },
-                        { id: 'SAR', name: 'Saudi Riyal (SAR)' },
-                        { id: 'A$', name: 'Australian Dollar (A$)' },
-                        { id: 'C$', name: 'Canadian Dollar (C$)' },
-                        { id: 'S$', name: 'Singapore Dollar (S$)' },
-                        { id: 'RM', name: 'Malaysian Ringgit (RM)' },
-                      ]}
-                      value={settingsData.currency}
-                      onChange={(val) => setSettingsData(prev => ({ ...prev, currency: val }))}
-                      showSearch={false}
-                      className="bg-white dark:bg-slate-900"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                      <Globe size={14} className="text-blue-500" /> Menu Language
-                    </label>
-                    <SearchableSelect
-                      options={[
-                        { id: 'en', name: 'English' },
-                        { id: 'hi', name: 'Hindi' },
-                        { id: 'ta', name: 'Tamil' },
-                        { id: 'te', name: 'Telugu' },
-                        { id: 'es', name: 'Spanish' },
-                        { id: 'fr', name: 'French' },
-                        { id: 'ar', name: 'Arabic' },
-                      ]}
-                      value={settingsData.language}
-                      onChange={(val) => setSettingsData(prev => ({ ...prev, language: val }))}
-                      showSearch={false}
-                      className="bg-white dark:bg-slate-900"
-                    />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Payment Awaiting Timeframe Card */}
-            <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs animate-in fade-in duration-300">
-              <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-slate-50/50 dark:bg-slate-900/50">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-                    <Clock size={20} />
-                  </div>
-                  <div>
-                    <CardTitle className="text-base font-bold">Payment Awaiting Timeframe</CardTitle>
-                    <CardDescription className="text-xs">
-                      Time allowed for customers to complete online payment on the public menu before orders automatically cancel.
-                    </CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="p-4 sm:p-6 space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl bg-slate-50/60 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
-                  <div className="space-y-1 max-w-md">
-                    <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                      <span>Order Cancellation Timer</span>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300">
-                        Default: 15 Mins
-                      </span>
-                    </label>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                      A live countdown timer will display on the customer's public order page. If online payment is not completed within this timeframe, the order is automatically cancelled and inventory is restored.
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2 shrink-0">
-                    <div className="w-52">
-                      <SearchableSelect
-                        options={[
-                          { id: '5', name: '5 Minutes' },
-                          { id: '10', name: '10 Minutes' },
-                          { id: '15', name: '15 Minutes (Default)' },
-                          { id: '20', name: '20 Minutes' },
-                          { id: '30', name: '30 Minutes' },
-                          { id: '45', name: '45 Minutes' },
-                          { id: '60', name: '60 Minutes (1 Hour)' },
-                          { id: 'custom', name: 'Custom Minutes...' },
-                        ]}
-                        value={timeoutMode}
-                        onChange={(val) => {
-                          setTimeoutMode(val);
-                          if (val !== 'custom') {
-                            setSettingsData(prev => ({ ...prev, payment_timeout_minutes: parseInt(val) || 15 }));
-                          }
-                        }}
-                        showSearch={false}
-                        className="bg-white dark:bg-slate-900"
-                      />
-                    </div>
-
-                    {timeoutMode === 'custom' && (
-                      <div className="flex items-center gap-1.5 animate-in fade-in duration-200">
-                        <input
-                          type="number"
-                          min="1"
-                          max="180"
-                          value={(settingsData as any).payment_timeout_minutes !== undefined && (settingsData as any).payment_timeout_minutes !== null ? (settingsData as any).payment_timeout_minutes : ''}
-                          onChange={(e) => {
-                            const raw = e.target.value;
-                            setSettingsData(prev => ({
-                              ...prev,
-                              payment_timeout_minutes: raw === '' ? ('' as any) : Math.max(1, Math.min(180, parseInt(raw) || 1))
-                            }));
-                          }}
-                          className="w-20 px-2.5 py-2 text-xs font-bold text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-amber-500 text-slate-900 dark:text-white shadow-2xs"
-                          placeholder="Mins"
-                        />
-                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400">mins</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Product Serial Number & SKU Configuration */}
-            <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs animate-in fade-in duration-300">
-              <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-slate-50/50 dark:bg-slate-900/50">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
-                    <Tag size={20} />
-                  </div>
-                  <div>
-                    <CardTitle className="text-base font-bold">Product Serial Number & SKU</CardTitle>
-                    <CardDescription className="text-xs">Configure auto-generation format, prefix, and digits padding for product serial numbers.</CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="p-4 sm:p-6 space-y-5">
-                <SettingRow
-                  icon={Sparkles}
-                  title="Auto-Generate Serial Numbers"
-                  description="Automatically generate the next sequential serial number when adding new products."
-                  checked={settingsData.auto_serial_number_enabled}
-                  onChange={(checked) => setSettingsData(prev => ({ ...prev, auto_serial_number_enabled: checked }))}
-                />
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50/60 dark:bg-slate-800/40 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                      Prefix (Optional)
-                    </label>
-                    <Input
-                      value={settingsData.serial_number_prefix}
-                      onChange={(e) => setSettingsData(prev => ({ ...prev, serial_number_prefix: e.target.value }))}
-                      placeholder="e.g. CRK-, C-, SKU-"
-                      className="bg-white dark:bg-slate-900"
-                    />
-                    <p className="text-[11px] text-muted-foreground">Appended before sequence number (e.g. C-101)</p>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                      Number Digits Padding
-                    </label>
-                    <SearchableSelect
-                      options={[
-                        { id: '1', name: '1 Digit (1, 2, 3...)' },
-                        { id: '2', name: '2 Digits (01, 02...)' },
-                        { id: '3', name: '3 Digits (001, 002...)' },
-                        { id: '4', name: '4 Digits (0001, 0002...)' },
-                        { id: '5', name: '5 Digits (00001, 00002...)' },
-                      ]}
-                      value={String(settingsData.serial_number_digits || 3)}
-                      onChange={(val) => setSettingsData(prev => ({ ...prev, serial_number_digits: parseInt(val, 10) || 3 }))}
-                      showSearch={false}
-                      className="bg-white dark:bg-slate-900"
-                    />
-                    <p className="text-[11px] text-muted-foreground">Minimum number of digits with zero-padding</p>
-                  </div>
-                </div>
-
-                {/* Live Preview Box */}
-                <div className="p-3.5 bg-purple-50/70 dark:bg-purple-950/30 border border-purple-200/80 dark:border-purple-800/60 rounded-xl flex items-center justify-between gap-3">
-                  <div className="space-y-0.5">
-                    <span className="text-[11px] font-bold text-purple-900 dark:text-purple-200 flex items-center gap-1.5">
-                      <Eye size={13} className="text-purple-600" /> Live Format Preview
-                    </span>
-                    <p className="text-xs text-purple-700 dark:text-purple-300 font-mono font-bold">
-                      {settingsData.serial_number_prefix}{String(1).padStart(settingsData.serial_number_digits || 3, '0')},&nbsp;
-                      {settingsData.serial_number_prefix}{String(2).padStart(settingsData.serial_number_digits || 3, '0')},&nbsp;
-                      {settingsData.serial_number_prefix}{String(3).padStart(settingsData.serial_number_digits || 3, '0')}, ...
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* App Version & Mode Card */}
-            <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs animate-in fade-in duration-300">
-              <CardContent className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <p className="font-bold text-sm text-slate-800 dark:text-slate-200">App Version & Mode</p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">v{APP_VERSION} ({import.meta.env.MODE || 'production'})</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsWhatsNewOpen(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-950/60 text-amber-700 dark:text-amber-400 border border-amber-200/80 dark:border-amber-800/60 rounded-full font-bold text-xs transition-colors cursor-pointer shadow-2xs"
-                  >
-                    <Sparkles size={13} className="text-amber-500" />
-                    <span>What's New</span>
-                  </button>
-                  <div className="bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 font-bold px-3 py-1.5 rounded-full uppercase text-[11px] border border-emerald-200 dark:border-emerald-800">
-                    Stable
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            </>
+        {/* Right Configuration Canvas (Scrollable) */}
+        <main className="flex-1 min-w-0 w-full space-y-6">
+          {activeTab === 'general' && (
+            <GeneralSettingsTab
+              settingsData={settingsData}
+              setSettingsData={setSettingsData}
+              timeoutMode={timeoutMode}
+              setTimeoutMode={setTimeoutMode}
+              isInstalled={isInstalled}
+              promptInstall={promptInstall}
+              setIsWhatsNewOpen={setIsWhatsNewOpen}
+              businessCategory={businessCategory}
+              onSave={handleSaveShopSettings}
+              isSaving={isSavingSettings}
+            />
           )}
 
-          {/* =========================================
-              ORDERING CHANNELS TAB
-          ========================================= */}
-          {activeTab === 'ordering' && (() => {
-            const status = liveRazorpayStatus || shop?.settings?.razorpay_route_status;
-            const isBankVerified = Boolean(shop?.settings?.bank_account_last4) && (status === 'activated' || status === 'active');
+          {activeTab === 'ordering' && (
+            <OrderingSettingsTab
+              settingsData={settingsData}
+              setSettingsData={setSettingsData}
+              shop={shop}
+              liveRazorpayStatus={liveRazorpayStatus}
+              onNavigateToPayments={() => handleSelectModule('payments')}
+              businessCategory={businessCategory}
+              onSave={handleSaveShopSettings}
+              isSaving={isSavingSettings}
+            />
+          )}
 
-            return (
-              <div className="space-y-6 animate-in fade-in duration-300">
-                {!isBankVerified && (
-                  <div className="p-4 bg-amber-50/90 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xs">
-                    <div className="flex items-start gap-3.5">
-                      <div className="p-2.5 rounded-xl bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 shrink-0 mt-0.5">
-                        <AlertCircle size={20} />
-                      </div>
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <h4 className="text-sm font-bold text-amber-900 dark:text-amber-200">
-                            Bank Account & Verification Required
-                          </h4>
-                          <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-amber-200/70 dark:bg-amber-900/70 text-amber-800 dark:text-amber-300">
-                            Action Needed
-                          </span>
-                        </div>
-                        <p className="text-xs text-amber-700 dark:text-amber-300/90 font-medium leading-relaxed max-w-2xl">
-                          {!shop?.settings?.bank_account_last4
-                            ? `To enable ordering channels (${businessCategory.orderTypeDineInTitle}, ${businessCategory.orderTypeTakeawayTitle}, ${businessCategory.orderTypeDeliveryTitle}) and receive customer payouts, you must add and link your settlement bank account.`
-                            : "Your settlement bank account details have been submitted and are currently under verification. Ordering channels will unlock automatically once active."}
-                        </p>
-                      </div>
-                    </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => setActiveTab('payments')}
-                      className="shrink-0 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-xs px-4 h-9 self-stretch sm:self-auto flex items-center justify-center gap-1.5"
-                    >
-                      <CreditCard size={15} />
-                      <span>{!shop?.settings?.bank_account_last4 ? "Add Bank Account" : "View Bank Verification"}</span>
-                    </Button>
-                  </div>
-                )}
-
-                {/* 1. Ordering Channels Card */}
-                <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs">
-                  <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-slate-50/50 dark:bg-slate-900/50">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <CardTitle className="text-base font-bold">Active Ordering Channels</CardTitle>
-                        <CardDescription className="text-xs">Enable the fulfillment channels available to your customers on the digital menu.</CardDescription>
-                      </div>
-                      {!isBankVerified && (
-                        <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/60 px-2.5 py-1 rounded-lg flex items-center gap-1">
-                          <Lock size={12} />
-                          Locked
-                        </span>
-                      )}
-                    </div>
-                  </CardHeader>
-                  <CardContent className="p-4 sm:p-6 divide-y divide-slate-100 dark:divide-slate-800">
-                    <SettingRow
-                      icon={QrCode}
-                      title={businessCategory.dineInChannelLabel}
-                      description={businessCategory.dineInChannelDesc}
-                      checked={isBankVerified && settingsData.dinein_enabled}
-                      onChange={(c) => {
-                        if (isBankVerified) {
-                          setSettingsData(prev => ({ ...prev, dinein_enabled: c }));
-                        } else {
-                          toast.error(`Please add and verify your settlement bank account to enable ${businessCategory.orderTypeDineInTitle} ordering.`);
-                        }
-                      }}
-                      disabled={!isBankVerified}
-                    />
-
-                    {isBankVerified && settingsData.dinein_enabled && businessCategory.isFood && (
-                      <div className="ml-2 sm:ml-4 pl-3.5 border-l-2 border-amber-200 dark:border-amber-800/60 my-2 space-y-2.5 transition-all">
-                        <SettingRow
-                          icon={UtensilsCrossed}
-                          title="Enable Table Selection (Table Numbers)"
-                          description="Allow customers and staff to choose specific table numbers (Table-1, Table-2, etc.). Turn off if your restaurant does not use table numbers."
-                          checked={settingsData.dinein_tables_enabled}
-                          onChange={(c) => setSettingsData(prev => ({ ...prev, dinein_tables_enabled: c }))}
-                        />
-
-                        {settingsData.dinein_tables_enabled && (
-                          <div className="py-3 px-4 sm:px-5 bg-amber-50/60 dark:bg-amber-950/20 rounded-2xl border border-amber-200/80 dark:border-amber-900/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all">
-                            <div className="space-y-0.5">
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs font-black text-slate-800 dark:text-slate-100">Total Dine-In Tables</span>
-                                <span className="text-[10px] font-black uppercase px-2 py-0.5 bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 rounded-md">Table-1 to Table-N</span>
-                              </div>
-                              <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                                Configure total restaurant tables. Customers and staff will choose from a structured dropdown (Table-1, Table-2, etc.).
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-2 w-full sm:w-auto">
-                              <input
-                                type="number"
-                                min={1}
-                                max={500}
-                                value={settingsData.dinein_tables_count || 10}
-                                onChange={(e) => {
-                                  const val = Math.max(1, Math.min(500, parseInt(e.target.value) || 1));
-                                  setSettingsData(prev => ({ ...prev, dinein_tables_count: val }));
-                                }}
-                                className="w-24 px-3 py-1.5 text-xs font-black bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700/60 rounded-xl text-center focus:ring-2 focus:ring-primary focus:outline-none shadow-2xs font-mono"
-                              />
-                              <span className="text-xs font-bold text-slate-600 dark:text-slate-300">Tables</span>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    <SettingRow
-                      icon={ShoppingBag}
-                      title={businessCategory.takeawayChannelLabel}
-                      description={businessCategory.takeawayChannelDesc}
-                      checked={isBankVerified && settingsData.takeaway_enabled}
-                      onChange={(c) => {
-                        if (isBankVerified) {
-                          setSettingsData(prev => ({ ...prev, takeaway_enabled: c }));
-                        } else {
-                          toast.error(`Please add and verify your settlement bank account to enable ${businessCategory.orderTypeTakeawayTitle} ordering.`);
-                        }
-                      }}
-                      disabled={!isBankVerified}
-                    />
-
-                    <SettingRow
-                      icon={Truck}
-                      title={businessCategory.deliveryChannelLabel}
-                      description={businessCategory.deliveryChannelDesc}
-                      checked={isBankVerified && settingsData.delivery_enabled}
-                      onChange={(c) => {
-                        if (isBankVerified) {
-                          setSettingsData(prev => ({ ...prev, delivery_enabled: c }));
-                        } else {
-                          toast.error(`Please add and verify your settlement bank account to enable ${businessCategory.orderTypeDeliveryTitle} ordering.`);
-                        }
-                      }}
-                      disabled={!isBankVerified}
-                    />
-
-                    {isBankVerified && settingsData.delivery_enabled && (
-                      <div className="ml-2 sm:ml-4 pl-3.5 border-l-2 border-amber-200 dark:border-amber-800/60 my-2 space-y-4 transition-all">
-                        <div className="p-4 bg-amber-50/50 dark:bg-amber-950/20 rounded-2xl border border-amber-200/80 dark:border-amber-900/40 space-y-4">
-                          <div className="flex items-center gap-2">
-                            <Truck className="w-4 h-4 text-amber-500" />
-                            <span className="text-xs font-black text-slate-800 dark:text-slate-100 uppercase tracking-wider">
-                              Delivery Pricing & Range Rules
-                            </span>
-                          </div>
-
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
-                            <div>
-                              <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1.5 truncate">
-                                Base Cost ({settingsData.currency})
-                              </label>
-                              <input
-                                type="number" min="0" step="1"
-                                value={settingsData.base_delivery_charge !== undefined && settingsData.base_delivery_charge !== null ? settingsData.base_delivery_charge : ''}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  setSettingsData(prev => ({ ...prev, base_delivery_charge: val === '' ? ('' as any) : Math.max(0, parseFloat(val) || 0) }));
-                                }}
-                                className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-amber-500 font-semibold text-slate-900 dark:text-white"
-                              />
-                            </div>
-                            <div>
-                              <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1.5 truncate">
-                                Included Distance (km)
-                              </label>
-                              <input
-                                type="number" min="0" step="0.5"
-                                value={settingsData.base_delivery_distance !== undefined && settingsData.base_delivery_distance !== null ? settingsData.base_delivery_distance : ''}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  setSettingsData(prev => ({ ...prev, base_delivery_distance: val === '' ? ('' as any) : Math.max(0, parseFloat(val) || 0) }));
-                                }}
-                                className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-amber-500 font-semibold text-slate-900 dark:text-white"
-                              />
-                            </div>
-                            <div>
-                              <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1.5 truncate">
-                                Extra Step (km)
-                              </label>
-                              <input
-                                type="number" min="0.1" step="0.5"
-                                value={settingsData.extra_delivery_distance_step !== undefined && settingsData.extra_delivery_distance_step !== null ? settingsData.extra_delivery_distance_step : ''}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  setSettingsData(prev => ({ ...prev, extra_delivery_distance_step: val === '' ? ('' as any) : Math.max(0.1, parseFloat(val) || 0.1) }));
-                                }}
-                                className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-amber-500 font-semibold text-slate-900 dark:text-white"
-                              />
-                            </div>
-                            <div>
-                              <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1.5 truncate">
-                                Extra Rate ({settingsData.currency})
-                              </label>
-                              <input
-                                type="number" min="0" step="1"
-                                value={settingsData.extra_delivery_charge_per_step !== undefined && settingsData.extra_delivery_charge_per_step !== null ? settingsData.extra_delivery_charge_per_step : ''}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  setSettingsData(prev => ({ ...prev, extra_delivery_charge_per_step: val === '' ? ('' as any) : Math.max(0, parseFloat(val) || 0) }));
-                                }}
-                                className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-amber-500 font-semibold text-slate-900 dark:text-white"
-                              />
-                            </div>
-                            <div>
-                              <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1.5 flex items-center justify-between gap-1">
-                                <span className="truncate">Coverable Radius</span>
-                                <span className="text-[10px] text-amber-600 dark:text-amber-400 font-normal shrink-0">(0 = ∞)</span>
-                              </label>
-                              <input
-                                type="number" min="0" step="0.5"
-                                placeholder="0"
-                                value={(settingsData as any).max_delivery_distance !== undefined && (settingsData as any).max_delivery_distance !== null ? (settingsData as any).max_delivery_distance : ''}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  setSettingsData(prev => ({
-                                    ...prev,
-                                    max_delivery_distance: val === '' ? ('' as any) : Math.max(0, parseFloat(val) || 0)
-                                  }));
-                                }}
-                                className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-amber-500 font-semibold text-slate-900 dark:text-white"
-                              />
-                            </div>
-                          </div>
-
-                          <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-amber-200/80 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 space-y-2">
-                            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-2">
-                              <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Calculation Preview
-                              </span>
-                              <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 px-2.5 py-0.5 rounded-lg border border-slate-200 dark:border-slate-700 shadow-2xs">
-                                <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Test Distance:</span>
-                                <input
-                                  type="number" min="0" step="0.5"
-                                  value={testDistance}
-                                  onChange={(e) => setTestDistance(Math.max(0, parseFloat(e.target.value) || 0))}
-                                  className="w-14 px-1.5 py-0.5 text-xs bg-transparent border-0 text-center font-bold text-primary focus:outline-none"
-                                />
-                                <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">km</span>
-                              </div>
-                            </div>
-                            <div className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                              {(() => {
-                                const dist = testDistance;
-                                const baseDist = settingsData.base_delivery_distance || 0;
-                                const baseCharge = settingsData.base_delivery_charge || 0;
-                                const step = settingsData.extra_delivery_distance_step || 1;
-                                const rate = settingsData.extra_delivery_charge_per_step || 0;
-                                const maxDist = (settingsData as any).max_delivery_distance || 0;
-
-                                if (maxDist > 0 && dist > maxDist) {
-                                  return <span className="text-rose-500 font-bold">⚠️ Outside Delivery Range: Test distance ({dist} km) exceeds maximum coverable distance ({maxDist} km). Orders will be blocked.</span>;
-                                }
-
-                                if (dist <= baseDist) {
-                                  return <span>Total Fee: <strong className="text-emerald-600 dark:text-emerald-400">{settingsData.currency}{baseCharge}</strong> (Within base distance).</span>;
-                                }
-                                const extraKm = dist - baseDist;
-                                const steps = Math.ceil(extraKm / step);
-                                const extraFee = steps * rate;
-                                return <span>Base: <strong className="text-slate-900 dark:text-white">{settingsData.currency}{baseCharge}</strong> + Extra: <strong className="text-amber-600 dark:text-amber-400">{settingsData.currency}{extraFee}</strong> ({steps} steps) = Total: <strong className="text-emerald-600 dark:text-emerald-400 text-sm">{settingsData.currency}{baseCharge + extraFee}</strong></span>;
-                              })()}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-
-                {/* 2. Order Acceptance & Payment Rules Card */}
-                <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs">
-                  <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-slate-50/50 dark:bg-slate-900/50">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <CardTitle className="text-base font-bold">Order Acceptance & Payment Rules</CardTitle>
-                        <CardDescription className="text-xs">Configure how incoming orders are accepted and whether upfront customer payment is required.</CardDescription>
-                      </div>
-                      {!isBankVerified && (
-                        <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/60 px-2.5 py-1 rounded-lg flex items-center gap-1">
-                          <Lock size={12} />
-                          Locked
-                        </span>
-                      )}
-                    </div>
-                  </CardHeader>
-                  <CardContent className="p-4 sm:p-6 divide-y divide-slate-100 dark:divide-slate-800">
-                    <SettingRow
-                      icon={ShieldCheck}
-                      title="Accept Orders Only After Payment"
-                      description="When enabled, online orders placed via the public menu must be paid upfront before the order is placed/confirmed. When disabled (default), the order is submitted first for merchant review and acceptance, and then payment is made."
-                      checked={isBankVerified && settingsData.accept_after_payment}
-                      onChange={(c) => {
-                        if (isBankVerified) {
-                          setSettingsData(prev => ({ ...prev, accept_after_payment: c }));
-                        } else {
-                          toast.error("Please add and verify your settlement bank account first.");
-                        }
-                      }}
-                      disabled={!isBankVerified}
-                    />
-
-                    <SettingRow
-                      icon={Zap}
-                      title="Auto Accept Incoming Orders"
-                      description="Automatically accept and confirm incoming orders immediately without requiring manual merchant approval."
-                      checked={isBankVerified && settingsData.auto_accept_orders}
-                      onChange={(c) => {
-                        if (isBankVerified) {
-                          setSettingsData(prev => ({ ...prev, auto_accept_orders: c }));
-                        } else {
-                          toast.error("Please add and verify your settlement bank account first.");
-                        }
-                      }}
-                      disabled={!isBankVerified}
-                    />
-                  </CardContent>
-                </Card>
-
-                {/* Bottom Action Save */}
-                <div className="flex justify-end pt-2">
-                  <Button
-                    onClick={handleSaveShopSettings}
-                    disabled={isSavingSettings}
-                    className="font-bold bg-primary text-white rounded-xl shadow-md hover:shadow-lg transition-all px-6 py-2.5 cursor-pointer"
-                  >
-                    <Save className="w-4 h-4 mr-2" />
-                    {isSavingSettings ? 'Saving...' : 'Save Ordering Settings'}
-                  </Button>
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* =========================================
-              CANCELLATION & REPLACEMENT POLICIES TAB
-          ========================================= */}
           {activeTab === 'policies' && (
-            <div className="space-y-6 animate-in fade-in duration-300">
-              {/* 1. CANCELLATION & REFUND POLICY CARD */}
-              <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs">
-                <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-slate-50/50 dark:bg-slate-900/50">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className={`p-2 rounded-xl ${settingsData.refund_allowed ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'}`}>
-                        <RotateCcw className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <CardTitle className="text-base font-bold">Cancellation Policy</CardTitle>
-                        <CardDescription className="text-xs">Control whether order cancellation triggers automated food amount refunds to customers.</CardDescription>
-                      </div>
-                    </div>
-                    <Switch
-                      checked={settingsData.refund_allowed}
-                      onCheckedChange={(checked) => {
-                        setSettingsData(prev => {
-                          const isDefaultOrEmpty = !prev.refund_policy_notes || 
-                            prev.refund_policy_notes === 'If any item is cancelled, 100% of the food item price is refunded to your account within 5-7 business days.' ||
-                            prev.refund_policy_notes === 'This store operates under a strict no-refund policy. Orders cannot be refunded upon cancellation.';
-                          return {
-                            ...prev,
-                            refund_allowed: checked,
-                            refund_policy_notes: isDefaultOrEmpty
-                              ? (checked ? 'If any item is cancelled, 100% of the food item price is refunded to your account within 5-7 business days.' : 'This store operates under a strict no-refund policy. Orders cannot be refunded upon cancellation.')
-                              : prev.refund_policy_notes,
-                          };
-                        });
-                      }}
-                    />
-                  </div>
-                </CardHeader>
-                <CardContent className="p-6 space-y-4">
-                  {settingsData.refund_allowed ? (
-                    <div className="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50 text-xs text-emerald-800 dark:text-emerald-300 flex items-start gap-2.5">
-                      <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 mt-0.5" />
-                      <div>
-                        <span className="font-semibold">Cancellation Refund Enabled:</span> When an online-paid order is cancelled (by customer or store), the food amount will be refunded automatically via payment gateway (Razorpay) and a WhatsApp refund confirmation will be sent to the customer.
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/50 text-xs text-rose-800 dark:text-rose-300 flex items-start gap-2.5">
-                      <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
-                      <div>
-                        <span className="font-semibold">No Refund on Cancellation:</span> If an order is cancelled, the food amount will <strong className="underline">NOT</strong> be refunded and <strong className="underline">NO</strong> payment gateway refund or automated refund activities will be triggered. Orders are treated as non-refundable.
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        Cancellation Policy Terms & Instructions (Shown to Customers)
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => setSettingsData(prev => ({
-                          ...prev,
-                          refund_policy_notes: settingsData.refund_allowed
-                            ? 'If any item is cancelled, 100% of the food item price is refunded to your account within 5-7 business days.'
-                            : 'This store operates under a strict no-refund policy. Orders cannot be refunded upon cancellation.'
-                        }))}
-                        className="text-[10px] font-bold text-primary hover:underline cursor-pointer"
-                      >
-                        Reset to Default Text
-                      </button>
-                    </div>
-                    <textarea
-                      rows={3}
-                      value={settingsData.refund_policy_notes || ''}
-                      onChange={(e) => setSettingsData(prev => ({ ...prev, refund_policy_notes: e.target.value }))}
-                      placeholder={settingsData.refund_allowed ? "If any item is cancelled, 100% of the food item price is refunded to your account within 5-7 business days." : "This store operates under a strict no-refund policy. Orders cannot be refunded upon cancellation."}
-                      className="w-full text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none font-medium leading-relaxed"
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* 2. REPLACEMENT POLICY CARD */}
-              <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs">
-                <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-slate-50/50 dark:bg-slate-900/50">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className={`p-2 rounded-xl ${settingsData.replacement_allowed ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' : 'bg-slate-500/10 text-slate-600 dark:text-slate-400'}`}>
-                        <UtensilsCrossed className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <CardTitle className="text-base font-bold">Replacement Policy</CardTitle>
-                        <CardDescription className="text-xs">Set customer-facing item replacement policy. (Store staff can still perform manual replacements from admin portal).</CardDescription>
-                      </div>
-                    </div>
-                    <Switch
-                      checked={settingsData.replacement_allowed}
-                      onCheckedChange={(checked) => {
-                        setSettingsData(prev => {
-                          const isDefaultOrEmpty = !prev.replacement_policy_notes || 
-                            prev.replacement_policy_notes === 'Free replacement available for damaged or incorrect delivered items.' ||
-                            prev.replacement_policy_notes === 'Item replacements are not accepted on public orders.';
-                          return {
-                            ...prev,
-                            replacement_allowed: checked,
-                            replacement_policy_notes: isDefaultOrEmpty
-                              ? (checked ? 'Free replacement available for damaged or incorrect delivered items.' : 'Item replacements are not accepted on public orders.')
-                              : prev.replacement_policy_notes,
-                          };
-                        });
-                      }}
-                    />
-                  </div>
-                </CardHeader>
-                <CardContent className="p-6 space-y-4">
-                  {settingsData.replacement_allowed ? (
-                    <>
-                      <div className="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50 text-xs text-emerald-800 dark:text-emerald-300 flex items-start gap-2.5">
-                        <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 mt-0.5" />
-                        <div>
-                          <span className="font-semibold">Customer Replacements Enabled:</span> Customers will see that item replacements are available on your storefront for damaged, defective, or incorrect food items.
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div className="space-y-1.5">
-                          <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                            Replacement Window (Days)
-                          </label>
-                          <Input
-                            type="number"
-                            min="0"
-                            max="90"
-                            value={settingsData.replacement_window_days ?? 0}
-                            onChange={(e) => setSettingsData(prev => ({ ...prev, replacement_window_days: parseInt(e.target.value) || 0 }))}
-                            placeholder="0 (Immediate / Same Day) or days"
-                            className="text-xs rounded-xl"
-                          />
-                          <p className="text-[11px] text-slate-400">Enter 0 for same-day replacement upon delivery, or number of days.</p>
-                        </div>
-                      </div>
-                      <div className="space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                            Replacement Terms & Guidelines (Shown to Customers)
-                          </label>
-                          <button
-                            type="button"
-                            onClick={() => setSettingsData(prev => ({
-                              ...prev,
-                              replacement_policy_notes: 'Free replacement available for damaged or incorrect delivered items.'
-                            }))}
-                            className="text-[10px] font-bold text-primary hover:underline cursor-pointer"
-                          >
-                            Reset to Default Text
-                          </button>
-                        </div>
-                        <textarea
-                          rows={3}
-                          value={settingsData.replacement_policy_notes || ''}
-                          onChange={(e) => setSettingsData(prev => ({ ...prev, replacement_policy_notes: e.target.value }))}
-                          placeholder="Free replacement available for damaged or incorrect delivered items."
-                          className="w-full text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none font-medium leading-relaxed"
-                        />
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 flex items-start gap-2.5">
-                        <Info className="w-4 h-4 shrink-0 text-slate-500 mt-0.5" />
-                        <div>
-                          <span className="font-semibold">Customer Replacements Disabled:</span> Customers will see "No item replacements accepted" on your storefront. <strong className="text-slate-900 dark:text-white">Note:</strong> Store staff and admin can still manually replace items from the order manager if needed for customer resolution.
-                        </div>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                            Replacement Policy Terms (Shown to Customers)
-                          </label>
-                          <button
-                            type="button"
-                            onClick={() => setSettingsData(prev => ({
-                              ...prev,
-                              replacement_policy_notes: 'Item replacements are not accepted on public orders.'
-                            }))}
-                            className="text-[10px] font-bold text-primary hover:underline cursor-pointer"
-                          >
-                            Reset to Default Text
-                          </button>
-                        </div>
-                        <textarea
-                          rows={2}
-                          value={settingsData.replacement_policy_notes || ''}
-                          onChange={(e) => setSettingsData(prev => ({ ...prev, replacement_policy_notes: e.target.value }))}
-                          placeholder="Item replacements are not accepted on public orders."
-                          className="w-full text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none font-medium leading-relaxed"
-                        />
-                      </div>
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* 3. CUSTOMER PREVIEW SUMMARY CARD */}
-              <Card className="border-dashed border-2 border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/30">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-2">
-                    <Sparkles className="w-3.5 h-3.5 text-primary" />
-                    Customer Storefront Policy Badges Preview
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="pt-0">
-                  <div className="flex flex-wrap gap-2.5">
-                    {/* Cancellation Badge */}
-                    <div className={`px-3 py-1.5 rounded-xl text-xs font-medium border flex items-center gap-1.5 ${
-                      settingsData.refund_allowed 
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/60' 
-                        : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800/60'
-                    }`}>
-                      <RotateCcw className="w-3.5 h-3.5 shrink-0" />
-                      <span>{settingsData.refund_allowed ? 'Cancellation Refund Supported' : 'No Refund on Cancellation'}</span>
-                    </div>
-
-                    {/* Replacement Badge */}
-                    <div className={`px-3 py-1.5 rounded-xl text-xs font-medium border flex items-center gap-1.5 ${
-                      settingsData.replacement_allowed 
-                        ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/60' 
-                        : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
-                    }`}>
-                      <UtensilsCrossed className="w-3.5 h-3.5 shrink-0" />
-                      <span>
-                        {settingsData.replacement_allowed 
-                          ? `${settingsData.replacement_window_days ? `${settingsData.replacement_window_days}-Day ` : ''}Replacement Available` 
-                          : 'No Replacements Accepted'}
-                      </span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Bottom Action Save */}
-              <div className="flex justify-end pt-2">
-                <Button
-                  onClick={handleSaveShopSettings}
-                  disabled={isSavingSettings}
-                  className="font-bold bg-primary text-white rounded-xl shadow-md hover:shadow-lg transition-all px-6 py-2.5"
-                >
-                  <Save className="w-4 h-4 mr-2" />
-                  {isSavingSettings ? 'Saving...' : 'Save Policy Settings'}
-                </Button>
-              </div>
-            </div>
+            <PoliciesSettingsTab
+              settingsData={settingsData}
+              setSettingsData={setSettingsData}
+              businessCategory={businessCategory}
+              onSave={handleSaveShopSettings}
+              isSaving={isSavingSettings}
+            />
           )}
 
-          {/* =========================================
-              DISCOVERY TAB
-          ========================================= */}
           {activeTab === 'discovery' && (
-            <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs animate-in fade-in duration-300">
-              <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-slate-50/50 dark:bg-slate-900/50">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <CardTitle className="text-base font-bold">Public App Discovery</CardTitle>
-                    <CardDescription className="text-xs">Control your visibility on the customer map and search.</CardDescription>
-                  </div>
-                  {/* Current Active Mode Badge */}
-                  {settingsData.is_discoverable && settingsData.hide_discovery_badge ? (
-                    <span className="text-[11px] font-bold px-3 py-1 rounded-full bg-amber-100 text-amber-900 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 flex items-center gap-1.5 w-fit">
-                      <img src={menukitLogo} alt="Menukit" className="w-3.5 h-3.5 object-contain shrink-0" />
-                      Paid Discovery (₹49/mo){discoveryDaysLeft > 0 ? ` · ${discoveryDaysLeft}d left` : ''}
-                    </span>
-                  ) : settingsData.is_discoverable ? (
-                    <span className="text-[11px] font-bold px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 flex items-center gap-1.5 w-fit">
-                      <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
-                      Standard Discovery (Free)
-                    </span>
-                  ) : (
-                    <span className="text-[11px] font-bold px-3 py-1 rounded-full bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 flex items-center gap-1.5 w-fit">
-                      <EyeOff size={13} className="shrink-0" />
-                      Discovery Disabled
-                    </span>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent className="p-4 sm:p-6 space-y-6">
-                <SettingRow
-                  icon={MapPin}
-                  title="Enable Store Discovery"
-                  description={
-                    settingsData.is_discoverable && settingsData.hide_discovery_badge
-                      ? `Paid mode active (${discoveryDaysLeft} days left): Shop is discoverable on public map, and 'Discover' label is hidden on your public menu & orders.`
-                      : settingsData.is_discoverable
-                      ? "Standard mode active: Shop is discoverable on public map, and 'Discover' label is shown on your public menu & orders."
-                      : "Discovery disabled: Shop is removed from public map & search, and 'Discover' label is hidden on your menu & orders."
-                  }
-                  checked={settingsData.is_discoverable}
-                  onChange={(checked) => {
-                    if (!checked) {
-                      // Smoothly turn OFF store discovery without any error
-                      handleSelectFreeDiscoveryOption();
-                    } else {
-                      // Turn ON store discovery
-                      if (isPaidDiscoveryActive) {
-                        const updated = {
-                          ...settingsData,
-                          is_discoverable: true,
-                          hide_discovery_badge: true,
-                          show_prices: true,
-                          show_offers: true,
-                          show_menus_in_discovery: true,
-                        };
-                        setSettingsData(updated);
-                        api.put('/shops/me/settings', updated).then((res) => {
-                          publicCache.clear();
-                          window.dispatchEvent(new CustomEvent('menukit-shop-settings-updated', { detail: res.data }));
-                          if (shop) setShop({ ...shop, settings: { ...shop.settings, ...updated } });
-                          toast.success('Store discovery enabled (Shop is on public map & Discover label is hidden).');
-                        }).catch((err) => {
-                          toast.error(err.response?.data?.detail || 'Failed to enable discovery');
-                        });
-                      } else {
-                        handleResetToStandardDiscovery();
-                      }
-                    }
-                  }}
-                />
-
-                {/* Option summary cards */}
-                <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
-                  <div className="flex items-center justify-between mb-3">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                      Discovery & Menu Label Options
-                    </h4>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setIsDiscoveryModalOpen(true)}
-                      className="text-xs h-8 cursor-pointer"
-                    >
-                      Change Option
-                    </Button>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {/* Free Option Card */}
-                    <div
-                      onClick={() => setIsDiscoveryModalOpen(true)}
-                      className={`p-4 rounded-xl border transition-all cursor-pointer ${
-                        !settingsData.is_discoverable
-                          ? 'border-purple-500 bg-purple-50/40 dark:bg-purple-950/20 ring-1 ring-purple-500'
-                          : 'border-border bg-card hover:border-slate-300'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                          <EyeOff size={14} className="text-slate-500" />
-                          Option 1: Free Option
-                        </span>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                          ₹0 Free
-                        </span>
-                      </div>
-                      <p className="text-xs text-muted-foreground leading-relaxed">
-                        Hides your shop completely from the public discovery map & search, and removes the "Discover" label from your customer menu & orders.
-                      </p>
-                      {!settingsData.is_discoverable && (
-                        <div className="mt-2 text-[11px] font-bold text-purple-700 dark:text-purple-400 flex items-center gap-1">
-                          <Check size={12} strokeWidth={3} /> Currently Active
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Paid Option Card */}
-                    <div
-                      onClick={() => setIsDiscoveryModalOpen(true)}
-                      className={`p-4 rounded-xl border transition-all cursor-pointer ${
-                        settingsData.is_discoverable && settingsData.hide_discovery_badge
-                          ? 'border-amber-500 bg-amber-50/40 dark:bg-amber-950/20 ring-1 ring-amber-500'
-                          : 'border-border bg-card hover:border-amber-300'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                          <img src={menukitLogo} alt="Menukit" className="w-3.5 h-3.5 object-contain shrink-0" />
-                          Option 2: Paid Option
-                        </span>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300">
-                          ₹49 / mo
-                        </span>
-                      </div>
-                      <p className="text-xs text-muted-foreground leading-relaxed">
-                        Shows your shop on public discovery map & search, but completely removes the "Discover" label from your customer menu. Included in next renewal.
-                      </p>
-                      {settingsData.is_discoverable && settingsData.hide_discovery_badge && (
-                        <div className="mt-2 text-[11px] font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1">
-                          <Check size={12} strokeWidth={3} /> Currently Active {discoveryDaysLeft > 0 ? `(${discoveryDaysLeft} days left)` : ''}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            <DiscoverySettingsTab
+              settingsData={settingsData}
+              setSettingsData={setSettingsData}
+              discoveryDaysLeft={discoveryDaysLeft}
+              discoveryExpiresAt={discoveryExpiresAt}
+              isPaidDiscoveryActive={isPaidDiscoveryActive}
+              onOpenDiscoveryModal={() => setIsDiscoveryModalOpen(true)}
+              onNavigateToShopSetup={() => navigate('/shop-setup')}
+              onSelectFreeDiscoveryOption={handleSelectFreeDiscoveryOption}
+              onResetToStandardDiscovery={handleResetToStandardDiscovery}
+              shop={shop}
+              setShop={setShop}
+            />
           )}
 
-          {/* =========================================
-              PAYMENTS & BANK TAB
-          ========================================= */}
           {activeTab === 'payments' && (
-            <div className="space-y-6 animate-in fade-in duration-300">
-              <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs">
-                <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-slate-50/50 dark:bg-slate-900/50">
-                  <CardTitle className="text-base font-bold">Online Payments</CardTitle>
-                  <CardDescription className="text-xs">Gateway configuration and payment settings.</CardDescription>
-                </CardHeader>
-                <CardContent className="p-4 sm:p-6 space-y-6">
-                  {/* Gateway */}
-                  <div>
-                    {(() => {
-                      const status = liveRazorpayStatus || shop?.settings?.razorpay_route_status;
-                      const isVerified = status === 'activated' || status === 'active';
-                      return (
-                        <>
-                          <SettingRow
-                            icon={CreditCard}
-                            title="Accept Online Payments via Gateway"
-                            description="Master switch to accept online payments (UPI, Cards, Netbanking) across your ordering channels."
-                            checked={settingsData.online_payments_enabled && isVerified}
-                            onChange={(c) => {
-                              if (isVerified) {
-                                setSettingsData(prev => ({ ...prev, online_payments_enabled: c }));
-                              }
-                            }}
-                            disabled={!isVerified}
-                          />
-
-                          {/* Separate channel toggles when master is enabled & verified */}
-                          {isVerified && settingsData.online_payments_enabled && (
-                            <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 space-y-4 pl-2 sm:pl-4 bg-slate-50/50 dark:bg-slate-900/40 p-4 rounded-2xl border border-slate-200/60 dark:border-slate-800/80 animate-fade-in">
-                              <div className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                                Ordering Channels Payment Options
-                              </div>
-
-                              <SettingRow
-                                icon={businessCategory.isFood ? UtensilsCrossed : Store}
-                                title={businessCategory.dineInOnlinePaymentTitle}
-                                description={businessCategory.dineInOnlinePaymentDesc}
-                                checked={settingsData.online_payments_dinein_enabled !== false}
-                                onChange={(c) => setSettingsData(prev => ({ ...prev, online_payments_dinein_enabled: c }))}
-                              />
-
-                              <SettingRow
-                                icon={businessCategory.isFood ? ShoppingBag : PackageCheck}
-                                title={businessCategory.takeawayOnlinePaymentTitle}
-                                description={businessCategory.takeawayOnlinePaymentDesc}
-                                checked={settingsData.online_payments_takeaway_enabled !== false}
-                                onChange={(c) => setSettingsData(prev => ({ ...prev, online_payments_takeaway_enabled: c }))}
-                              />
-
-                              <SettingRow
-                                icon={Truck}
-                                title={businessCategory.deliveryOnlinePaymentTitle}
-                                description={businessCategory.deliveryOnlinePaymentDesc}
-                                checked={settingsData.online_payments_delivery_enabled !== false}
-                                onChange={(c) => setSettingsData(prev => ({ ...prev, online_payments_delivery_enabled: c }))}
-                              />
-                            </div>
-                          )}
-
-                          {!isVerified && (
-                            <div className="mt-2 p-3.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 rounded-xl space-y-1 text-xs">
-                              <div className="flex items-center gap-1.5 font-bold text-amber-900 dark:text-amber-200">
-                                <AlertCircle size={14} className="text-amber-600" />
-                                <span>Verification Required</span>
-                              </div>
-                              <p className="text-amber-700 dark:text-amber-300">You must verify your Settlement Bank Account before accepting online payments.</p>
-                            </div>
-                          )}
-                        </>
-                      );
-                    })()}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Settlement Bank */}
-              <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs">
-                <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-green-50/30 dark:bg-green-900/10">
-                  <CardTitle className="text-base font-bold text-green-700 dark:text-green-500">Settlement Bank Account</CardTitle>
-                  <CardDescription className="text-xs">Receive automatic payouts for online orders.</CardDescription>
-                </CardHeader>
-                <CardContent className="p-4 sm:p-6 space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="sm:col-span-2">
-                      <label className="text-[10px] font-semibold text-slate-500 uppercase mb-1 block">Beneficiary Name</label>
-                      <input
-                        type="text" placeholder="e.g. Siva Store"
-                        value={settingsData.beneficiary_name || ''}
-                        onChange={(e) => setSettingsData(prev => ({ ...prev, beneficiary_name: e.target.value }))}
-                        className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-green-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-semibold text-slate-500 uppercase mb-1 block">Account Number</label>
-                      <input
-                        type="text"
-                        placeholder={shop?.settings?.bank_account_last4 ? `•••• •••• ${shop.settings.bank_account_last4}` : "Account Number"}
-                        value={settingsData.bank_account_number || ''}
-                        onChange={(e) => setSettingsData(prev => ({ ...prev, bank_account_number: e.target.value }))}
-                        className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-green-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-semibold text-slate-500 uppercase mb-1 block">IFSC Code</label>
-                      <input
-                        type="text" placeholder="e.g. HDFC0001234"
-                        value={settingsData.ifsc_code || ''}
-                        onChange={(e) => setSettingsData(prev => ({ ...prev, ifsc_code: e.target.value.toUpperCase() }))}
-                        className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-green-500"
-                      />
-                    </div>
-                  </div>
-                  
-                  {shop?.settings?.bank_account_last4 && (
-                    <div className="flex items-center gap-3 mt-4 pt-4 border-t border-slate-100">
-                      <p className="text-xs text-green-600 font-bold">
-                        ✓ Linked (ending in {shop.settings.bank_account_last4})
-                      </p>
-                      {(liveRazorpayStatus || shop.settings.razorpay_route_status) && (() => {
-                        const status = liveRazorpayStatus || shop.settings.razorpay_route_status;
-                        const isVerified = status === 'activated' || status === 'active';
-                        return (
-                          <div className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase ${isVerified ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                            {isVerified ? '✓ Verified & Active' : '⏳ Verification Pending'}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
+            <PaymentsSettingsTab
+              settingsData={settingsData}
+              setSettingsData={setSettingsData}
+              shop={shop}
+              user={user}
+              liveRazorpayStatus={liveRazorpayStatus}
+              businessCategory={businessCategory}
+            />
           )}
 
-          {/* =========================================
-              GST & GOVERNMENT COMPLIANCES TAB
-          ========================================= */}
           {activeTab === 'gst' && (
-            <div className="space-y-6 animate-in fade-in duration-300">
-              <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs">
-                <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-slate-50/50 dark:bg-slate-900/50">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <CardTitle className="text-base font-bold">GST & Government Compliances</CardTitle>
-                        <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                          Tax Invoices & FSSAI
-                        </span>
-                      </div>
-                      <CardDescription className="text-xs mt-1">
-                        Configure GSTIN, FSSAI registration, tax rates (CGST/SGST), and invoice calculation mode.
-                      </CardDescription>
-                    </div>
-                    <div className="flex items-center gap-3 bg-white dark:bg-slate-900 px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs">
-                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Enable GST Billing:</span>
-                      <Switch
-                        checked={settingsData.gst_enabled}
-                        onChange={(checked) => setSettingsData(prev => ({ ...prev, gst_enabled: checked }))}
-                      />
-                    </div>
-                  </div>
-                </CardHeader>
-
-                <CardContent className="p-4 sm:p-6 space-y-6">
-                  {!settingsData.gst_enabled ? (
-                    <div className="p-6 text-center rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-dashed border-slate-200 dark:border-slate-800 space-y-3">
-                      <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 mx-auto flex items-center justify-center">
-                        <Receipt size={24} />
-                      </div>
-                      <div className="font-bold text-sm text-slate-800 dark:text-slate-200">GST Billing is Disabled</div>
-                      <p className="text-xs text-slate-500 max-w-md mx-auto">
-                        Turn on the switch above if your restaurant or business is registered under GST to calculate CGST/SGST on orders, issue legal Tax Invoices, and generate tax compliance audit reports.
-                      </p>
-                      <Button
-                        size="sm"
-                        onClick={() => setSettingsData(prev => ({ ...prev, gst_enabled: true }))}
-                        className="font-bold bg-primary text-white text-xs h-8 px-4"
-                      >
-                        Enable GST Now
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="space-y-6">
-                      {/* Government Registrations */}
-                      <div>
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-2">
-                          <Store size={14} className="text-primary" />
-                          Business & Government Identifiers
-                        </h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
-                              <span>Goods & Services Tax ID (GSTIN)</span>
-                              <span className="text-[10px] font-normal text-slate-400">15 Characters</span>
-                            </label>
-                            <Input
-                              placeholder="e.g. 33AAAAA0000A1Z5"
-                              value={settingsData.gstin}
-                              onChange={(e) => setSettingsData(prev => ({ ...prev, gstin: e.target.value.toUpperCase().trim() }))}
-                              maxLength={15}
-                              className="font-mono uppercase font-bold tracking-wider"
-                            />
-                            <p className="text-[11px] text-slate-500">
-                              Appears prominently on public customer receipts and cashier bills.
-                            </p>
-                          </div>
-
-                          <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                              Legal / Registered Business Name
-                            </label>
-                            <Input
-                              placeholder="e.g. Siva Food Enterprises Pvt Ltd"
-                              value={settingsData.legal_name}
-                              onChange={(e) => setSettingsData(prev => ({ ...prev, legal_name: e.target.value }))}
-                            />
-                            <p className="text-[11px] text-slate-500">
-                              Official registered trade entity name for legal Tax Invoices.
-                            </p>
-                          </div>
-
-                          <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
-                              <span>FSSAI License Number</span>
-                              <span className="text-[10px] font-normal text-slate-400">14 Digits</span>
-                            </label>
-                            <Input
-                              placeholder="e.g. 12423008000123"
-                              value={settingsData.fssai_license}
-                              onChange={(e) => setSettingsData(prev => ({ ...prev, fssai_license: e.target.value.trim() }))}
-                              maxLength={14}
-                              className="font-mono tracking-wider font-bold"
-                            />
-                            <p className="text-[11px] text-slate-500">
-                              Mandatory Food Safety license number printed on restaurant slips.
-                            </p>
-                          </div>
-
-                          <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                              Invoice Declaration / Footer Note
-                            </label>
-                            <Input
-                              placeholder="e.g. Tax Invoice issued under Section 31 of CGST Act"
-                              value={settingsData.tax_invoice_notes}
-                              onChange={(e) => setSettingsData(prev => ({ ...prev, tax_invoice_notes: e.target.value }))}
-                            />
-                            <p className="text-[11px] text-slate-500">
-                              Custom compliance or return policy note printed at the bottom of bills.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Tax Rates Configuration */}
-                      <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-                          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
-                            <Coins size={14} className="text-primary" />
-                            Tax Rates & GST Slabs
-                          </h4>
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-[11px] font-medium text-slate-500">Quick Slabs:</span>
-                            <button
-                              type="button"
-                              onClick={() => setSettingsData(prev => ({ ...prev, cgst_rate: 2.5, sgst_rate: 2.5 }))}
-                              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                                settingsData.cgst_rate === 2.5 && settingsData.sgst_rate === 2.5
-                                  ? 'bg-primary text-white shadow-xs'
-                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                              }`}
-                            >
-                              5% (Standard)
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setSettingsData(prev => ({ ...prev, cgst_rate: 6.0, sgst_rate: 6.0 }))}
-                              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                                settingsData.cgst_rate === 6.0 && settingsData.sgst_rate === 6.0
-                                  ? 'bg-primary text-white shadow-xs'
-                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                              }`}
-                            >
-                              12%
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setSettingsData(prev => ({ ...prev, cgst_rate: 9.0, sgst_rate: 9.0 }))}
-                              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                                settingsData.cgst_rate === 9.0 && settingsData.sgst_rate === 9.0
-                                  ? 'bg-primary text-white shadow-xs'
-                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                              }`}
-                            >
-                              18% (AC/Bar)
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                          <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                              Central GST (CGST %)
-                            </label>
-                            <div className="relative">
-                              <Input
-                                type="number"
-                                step="0.1"
-                                min="0"
-                                max="28"
-                                value={settingsData.cgst_rate}
-                                onChange={(e) => setSettingsData(prev => ({ ...prev, cgst_rate: parseFloat(e.target.value) || 0 }))}
-                                className="pr-8 font-bold"
-                              />
-                              <span className="absolute right-3 top-2.5 text-xs text-slate-400 font-bold">%</span>
-                            </div>
-                          </div>
-
-                          <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                              State GST (SGST %)
-                            </label>
-                            <div className="relative">
-                              <Input
-                                type="number"
-                                step="0.1"
-                                min="0"
-                                max="28"
-                                value={settingsData.sgst_rate}
-                                onChange={(e) => setSettingsData(prev => ({ ...prev, sgst_rate: parseFloat(e.target.value) || 0 }))}
-                                className="pr-8 font-bold"
-                              />
-                              <span className="absolute right-3 top-2.5 text-xs text-slate-400 font-bold">%</span>
-                            </div>
-                          </div>
-
-                          <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                              Combined Effective Tax
-                            </label>
-                            <div className="h-10 flex items-center px-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 font-black text-emerald-700 dark:text-emerald-300 text-sm">
-                              {((Number(settingsData.cgst_rate) || 0) + (Number(settingsData.sgst_rate) || 0)).toFixed(1)}% Total GST
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Tax Calculation Mode: Exclusive vs Inclusive */}
-                      <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-2">
-                          <Sliders size={14} className="text-primary" />
-                          Tax Pricing Calculation Mode
-                        </h4>
-                        
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <div 
-                            onClick={() => setSettingsData(prev => ({ ...prev, inclusive_tax: false }))}
-                            className={`p-4 rounded-2xl border-2 transition-all cursor-pointer ${
-                              !settingsData.inclusive_tax
-                                ? 'border-primary bg-primary/5 dark:bg-primary/10'
-                                : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between mb-1.5">
-                              <span className="font-bold text-sm text-slate-900 dark:text-slate-100">
-                                Exclusive Tax (Added at checkout)
-                              </span>
-                              <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${
-                                !settingsData.inclusive_tax ? 'border-primary bg-primary text-white' : 'border-slate-300'
-                              }`}>
-                                {!settingsData.inclusive_tax && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-                              </div>
-                            </div>
-                            <p className="text-xs text-slate-500 leading-relaxed">
-                              Standard for restaurants. Menu prices represent net food amount; CGST & SGST are computed and added on top in the bill.
-                            </p>
-                            <div className="mt-3 text-[11px] font-mono bg-slate-100 dark:bg-slate-800 p-2 rounded-lg text-slate-600 dark:text-slate-400">
-                              Item: ₹100 + 5% GST (₹5) = <strong>Total ₹105</strong>
-                            </div>
-                          </div>
-
-                          <div 
-                            onClick={() => setSettingsData(prev => ({ ...prev, inclusive_tax: true }))}
-                            className={`p-4 rounded-2xl border-2 transition-all cursor-pointer ${
-                              settingsData.inclusive_tax
-                                ? 'border-primary bg-primary/5 dark:bg-primary/10'
-                                : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between mb-1.5">
-                              <span className="font-bold text-sm text-slate-900 dark:text-slate-100">
-                                Inclusive Tax (Included in menu price)
-                              </span>
-                              <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${
-                                settingsData.inclusive_tax ? 'border-primary bg-primary text-white' : 'border-slate-300'
-                              }`}>
-                                {settingsData.inclusive_tax && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-                              </div>
-                            </div>
-                            <p className="text-xs text-slate-500 leading-relaxed">
-                              Ideal for cafes & QSR. Menu prices already include GST; the invoice automatically shows the extracted net taxable amount & tax breakdown.
-                            </p>
-                            <div className="mt-3 text-[11px] font-mono bg-slate-100 dark:bg-slate-800 p-2 rounded-lg text-slate-600 dark:text-slate-400">
-                              Item: ₹100 (Taxable ₹95.24 + GST ₹4.76) = <strong>Total ₹100</strong>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Live Status Overview Banner */}
-                      <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                        <div className="flex items-center gap-2.5">
-                          <CheckCircle2 size={18} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
-                          <div>
-                            <span className="font-extrabold text-emerald-950 dark:text-emerald-200">
-                              GST Compliance Active ({((Number(settingsData.cgst_rate) || 0) + (Number(settingsData.sgst_rate) || 0)).toFixed(1)}% Total Tax)
-                            </span>
-                            <div className="text-[11px] text-emerald-700 dark:text-emerald-300 mt-0.5">
-                              Mode: {settingsData.inclusive_tax ? 'Inclusive Pricing' : 'Exclusive (Added to Bill)'} • GSTIN: {settingsData.gstin || 'Not configured'} • FSSAI: {settingsData.fssai_license || 'Not configured'}
-                            </div>
-                          </div>
-                        </div>
-                        <Button
-                          size="sm"
-                          onClick={handleSaveShopSettings}
-                          disabled={isSavingSettings}
-                          className="font-bold bg-emerald-600 hover:bg-emerald-700 text-white shrink-0 h-8 cursor-pointer"
-                        >
-                          {isSavingSettings ? 'Saving...' : 'Save GST Settings'}
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
+            <TaxSettingsTab
+              settingsData={settingsData}
+              setSettingsData={setSettingsData}
+              shop={shop}
+              onSave={handleSaveShopSettings}
+              isSaving={isSavingSettings}
+            />
           )}
 
-          {/* =========================================
-              KITCHEN PRINTERS & KOT SETTINGS TAB
-          ========================================= */}
           {activeTab === 'printers' && (
-            <div className="space-y-6 animate-in fade-in duration-300">
-              {/* Context Selector / Quick Filter Bar */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 p-2 sm:p-2.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
-                <div className="flex items-center gap-1.5 p-1 bg-slate-100/80 dark:bg-slate-800/80 rounded-xl w-full sm:w-auto">
-                  <button
-                    type="button"
-                    onClick={() => setPrinterSection('all')}
-                    className={`flex-1 sm:flex-none px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                      printerSection === 'all'
-                        ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                  >
-                    <Layers size={13} />
-                    <span>All Setup</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPrinterSection('kot')}
-                    className={`flex-1 sm:flex-none px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                      printerSection === 'kot'
-                        ? 'bg-amber-500 text-white shadow-xs'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                  >
-                    {businessCategory.isFood ? <UtensilsCrossed size={13} /> : <ShoppingBag size={13} />}
-                    <span>{businessCategory.kotTabLabel} ({stations.length})</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPrinterSection('billing')}
-                    className={`flex-1 sm:flex-none px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                      printerSection === 'billing'
-                        ? 'bg-emerald-600 text-white shadow-xs'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                  >
-                    <Receipt size={13} />
-                    <span>{businessCategory.billingTabLabel} ({billingPrinters.length})</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* =========================================================
-                  SECTION 1: KITCHEN / PACKING ORDER TICKETS (KOT / POT)
-              ========================================================= */}
-              {(printerSection === 'all' || printerSection === 'kot') && (
-                <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs overflow-hidden">
-                  <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-linear-to-r from-amber-50/70 via-orange-50/30 to-transparent dark:from-amber-950/20 dark:via-orange-950/10 dark:to-transparent flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                    <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
-                        {businessCategory.isFood ? <UtensilsCrossed size={20} /> : <ShoppingBag size={20} />}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <CardTitle className="text-base font-bold">{businessCategory.productionStationLabel}</CardTitle>
-                          <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
-                            {businessCategory.kotShort} Station
-                          </span>
-                        </div>
-                        <CardDescription className="text-xs mt-0.5">
-                          {businessCategory.productionPrinterDesc}
-                        </CardDescription>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleTestPrint()}
-                        leftIcon={<FileText size={13} className="text-amber-500" />}
-                        className="text-xs font-bold"
-                      >
-                        {businessCategory.testKotButtonLabel}
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={openNewStationModal}
-                        leftIcon={<Plus size={14} />}
-                        className="bg-primary text-white font-bold text-xs shadow-xs"
-                      >
-                        {businessCategory.addKotStationButtonLabel}
-                      </Button>
-                    </div>
-                  </CardHeader>
-
-                  <CardContent className="p-4 sm:p-5 space-y-5">
-                    {/* Auto-Print KOT Switch */}
-                    <div className="p-3.5 rounded-xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0">
-                          <Zap size={16} />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
-                            {businessCategory.autoPrintKotLabel}
-                          </p>
-                          <p className="text-[10px] text-slate-500 truncate">
-                            {businessCategory.autoPrintKotDesc}
-                          </p>
-                        </div>
-                      </div>
-                      <Switch
-                        checked={autoPrintOnAccept}
-                        onChange={(val) => {
-                          setAutoPrintOnAccept(val);
-                          toast.success(val ? `Auto-print ${businessCategory.kotShort} enabled` : `Auto-print ${businessCategory.kotShort} disabled`);
-                        }}
-                      />
-                    </div>
-
-                    {/* Kitchen Printer Stations Subsection */}
-                    <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <label className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider block">
-                            {businessCategory.productionStationLabel}
-                          </label>
-                          <p className="text-[11px] text-slate-500">
-                            {businessCategory.productionPrinterDesc}
-                          </p>
-                        </div>
-                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                          {stations.length} {stations.length === 1 ? 'Station Configured' : 'Stations Configured'}
-                        </span>
-                      </div>
-
-                      {stations.length === 0 ? (
-                        <div className="text-center py-8 bg-slate-50 dark:bg-slate-850/50 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 p-5 space-y-2.5">
-                          <Printer size={32} className="mx-auto text-slate-400" />
-                          <div>
-                            <p className="font-bold text-sm text-slate-700 dark:text-slate-300">{businessCategory.noKotStationsTitle}</p>
-                            <p className="text-xs text-slate-500 mt-0.5 max-w-md mx-auto">
-                              {businessCategory.isFood
-                                ? 'Add your first station (e.g., Main Kitchen, Bar, Tandoor) to automatically route specific food categories.'
-                                : 'Add your first station (e.g., Main Godown, Counter 1, Dispatch Desk) to automatically route items.'}
-                            </p>
-                          </div>
-                          <Button
-                            size="sm"
-                            onClick={openNewStationModal}
-                            leftIcon={<Plus size={14} />}
-                            className="font-bold"
-                          >
-                            {businessCategory.addKotStationButtonLabel}
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                          {stations.map((station) => {
-                            const isUniversal = !station.categoryIds || station.categoryIds.includes('all') || station.categoryIds.length === 0;
-                            const matchedCategories = !isUniversal 
-                              ? categories.filter(c => station.categoryIds.includes(c.id))
-                              : [];
-
-                            return (
-                              <div
-                                key={station.id}
-                                className={`p-3.5 rounded-2xl border transition-all flex flex-col justify-between space-y-2.5 ${
-                                  station.enabled !== false
-                                    ? 'bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-800 shadow-xs'
-                                    : 'bg-slate-50/70 dark:bg-slate-900/40 border-slate-200/40 dark:border-slate-800/40 opacity-70'
-                                }`}
-                              >
-                                <div className="space-y-2">
-                                  <div className="flex items-start justify-between gap-2">
-                                    <div className="space-y-0.5">
-                                      <div className="flex items-center gap-2 flex-wrap">
-                                        <h4 className="font-black text-sm text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-                                          <Printer size={15} className="text-primary" />
-                                          {station.name}
-                                        </h4>
-                                        <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                                          {station.paperWidth || '80mm'}
-                                        </span>
-                                        {station.connectionType === 'network' && (
-                                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800 flex items-center gap-1">
-                                            <Wifi size={10} /> LAN {station.ipAddress || 'No IP'}
-                                          </span>
-                                        )}
-                                        {station.connectionType === 'usb' && (
-                                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300 border border-teal-200 dark:border-teal-800 flex items-center gap-1">
-                                            <Usb size={10} /> Direct USB
-                                          </span>
-                                        )}
-                                        {station.connectionType === 'bluetooth' && (
-                                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1">
-                                            <Bluetooth size={10} /> Direct Bluetooth
-                                          </span>
-                                        )}
-                                        {(!station.connectionType || station.connectionType === 'browser') && (
-                                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 flex items-center gap-1">
-                                            🖥️ System Default
-                                          </span>
-                                        )}
-                                        {station.soundBuzzer !== false && (
-                                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded text-amber-600 dark:text-amber-400 flex items-center gap-0.5" title="Kitchen Buzzer Alert Active">
-                                            <Volume2 size={11} />
-                                          </span>
-                                        )}
-                                        {station.enabled === false && (
-                                          <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300">
-                                            Disabled
-                                          </span>
-                                        )}
-                                      </div>
-                                    </div>
-
-                                    <div className="flex items-center gap-1 shrink-0">
-                                      <button
-                                        type="button"
-                                        onClick={() => handleTestPrint(station)}
-                                        title="Send Test Print to this Station"
-                                        className="p-1.5 rounded-lg text-slate-400 hover:text-primary hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                                      >
-                                        <Printer size={14} />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => openEditStationModal(station)}
-                                        title="Edit Station"
-                                        className="p-1.5 rounded-lg text-slate-400 hover:text-primary hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                                      >
-                                        <Edit2 size={14} />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          if (confirm(`Remove printer station "${station.name}"?`)) {
-                                            removeStation(station.id);
-                                            toast.success('Station removed');
-                                          }
-                                        }}
-                                        title="Delete Station"
-                                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
-                                      >
-                                        <Trash2 size={14} />
-                                      </button>
-                                    </div>
-                                  </div>
-
-                                  {/* Category routing badges */}
-                                  <div className="pt-0.5">
-                                    <div className="flex items-center justify-between mb-1">
-                                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
-                                        Routing Categories:
-                                      </span>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setQuickAssignStation(station);
-                                          setQuickAssignCategoryIds(station.categoryIds || ['all']);
-                                          setCategorySearchQuery('');
-                                        }}
-                                        className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 hover:underline cursor-pointer"
-                                        title="Choose & assign multiple categories to this printer"
-                                      >
-                                        <Tags size={12} />
-                                        <span>Assign Categories</span>
-                                      </button>
-                                    </div>
-                                    {isUniversal ? (
-                                      <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[11px] font-bold bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/60">
-                                        <Zap size={12} className="text-purple-600" />
-                                        <span>{businessCategory.routingDesc}</span>
-                                      </div>
-                                    ) : (
-                                      <div className="flex flex-wrap gap-1">
-                                        {matchedCategories.length > 0 ? (
-                                          matchedCategories.map((c) => (
-                                            <span
-                                              key={c.id}
-                                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/60"
-                                            >
-                                              {c.name}
-                                            </span>
-                                          ))
-                                        ) : (
-                                          <span className="text-[11px] text-slate-400 italic">
-                                            {station.categoryIds.length} categories assigned
-                                          </span>
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-
-                                <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs">
-                                  <span className="text-slate-500 font-medium text-[11px]">
-                                    Auto-print: <strong className={station.autoPrintOnAccept !== false ? 'text-emerald-600' : 'text-slate-400'}>{station.autoPrintOnAccept !== false ? 'Active' : 'Off'}</strong>
-                                  </span>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => updateStation(station.id, { enabled: station.enabled === false ? true : false })}
-                                    className="h-6 text-[11px] font-bold text-slate-600 dark:text-slate-300 px-2"
-                                  >
-                                    {station.enabled === false ? 'Enable' : 'Disable'}
-                                  </Button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* =========================================================
-                  SECTION 2: CASHIER & CUSTOMER BILL PRINTERS
-              ========================================================= */}
-              {(printerSection === 'all' || printerSection === 'billing') && (
-                <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs overflow-hidden">
-                  <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-3.5 bg-linear-to-r from-emerald-50/70 via-teal-50/30 to-transparent dark:from-emerald-950/20 dark:via-teal-950/10 dark:to-transparent flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                    <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 mt-0.5">
-                        <Receipt size={20} />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <CardTitle className="text-base font-bold">{businessCategory.billingHeaderTitle}</CardTitle>
-                          <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
-                            {businessCategory.billingStationBadge}
-                          </span>
-                        </div>
-                        <CardDescription className="text-xs mt-0.5">
-                          {businessCategory.billingHeaderDesc}
-                        </CardDescription>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={handleTestBillPrint}
-                        leftIcon={<Printer size={13} className="text-emerald-600" />}
-                        className="text-xs font-bold border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/50"
-                      >
-                        {businessCategory.testBillButtonLabel}
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={openNewBillingPrinterModal}
-                        leftIcon={<Plus size={14} />}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs"
-                      >
-                        {businessCategory.addBillingPrinterButtonLabel}
-                      </Button>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="p-4 sm:p-5 space-y-5">
-                    {/* Auto-Print Bill Switch */}
-                    <div className="p-3.5 rounded-xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 flex items-center justify-center shrink-0">
-                          <Zap size={16} />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
-                            {businessCategory.autoPrintBillLabel}
-                          </p>
-                          <p className="text-[10px] text-slate-500 truncate">
-                            {businessCategory.autoPrintBillDesc}
-                          </p>
-                        </div>
-                      </div>
-                      <Switch
-                        checked={autoPrintOnPayment || false}
-                        onChange={(val) => {
-                          setAutoPrintOnPayment(val);
-                          toast.success(val ? 'Auto-print bill enabled' : 'Auto-print bill disabled');
-                        }}
-                      />
-                    </div>
-
-                    {/* Cashier Billing Printers Subsection */}
-                    <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <label className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider block">
-                            {businessCategory.billingStationLabel}
-                          </label>
-                          <p className="text-[11px] text-slate-500">
-                            {businessCategory.billingPrinterDesc}
-                          </p>
-                        </div>
-                        <span className="text-[11px] font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
-                          {billingPrinters.length} {billingPrinters.length === 1 ? 'Printer' : 'Printers'} Configured
-                        </span>
-                      </div>
-
-                      {billingPrinters.length === 0 ? (
-                        <div className="p-8 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
-                          <Receipt className="mx-auto h-8 w-8 text-slate-400 mb-2" />
-                          <p className="text-xs font-bold text-slate-700 dark:text-slate-300">{businessCategory.noBillingPrintersTitle}</p>
-                          <p className="text-[11px] text-slate-500 mt-0.5">Click below to register your first billing printer.</p>
-                          <Button
-                            size="sm"
-                            onClick={openNewBillingPrinterModal}
-                            leftIcon={<Plus size={14} />}
-                            className="mt-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
-                          >
-                            {businessCategory.addBillingPrinterButtonLabel}
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                          {billingPrinters.map((printer) => (
-                            <div
-                              key={printer.id}
-                              className={`p-4 rounded-2xl border transition-all flex flex-col justify-between gap-3 ${
-                                printer.enabled === false
-                                  ? 'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 opacity-60'
-                                  : 'border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900/70 shadow-xs hover:border-emerald-300 dark:hover:border-emerald-800'
-                              }`}
-                            >
-                              <div className="space-y-2.5">
-                                <div className="flex items-start justify-between gap-2">
-                                  <div>
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                      <Receipt size={15} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
-                                      <h5 className="font-extrabold text-sm text-slate-900 dark:text-slate-100">
-                                        {printer.name}
-                                      </h5>
-                                    </div>
-
-                                    <div className="flex items-center gap-1.5 flex-wrap mt-1">
-                                      <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                                        {printer.paperWidth || '80mm'}
-                                      </span>
-                                      {printer.connectionType === 'network' && (
-                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800 flex items-center gap-1">
-                                          <Wifi size={10} /> LAN {printer.ipAddress}:{printer.port || 9100}
-                                        </span>
-                                      )}
-                                      {printer.connectionType === 'usb' && (
-                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300 border border-teal-200 dark:border-teal-800 flex items-center gap-1">
-                                          <Usb size={10} /> Direct USB
-                                        </span>
-                                      )}
-                                      {printer.connectionType === 'bluetooth' && (
-                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1">
-                                          <Bluetooth size={10} /> Direct Bluetooth
-                                        </span>
-                                      )}
-                                      {(!printer.connectionType || printer.connectionType === 'browser') && (
-                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 flex items-center gap-1">
-                                          🖥️ System Default
-                                        </span>
-                                      )}
-                                      {printer.isDefault && (
-                                        <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
-                                          Default Bill Printer
-                                        </span>
-                                      )}
-                                      {printer.enabled === false && (
-                                        <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300">
-                                          Disabled
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-
-                                  <div className="flex items-center gap-1 shrink-0">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleTestSpecificBillPrint(printer)}
-                                      title="Send Test Bill Print to this Printer"
-                                      className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                                    >
-                                      <Printer size={14} />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => openEditBillingPrinterModal(printer)}
-                                      title="Edit Cashier Printer"
-                                      className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                                    >
-                                      <Edit2 size={14} />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        if (billingPrinters.length <= 1) {
-                                          toast.error('You must have at least one cashier billing printer.');
-                                          return;
-                                        }
-                                        if (confirm(`Remove cashier printer "${printer.name}"?`)) {
-                                          removeBillingPrinter(printer.id);
-                                          toast.success('Cashier printer removed');
-                                        }
-                                      }}
-                                      title="Delete Printer"
-                                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
-                                    >
-                                      <Trash2 size={14} />
-                                    </button>
-                                  </div>
-                                </div>
-
-                                <div className="pt-0.5">
-                                  {printer.isDefault ? (
-                                    <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-bold bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60">
-                                      <Check size={12} strokeWidth={3} />
-                                      <span>Primary Counter (Default target for quick bill print &amp; auto-printing)</span>
-                                    </div>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setDefaultBillingPrinter(printer.id);
-                                        toast.success(`"${printer.name}" set as default bill printer`);
-                                      }}
-                                      className="text-[11px] font-bold text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 hover:underline cursor-pointer"
-                                    >
-                                      ★ Set as Primary Bill Printer
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-
-                              <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs">
-                                <span className="text-slate-500 font-medium text-[11px]">
-                                  Auto-print: <strong className={printer.enabled !== false && autoPrintOnPayment ? 'text-emerald-600' : 'text-slate-400'}>{printer.enabled !== false && autoPrintOnPayment ? 'Active' : 'Off'}</strong>
-                                </span>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => updateBillingPrinter(printer.id, { enabled: printer.enabled === false ? true : false })}
-                                  className="h-6 text-[11px] font-bold text-slate-600 dark:text-slate-300 px-2"
-                                >
-                                  {printer.enabled === false ? 'Enable' : 'Disable'}
-                                </Button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
+            <PrinterSettingsTab
+              printerSection={printerSection}
+              setPrinterSection={setPrinterSection}
+              stations={stations}
+              billingPrinters={billingPrinters}
+              primaryBillingPrinter={billingPrinter as any}
+              paperWidth={paperWidth}
+              setPaperWidth={setPaperWidth}
+              autoPrintOnAccept={autoPrintOnAccept}
+              setAutoPrintOnAccept={setAutoPrintOnAccept}
+              bridgeStatus={bridgeStatus}
+              setBridgeStatus={setBridgeStatus}
+              pairedUsbName={pairedUsbName}
+              pairedBtName={pairedBtName}
+              btPermissionBlocked={btPermissionBlocked}
+              setBtPermissionBlocked={setBtPermissionBlocked}
+              isTestingBt={isTestingBt}
+              isPairingUsb={false}
+              categories={categories}
+              onOpenStationModal={(st) => st ? openEditStationModal(st) : openNewStationModal()}
+              onDeleteStation={removeStation}
+              onOpenBillingPrinterModal={(bp) => bp ? openEditBillingPrinterModal(bp) : openNewBillingPrinterModal()}
+              onDeleteBillingPrinter={removeBillingPrinter}
+              onTestStation={handleTestPrint}
+              onTestBillingPrinter={handleTestSpecificBillPrint}
+              onTestBluetoothSlip={handleTestBluetoothSlip}
+              onPairBillingPrinterUsb={handlePairBillingPrinterUsb}
+              onPairBillingPrinterBt={handlePairBillingPrinterBt}
+              businessCategory={businessCategory}
+            />
           )}
 
-          {/* =========================================
-              SECURITY & ACCOUNT TAB
-          ========================================= */}
           {activeTab === 'account' && (
-            <div className="space-y-6 animate-in fade-in duration-300">
-              <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs">
-                <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-slate-50/50 dark:bg-slate-900/50">
-                  <CardTitle className="text-base font-bold">Account Profile</CardTitle>
-                </CardHeader>
-                <CardContent className="p-4 sm:p-6 space-y-6">
-                  
-                  {/* Shop Details Shortcut */}
-                  <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 cursor-pointer hover:border-primary/50 transition-colors group" onClick={() => navigate('/shop-setup')}>
-                    <div className="flex items-center gap-4 min-w-0">
-                      <div className="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center shrink-0">
-                        {shop?.logo_url ? <img src={shop.logo_url} alt="Logo" className="w-full h-full rounded-xl object-cover" /> : <Store size={20} />}
-                      </div>
-                      <div>
-                        <p className="font-bold text-sm text-slate-800">{shop?.name || 'My Shop'}</p>
-                        <p className="text-xs text-slate-500">Edit shop name, logo, banner & hours</p>
-                      </div>
-                    </div>
-                    <ChevronRight size={18} className="text-slate-400 group-hover:text-primary transition-all shrink-0 ml-2" />
-                  </div>
-
-                  {/* Mobile Number & Security */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center font-black shrink-0">
-                        <Phone size={18} />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <p className="text-[10px] font-bold text-slate-400 uppercase">Registered Mobile</p>
-                          {user?.phone_verified ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/50 dark:text-emerald-400 px-2 py-0.5 rounded-full">
-                              <CheckCircle2 size={10} /> Verified
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-50 dark:bg-amber-950/50 dark:text-amber-400 px-2 py-0.5 rounded-full">
-                              Unverified
-                            </span>
-                          )}
-                        </div>
-                        <p className="font-bold text-sm text-slate-800 dark:text-slate-200">
-                          {user?.phone || 'No mobile number linked'}
-                        </p>
-                      </div>
-                    </div>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={() => {
-                        resetPhoneFlow();
-                        setIsPhoneModalOpen(true);
-                      }} 
-                      className="rounded-xl font-bold cursor-pointer"
-                    >
-                      {user?.phone ? 'Change Mobile' : 'Link Mobile'}
-                    </Button>
-                  </div>
-
-                  {/* Email & Security */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-primary/10 text-primary rounded-full flex items-center justify-center font-black uppercase text-sm shrink-0">
-                        {user?.email?.charAt(0) || 'U'}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <p className="text-[10px] font-bold text-slate-400 uppercase">Signed In Email</p>
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/50 dark:text-emerald-400 px-2 py-0.5 rounded-full">
-                            <CheckCircle2 size={10} /> Verified
-                          </span>
-                        </div>
-                        <p className="font-bold text-sm text-slate-800 dark:text-slate-200 truncate">{user?.email}</p>
-                      </div>
-                    </div>
-                    <Button variant="outline" size="sm" onClick={() => setIsEmailModalOpen(true)} className="rounded-xl font-bold cursor-pointer">
-                      Change Email
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+            <AccountSettingsTab
+              user={user}
+              shop={shop}
+              onNavigateToShopSetup={() => navigate('/shop-setup')}
+              onOpenPhoneModal={() => {
+                resetPhoneFlow();
+                setIsPhoneModalOpen(true);
+              }}
+              onOpenEmailModal={() => {
+                resetEmailFlow();
+                setIsEmailModalOpen(true);
+              }}
+              onOpenLicensesModal={() => setIsLicensesModalOpen(true)}
+              onOpenDeleteShopModal={() => {
+                setShopOtpSent(false);
+                setShopOtpCode('');
+                setIsDeleteShopModalOpen(true);
+              }}
+              onOpenDeleteAccountModal={() => {
+                setAccountOtpSent(false);
+                setAccountOtpCode('');
+                setIsDeleteAccountModalOpen(true);
+              }}
+            />
           )}
 
-          </div>
-        </div>
-      )}
+          {activeTab === 'support' && (
+            <SupportSettingsTab
+              shop={shop}
+              user={user}
+            />
+          )}
+        </main>
+      </div>
+
+
 
       {/* Change / Link Mobile Number Modal */}
       <Modal
@@ -4049,7 +1994,7 @@ export function SettingsPage() {
                 {bridgeStatus?.online && (
                   <div className="flex items-center justify-between p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-[11px] text-emerald-800 dark:text-emerald-300">
                     <div className="flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                      <span className="w-2 h-2 rounded-full bg-emerald-500" />
                       <span className="font-bold">Local Print Bridge Active</span>
                       <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono">({bridgeStatus.ip || '127.0.0.1'}:9101)</span>
                     </div>
@@ -4418,7 +2363,7 @@ export function SettingsPage() {
                 {bridgeStatus?.online && (
                   <div className="flex items-center justify-between p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-[11px] text-emerald-800 dark:text-emerald-300">
                     <div className="flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                      <span className="w-2 h-2 rounded-full bg-emerald-500" />
                       <span className="font-bold">Local Print Bridge Active</span>
                       <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono">({bridgeStatus.ip || '127.0.0.1'}:9101)</span>
                     </div>
@@ -4553,6 +2498,29 @@ export function SettingsPage() {
                 )}
               </div>
             )}
+          </div>
+
+          {/* Bill Print Language */}
+          <div className="space-y-1.5 pt-1">
+            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <Globe size={13} className="text-primary" />
+                <span>Bill Print Language</span>
+              </span>
+              <span className="text-[10px] text-muted-foreground font-mono">
+                Printed Receipt Format
+              </span>
+            </label>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              Customer receipts, tax breakdown, and item headers from this printer will be printed in this language.
+            </p>
+            <SearchableSelect
+              options={BILL_LANGUAGES}
+              value={billingPrinterForm.language || 'store'}
+              onChange={(val) => setBillingPrinterForm(prev => ({ ...prev, language: val }))}
+              placeholder="Select receipt language..."
+              className="w-full"
+            />
           </div>
 
           {/* Primary Counter & Active Checkboxes */}
@@ -4751,6 +2719,251 @@ export function SettingsPage() {
           )}
         </div>
             </Modal>
+
+      {/* Individual Shop Deactivation Modal */}
+      <Modal
+        isOpen={isDeleteShopModalOpen}
+        onClose={() => setIsDeleteShopModalOpen(false)}
+        title={`Deactivate Shop: ${shop?.name || 'Storefront'}`}
+        className="max-w-md"
+      >
+        <div className="space-y-4 pt-2">
+          <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-900/60 text-xs text-amber-900 dark:text-amber-200 space-y-1.5">
+            <p className="font-bold flex items-center gap-1.5 text-amber-700 dark:text-amber-300">
+              <AlertCircle size={15} />
+              <span>Restorable Shop Deactivation (is_deleted = True)</span>
+            </p>
+            <p className="leading-relaxed">
+              Deactivating this shop will immediately take it offline and hide it from customer discovery.
+            </p>
+            <ul className="list-disc pl-4 space-y-1 text-[11px]">
+              <li>Your master login and any other registered shops remain completely active.</li>
+              <li>Catalog items, QR codes, and past order records will be preserved in our database.</li>
+              <li>You can request instant restoration anytime by emailing <strong>debuggerstechs@gmail.com</strong>.</li>
+            </ul>
+          </div>
+
+          {!shopOtpSent ? (
+            <div className="space-y-3 pt-1">
+              <p className="text-xs text-slate-600 dark:text-slate-300">
+                To confirm this deactivation, a 6-digit verification OTP will be sent to your registered email: <strong>{user?.email}</strong>.
+              </p>
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsDeleteShopModalOpen(false)}
+                  className="rounded-xl font-bold"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  isLoading={isSendingShopOtp}
+                  onClick={handleRequestShopDeletionOtp}
+                  className="rounded-xl font-bold bg-amber-600 hover:bg-amber-700 text-white"
+                >
+                  Send Verification OTP
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3 pt-1">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Enter 6-digit OTP sent to <span className="text-orange-600 font-semibold">{user?.email}</span>:
+                </label>
+                <input
+                  type="text"
+                  maxLength={6}
+                  value={shopOtpCode}
+                  onChange={(e) => setShopOtpCode(e.target.value)}
+                  placeholder="e.g. 123456"
+                  className="w-full h-11 px-3.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-center tracking-widest text-lg font-mono font-bold text-slate-900 dark:text-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-between pt-2">
+                <button
+                  type="button"
+                  disabled={isSendingShopOtp}
+                  onClick={handleRequestShopDeletionOtp}
+                  className="text-xs text-orange-600 hover:underline font-bold disabled:opacity-50"
+                >
+                  Resend OTP
+                </button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsDeleteShopModalOpen(false)}
+                    className="rounded-xl font-bold"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    disabled={!shopOtpCode || shopOtpCode.length < 4}
+                    isLoading={isDeletingShop}
+                    onClick={handleConfirmDeleteShop}
+                    className="rounded-xl font-bold bg-amber-600 hover:bg-amber-700 text-white"
+                  >
+                    Confirm & Deactivate Shop
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      {/* Account Deletion Confirmation Modal */}
+      <Modal
+        isOpen={isDeleteAccountModalOpen}
+        onClose={() => setIsDeleteAccountModalOpen(false)}
+        title="Deactivate Account & Storefronts"
+        className="max-w-md"
+      >
+        <div className="space-y-4 pt-2">
+          <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200/80 dark:border-rose-900/60 text-xs text-rose-900 dark:text-rose-200 space-y-1.5">
+            <p className="font-bold flex items-center gap-1.5 text-rose-700 dark:text-rose-300">
+              <AlertCircle size={15} />
+              <span>Restorable Account Deactivation (is_deleted = True)</span>
+            </p>
+            <p className="leading-relaxed">
+              Confirming this action will immediately revoke your active login session and take all your shops offline:
+            </p>
+            <ul className="list-disc pl-4 space-y-1 text-[11px]">
+              <li>All registered storefronts and public QR codes will be deactivated (is_deleted=True).</li>
+              <li>Your database records are NOT erased — they remain safely archived and preserved.</li>
+              <li>You can request full restoration of your account and shops anytime by emailing <strong>debuggerstechs@gmail.com</strong>.</li>
+            </ul>
+          </div>
+
+          {!accountOtpSent ? (
+            <div className="space-y-3 pt-1">
+              <p className="text-xs text-slate-600 dark:text-slate-300">
+                To protect against unauthorized closure, a 6-digit confirmation OTP will be sent to your registered email: <strong>{user?.email}</strong>.
+              </p>
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsDeleteAccountModalOpen(false)}
+                  className="rounded-xl font-bold"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  isLoading={isSendingAccountOtp}
+                  onClick={handleRequestAccountDeletionOtp}
+                  className="rounded-xl font-bold bg-rose-600 hover:bg-rose-700 text-white"
+                >
+                  Send Deletion OTP
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3 pt-1">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Enter 6-digit OTP sent to <span className="text-orange-600 font-semibold">{user?.email}</span>:
+                </label>
+                <input
+                  type="text"
+                  maxLength={6}
+                  value={accountOtpCode}
+                  onChange={(e) => setAccountOtpCode(e.target.value)}
+                  placeholder="e.g. 123456"
+                  className="w-full h-11 px-3.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-center tracking-widest text-lg font-mono font-bold text-slate-900 dark:text-white focus:border-rose-500 focus:ring-1 focus:ring-rose-500 outline-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-between pt-2">
+                <button
+                  type="button"
+                  disabled={isSendingAccountOtp}
+                  onClick={handleRequestAccountDeletionOtp}
+                  className="text-xs text-orange-600 hover:underline font-bold disabled:opacity-50"
+                >
+                  Resend OTP
+                </button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsDeleteAccountModalOpen(false)}
+                    className="rounded-xl font-bold"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    disabled={!accountOtpCode || accountOtpCode.length < 4}
+                    isLoading={isDeletingAccount}
+                    onClick={handleConfirmDeleteAccount}
+                    className="rounded-xl font-bold bg-rose-600 hover:bg-rose-700 text-white"
+                  >
+                    Verify & Deactivate Account
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      {/* Open-Source Software Notices Modal */}
+      <Modal
+        isOpen={isLicensesModalOpen}
+        onClose={() => setIsLicensesModalOpen(false)}
+        title="Open-Source Software Notices"
+        className="max-w-xl"
+      >
+        <div className="space-y-4 pt-2 max-h-[70vh] overflow-y-auto pr-1">
+          <p className="text-xs text-slate-600 dark:text-slate-300">
+            MenuKit is built with modern open-source technologies under permissible community licenses (MIT, Apache 2.0, BSD):
+          </p>
+
+          <div className="space-y-2.5">
+            {[
+              { name: 'React & React DOM', license: 'MIT License', desc: 'The library for web and native user interfaces' },
+              { name: 'Lucide Icons', license: 'ISC / MIT License', desc: 'Beautiful & consistent icons made by the community' },
+              { name: 'Tailwind CSS', license: 'MIT License', desc: 'A utility-first CSS framework for rapid UI development' },
+              { name: 'Vite', license: 'MIT License', desc: 'Next generation frontend tooling' },
+              { name: 'Canvas Confetti', license: 'ISC License', desc: 'Performant celebratory canvas animations' },
+              { name: 'Zustand', license: 'MIT License', desc: 'Bear necessities for state management in React' },
+              { name: 'Axios', license: 'MIT License', desc: 'Promise-based HTTP client for the browser and node.js' },
+            ].map((pkg, idx) => (
+              <div key={idx} className="p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 flex items-center justify-between gap-3 text-xs">
+                <div>
+                  <h4 className="font-bold text-slate-900 dark:text-white">{pkg.name}</h4>
+                  <p className="text-[11px] text-slate-500">{pkg.desc}</p>
+                </div>
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 shrink-0">
+                  {pkg.license}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsLicensesModalOpen(false)}
+              className="rounded-xl font-bold"
+            >
+              Close
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       <WhatsNewModal
         isOpen={isWhatsNewOpen}

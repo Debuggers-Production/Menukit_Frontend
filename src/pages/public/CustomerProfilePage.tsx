@@ -7,7 +7,6 @@ import {
   Gift, 
   ShoppingBag, 
   ChevronRight, 
-  Sparkles, 
   Flame, 
   CheckCircle2,
   ExternalLink
@@ -378,7 +377,9 @@ export function CustomerProfilePage() {
                               <span className="font-extrabold text-emerald-700 dark:text-emerald-400">Direct Price Drop</span>
                             </div>
                             <span className="px-2.5 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-[11px] font-bold text-emerald-800 dark:text-emerald-300">
-                              Auto-Applied to Menu
+                              {(r.min_order_value && Number(r.min_order_value) > 0) || (r.max_order_value && Number(r.max_order_value) > 0)
+                                ? 'Auto-Applied at Checkout'
+                                : 'Auto-Applied to Menu'}
                             </span>
                           </div>
                         );

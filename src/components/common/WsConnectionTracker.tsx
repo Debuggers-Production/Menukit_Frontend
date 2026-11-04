@@ -23,7 +23,7 @@ export const WsConnectionTracker: React.FC<WsConnectionTrackerProps> = ({
     return (
       <div
         className={cn(
-          "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold select-none transition-all",
+          "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold select-none transition-all",
           "bg-emerald-50/90 hover:bg-emerald-100/90 text-emerald-700 dark:bg-emerald-950/40 dark:hover:bg-emerald-950/70 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/60 shadow-2xs cursor-pointer",
           className
         )}
@@ -31,14 +31,14 @@ export const WsConnectionTracker: React.FC<WsConnectionTrackerProps> = ({
         onClick={handleManualReconnect}
       >
         <span className="relative flex h-2 w-2 shrink-0">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+          <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
           <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
         </span>
         <span className={cn("text-[11px] font-bold tracking-tight", !showTextOnMobile && "hidden sm:inline")}>
           Live
         </span>
         {latencyMs !== null && (
-          <span className="hidden md:inline text-[9px] font-mono text-emerald-600/80 dark:text-emerald-400/80">
+          <span className="hidden md:inline text-[9.5px] font-mono text-emerald-600/80 dark:text-emerald-400/80">
             {latencyMs}ms
           </span>
         )}
@@ -50,8 +50,8 @@ export const WsConnectionTracker: React.FC<WsConnectionTrackerProps> = ({
     return (
       <div
         className={cn(
-          "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold select-none transition-all",
-          "bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800 shadow-2xs animate-pulse cursor-wait",
+          "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold select-none transition-all",
+          "bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800 shadow-2xs cursor-wait",
           className
         )}
         title={`Connecting to order stream... (Attempt ${reconnectCount + 1})`}
@@ -69,7 +69,7 @@ export const WsConnectionTracker: React.FC<WsConnectionTrackerProps> = ({
       type="button"
       onClick={handleManualReconnect}
       className={cn(
-        "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold select-none transition-all cursor-pointer",
+        "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold select-none transition-all cursor-pointer",
         "bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:hover:bg-rose-900/80 dark:text-rose-300 border border-rose-200 dark:border-rose-800 shadow-2xs hover:scale-105 active:scale-95",
         className
       )}

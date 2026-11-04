@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { X, Sparkles } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { X } from 'lucide-react';
 import { ChalkWritingEngine } from './ChalkWritingEngine';
 import { extractUrlsAndCleanText, ExtractedLink } from '@/utils/urlPlatformHelper';
 import { ExternalLinkModal, PlatformIcon } from '@/components/common/ExternalLinkModal';
@@ -108,14 +109,15 @@ export const ChalkboardModal: React.FC<ChalkboardModalProps> = ({
 
   if (!isOpen) return null;
 
-  return (
+  const modalContent = (
     <div
-      className={`fixed inset-0 z-[9999] flex items-center justify-center p-2 sm:p-6 transition-all duration-300 ${
-        animStep >= 1 ? 'bg-black/75 backdrop-blur-md opacity-100' : 'bg-transparent opacity-0'
+      className={`fixed inset-0 z-[99999] flex items-center justify-center p-2 sm:p-6 transition-all duration-300 ${
+        animStep >= 1 ? 'bg-black/80 backdrop-blur-md opacity-100' : 'bg-transparent opacity-0'
       }`}
       role="dialog"
       aria-modal="true"
       aria-label="Restaurant Chalkboard Special"
+      onClick={onClose}
     >
       {/* Top Right Close Button */}
       <button
@@ -336,4 +338,6 @@ export const ChalkboardModal: React.FC<ChalkboardModalProps> = ({
       )}
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(modalContent, document.body) : null;
 };

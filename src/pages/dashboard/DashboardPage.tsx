@@ -14,14 +14,15 @@ import {
   Users,
   ShoppingBag,
   Coins,
-  Sparkles,
   X
 } from 'lucide-react';
 import { api } from '@/services/api';
+import { analyticsService } from '@/services/analyticsService';
 import { membershipService } from '@/services/memberships';
 import { useShopStore } from '@/store/shopStore';
 import { isSchemeEnabledShop } from '@/config/businessCategories';
 import { WhatsNewModal } from '@/components/WhatsNewModal';
+import { StatSummaryCard } from '@/components/ui/StatSummaryCard';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Button } from '@/components/ui/Button';
@@ -51,7 +52,7 @@ export function DashboardPage() {
   const isSchemeShop = isSchemeEnabledShop(shop?.category);
   const [showSchemeBanner, setShowSchemeBanner] = useState(() => {
     try {
-      return localStorage.getItem('menukit_dismiss_scheme_banner_v2_0_5') !== 'true';
+      return localStorage.getItem('menukit_dismiss_scheme_banner_v2_1_0') !== 'true';
     } catch {
       return true;
     }
@@ -61,7 +62,7 @@ export function DashboardPage() {
   const handleDismissSchemeBanner = () => {
     setShowSchemeBanner(false);
     try {
-      localStorage.setItem('menukit_dismiss_scheme_banner_v2_0_5', 'true');
+      localStorage.setItem('menukit_dismiss_scheme_banner_v2_1_0', 'true');
     } catch {}
   };
 
@@ -72,10 +73,8 @@ export function DashboardPage() {
       if (activitySearch !== undefined) {
         setIsSearchingActivity(true);
         try {
-          const res = await api.get('/analytics/activities', { params: { search: activitySearch || undefined } });
-          if (res.data?.recent_activities) {
-            setActivities(res.data.recent_activities);
-          }
+          const recent = await analyticsService.getRecentActivities(activitySearch);
+          setActivities(recent);
         } catch (e) {
           console.error("Failed to search activities", e);
         } finally {
@@ -178,9 +177,9 @@ export function DashboardPage() {
 
   useEffect(() => {
     if (shop) {
-      setTitle('Overview', `Welcome back! Here's what's happening at ${shop.name}.`);
+      setTitle('Overview');
     } else {
-      setTitle('Overview', '');
+      setTitle('Overview');
     }
   }, [shop, setTitle]);
 
@@ -258,51 +257,51 @@ export function DashboardPage() {
 
       {/* ── VERSION 2.0.5 SCHEMES LOG BANNER (CRACKERS & BAKERIES) ────────────────── */}
       {isSchemeShop && showSchemeBanner && (
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 p-[1.5px] shadow-lg shadow-orange-500/10">
-          <div className="relative rounded-[23px] bg-white/95 dark:bg-slate-900/95 backdrop-blur-md p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-3.5">
-              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 text-white flex items-center justify-center shrink-0 shadow-md shadow-orange-500/25">
-                <Coins size={24} className="animate-pulse" />
+        <div className="relative overflow-hidden rounded-lg bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 p-[1px] shadow-xs">
+          <div className="relative rounded-[7px] bg-white/95 dark:bg-slate-900/95 backdrop-blur-md p-3.5 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-md bg-gradient-to-br from-amber-500 to-orange-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+                <Coins size={18} className="animate-pulse" />
               </div>
               <div className="space-y-0.5">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/20">
-                    v2.0.5 NEW FEATURE
+                  <span className="text-[9.5px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/20">
+                    v2.1.0 MAJOR RELEASE
                   </span>
-                  <span className="text-xs sm:text-sm font-black text-slate-800 dark:text-slate-100 flex items-center gap-1">
+                  <span className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1">
                     <span>Customer Savings Schemes (Pandu) Live!</span>
-                    <Sparkles size={13} className="text-amber-500 fill-current" />
+                    <Coins size={14} className="text-amber-500" />
                   </span>
                 </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xl leading-relaxed">
-                  Start festive installment clubs (Diwali crackers, festive cakes) with automated WhatsApp due reminders and live customer passbooks.
+                <p className="text-[11.5px] text-slate-500 dark:text-slate-400 max-w-xl leading-relaxed">
+                  Start festive installment clubs with automated WhatsApp due reminders and live customer passbooks.
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2.5 self-end sm:self-center shrink-0">
+            <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
               <button
                 type="button"
                 onClick={() => setIsWhatsNewOpen(true)}
-                className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                className="px-2.5 py-1.5 rounded-md text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
               >
-                What's New Log
+                What's New
               </button>
               <button
                 type="button"
                 onClick={() => navigate('/schemes')}
-                className="px-4 py-2 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white text-xs font-bold shadow-md shadow-orange-500/20 transition-all flex items-center gap-1.5 cursor-pointer hover:scale-105 active:scale-95"
+                className="px-3 py-1.5 rounded-md bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white text-xs font-medium shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer hover:scale-105 active:scale-95"
               >
                 <span>Launch Schemes</span>
-                <ArrowRight size={13} />
+                <ArrowRight size={12} />
               </button>
               <button
                 type="button"
                 onClick={handleDismissSchemeBanner}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                className="p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
                 aria-label="Dismiss banner"
               >
-                <X size={16} />
+                <X size={14} />
               </button>
             </div>
           </div>
@@ -316,70 +315,57 @@ export function DashboardPage() {
       />
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
         {statCards.map((stat, i) => (
-          <Card key={i} className="hover:shadow-md transition-shadow">
-            <CardContent className="p-4 sm:p-6">
-              <div className="flex flex-col-reverse sm:flex-row sm:justify-between sm:items-start gap-2">
-                <div>
-                  <p className="text-xs sm:text-sm font-medium text-muted-foreground mb-0.5 sm:mb-1 truncate">
-                    {stat.title}
-                  </p>
-                  <h3 className="text-2xl sm:text-3xl font-bold text-foreground">
-                    {stat.value}
-                  </h3>
-                </div>
-
-                <div className={`p-2 sm:p-3 rounded-xl self-start ${stat.bg} ${stat.color}`}>
-                  <stat.icon className="w-5 h-5 sm:w-6 sm:h-6" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <StatSummaryCard
+            key={i}
+            title={stat.title}
+            value={stat.value}
+            icon={stat.icon}
+            colorClass={stat.color}
+            bgClass={stat.bg}
+          />
         ))}
       </div>
 
       {/* Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
         {/* Recent Activity */}
-        <Card className="flex flex-col h-[350px] sm:h-[450px]">
-                    <CardHeader className="shrink-0 pb-3 sm:pb-4 space-y-3">
+        <Card className="flex flex-col h-[320px] sm:h-[400px]">
+          <CardHeader className="shrink-0 pb-2 sm:pb-3 space-y-2">
             <div>
               <CardTitle>Recent Activity</CardTitle>
-              <CardDescription>
-                Your latest actions on the platform
-              </CardDescription>
             </div>
             <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
               <Input 
                 placeholder="Search activity..."
-                className="pl-9 bg-slate-50 dark:bg-slate-900 h-9 text-sm"
+                className="pl-8 bg-slate-50 dark:bg-slate-900 h-8 text-xs"
                 value={activitySearch}
                 onChange={(e) => setActivitySearch(e.target.value)}
               />
               {isSearchingActivity && (
-                <div className="absolute right-3 top-2.5 h-4 w-4 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                <div className="absolute right-2.5 top-2 h-3.5 w-3.5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
               )}
             </div>
           </CardHeader>
 
-          <CardContent className="flex-1 overflow-y-auto pr-4 custom-scrollbar">
+          <CardContent className="flex-1 overflow-y-auto pr-3 custom-scrollbar">
             {activities.length > 0 ? (
-              <div className="space-y-6">
+              <div className="space-y-4">
                 {activities.map((activity) => (
-                  <div key={activity.id} className="flex items-start gap-4">
-                    <div className="mt-1 bg-slate-100 dark:bg-slate-800 p-2 rounded-full text-slate-500">
-                      <Clock size={16} />
+                  <div key={activity.id} className="flex items-start gap-3">
+                    <div className="mt-0.5 bg-slate-100 dark:bg-slate-800 p-1.5 rounded-md text-slate-500 shrink-0">
+                      <Clock size={13} />
                     </div>
 
-                    <div>
-                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-slate-900 dark:text-slate-100 truncate">
                         {activity.details ||
                           activity.action.replace('_', ' ')}
                       </p>
 
-                      <p className="text-xs text-slate-500">
+                      <p className="text-[10.5px] text-slate-400">
                         {formatLocalDateTime(activity.created_at)}
                       </p>
                     </div>
@@ -387,7 +373,7 @@ export function DashboardPage() {
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-slate-500 italic">
+              <p className="text-xs text-slate-500 italic">
                 No recent activity found.
               </p>
             )}
@@ -395,34 +381,31 @@ export function DashboardPage() {
         </Card>
 
         {/* Top Reviews */}
-        <Card className="flex flex-col h-[300px] sm:h-[450px]">
-          <CardHeader className="shrink-0 pb-3 sm:pb-4">
+        <Card className="flex flex-col h-[300px] sm:h-[400px] lg:col-span-2">
+          <CardHeader className="shrink-0 pb-2 sm:pb-3">
             <CardTitle>Top Product Reviews</CardTitle>
-            <CardDescription>
-              Highest rated recent feedback
-            </CardDescription>
           </CardHeader>
 
-          <CardContent className="flex-1 overflow-y-auto pr-4 custom-scrollbar">
+          <CardContent className="flex-1 overflow-y-auto pr-3 custom-scrollbar">
             {topReviews.length > 0 ? (
-              <div className="space-y-4">
+              <div className="space-y-2.5">
                 {topReviews.map((review: any) => (
-                  <div key={review.id} className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800">
+                  <div key={review.id} className="p-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-md border border-slate-100 dark:border-slate-800">
                     <div className="flex justify-between items-start mb-1">
-                      <span className="text-sm font-semibold text-slate-900 dark:text-white truncate pr-2">
+                      <span className="text-xs font-semibold text-slate-900 dark:text-white truncate pr-2">
                         {review.item_name}
                       </span>
-                      <div className="flex items-center gap-0.5 shrink-0 bg-orange-100 dark:bg-orange-900/30 px-1.5 py-0.5 rounded text-orange-600 dark:text-orange-400">
-                        <Star size={12} className="fill-current" />
-                        <span className="text-xs font-bold">{review.rating}</span>
+                      <div className="flex items-center gap-0.5 shrink-0 bg-orange-100 dark:bg-orange-900/30 px-1.5 py-0.2 rounded-md text-orange-600 dark:text-orange-400">
+                        <Star size={11} className="fill-current" />
+                        <span className="text-[10px] font-bold">{review.rating}</span>
                       </div>
                     </div>
                     {review.comment && (
-                      <p className="text-xs text-slate-600 dark:text-slate-400 italic line-clamp-2 mb-2">
+                      <p className="text-[11px] text-slate-600 dark:text-slate-400 italic line-clamp-2 mb-1">
                         "{review.comment}"
                       </p>
                     )}
-                    <div className="flex justify-between items-center text-[10px] text-slate-400">
+                    <div className="flex justify-between items-center text-[9.5px] text-slate-400">
                       <span className="font-medium">{review.reviewer_name}</span>
                       <span>{formatLocalDate(review.created_at)}</span>
                     </div>
@@ -431,8 +414,8 @@ export function DashboardPage() {
               </div>
             ) : (
               <div className="text-center py-6 text-slate-500">
-                <Star size={32} className="mx-auto mb-3 text-slate-300" />
-                <p className="text-sm">No reviews yet.</p>
+                <Star size={24} className="mx-auto mb-2 text-slate-300" />
+                <p className="text-xs">No reviews yet.</p>
               </div>
             )}
           </CardContent>
@@ -451,8 +434,8 @@ export function DashboardPage() {
               : 'opacity-0 translate-y-4 scale-95 pointer-events-none'
           }`}
         >
-          <div className="flex items-center gap-3">
-            <span className="bg-white dark:bg-slate-800 text-slate-800 dark:text-white px-3 py-1.5 rounded-lg shadow-md text-xs font-semibold">
+          <div className="flex items-center gap-2">
+            <span className="bg-white dark:bg-slate-800 text-slate-800 dark:text-white px-2.5 py-1 rounded-md shadow-xs text-xs font-medium border border-slate-200/80 dark:border-slate-700">
               Create Order
             </span>
 
@@ -461,14 +444,14 @@ export function DashboardPage() {
                 setIsFabOpen(false);
                 setIsCreateOrderModalOpen(true);
               }}
-              className="w-12 h-12 rounded-full bg-primary text-white shadow-xl flex items-center justify-center hover:scale-105 transition-transform"
+              className="w-11 h-11 rounded-xl bg-primary text-white shadow-md flex items-center justify-center hover:scale-105 active:scale-95 transition-transform cursor-pointer"
             >
               <ShoppingBag size={20} />
             </button>
           </div>
 
-          <div className="flex items-center gap-3">
-            <span className="bg-white dark:bg-slate-800 text-slate-800 dark:text-white px-3 py-1.5 rounded-lg shadow-md text-xs font-semibold">
+          <div className="flex items-center gap-2">
+            <span className="bg-white dark:bg-slate-800 text-slate-800 dark:text-white px-2.5 py-1 rounded-md shadow-xs text-xs font-medium border border-slate-200/80 dark:border-slate-700">
               View Menu
             </span>
 
@@ -477,14 +460,14 @@ export function DashboardPage() {
                 setIsFabOpen(false);
                 window.open(`/shop/${shop?.id}`, '_blank');
               }}
-              className="w-12 h-12 rounded-full bg-white dark:bg-slate-800 text-slate-800 dark:text-white shadow-xl flex items-center justify-center hover:scale-105 transition-transform"
+              className="w-11 h-11 rounded-xl bg-white dark:bg-slate-800 text-slate-800 dark:text-white border border-slate-200 dark:border-slate-700 shadow-md flex items-center justify-center hover:scale-105 active:scale-95 transition-transform cursor-pointer"
             >
               <ExternalLink size={20} />
             </button>
           </div>
 
-          <div className="flex items-center gap-3">
-            <span className="bg-white dark:bg-slate-800 text-slate-800 dark:text-white px-3 py-1.5 rounded-lg shadow-md text-xs font-semibold">
+          <div className="flex items-center gap-2">
+            <span className="bg-white dark:bg-slate-800 text-slate-800 dark:text-white px-2.5 py-1 rounded-md shadow-xs text-xs font-medium border border-slate-200/80 dark:border-slate-700">
               Get QR Code
             </span>
 
@@ -493,19 +476,20 @@ export function DashboardPage() {
                 setIsFabOpen(false);
                 navigate('/qr-code');
               }}
-              className="w-12 h-12 rounded-full bg-white dark:bg-slate-800 text-slate-800 dark:text-white shadow-xl flex items-center justify-center hover:scale-105 transition-transform"
+              className="w-11 h-11 rounded-xl bg-white dark:bg-slate-800 text-slate-800 dark:text-white border border-slate-200 dark:border-slate-700 shadow-md flex items-center justify-center hover:scale-105 active:scale-95 transition-transform cursor-pointer"
             >
               <QrCode size={20} />
             </button>
           </div>
         </div>
 
-        {/* Main FAB */}
+        {/* Main Square FAB */}
         <button
           onClick={() => setIsFabOpen(!isFabOpen)}
-          className={`w-14 h-14 rounded-full shadow-xl flex items-center justify-center text-white transition-all duration-300 ${
+          className={`w-12 h-12 sm:w-14 sm:h-14 rounded-xl shadow-xl flex items-center justify-center text-white transition-all duration-200 cursor-pointer border border-white/20 active:scale-95 ${
             isFabOpen ? 'bg-slate-800 rotate-45' : 'bg-primary hover:bg-primary-600 hover:scale-105'
           }`}
+          title={isFabOpen ? "Close menu" : "Quick actions"}
         >
           <Plus size={24} />
         </button>

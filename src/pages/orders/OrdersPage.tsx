@@ -17,6 +17,8 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { DatePicker } from '@/components/ui/DatePicker';
 import { Input } from '@/components/ui/Input';
 import { SearchableSelect } from '@/components/ui/SearchableSelect';
+import { SquareFAB } from '@/components/ui/SquareFAB';
+import { HorizontalScrollContainer } from '@/components/ui/HorizontalScrollContainer';
 import toast from 'react-hot-toast';
 import { CreateOrderModal } from './CreateOrderModal';
 import { ThermalBillModal } from '@/components/orders/ThermalBillModal';
@@ -740,6 +742,7 @@ export function OrdersPage() {
   const { setTitle } = useHeaderStore();
   const { shop, menuItems, setMenuItems } = useShopStore();
   const businessCategory = getBusinessCategory(shop?.category);
+  const kotShort = (shop?.settings as any)?.kot_short || businessCategory.kotShort;
   const { 
     paperWidth: defaultPaperWidth, 
     autoPrintOnAccept, 
@@ -761,10 +764,12 @@ export function OrdersPage() {
       reason?: string;
       kotTitle?: string;
       kotNumber?: string;
+      kotShort?: string;
     }
   ) => {
     if (!targetOrder) return;
-    const toastId = silent ? undefined : toast.loading('Sending KOT directly to kitchen printer...');
+    const effectiveKotShort = (shop?.settings as any)?.kot_short || options?.kotShort || businessCategory.kotShort;
+    const toastId = silent ? undefined : toast.loading(`Sending ${effectiveKotShort} directly to printer...`);
     try {
       const ok = await printOrderToStations(
         targetOrder,
@@ -780,9 +785,9 @@ export function OrdersPage() {
       );
       if (ok) {
         markOrderKotPrinted(targetOrder.id);
-        if (toastId) toast.success('KOT printed successfully!', { id: toastId });
-        else if (mode === 'cancelled') toast.success(`Void KOT sent to station for Order #${targetOrder.daily_order_number || targetOrder.id.slice(0, 8).toUpperCase()}`);
-        else toast.success(`Auto-printed KOT for Order #${targetOrder.daily_order_number || targetOrder.id.slice(0, 8).toUpperCase()}`);
+        if (toastId) toast.success(`${effectiveKotShort} printed successfully!`, { id: toastId });
+        else if (mode === 'cancelled') toast.success(`Void ${effectiveKotShort} sent to station for Order #${targetOrder.daily_order_number || targetOrder.id.slice(0, 8).toUpperCase()}`);
+        else toast.success(`Auto-printed ${effectiveKotShort} for Order #${targetOrder.daily_order_number || targetOrder.id.slice(0, 8).toUpperCase()}`);
       } else {
         // If printer is offline/unreachable during background auto-print, mark as attempted to STOP continuous loop
         if (silent) {
@@ -791,13 +796,13 @@ export function OrdersPage() {
         if (toastId) toast.error('Printer unavailable or offline', { id: toastId });
       }
     } catch (err: any) {
-      console.error('Print KOT failed:', err);
+      console.error(`Print ${effectiveKotShort} failed:`, err);
       if (silent) {
         markOrderKotPrinted(targetOrder.id);
       }
-      if (toastId) toast.error(err?.message || 'Failed to print KOT', { id: toastId });
+      if (toastId) toast.error(err?.message || `Failed to print ${effectiveKotShort}`, { id: toastId });
     }
-  }, [shop, menuItems, stations, defaultPaperWidth, markOrderKotPrinted]);
+  }, [shop, menuItems, stations, defaultPaperWidth, markOrderKotPrinted, businessCategory.kotShort]);
 
   const autoPrintRef = useRef(autoPrintOnAccept);
   autoPrintRef.current = autoPrintOnAccept;
@@ -815,7 +820,7 @@ export function OrdersPage() {
   }, [menuItems, setMenuItems]);
 
   useEffect(() => {
-    setTitle('Orders Queue', 'Manage live orders, tickets, and deliveries.');
+    setTitle('Orders');
   }, [setTitle]);
 
   const fetchStatusCounts = useCallback(async () => {
@@ -1181,14 +1186,14 @@ export function OrdersPage() {
       setCustomCancelItemReason('');
       setCancelItemWithRefund(true);
 
-      // Directly send VOID KOT to the cancelled item's station printer only
+      // Directly send VOID ticket to the cancelled item's station printer only
       await handleDirectPrintKot(updatedOrder, 'cancelled', true, {
         customItems: [{
           ...cancelledItem,
           is_cancelled: true,
           cancellation_reason: finalReason,
         }],
-        kotTitle: 'VOID KOT - ITEM CANCELLED',
+        kotTitle: `VOID ${kotShort} - ITEM CANCELLED`,
         reason: finalReason,
       });
     } catch (err: any) {
@@ -1297,7 +1302,7 @@ export function OrdersPage() {
   }, [fetchStatusCounts]);
 
   return (
-    <div className="max-w-5xl mx-auto animate-fade-in pb-24 lg:pb-12 space-y-4">
+    <div className="w-full animate-fade-in pb-24 lg:pb-12 space-y-4">
       
       <HeaderActions>
         <Button
@@ -1337,9 +1342,9 @@ export function OrdersPage() {
       )}
 
       {/* Tabs — sticky top with backdrop blur matching Menus page */}
-      <div className="sticky top-[-16px] sm:top-[-24px] lg:top-[-32px] z-20 bg-background/95 backdrop-blur-md pb-2.5 pt-2.5 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 border-b border-border mb-4 space-y-2">
-        {/* Row 1: Status Filters - Sleek Horizontal Scrollable Tabs */}
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar scrollbar-hide py-0.5 whitespace-nowrap">
+      <div className="sticky top-[-14px] sm:top-[-20px] lg:top-[-24px] z-20 bg-background/95 backdrop-blur-md py-2 -mx-3.5 px-3.5 sm:-mx-5 sm:px-5 lg:-mx-6 lg:px-6 border-b border-border/80 mb-3 space-y-2">
+        {/* Row 1: Status Filters - Sleek Horizontal Scrollable Tabs with Desktop Nav Buttons */}
+        <HorizontalScrollContainer scrollAmount={240} contentClassName="flex items-center gap-1.5 py-0.5 whitespace-nowrap w-full">
           {[
             { id: 'all', label: 'All Orders', count: statusCounts.all ?? 0, activeBg: 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 shadow-sm' },
             { id: 'new', label: 'New Orders', count: statusCounts.new ?? 0, activeBg: 'bg-amber-500 text-white shadow-sm' },
@@ -1376,10 +1381,10 @@ export function OrdersPage() {
               </button>
             );
           })}
-        </div>
+        </HorizontalScrollContainer>
 
         {/* Row 2: Order Type Secondary Filters + Quick Date Shortcuts */}
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar scrollbar-hide py-0.5 whitespace-nowrap text-xs">
+        <HorizontalScrollContainer scrollAmount={200} contentClassName="flex items-center gap-1.5 py-0.5 whitespace-nowrap text-xs w-full">
           {[
             { id: 'all', label: 'All Types', activeBg: 'bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900' },
             { id: 'dine_in', label: 'Dine-in', activeBg: 'bg-indigo-600 text-white shadow-xs border-transparent' },
@@ -1446,7 +1451,7 @@ export function OrdersPage() {
           >
             All Time
           </button>
-        </div>
+        </HorizontalScrollContainer>
 
         {/* Row 3: Search & Date Filter Controls (1 compact row on both mobile & desktop) */}
         <div className="flex items-center gap-2 pt-0.5">
@@ -2543,13 +2548,13 @@ export function OrdersPage() {
                     <div className="flex-1 sm:flex-initial inline-flex items-center justify-center rounded-xl border border-emerald-300/80 dark:border-emerald-800/80 bg-emerald-50/80 dark:bg-emerald-950/40 overflow-hidden h-10 sm:h-9 text-xs">
                       <span className="px-2.5 sm:px-3 py-1 font-bold text-emerald-700 dark:text-emerald-400 flex items-center justify-center gap-1 border-r border-emerald-200 dark:border-emerald-800/80 whitespace-nowrap flex-1 sm:flex-initial">
                         <CheckCircle2 size={13} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
-                        <span>KOT Printed</span>
+                        <span>{kotShort} Printed</span>
                       </span>
                       <button
                         type="button"
                         onClick={() => handleDirectPrintKot(itemsModalOrder, 'full')}
                         className="px-2.5 sm:px-3 py-1 font-semibold text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap flex-1 sm:flex-initial"
-                        title="Reprint KOT"
+                        title={`Reprint ${kotShort}`}
                       >
                         <RotateCcw size={12} className="shrink-0" />
                         <span>Reprint</span>
@@ -2561,9 +2566,9 @@ export function OrdersPage() {
                       variant="outline"
                       className="flex-1 sm:flex-initial border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 font-bold text-xs h-10 sm:h-9 justify-center whitespace-nowrap"
                       onClick={() => handleDirectPrintKot(itemsModalOrder, 'full')}
-                      leftIcon={<UtensilsCrossed size={13} className="shrink-0" />}
+                      leftIcon={businessCategory.isFood ? <UtensilsCrossed size={13} className="shrink-0" /> : <ShoppingBag size={13} className="shrink-0" />}
                     >
-                      Print KOT
+                      Print {kotShort}
                     </Button>
                   )
                 )}
@@ -2917,7 +2922,7 @@ export function OrdersPage() {
                       onClick={() => handleDirectPrintKot(itemsModalOrder, 'full')}
                       leftIcon={<RotateCcw size={13} className="shrink-0" />}
                     >
-                      Reprint KOT
+                      Reprint {kotShort}
                     </Button>
                   ) : (
                     <Button
@@ -2925,9 +2930,9 @@ export function OrdersPage() {
                       variant="outline"
                       className="flex-1 border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 font-bold text-xs h-10 justify-center whitespace-nowrap"
                       onClick={() => handleDirectPrintKot(itemsModalOrder, 'full')}
-                      leftIcon={<UtensilsCrossed size={13} className="shrink-0" />}
+                      leftIcon={businessCategory.isFood ? <UtensilsCrossed size={13} className="shrink-0" /> : <ShoppingBag size={13} className="shrink-0" />}
                     >
-                      Print KOT
+                      Print {kotShort}
                     </Button>
                   )
                 )}
@@ -3399,7 +3404,7 @@ export function OrdersPage() {
           if (updatedOrder && autoPrintOnAccept) {
             await handleDirectPrintKot(updatedOrder, 'new_only', true, {
               customItems: newlyAddedItems,
-              kotTitle: 'KOT - NEW ADDITIONS'
+              kotTitle: `${kotShort} - NEW ADDITIONS`
             });
           }
         }}
@@ -3552,19 +3557,19 @@ export function OrdersPage() {
           }
           fetchOrdersData(0, true);
 
-          // 1. Send VOID KOT for the cancelled previous item to its station printer
+          // 1. Send VOID ticket for the cancelled previous item to its station printer
           if (previousItem && autoPrintOnAccept) {
             await handleDirectPrintKot(updatedOrder, 'cancelled', true, {
               customItems: [previousItem],
-              kotTitle: 'VOID KOT - ITEM REPLACED',
+              kotTitle: `VOID ${kotShort} - ITEM REPLACED`,
               reason: previousItem.cancellation_reason || 'Replaced with another item'
             });
           }
-          // 2. Send KOT for the newly replaced item to its station printer
+          // 2. Send ticket for the newly replaced item to its station printer
           if (newItem && autoPrintOnAccept) {
             await handleDirectPrintKot(updatedOrder, 'new_only', true, {
               customItems: [newItem],
-              kotTitle: 'KOT - REPLACEMENT ITEM'
+              kotTitle: `${kotShort} - REPLACEMENT ITEM`
             });
           }
         }}
@@ -3839,17 +3844,13 @@ export function OrdersPage() {
         }}
       />
 
-      {/* Floating Action Button (FAB) for Create Order */}
-      {!isCreateModalOpen && !targetOrderForAdd && createPortal(
-        <button
-          onClick={() => setIsCreateModalOpen(true)}
-          className="lg:hidden fixed bottom-20 lg:bottom-8 right-4 lg:right-8 z-50 w-14 h-14 rounded-full bg-primary hover:bg-primary-600 hover:scale-105 shadow-xl flex items-center justify-center text-white transition-all duration-200 cursor-pointer"
-          title="Create New Order"
-        >
-          <Plus size={24} />
-        </button>,
-        document.body
-      )}
+      {/* Reusable Square FAB for Create Order */}
+      <SquareFAB
+        icon={Plus}
+        onClick={() => setIsCreateModalOpen(true)}
+        title="Create New Order"
+        visible={!isCreateModalOpen && !targetOrderForAdd}
+      />
     </div>
   );
 }

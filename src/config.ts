@@ -28,4 +28,7 @@ export const APP_CONFIG = {
   CUSTOMER_PROFILE_URL: getEnv("CUSTOMER_PROFILE_URL", import.meta.env.VITE_CUSTOMER_PROFILE_URL, "http://localhost:5176"),
   GOOGLE_ADSENSE_CLIENT_ID: getEnv("GOOGLE_ADSENSE_CLIENT_ID", import.meta.env.VITE_GOOGLE_ADSENSE_CLIENT_ID, "ca-pub-3222424909905554"),
   FORCE_SHOW_ADS: getEnv("FORCE_SHOW_ADS", import.meta.env.VITE_FORCE_SHOW_ADS, "false"),
+  STOP_ADS: getEnv("STOP_ADS", import.meta.env.VITE_STOP_ADS, "true"),
+  DISABLE_ADS: getEnv("DISABLE_ADS", import.meta.env.VITE_DISABLE_ADS, "false"),
+  ENABLE_ADS: getEnv("ENABLE_ADS", import.meta.env.VITE_ENABLE_ADS, "false"),
 };

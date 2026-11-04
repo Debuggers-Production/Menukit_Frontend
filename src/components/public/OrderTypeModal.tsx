@@ -160,6 +160,7 @@ export const OrderTypeModal: React.FC<OrderTypeModalProps> = ({
       isOpen={isOpen}
       onClose={() => allowClose && onClose()}
       title=""
+      hideCloseButton={!allowClose}
       containerClassName="z-[160]"
     >
       <div className="text-center pb-2 pt-1">

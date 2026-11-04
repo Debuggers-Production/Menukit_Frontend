@@ -19,8 +19,16 @@
     <link rel="dns-prefetch" href="https://googleads.g.doubleclick.net">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="/config.js"></script>
-    <!-- Google AdSense Site Verification -->
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3222424909905554" crossorigin="anonymous"></script>
+    <script>
+      // Early capture of beforeinstallprompt so production PWA install triggers immediately
+      window.addEventListener('beforeinstallprompt', function(e) {
+        e.preventDefault();
+        window.__deferredInstallPrompt = e;
+        window.dispatchEvent(new CustomEvent('menukit-pwa-installable'));
+      });
+    </script>
+    <!-- Google AdSense Account Verification (ControlledGoogleAd loads script dynamically when ads are active) -->
+    <meta name="google-adsense-account" content="ca-pub-3222424909905554">
     <title>Menukit</title>
   </head>
   <body>

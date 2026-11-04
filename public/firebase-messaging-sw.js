@@ -48,7 +48,10 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim());
 });
 
-// Handle notification click: focus open window or navigate
+// Essential fetch handler for Chrome PWA installability criteria
+self.addEventListener('fetch', (event) => {
+  // Pass-through fetch to allow browser to handle caching
+});
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 

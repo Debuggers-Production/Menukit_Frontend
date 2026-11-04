@@ -1125,3 +1125,49 @@ export function isGeneralRetailBusiness(categoryValue?: string | null): boolean 
 export function isSchemeEnabledShop(categoryValue?: string | null): boolean {
   return isFireworksBusiness(categoryValue) || isBakeryBusiness(categoryValue);
 }
+import React from 'react';
+import { 
+  UtensilsCrossed, 
+  Shirt, 
+  Cake, 
+  ShoppingBasket, 
+  Smartphone, 
+  Scissors, 
+  HeartPulse, 
+  Wrench, 
+  PartyPopper, 
+  Store 
+} from 'lucide-react';
+
+export function getCategoryIcon(categoryId?: string | null, size = 15): React.ReactNode {
+  if (!categoryId) return React.createElement(Store, { size });
+  const val = categoryId.toLowerCase().trim();
+  if (val.includes('restaurant') || val.includes('cafe') || val.includes('hotel') || val.includes('food')) {
+    return React.createElement(UtensilsCrossed, { size });
+  }
+  if (val.includes('fashion') || val.includes('apparel') || val.includes('boutique') || val.includes('cloth')) {
+    return React.createElement(Shirt, { size });
+  }
+  if (val.includes('bakery') || val.includes('sweet') || val.includes('cake')) {
+    return React.createElement(Cake, { size });
+  }
+  if (val.includes('grocery') || val.includes('supermarket') || val.includes('mart')) {
+    return React.createElement(ShoppingBasket, { size });
+  }
+  if (val.includes('electronic') || val.includes('mobile')) {
+    return React.createElement(Smartphone, { size });
+  }
+  if (val.includes('beauty') || val.includes('salon') || val.includes('cosmetic')) {
+    return React.createElement(Scissors, { size });
+  }
+  if (val.includes('pharmacy') || val.includes('health') || val.includes('medicine')) {
+    return React.createElement(HeartPulse, { size });
+  }
+  if (val.includes('hardware') || val.includes('home')) {
+    return React.createElement(Wrench, { size });
+  }
+  if (val.includes('firework') || val.includes('cracker')) {
+    return React.createElement(PartyPopper, { size });
+  }
+  return React.createElement(Store, { size });
+}

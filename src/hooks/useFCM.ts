@@ -1,12 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
-import {
-  isFirebaseConfigured,
-  requestFCMToken,
-  setupFCMForegroundListener,
-  testPushNotification,
-  getDeviceInfo,
-} from '../services/fcm';
+import { isFirebaseConfigured, getDeviceInfo } from '../services/fcmConfig';
 
 export function useFCM(shopId?: string) {
   const [permission, setPermission] = useState<NotificationPermission>(() => {
@@ -32,8 +26,10 @@ export function useFCM(shopId?: string) {
           const current = Notification.permission;
           setPermission(current);
           if (current === 'granted' && shopId && !token) {
-            requestFCMToken(shopId).then(res => {
-              if (res.success && res.token) setToken(res.token);
+            import('../services/fcm').then(({ requestFCMToken }) => {
+              requestFCMToken(shopId).then(res => {
+                if (res.success && res.token) setToken(res.token);
+              });
             });
           }
         }
@@ -44,16 +40,19 @@ export function useFCM(shopId?: string) {
     }
   }, [shopId, token]);
 
-  // Listen for foreground push messages
+  // Listen for foreground push messages only when configured
   useEffect(() => {
     if (!isConfigured) return;
 
-    const unsubscribe = setupFCMForegroundListener(() => {
-      // Foreground push handled natively by browser notification and audio chime
+    let unsubscribe: (() => void) | undefined;
+    import('../services/fcm').then(({ setupFCMForegroundListener }) => {
+      unsubscribe = setupFCMForegroundListener(() => {
+        // Foreground push handled natively by browser notification and audio chime
+      });
     });
 
     return () => {
-      unsubscribe();
+      if (unsubscribe) unsubscribe();
     };
   }, [isConfigured]);
 
@@ -65,6 +64,7 @@ export function useFCM(shopId?: string) {
 
     setLoading(true);
     try {
+      const { requestFCMToken } = await import('../services/fcm');
       const res = await requestFCMToken(shopId);
       if (res.success && res.token) {
         setToken(res.token);
@@ -89,6 +89,7 @@ export function useFCM(shopId?: string) {
   const sendTest = useCallback(async () => {
     setLoading(true);
     try {
+      const { testPushNotification } = await import('../services/fcm');
       const res = await testPushNotification(shopId);
       if (res.success) {
         toast.success(res.message);

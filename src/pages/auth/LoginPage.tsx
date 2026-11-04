@@ -69,7 +69,7 @@ export function LoginPage() {
         No password required. We'll send you a secure login code.
       </p>
       <p className="text-center text-xs text-slate-400 mt-4 px-6">
-        By continuing, you are accepting our <Link to="/terms" className="text-primary font-medium hover:underline">Terms of Service</Link> and <Link to="/privacy" className="text-primary font-medium hover:underline">Privacy Policy</Link>.
+        By continuing, you agree to our <Link to="/terms" className="text-primary font-medium hover:underline">Terms of Service</Link>, <Link to="/privacy" className="text-primary font-medium hover:underline">Privacy Policy</Link>, and <Link to="/refund-policy" className="text-primary font-medium hover:underline">Refund Policy</Link>.
       </p>
     </div>
   );

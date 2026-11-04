@@ -196,7 +196,50 @@ async function ensureBluetoothConnected(): Promise<any> {
     }
   }
 
-  // If no active device in memory, prompt user to pair
+  // Try silent reconnect to previously permitted Bluetooth printer without prompt
+  const nav = navigator as any;
+  if (isBluetoothPrintingSupported() && typeof nav.bluetooth?.getDevices === 'function') {
+    try {
+      const permitted = await nav.bluetooth.getDevices();
+      if (permitted && permitted.length > 0) {
+        const savedId = localStorage.getItem('menukit_paired_bt_printer_id');
+        const savedName = localStorage.getItem('menukit_paired_bt_printer_name');
+        let target = permitted.find(
+          (d: any) => (savedId && d.id === savedId) || (savedName && d.name === savedName)
+        );
+        if (!target && permitted.length === 1) target = permitted[0];
+        if (!target) {
+          target = permitted.find(
+            (d: any) => d.name && /kpc|pos|printer|thermal|pt-|mpt|rp|bt/i.test(d.name)
+          ) || permitted[0];
+        }
+
+        if (target) {
+          console.log(`[Bluetooth Printer] Auto-reconnecting to previously permitted "${target.name || target.id}" without prompt...`);
+          activeBluetoothDevice = target;
+          target.addEventListener('gattserverdisconnected', () => {
+            console.warn(`[Bluetooth Printer] Device "${target.name || 'Printer'}" disconnected.`);
+            activeWriteCharacteristic = null;
+            activeGattServer = null;
+          });
+          const server = await target.gatt?.connect();
+          if (server) {
+            activeGattServer = server;
+            const char = await discoverWritableCharacteristic(server);
+            if (char) {
+              activeWriteCharacteristic = char;
+              activeDeviceName = target.name || 'Bluetooth Printer';
+              return char;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[Bluetooth Printer] getDevices silent reconnect failed:', e);
+    }
+  }
+
+  // If no active or previously permitted device in memory, prompt user to pair
   const paired = await requestWebBluetoothPrinter();
   if (paired && paired.characteristic) {
     return paired.characteristic;
@@ -222,12 +265,24 @@ export async function sendEscPosToBluetooth(data: Uint8Array): Promise<boolean> 
   for (let offset = 0; offset < totalLength; offset += CHUNK_SIZE) {
     const chunk = data.slice(offset, Math.min(offset + CHUNK_SIZE, totalLength));
     
-    if (characteristic.writeValueWithoutResponse) {
-      await characteristic.writeValueWithoutResponse(chunk);
-    } else if (characteristic.writeValue) {
-      await characteristic.writeValue(chunk);
-    } else {
-      await (characteristic as any).writeValueWithResponse(chunk);
+    try {
+      if (characteristic.writeValueWithoutResponse) {
+        await characteristic.writeValueWithoutResponse(chunk);
+      } else if (characteristic.writeValue) {
+        await characteristic.writeValue(chunk);
+      } else {
+        await (characteristic as any).writeValueWithResponse(chunk);
+      }
+    } catch (writeErr) {
+      console.warn('[Bluetooth Printer] Write error, retrying with reconnection:', writeErr);
+      const reconnectedChar = await ensureBluetoothConnected();
+      if (reconnectedChar.writeValueWithoutResponse) {
+        await reconnectedChar.writeValueWithoutResponse(chunk);
+      } else if (reconnectedChar.writeValue) {
+        await reconnectedChar.writeValue(chunk);
+      } else {
+        await (reconnectedChar as any).writeValueWithResponse(chunk);
+      }
     }
 
     // Small micro-delay (15ms) between BLE packets to ensure printer MCU processes cleanly

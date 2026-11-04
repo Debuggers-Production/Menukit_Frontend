@@ -275,7 +275,7 @@ export function ThemeCustomizePage() {
           <div className="absolute inset-0 z-10 cursor-default"></div>
           
           {/* Floating Action Button mock */}
-          <div className="absolute bottom-6 right-4 z-20 w-12 h-12 rounded-full shadow-lg flex items-center justify-center text-white" style={{ backgroundColor: formData.primary_color }}>
+          <div className="absolute bottom-6 right-4 z-20 w-12 h-12 rounded-xl shadow-lg flex items-center justify-center text-white border border-white/20" style={{ backgroundColor: formData.primary_color }}>
             <Eye size={20} />
           </div>
         </div>

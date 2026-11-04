@@ -3,8 +3,10 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  PanelLeftClose, Sparkles, Bug, CheckCircle2, ArrowRight, X, Layout, 
-  Maximize2, Coins, Flame, CalendarClock, MessageCircle, Wallet, FileText, Zap, ShieldCheck, Clock
+  Zap, 
+  ArrowRight, X, Coins, MessageCircle, Wallet, 
+  Printer, Store, Layers, CheckCircle2, ShoppingBag, 
+  Percent, Smartphone, Globe2, Radio
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { APP_VERSION, APP_VERSION_NAME, FEATURE_STORAGE_KEY_V1_1_0 } from '@/config/version';
@@ -21,6 +23,7 @@ interface WhatsNewModalProps {
 
 export function WhatsNewModal({ isOpen: controlledIsOpen, onClose: controlledOnClose, forceOpen = false }: WhatsNewModalProps) {
   const [internalOpen, setInternalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'all' | 'schemes' | 'pos' | 'commerce'>('all');
   const [mounted, setMounted] = useState(false);
   const modalRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
@@ -60,90 +63,16 @@ export function WhatsNewModal({ isOpen: controlledIsOpen, onClose: controlledOnC
   const triggerCelebration = () => {
     try {
       confetti({
-        particleCount: 90,
+        particleCount: 85,
         spread: 80,
-        origin: { y: 0.6 },
+        origin: { y: 0.55 },
         zIndex: 9999,
-        colors: ['#f97316', '#eab308', '#10b981', '#6366f1']
+        colors: ['#f97316', '#fb923c', '#f59e0b', '#10b981', '#6366f1']
       });
     } catch {
       // Ignore confetti errors
     }
   };
-
-  const [arrowData, setArrowData] = useState<{
-    startX: number;
-    startY: number;
-    endX: number;
-    endY: number;
-    path: string;
-    targetRect: DOMRect;
-  } | null>(null);
-
-  const featureCardRef = useRef<HTMLDivElement>(null);
-
-  const updateArrow = () => {
-    const target = isSchemeShop
-      ? (document.getElementById('sidebar-nav-schemes') || document.getElementById('sidebar-collapse-toggle-btn'))
-      : (document.getElementById('sidebar-nav-subscription') || document.getElementById('sidebar-collapse-toggle-btn'));
-
-    const modal = modalRef.current;
-    const card = featureCardRef.current;
-
-    if (!target || !modal) {
-      setArrowData(null);
-      return;
-    }
-
-    const tRect = target.getBoundingClientRect();
-    const mRect = modal.getBoundingClientRect();
-    const cRect = card ? card.getBoundingClientRect() : null;
-
-    // Only display on desktop where target is located to the left of the modal
-    if (tRect.width === 0 || tRect.right >= mRect.left - 20) {
-      setArrowData(null);
-      return;
-    }
-
-    const startX = mRect.left;
-    const startY = cRect ? cRect.top + cRect.height / 2 : mRect.top + 220;
-    const endX = tRect.right + 10;
-    const endY = tRect.top + tRect.height / 2;
-
-    const dx = startX - endX;
-    const cp1X = startX - dx * 0.45;
-    const cp1Y = startY;
-    const cp2X = endX + Math.min(dx * 0.4, 80);
-    const cp2Y = endY;
-
-    const path = `M ${startX} ${startY} C ${cp1X} ${cp1Y}, ${cp2X} ${cp2Y}, ${endX} ${endY}`;
-
-    setArrowData({
-      startX,
-      startY,
-      endX,
-      endY,
-      path,
-      targetRect: tRect,
-    });
-  };
-
-  useEffect(() => {
-    if (!isVisible) {
-      setArrowData(null);
-      return;
-    }
-
-    const timer = setTimeout(updateArrow, 250);
-    window.addEventListener('resize', updateArrow);
-    window.addEventListener('scroll', updateArrow, true);
-
-    return () => {
-      clearTimeout(timer);
-      window.removeEventListener('resize', updateArrow);
-      window.removeEventListener('scroll', updateArrow, true);
-    };
-  }, [isVisible, isSchemeShop]);
 
   const markAsAcknowledged = () => {
     try {
@@ -174,7 +103,7 @@ export function WhatsNewModal({ isOpen: controlledIsOpen, onClose: controlledOnC
     if (isSchemeShop) {
       navigate('/schemes');
     } else {
-      navigate('/subscription');
+      navigate('/orders');
     }
 
     if (isControlled && controlledOnClose) {
@@ -188,280 +117,236 @@ export function WhatsNewModal({ isOpen: controlledIsOpen, onClose: controlledOnC
 
   return createPortal(
     <AnimatePresence>
-      <div className="fixed inset-0 z-[9990] flex items-center justify-center p-2.5 sm:p-4 overflow-y-auto">
-        {/* Full-Screen Backdrop covering entire window including header */}
+      <div className="fixed inset-0 z-[9990] flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
+        {/* Full-Screen Backdrop */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           onClick={handleClose}
-          className="fixed inset-0 bg-slate-950/75 backdrop-blur-sm cursor-pointer z-0"
+          className="fixed inset-0 bg-slate-950/75 backdrop-blur-md cursor-pointer z-0"
         />
-
-        {/* Dynamic Curved Pointer Arrow to Sidebar Item */}
-        {arrowData && (
-          <div className="fixed inset-0 pointer-events-none z-10">
-            {/* Pulsating Target Spotlight Indicator */}
-            <div
-              style={{
-                position: 'fixed',
-                left: arrowData.targetRect.left - 4,
-                top: arrowData.targetRect.top - 2,
-                width: arrowData.targetRect.width + 8,
-                height: arrowData.targetRect.height + 4,
-              }}
-              className="pointer-events-auto cursor-pointer"
-              onClick={handlePrimaryAction}
-              title={isSchemeShop ? "Click to open Savings Schemes" : "Click to view Subscription & Auto-Pay"}
-            >
-              <div className="w-full h-full rounded-xl bg-amber-500 text-white flex items-center justify-center gap-1.5 shadow-[0_0_25px_rgba(245,158,11,0.9)] ring-4 ring-amber-400 ring-offset-2 ring-offset-slate-950 border-2 border-white animate-pulse px-2">
-                {isSchemeShop ? (
-                  <>
-                    <Coins size={16} className="text-white fill-current shrink-0" />
-                    <span className="text-[10px] font-black uppercase tracking-wider hidden sm:inline truncate">Schemes</span>
-                  </>
-                ) : (
-                  <>
-                    <Zap size={16} className="text-white fill-current shrink-0" />
-                    <span className="text-[10px] font-black uppercase tracking-wider hidden sm:inline truncate">Subscription</span>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* SVG Arc and Arrowhead */}
-            <svg className="fixed inset-0 w-full h-full pointer-events-none overflow-visible">
-              <defs>
-                <filter id="arrow-glow" x="-20%" y="-20%" width="140%" height="140%">
-                  <feDropShadow dx="0" dy="0" stdDeviation="3" floodColor="#f59e0b" floodOpacity="0.9" />
-                </filter>
-                <linearGradient id="arrow-grad" x1="100%" y1="0%" x2="0%" y2="0%">
-                  <stop offset="0%" stopColor="#ea580c" />
-                  <stop offset="50%" stopColor="#f59e0b" />
-                  <stop offset="100%" stopColor="#fbbf24" />
-                </linearGradient>
-              </defs>
-
-              <motion.path
-                d={arrowData.path}
-                fill="none"
-                stroke="url(#arrow-grad)"
-                strokeWidth="3.5"
-                strokeLinecap="round"
-                strokeDasharray="8 6"
-                filter="url(#arrow-glow)"
-                initial={{ pathLength: 0, opacity: 0 }}
-                animate={{ pathLength: 1, opacity: 1 }}
-                transition={{ duration: 0.6, ease: "easeOut" }}
-              />
-
-              {/* Arrow Head */}
-              <polygon
-                points={`
-                  ${arrowData.endX},${arrowData.endY} 
-                  ${arrowData.endX + 13},${arrowData.endY - 6.5} 
-                  ${arrowData.endX + 9},${arrowData.endY} 
-                  ${arrowData.endX + 13},${arrowData.endY + 6.5}
-                `}
-                fill="#f59e0b"
-                filter="url(#arrow-glow)"
-              />
-            </svg>
-          </div>
-        )}
 
         {/* Modal Card */}
         <motion.div
           ref={modalRef}
-          initial={{ opacity: 0, scale: 0.92, y: 20 }}
+          initial={{ opacity: 0, scale: 0.94, y: 16 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.92, y: 20 }}
-          transition={{ type: "spring", damping: 26, stiffness: 300 }}
-          className="relative w-full max-w-lg max-h-[92vh] sm:max-h-[88vh] bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200/80 dark:border-slate-800 overflow-hidden z-20 flex flex-col my-auto"
+          exit={{ opacity: 0, scale: 0.94, y: 16 }}
+          transition={{ type: "spring", damping: 28, stiffness: 320 }}
+          className="relative w-full max-w-xl max-h-[92vh] bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200/90 dark:border-slate-800 overflow-hidden z-20 flex flex-col my-auto"
         >
-          {/* Top Right Close Button */}
-          <button
-            onClick={handleClose}
-            className="absolute top-3.5 right-3.5 z-30 p-2 rounded-full bg-black/20 hover:bg-black/40 text-white/90 hover:text-white transition-all cursor-pointer backdrop-blur-xs"
-            aria-label="Close"
-          >
-            <X size={18} />
-          </button>
+          {/* Top Brand Accent Bar */}
+          <div className="h-1.5 w-full bg-gradient-to-r from-orange-500 via-amber-500 to-orange-400" />
 
-          {/* Top Decorative Header */}
-          <div className="relative bg-gradient-to-br from-amber-500 via-orange-500 to-rose-600 px-5 pt-5 pb-4 sm:px-6 sm:pt-6 sm:pb-5 text-white overflow-hidden shrink-0">
-            <div className="absolute -top-12 -right-12 w-44 h-44 bg-white/15 rounded-full blur-2xl pointer-events-none" />
-            <div className="absolute -bottom-8 -left-8 w-36 h-36 bg-black/20 rounded-full blur-xl pointer-events-none" />
-
-            {/* Pill Badge */}
-            <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-white/20 border border-white/30 text-white text-[10px] sm:text-[11px] font-black uppercase tracking-wider mb-2 backdrop-blur-xs shadow-xs">
-              <img src={menukitLogo} alt="Menukit" className="w-3.5 h-3.5 object-contain brightness-0 invert" />
-              <span>What's New in v{APP_VERSION}</span>
+          {/* Top Header */}
+          <div className="relative px-5 pt-5 pb-3 sm:px-6 sm:pt-6 sm:pb-4 border-b border-slate-100 dark:border-slate-800/80 bg-slate-50/70 dark:bg-slate-900/50 flex items-start justify-between gap-4 shrink-0">
+            <div className="space-y-1.5 min-w-0">
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 text-[11px] font-bold tracking-tight border border-orange-200 dark:border-orange-800/60">
+                <img src={menukitLogo} alt="Menukit" className="w-3.5 h-3.5 object-contain" />
+                <span>v{APP_VERSION} Major Release</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              </div>
+              <h2 className="text-lg sm:text-xl font-black tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
+                <span>Universal Commerce & Multi-Station Dispatch</span>
+                <Zap size={18} className="text-amber-500 shrink-0" />
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                Welcome to Menukit v2.1.0! Experience our biggest evolution yet: multi-industry catalogs, savings schemes, driver-free thermal POS, and streamlined multi-station routing.
+              </p>
             </div>
 
-            <h2 className="text-lg sm:text-2xl font-black tracking-tight text-white flex items-center gap-2">
-              {isSchemeShop ? (
-                <>
-                  <span>Savings Schemes & Fund Live!</span>
-                  <Coins size={22} className="text-amber-200 fill-current shrink-0" />
-                </>
-              ) : (
-                <>
-                  <span>Auto-Pay Controls & Platform v{APP_VERSION}</span>
-                  <Zap size={20} className="text-amber-200 shrink-0" />
-                </>
-              )}
-            </h2>
-            <p className="text-xs sm:text-sm text-orange-50/95 font-medium mt-1 leading-relaxed">
-              {isSchemeShop
-                ? "Specially built for Crackers and Bakery shops: Launch customer installment schemes, advance festive clubs, and automated WhatsApp due reminders."
-                : "Manage Auto-Pay mandates, switch between Monthly & Yearly cycles, delayed customer number prompts, and automatic tax receipts."}
-            </p>
+            {/* Close Button */}
+            <button
+              onClick={handleClose}
+              className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-700 dark:hover:text-white transition-all cursor-pointer shrink-0 mt-0.5"
+              aria-label="Close"
+            >
+              <X size={16} />
+            </button>
           </div>
 
-          {/* Body Content - flex-1 min-h-0 with internal scroll */}
-          <div className="p-4 sm:p-6 space-y-3 sm:space-y-4 overflow-y-auto flex-1 min-h-0">
-            {/* Feature Showcase Card (Connected to Arrow) */}
-            <div ref={featureCardRef} className="relative rounded-2xl bg-gradient-to-b from-amber-500/10 via-orange-500/5 to-slate-50 dark:from-amber-500/15 dark:via-slate-800/60 dark:to-slate-900 border border-amber-500/20 p-4 select-none overflow-hidden">
-              <div className="flex items-center gap-4 justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 text-white flex items-center justify-center shrink-0 shadow-md shadow-orange-500/25">
-                    {isSchemeShop ? <Coins size={24} className="animate-pulse" /> : <Zap size={24} className="animate-pulse" />}
+          {/* Filter Pills */}
+          <div className="px-5 pt-3 pb-1 border-b border-slate-100 dark:border-slate-800/60 bg-white dark:bg-slate-900 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+            {[
+              { id: 'all', label: 'All Highlights' },
+              { id: 'schemes', label: 'Savings Schemes' },
+              { id: 'pos', label: 'Thermal POS & Stations' },
+              { id: 'commerce', label: 'Multi-Industry' }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`px-3 py-1 rounded-full text-xs font-bold transition-all shrink-0 ${
+                  activeTab === tab.id
+                    ? 'bg-orange-500 text-white shadow-xs'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Body Content - Scrollable */}
+          <div className="p-4 sm:p-5 space-y-3 overflow-y-auto custom-scrollbar flex-1 min-h-0">
+            {/* Featured Hero Card */}
+            {(activeTab === 'all' || activeTab === 'schemes') && (
+              <div className="rounded-2xl p-4 bg-gradient-to-br from-orange-50 via-amber-50/40 to-white dark:from-orange-950/20 dark:via-slate-800/60 dark:to-slate-900 border border-orange-200/80 dark:border-orange-800/50 shadow-xs space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-orange-500 text-white shadow-2xs">
+                    MAJOR FEATURE
+                  </span>
+                  <span className="text-[11px] font-semibold text-orange-600 dark:text-orange-400 flex items-center gap-1">
+                    <CheckCircle2 size={12} />
+                    <span>Live in v2.1.0</span>
+                  </span>
+                </div>
+                <div className="flex items-start gap-3 pt-1">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-orange-500 to-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+                    <Coins size={20} />
                   </div>
-                  <div className="space-y-0.5 text-left">
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-amber-500/15 text-amber-700 dark:text-amber-300">
-                      {isSchemeShop ? "FEATURED FOR YOUR SHOP" : "BILLING & AUTO-PAY"}
-                    </span>
-                    <h3 className="text-sm font-black text-slate-800 dark:text-slate-100">
-                      {isSchemeShop ? "Customer Savings Schemes (Pandu)" : "Auto-Pay Mandate Controls & Billing"}
+                  <div className="space-y-0.5 min-w-0">
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white leading-snug">
+                      Customer Savings Schemes (Pandu / Deepavali Schemes)
                     </h3>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                      {isSchemeShop
-                        ? "Run weekly/monthly installment funds for Diwali crackers, festival sweets, or cake clubs with instant digital tracking."
-                        : "Switch between Monthly and Yearly Auto-Pay, revoke mandates instantly on the gateway with zero unwanted charges, and download official invoices."}
+                    <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                      Built for Crackers, Bakeries, and Retailers: launch recurring weekly or monthly installment clubs, track customer passbooks, issue digital receipts, and automate payment collections.
                     </p>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
 
-            {/* Feature Highlights List */}
-            <div className="space-y-2.5">
-              {isSchemeShop ? (
-                <>
-                  {/* Feature 1: WhatsApp Due Reminders */}
-                  <div className="flex items-start gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
-                    <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 mt-0.5">
-                      <MessageCircle size={16} />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-                        <span>Automated WhatsApp Due Alerts</span>
-                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-600 font-bold">1 Day Before</span>
-                      </h4>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed mt-0.5">
-                        Members receive automated WhatsApp reminders on day 6 (for weekly) or 1 day before due date with their shop currency and direct payment link.
-                      </p>
-                    </div>
+            {/* Feature Highlights Grid / List */}
+            <div className="space-y-2.5 pt-1">
+              {/* Highlight 1: Multi-Industry Expansion */}
+              {(activeTab === 'all' || activeTab === 'commerce') && (
+                <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-800 hover:border-orange-300 dark:hover:border-orange-800 transition-colors">
+                  <div className="w-8 h-8 rounded-lg bg-orange-500/10 text-orange-600 dark:text-orange-400 flex items-center justify-center shrink-0 mt-0.5">
+                    <Store size={16} />
                   </div>
-
-                  {/* Feature 2: Weekly & Monthly Cycles */}
-                  <div className="flex items-start gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
-                    <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
-                      <CalendarClock size={16} />
-                    </div>
-                    <div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
                       <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100">
-                        Flexible Weekly & Monthly Tenures
+                        Universal Commercial Business Models
                       </h4>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed mt-0.5">
-                        Configure customized durations (e.g. 10 months, 52 weeks) with bonus discounts or gift hampers upon completion.
-                      </p>
+                      <span className="text-[9.5px] px-1.5 py-0.5 rounded-md bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 font-bold shrink-0">
+                        5 Industries
+                      </span>
                     </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed mt-0.5">
+                      Tailored workflows for <strong>Fashion & Boutiques</strong> (size/color matrix), <strong>Crackers & Fireworks</strong>, <strong>Wholesale & B2B</strong> (tier discounts), <strong>Bakeries & Sweets</strong>, and <strong>Restaurants, Cafés & Hotels</strong>.
+                    </p>
                   </div>
+                </div>
+              )}
 
-                  {/* Feature 3: Digital Passbook & Ledger */}
-                  <div className="flex items-start gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
-                    <div className="w-8 h-8 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 mt-0.5">
-                      <Wallet size={16} />
-                    </div>
-                    <div>
+              {/* Highlight 2: Thermal POS Printing & Station Dispatch */}
+              {(activeTab === 'all' || activeTab === 'pos') && (
+                <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-800 hover:border-emerald-300 dark:hover:border-emerald-800 transition-colors">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 mt-0.5">
+                    <Printer size={16} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
                       <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100">
-                        Live Passbook & Arrears Tracking
+                        High-Speed Thermal POS & Multi-Station Routing
                       </h4>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed mt-0.5">
-                        Track paid installments, pending dues, customer passbooks, and instant payment receipts with zero bookkeeping hassle.
-                      </p>
+                      <span className="text-[9.5px] px-1.5 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-bold shrink-0">
+                        Zero Drivers
+                      </span>
                     </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed mt-0.5">
+                      Direct 80mm & 58mm receipt printing over WebUSB, Bluetooth, and LAN with zero driver installations. Orders automatically route to billing desks, packing counters, or kitchen KOT.
+                    </p>
                   </div>
-                </>
-              ) : (
-                <>
-                  {/* Feature 1: Customer Phone Number Prompt Timing */}
-                  <div className="flex items-start gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
-                    <div className="w-8 h-8 rounded-xl bg-orange-500/10 text-orange-600 dark:text-orange-400 flex items-center justify-center shrink-0 mt-0.5">
-                      <Clock size={16} />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-                        <span>Smart Customer Number Delay</span>
-                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-orange-500/15 text-orange-600 font-bold">1:30 Mins</span>
-                      </h4>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed mt-0.5">
-                        The customer phone number prompt now waits 1:30 minutes before appearing, giving your guests ample time to browse the menu peacefully without early interruption.
-                      </p>
-                    </div>
-                  </div>
+                </div>
+              )}
 
-                  {/* Feature 2: Auto-Pay Switcher */}
-                  <div className="flex items-start gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
-                    <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 mt-0.5">
-                      <Zap size={16} />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100">
-                        Monthly ⟷ Yearly Auto-Pay Switching
-                      </h4>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed mt-0.5">
-                        Switch seamlessly between monthly and yearly billing cycles anytime while previous gateway mandates are automatically cancelled.
-                      </p>
-                    </div>
+              {/* Highlight 3: WhatsApp Automation */}
+              {(activeTab === 'all' || activeTab === 'schemes') && (
+                <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-800 hover:border-emerald-300 dark:hover:border-emerald-800 transition-colors">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 mt-0.5">
+                    <MessageCircle size={16} />
                   </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100">
+                        Automated WhatsApp Scheme Reminders
+                      </h4>
+                      <span className="text-[9.5px] px-1.5 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-bold shrink-0">
+                        1 Day Before
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed mt-0.5">
+                      Customers automatically receive personalized WhatsApp alerts 1 day before due dates with instant UPI payment links and digital passbook balances.
+                    </p>
+                  </div>
+                </div>
+              )}
 
-                  {/* Feature 3: Immediate Gateway Revocation & GST Invoices */}
-                  <div className="flex items-start gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
-                    <div className="w-8 h-8 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 mt-0.5">
-                      <ShieldCheck size={16} />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100">
-                        Immediate Gateway Revocation & GST Invoices
-                      </h4>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed mt-0.5">
-                        Turn off Auto-Pay with immediate gateway mandate revocation so no charges happen without approval, plus automated GST invoice receipts.
-                      </p>
-                    </div>
+              {/* Highlight 4: Auto-Applied Discounts & 4-Step Checkout */}
+              {(activeTab === 'all' || activeTab === 'commerce') && (
+                <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-800 hover:border-amber-300 dark:hover:border-amber-800 transition-colors">
+                  <div className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
+                    <Percent size={16} />
                   </div>
-                </>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100">
+                        Auto-Applied Discounts & 4-Step Order Pipeline
+                      </h4>
+                      <span className="text-[9.5px] px-1.5 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 font-bold shrink-0">
+                        Instant
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed mt-0.5">
+                      Smooth 4-step pipeline: QR scan / manual order → Auto-applied promo discounts → Multi-station routing → Instant split settlement (Cash + UPI).
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Highlight 5: Multilingual Thermal & Web Support */}
+              {(activeTab === 'all' || activeTab === 'pos') && (
+                <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-800 transition-colors">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 mt-0.5">
+                    <Globe2 size={16} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100">
+                        Multilingual Printing & Authentic Brand Orange
+                      </h4>
+                      <span className="text-[9.5px] px-1.5 py-0.5 rounded-md bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-bold shrink-0">
+                        13+ Languages
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed mt-0.5">
+                      Prints itemized customer receipts in Tamil, Hindi, English, and 10+ Indic scripts, wrapped in Menukit's unified warm brand orange palette.
+                    </p>
+                  </div>
+                </div>
               )}
             </div>
           </div>
 
-          {/* Footer Actions */}
-          <div className="p-3.5 sm:p-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 shrink-0">
+          {/* Sticky Modal Footer Actions */}
+          <div className="p-4 bg-slate-50/80 dark:bg-slate-900/80 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 shrink-0">
             <button
               onClick={handleClose}
-              className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 transition-colors cursor-pointer"
+              className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
             >
-              Maybe Later
+              Close
             </button>
 
             <button
               onClick={handlePrimaryAction}
-              className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:brightness-110 text-white shadow-md shadow-orange-500/20 transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+              className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold bg-orange-500 hover:bg-orange-600 text-white shadow-md shadow-orange-500/25 transition-all cursor-pointer active:scale-98"
             >
-              <span>{isSchemeShop ? "Open Savings Schemes" : "Manage Subscription"}</span>
-              <ArrowRight size={15} />
+              <span>{isSchemeShop ? "Explore Savings Schemes" : "View Live Orders"}</span>
+              <ArrowRight size={14} />
             </button>
           </div>
         </motion.div>

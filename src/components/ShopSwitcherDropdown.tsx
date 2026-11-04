@@ -75,29 +75,29 @@ export function ShopSwitcherDropdown({ collapsed = false }: ShopSwitcherProps) {
           type="button"
           onClick={() => setIsOpen(!isOpen)}
           className={cn(
-            "w-full flex items-center rounded-xl hover:bg-slate-100/80 dark:hover:bg-slate-800/60 transition-colors cursor-pointer",
-            collapsed ? "justify-center p-1.5" : "justify-between p-1"
+            "w-full flex items-center rounded-md hover:bg-slate-100/80 dark:hover:bg-slate-800/60 transition-colors cursor-pointer",
+            collapsed ? "justify-center p-1" : "justify-between p-1"
           )}
           title={collapsed ? (isCreateNew ? 'New Shop' : activeShop?.name || 'Select Shop') : undefined}
         >
           <div className={cn("flex items-center gap-2 min-w-0", collapsed && "justify-center")}>
-            <img src={logo} alt="Menukit Logo" className="h-7 sm:h-8 w-auto object-contain shrink-0" />
+            <img src={logo} alt="Menukit Logo" className="h-6 sm:h-7 w-auto object-contain shrink-0" />
             {!collapsed && (
               <div className="min-w-0 text-left flex flex-col items-start justify-center">
-                <span className="font-heading font-black text-xs sm:text-[14px] leading-tight text-slate-900 dark:text-white truncate max-w-[110px] sm:max-w-[140px]">
+                <span className="font-heading font-bold text-xs sm:text-[13px] leading-tight text-slate-900 dark:text-white truncate max-w-[110px] sm:max-w-[135px]">
                   {isCreateNew ? 'New Shop' : activeShop?.name || 'Select Shop'}
                 </span>
-                <span className="text-[8px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-wider block mt-0.5">Merchant Portal</span>
+                <span className="text-[8px] sm:text-[8.5px] font-semibold text-slate-400 uppercase tracking-wider block mt-0.5">Merchant Portal</span>
               </div>
             )}
           </div>
           {!collapsed && (
-            <ChevronDown size={14} className="text-slate-400 shrink-0 ml-1.5" />
+            <ChevronDown size={13} className="text-slate-400 shrink-0 ml-1" />
           )}
         </button>
 
         {isOpen && (
-          <div className="absolute top-[calc(100%+6px)] left-0 min-w-[240px] w-max max-w-[290px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl z-[100] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150">
+          <div className="absolute top-[calc(100%+6px)] left-0 min-w-[240px] w-max max-w-[290px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl z-[100] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150">
             <div className="overflow-y-auto custom-scrollbar max-h-[60vh]">
               {ownedShops.length > 0 && (
                 <div className="py-2">
@@ -164,7 +164,7 @@ export function ShopSwitcherDropdown({ collapsed = false }: ShopSwitcherProps) {
                   setIsOpen(false);
                   setIsModalOpen(true);
                 }}
-                className="w-full flex items-center justify-center gap-2 px-3 py-2 text-[13px] font-bold text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950/40 rounded-xl transition-all border border-orange-200/60 dark:border-orange-900/40 shadow-xs cursor-pointer"
+                className="w-full flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-semibold text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950/40 rounded-md transition-all border border-orange-200/60 dark:border-orange-900/40 shadow-2xs cursor-pointer"
               >
                 <Plus className="w-4 h-4 stroke-[2.5]" />
                 <span>{ownedShops.length > 0 ? 'Add New Branch / Shop' : 'Create Shop'}</span>

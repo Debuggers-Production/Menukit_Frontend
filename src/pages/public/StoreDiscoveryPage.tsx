@@ -1,10 +1,10 @@
 import { LinkifiedText } from '../../components/LinkifiedText';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useNavigate, useLocation } from 'react-router';
+import { useNavigate, useLocation, Link } from 'react-router';
 import {
   QrCode, MapPin, Star, ArrowRight,
-  Navigation, Tag, X, Search, Store, Gift, Phone, Clock, ExternalLink, Flame, Crown, Sparkles, Truck,
+  Navigation, Tag, X, Search, Store, Gift, Phone, Clock, ExternalLink, Flame, Crown, Truck,
   Percent, Banknote, Layers, TrendingDown, UtensilsCrossed
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -21,27 +21,39 @@ const BrandFooter = ({ mode }: { mode: 'landing' | 'scanner' | 'map' }) => {
   if (mode === 'map') {
     return (
       <div style={{
-        background: 'rgba(255,255,255,.9)', backdropFilter: 'blur(8px)',
+        background: 'rgba(255,255,255,.94)', backdropFilter: 'blur(10px)',
         borderTop: '1px solid #e2e8f0', padding: '6px 16px', zIndex: 50,
-        display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, flexShrink: 0
+        display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, flexShrink: 0, flexWrap: 'wrap'
       }}>
-        <span style={{ fontSize: 10, color: '#94a3b8', fontWeight: 500 }}>Powered by</span>
-        <a href="https://debuggerstechnologies.com/menukit/" target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, fontWeight: 800, background: 'linear-gradient(90deg, #f97316, #f59e0b)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
-          Menukit
-          <ExternalLink size={10} color="#f97316" />
-        </a>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ fontSize: 10, color: '#94a3b8', fontWeight: 500 }}>Powered by</span>
+          <a href="https://debuggerstechnologies.com/menukit/" target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, fontWeight: 800, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 3 }}>
+            <span style={{ color: '#ea580c' }}>Menukit</span>
+            <ExternalLink size={10} color="#f97316" />
+          </a>
+        </div>
+        <span style={{ color: '#cbd5e1', fontSize: 10 }}>•</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Link to="/terms" style={{ fontSize: 10, color: '#64748b', fontWeight: 600, textDecoration: 'none' }}>Terms</Link>
+          <span style={{ color: '#cbd5e1', fontSize: 10 }}>•</span>
+          <Link to="/privacy" style={{ fontSize: 10, color: '#64748b', fontWeight: 600, textDecoration: 'none' }}>Privacy</Link>
+        </div>
       </div>
     );
   }
 
   if (mode === 'landing') {
     return (
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
-        <div className="flex items-center gap-2.5 px-5 py-2 bg-white/60 backdrop-blur-xl border border-white/80 rounded-full shadow-[0_8px_30px_rgba(0,0,0,0.06)] hover:bg-white/80 transition-colors">
-          <a href="https://debuggerstechnologies.com/menukit/" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-[15px] font-black no-underline hover:opacity-80 transition-opacity">
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-500 to-amber-500">Menukit</span>
-            <ExternalLink size={14} className="text-orange-500" />
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-[90vw]">
+        <div className="flex items-center gap-3 px-4 py-2 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-white/90 dark:border-slate-800 rounded-full shadow-[0_8px_30px_rgba(0,0,0,0.08)]">
+          <a href="https://debuggerstechnologies.com/menukit/" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs font-black no-underline hover:opacity-80 transition-opacity">
+            <span className="text-orange-600">Menukit</span>
+            <ExternalLink size={11} className="text-orange-500" />
           </a>
+          <span className="text-slate-300 dark:text-slate-700 text-xs">•</span>
+          <Link to="/terms" className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 hover:text-orange-600 transition-colors">Terms</Link>
+          <span className="text-slate-300 dark:text-slate-700 text-xs">•</span>
+          <Link to="/privacy" className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 hover:text-orange-600 transition-colors">Privacy</Link>
         </div>
       </div>
     );
@@ -50,13 +62,21 @@ const BrandFooter = ({ mode }: { mode: 'landing' | 'scanner' | 'map' }) => {
   return (
     <div style={{
       position: 'absolute', bottom: 16, left: 0, right: 0,
-      display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, zIndex: 40
+      display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 10, zIndex: 40, flexWrap: 'wrap', padding: '0 12px'
     }}>
-      <span style={{ fontSize: 10, color: 'rgba(255,255,255,.5)', fontWeight: 500 }}>Powered by</span>
-      <a href="https://debuggerstechnologies.com/menukit/" target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, fontWeight: 800, background: 'linear-gradient(90deg, #f97316, #f59e0b)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
-        Menukit
-        <ExternalLink size={10} color="#f97316" />
-      </a>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <span style={{ fontSize: 10, color: 'rgba(255,255,255,.7)', fontWeight: 500 }}>Powered by</span>
+        <a href="https://debuggerstechnologies.com/menukit/" target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, fontWeight: 800, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 3 }}>
+          <span style={{ color: '#ea580c' }}>Menukit</span>
+          <ExternalLink size={10} color="#f97316" />
+        </a>
+      </div>
+      <span style={{ color: 'rgba(255,255,255,.4)', fontSize: 10 }}>•</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Link to="/terms" style={{ fontSize: 10, color: 'rgba(255,255,255,.8)', fontWeight: 600, textDecoration: 'none' }}>Terms</Link>
+        <span style={{ color: 'rgba(255,255,255,.4)', fontSize: 10 }}>•</span>
+        <Link to="/privacy" style={{ fontSize: 10, color: 'rgba(255,255,255,.8)', fontWeight: 600, textDecoration: 'none' }}>Privacy</Link>
+      </div>
     </div>
   );
 };
@@ -803,7 +823,7 @@ export function StoreDiscoveryPage() {
               </div>
             )}
             
-            <h3 style={{ color: '#0f172a', fontSize: '1.25rem', fontWeight: 800, margin: '0 0 8px 0', letterSpacing: '-0.02em' }}>Scan any MenuKit QR code</h3>
+            <h3 style={{ color: '#0f172a', fontSize: '1.25rem', fontWeight: 800, margin: '0 0 8px 0', letterSpacing: '-0.02em' }}>Scan any <span style={{ color: '#ea580c' }}>Menukit</span> QR code</h3>
             <p style={{ color: '#64748b', fontSize: '.9rem', margin: 0, fontWeight: 500 }}>
               to view menu
             </p>

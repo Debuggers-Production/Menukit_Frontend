@@ -1,18 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Sparkles, Save, Eye, PenTool, CheckCircle2, AlertCircle, RotateCcw,
-  Check, Store, MessageSquareQuote, Shield, Minimize2, Maximize2, X, Type
+  Save, Eye, CheckCircle2, AlertCircle, RotateCcw,
+  Check, Store, MessageSquareQuote, Minimize2, Maximize2, X, Type
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { api } from '@/services/api';
 import { useShopStore } from '@/store/shopStore';
 import { useHeaderStore } from '@/store/useHeaderStore';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { ChalkboardModal } from '@/components/chalkboard/ChalkboardModal';
 import { resolveChalkboardMessage } from '@/components/chalkboard/chalkboardUtils';
 import { MiniAFrame } from '@/components/chalkboard/AFrameIllustration';
 import { HeaderActions } from '@/components/HeaderActions';
+import { HorizontalScrollContainer } from '@/components/ui/HorizontalScrollContainer';
 
 export function ChalkboardPage() {
   const { shop, setShop } = useShopStore();
@@ -28,7 +29,7 @@ export function ChalkboardPage() {
   const [isMobileFloatingMinimized, setIsMobileFloatingMinimized] = useState<boolean>(false);
 
   useEffect(() => {
-    setHeaderTitle('Chalkboard Sign', 'Sidewalk chalkboard specials.');
+    setHeaderTitle('Chalkboard Sign');
 
     const fetchChalkboard = async () => {
       try {
@@ -127,7 +128,7 @@ export function ChalkboardPage() {
   const resolvedPreviewMessage = resolveChalkboardMessage(message, 'Siva');
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto pb-16">
+    <div className="space-y-4 w-full pb-16 animate-fade-in">
       {/* Header Actions for Top Bar */}
       <HeaderActions>
         <div className="flex items-center gap-2">
@@ -135,21 +136,21 @@ export function ChalkboardPage() {
             variant="outline"
             size="sm"
             onClick={() => setIsPreviewOpen(true)}
-            className="gap-1.5 font-bold border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800"
+            className="gap-1.5 font-semibold rounded-md border-border text-xs h-8"
           >
-            <Eye size={14} />
-            Preview Chalkboard
+            <Eye size={13} />
+            Preview Sign
           </Button>
           <Button
             onClick={handleSave}
             disabled={isSaving || isLoading}
             size="sm"
-            className="gap-1.5 font-bold shadow-xs bg-amber-600 hover:bg-amber-700 text-white"
+            className="gap-1.5 font-semibold shadow-2xs rounded-md bg-primary hover:bg-primary/90 text-white text-xs h-8"
           >
             {isSaving ? (
               <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
             ) : (
-              <Save size={14} />
+              <Save size={13} />
             )}
             Save Changes
           </Button>
@@ -157,12 +158,12 @@ export function ChalkboardPage() {
       </HeaderActions>
 
       {/* Mobile-Only Action Bar */}
-      <div className="flex sm:hidden items-center justify-between gap-2 p-3 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+      <div className="flex sm:hidden items-center justify-between gap-2 p-2.5 bg-card rounded-lg border border-border/80 shadow-2xs">
         <Button
           variant="outline"
           size="sm"
           onClick={() => setIsPreviewOpen(true)}
-          className="gap-1.5 font-bold text-xs"
+          className="gap-1.5 font-semibold text-xs h-8 rounded-md"
         >
           <Eye size={13} />
           Preview
@@ -171,7 +172,7 @@ export function ChalkboardPage() {
           onClick={handleSave}
           disabled={isSaving || isLoading}
           size="sm"
-          className="gap-1.5 font-bold text-xs bg-amber-600 hover:bg-amber-700 text-white"
+          className="gap-1.5 font-semibold text-xs bg-primary hover:bg-primary/90 text-white h-8 rounded-md"
         >
           {isSaving ? (
             <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -182,20 +183,20 @@ export function ChalkboardPage() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Left Column: Form Settings */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="lg:col-span-2 space-y-4">
           {/* Main Control Container */}
-          <div className="space-y-5 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs rounded-2xl p-5">
+          <div className="space-y-4 bg-card border border-border/80 shadow-2xs rounded-lg p-4 sm:p-5">
             {/* Board Header Title Field */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <label className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                  <Type size={16} className="text-amber-500" />
+                <label className="text-xs sm:text-sm font-bold text-foreground flex items-center gap-1.5">
+                  <Type size={14} className="text-amber-500" />
                   Board Header Title
                 </label>
-                <span className="text-xs text-slate-400 font-medium">
-                  {title.length}/30 characters
+                <span className="text-[11px] font-mono text-muted-foreground">
+                  {title.length}/30 chars
                 </span>
               </div>
               <input
@@ -204,23 +205,23 @@ export function ChalkboardPage() {
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="TODAY'S SPECIAL (Default if left empty)"
-                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 text-sm font-semibold tracking-wide focus:outline-none focus:ring-2 focus:ring-amber-500 transition-all placeholder:text-slate-400 placeholder:font-normal"
+                className="w-full h-9 px-3 rounded-md border border-input bg-background text-foreground text-xs sm:text-sm font-medium tracking-wide focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all placeholder:text-muted-foreground"
               />
             </div>
 
             {/* Message Textarea */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <label className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                  <MessageSquareQuote size={16} className="text-amber-500" />
+                <label className="text-xs sm:text-sm font-bold text-foreground flex items-center gap-1.5">
+                  <MessageSquareQuote size={14} className="text-amber-500" />
                   Custom Chalkboard Message
                 </label>
-                <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold transition-colors ${
+                <span className={`text-[11px] font-mono px-2 py-0.5 rounded-md font-semibold transition-colors ${
                   isAtCharLimit || isAtLineLimit
-                    ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 font-bold'
+                    ? 'bg-destructive/10 text-destructive'
                     : message.length >= MAX_CHARS * 0.8 || lineCount >= MAX_LINES - 1
-                    ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                    ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                    : 'bg-muted text-muted-foreground'
                 }`}>
                   {message.length}/{MAX_CHARS} chars • {lineCount}/{MAX_LINES} lines
                 </span>
@@ -232,15 +233,15 @@ export function ChalkboardPage() {
                 onChange={handleMessageChange}
                 onKeyDown={handleMessageKeyDown}
                 placeholder={`Welcome to our hotel!\nToday's special:\nChicken Biryani + Fresh Lime\nOnly ₹199`}
-                className={`w-full p-4 rounded-xl border bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 text-sm leading-relaxed focus:outline-none focus:ring-2 font-sans resize-none transition-all placeholder:text-slate-400 ${
+                className={`w-full p-3 rounded-md border bg-background text-foreground text-xs sm:text-sm leading-relaxed focus:outline-none focus:ring-1 resize-none transition-all placeholder:text-muted-foreground ${
                   isAtCharLimit || isAtLineLimit
-                    ? 'border-rose-300 dark:border-rose-800 focus:ring-rose-500'
-                    : 'border-slate-200 dark:border-slate-700 focus:ring-amber-500'
+                    ? 'border-destructive focus:ring-destructive'
+                    : 'border-input focus:ring-primary focus:border-primary'
                 }`}
               />
               {(isAtCharLimit || isAtLineLimit) && (
                 <div className="flex justify-end">
-                  <span className="text-rose-600 dark:text-rose-400 font-bold text-[11px] flex items-center gap-1">
+                  <span className="text-destructive font-semibold text-[11px] flex items-center gap-1">
                     <AlertCircle size={12} /> Limit reached
                   </span>
                 </div>
@@ -248,29 +249,29 @@ export function ChalkboardPage() {
             </div>
 
             {/* Quick Preset Templates */}
-            <div className="space-y-2 pt-1">
-              <label className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
+            <div className="space-y-1.5 pt-1 border-t border-border/60">
+              <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block">
                 Quick Message Templates
               </label>
-              <div className="flex flex-wrap gap-2">
+              <HorizontalScrollContainer scrollAmount={220} contentClassName="flex gap-1.5 py-0.5 items-center">
                 <button
                   type="button"
                   onClick={() => applyPreset("TODAY'S SPECIAL", "Welcome to our hotel!\nToday's special:\nChicken Biryani + Fresh Lime\nOnly ₹199")}
-                  className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60 hover:bg-amber-100 dark:hover:bg-amber-900/60 transition-colors cursor-pointer"
+                  className="px-2.5 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/30 hover:bg-amber-500/20 transition-colors cursor-pointer"
                 >
-                  🍗 Today's Special Combo
+                  🍗 Special Combo
                 </button>
                 <button
                   type="button"
                   onClick={() => applyPreset("WEEKEND SPECIAL", "Weekend Bonanza!\nFlat 20% OFF on all Starters.\nOrder now!")}
-                  className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition-colors cursor-pointer"
+                  className="px-2.5 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap bg-rose-500/10 text-rose-700 dark:text-rose-300 border border-rose-500/30 hover:bg-rose-500/20 transition-colors cursor-pointer"
                 >
                   🔥 Weekend 20% Promo
                 </button>
                 <button
                   type="button"
                   onClick={() => applyPreset("CHEF'S PICK", "Chef's Recommendation:\nPaneer Butter Masala\nwith Garlic Naan")}
-                  className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors cursor-pointer"
+                  className="px-2.5 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/20 transition-colors cursor-pointer"
                 >
                   🍲 Chef's Choice
                 </button>
@@ -281,62 +282,62 @@ export function ChalkboardPage() {
                     setMessage('');
                     toast.success('Cleared to dynamic customer greeting mode!');
                   }}
-                  className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                  className="px-2.5 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap bg-muted text-muted-foreground border border-border hover:bg-muted/80 hover:text-foreground transition-colors cursor-pointer"
                 >
                   ✨ Clear (Dynamic "Hi, {`{Name}`}!")
                 </button>
-              </div>
+              </HorizontalScrollContainer>
             </div>
           </div>
 
           {/* Fallback Logic Explanation Card */}
-          <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/20 text-slate-800 dark:text-slate-200 space-y-2.5">
-            <div className="flex items-center gap-2 font-bold text-amber-700 dark:text-amber-400 text-sm">
-              <AlertCircle size={17} />
+          <div className="p-4 rounded-lg bg-card border border-border/80 text-foreground space-y-2.5 shadow-2xs">
+            <div className="flex items-center gap-1.5 font-bold text-primary text-xs sm:text-sm">
+              <AlertCircle size={15} />
               Automatic Dynamic Greeting Logic
             </div>
-            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+            <p className="text-xs text-muted-foreground leading-relaxed">
               If you leave the message field empty, the public menu resolves the greeting automatically at runtime:
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1 text-xs">
-              <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-amber-500/20 shadow-xs">
-                <span className="font-extrabold text-amber-600 dark:text-amber-400 block mb-0.5">1. Custom Message</span>
-                <span className="text-slate-500">Your custom text entered above is displayed.</span>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 text-xs">
+              <div className="p-2.5 rounded-md bg-muted/40 border border-border/80 shadow-2xs">
+                <span className="font-bold text-amber-600 dark:text-amber-400 block mb-0.5 text-[11px]">1. Custom Message</span>
+                <span className="text-[11px] text-muted-foreground">Your custom text entered above is displayed on sidewalk sign.</span>
               </div>
-              <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-amber-500/20 shadow-xs">
-                <span className="font-extrabold text-amber-600 dark:text-amber-400 block mb-0.5">2. Logged-in User</span>
-                <span className="text-slate-500">Empty message resolves to: <b className="text-slate-800 dark:text-slate-200">"Hi, Siva!"</b></span>
+              <div className="p-2.5 rounded-md bg-muted/40 border border-border/80 shadow-2xs">
+                <span className="font-bold text-amber-600 dark:text-amber-400 block mb-0.5 text-[11px]">2. Logged-in User</span>
+                <span className="text-[11px] text-muted-foreground">Empty message resolves to: <b className="text-foreground">"Hi, Siva!"</b></span>
               </div>
-              <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-amber-500/20 shadow-xs">
-                <span className="font-extrabold text-amber-600 dark:text-amber-400 block mb-0.5">3. Guest Fallback</span>
-                <span className="text-slate-500">If unauthenticated, safely displays: <b className="text-slate-800 dark:text-slate-200">"Hi!"</b></span>
+              <div className="p-2.5 rounded-md bg-muted/40 border border-border/80 shadow-2xs">
+                <span className="font-bold text-amber-600 dark:text-amber-400 block mb-0.5 text-[11px]">3. Guest Fallback</span>
+                <span className="text-[11px] text-muted-foreground">If unauthenticated, safely displays: <b className="text-foreground">"Hi!"</b></span>
               </div>
             </div>
           </div>
         </div>
 
         {/* Right Column: Live Board Miniature Preview (Sticky on desktop, hidden on mobile) */}
-        <div className="hidden lg:block lg:sticky lg:top-6 self-start space-y-6">
-          <Card className="border border-slate-200/80 dark:border-slate-800 shadow-sm rounded-2xl overflow-hidden">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between">
+        <div className="hidden lg:block lg:sticky lg:top-6 self-start space-y-4">
+          <Card className="border border-border/80 shadow-2xs rounded-lg overflow-hidden bg-card">
+            <CardHeader className="p-4 pb-2 border-b border-border/60">
+              <CardTitle className="text-xs font-bold text-foreground flex items-center justify-between">
                 <span>Sidewalk Sign Look</span>
-                <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-semibold">
+                <span className="text-[10px] px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-semibold">
                   Live on Menu
                 </span>
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4 flex flex-col items-center justify-center p-6 text-center">
-              <div className="w-36 h-44 drop-shadow-xl hover:scale-105 transition-transform cursor-pointer" onClick={() => setIsPreviewOpen(true)}>
+            <CardContent className="space-y-3.5 flex flex-col items-center justify-center p-5 text-center">
+              <div className="w-32 h-40 drop-shadow-md hover:scale-105 transition-transform cursor-pointer" onClick={() => setIsPreviewOpen(true)}>
                 <MiniAFrame className="w-full h-full" title={title} />
               </div>
 
               <div className="space-y-1">
-                <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                <p className="text-xs font-bold text-foreground">
                   Physical Miniature A-Frame Sign
                 </p>
-                <p className="text-[11px] text-slate-500">
-                  Floats on the right side with a gentle bobbing animation. Tapping it opens the fullscreen chalkboard experience.
+                <p className="text-[11px] text-muted-foreground leading-normal">
+                  Floats on the customer menu with gentle bobbing. Tapping it opens the chalkboard sign experience.
                 </p>
               </div>
 
@@ -344,9 +345,9 @@ export function ChalkboardPage() {
                 variant="outline"
                 size="sm"
                 onClick={() => setIsPreviewOpen(true)}
-                className="w-full gap-2 border-amber-500/40 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                className="w-full gap-1.5 border-border text-foreground hover:bg-muted text-xs h-8 rounded-md"
               >
-                <Eye size={15} />
+                <Eye size={13} />
                 Test Writing Animation
               </Button>
             </CardContent>
@@ -357,13 +358,13 @@ export function ChalkboardPage() {
       {/* Mobile Floating Preview Window (< lg) */}
       <div className="lg:hidden">
         {isMobileFloatingOpen && !isMobileFloatingMinimized ? (
-          <div className="fixed bottom-20 right-3 z-40 w-52 sm:w-60 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl shadow-2xl border border-amber-500/30 dark:border-amber-500/20 p-3 transition-all duration-300 animate-in fade-in slide-in-from-bottom-5">
+          <div className="fixed bottom-20 right-3 z-40 w-52 sm:w-60 bg-card/95 backdrop-blur-md rounded-lg shadow-xl border border-border p-3 transition-all duration-300 animate-in fade-in slide-in-from-bottom-5">
             {/* Header with Title & Controls */}
-            <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100 dark:border-slate-800">
+            <div className="flex items-center justify-between pb-2 mb-2 border-b border-border/60">
               <div className="flex items-center gap-1.5">
                 <span className={`w-2 h-2 rounded-full ${isEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
-                <span className="text-xs font-bold text-slate-800 dark:text-slate-200">Sign Preview</span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-semibold">
+                <span className="text-xs font-bold text-foreground">Sign Preview</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold">
                   {isEnabled ? 'Live' : 'Off'}
                 </span>
               </div>
@@ -371,20 +372,20 @@ export function ChalkboardPage() {
                 <button
                   type="button"
                   onClick={() => setIsMobileFloatingMinimized(true)}
-                  className="p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
                   title="Minimize preview"
                   aria-label="Minimize preview"
                 >
-                  <Minimize2 size={13} />
+                  <Minimize2 size={12} />
                 </button>
                 <button
                   type="button"
                   onClick={() => setIsMobileFloatingOpen(false)}
-                  className="p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
                   title="Close preview"
                   aria-label="Close preview"
                 >
-                  <X size={13} />
+                  <X size={12} />
                 </button>
               </div>
             </div>
@@ -392,12 +393,12 @@ export function ChalkboardPage() {
             {/* Board Miniature Visual */}
             <div className="flex flex-col items-center justify-center pt-1 pb-2">
               <div
-                className="w-28 h-36 drop-shadow-xl hover:scale-105 active:scale-95 transition-transform cursor-pointer"
+                className="w-24 h-32 drop-shadow-md hover:scale-105 active:scale-95 transition-transform cursor-pointer"
                 onClick={() => setIsPreviewOpen(true)}
               >
                 <MiniAFrame className="w-full h-full" title={title} />
               </div>
-              <p className="text-[10px] text-slate-500 mt-1 text-center font-medium">
+              <p className="text-[10px] text-muted-foreground mt-1 text-center font-medium">
                 Tap sign to preview full board
               </p>
             </div>
@@ -407,7 +408,7 @@ export function ChalkboardPage() {
               variant="outline"
               size="sm"
               onClick={() => setIsPreviewOpen(true)}
-              className="w-full h-7 text-[11px] gap-1.5 border-amber-500/40 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 rounded-xl"
+              className="w-full h-7 text-[11px] gap-1.5 border-border text-foreground hover:bg-muted rounded-md"
             >
               <Eye size={12} />
               Test Animation
@@ -421,15 +422,13 @@ export function ChalkboardPage() {
               setIsMobileFloatingOpen(true);
               setIsMobileFloatingMinimized(false);
             }}
-            className="fixed bottom-20 right-3 z-40 px-3 py-2 rounded-full bg-slate-900/90 dark:bg-amber-500/95 text-white dark:text-slate-950 shadow-xl border border-white/20 dark:border-amber-400/40 backdrop-blur-md flex items-center gap-2 text-xs font-bold active:scale-95 transition-transform animate-in fade-in cursor-pointer"
+            className="fixed bottom-20 right-3 z-40 px-3 py-1.5 rounded-md bg-card text-foreground shadow-lg border border-border backdrop-blur-md flex items-center gap-1.5 text-xs font-bold active:scale-95 transition-transform animate-in fade-in cursor-pointer"
             title="Open Live Chalkboard Preview"
             aria-label="Open Live Chalkboard Preview"
           >
-            <div className="w-4 h-4 flex items-center justify-center">
-              <Store size={14} />
-            </div>
+            <Store size={13} className="text-amber-500" />
             <span>Sign Preview</span>
-            <Maximize2 size={12} className="opacity-80 ml-0.5" />
+            <Maximize2 size={11} className="opacity-70 ml-0.5" />
           </button>
         )}
       </div>

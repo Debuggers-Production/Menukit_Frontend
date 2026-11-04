@@ -6,7 +6,7 @@ import fs from 'fs'
 
 const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf-8'));
 const buildTime = Date.now();
-const packageVersion = pkg.version || '2.0.5';
+const packageVersion = pkg.version || '2.1.0';
 
 // Plugin to auto-generate public/version.json on build / dev start
 function versionGeneratorPlugin() {
@@ -37,7 +37,7 @@ export default defineConfig({
     __APP_BUILD_TIME__: JSON.stringify(buildTime),
     __APP_VERSION__: JSON.stringify(packageVersion),
   },
-  resolve: {
+    resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
@@ -62,7 +62,27 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (id.includes('node_modules')) {
-            if (id.includes('@excalidraw')) {
+            // Excalidraw and its bundled drawing/diagram dependencies
+            if (
+              id.includes('@excalidraw') ||
+              id.includes('mermaid') ||
+              id.includes('roughjs') ||
+              id.includes('open-color') ||
+              id.includes('pica') ||
+              id.includes('jotai') ||
+              id.includes('fractional-indexing') ||
+              id.includes('tunnel-rat') ||
+              id.includes('points-on-curve') ||
+              id.includes('perfect-freehand') ||
+              id.includes('browser-fs-access') ||
+              id.includes('image-blob-reduce') ||
+              id.includes('vscode-language') ||
+              id.includes('vscode-jsonrpc') ||
+              id.includes('khroma') ||
+              id.includes('d3-') ||
+              id.includes('cytoscape') ||
+              id.includes('dagre-d3-es')
+            ) {
               return 'vendor-excalidraw';
             }
             if (id.includes('tsparticles') || id.includes('matter-js') || id.includes('canvas-confetti')) {
@@ -91,6 +111,9 @@ export default defineConfig({
             }
             if (id.includes('leaflet') || id.includes('react-leaflet')) {
               return 'vendor-map';
+            }
+            if (id.includes('date-fns')) {
+              return 'vendor-date';
             }
             if (id.includes('react') || id.includes('react-dom') || id.includes('react-router')) {
               return 'vendor-react';

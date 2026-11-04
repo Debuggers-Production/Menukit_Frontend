@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import { Link } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Gift, Phone, ShieldCheck, User, ChevronDown, Crown, Sparkles, X } from 'lucide-react';
+import { Gift, Phone, ShieldCheck, User, ChevronDown, Crown, X } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { triggerHaptic, HAPTIC_PATTERNS } from '@/utils/haptic';
 import { customerService } from '../../services/customers';
@@ -56,13 +58,19 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
       }
       return 'intro';
     }
+    return initialStep || 'intro';
   });
 
   useEffect(() => {
-    if (initialStep === 'mobile' || initialStep === 'otp') {
-      setStep(initialStep);
+    if (initialStep) {
+      if (initialStep === 'intro' || initialStep === 'already_unlocked') {
+        const isShopUnlocked = Boolean(sessionStorage.getItem(`member_status_${shopId}`));
+        setStep(isShopUnlocked ? 'already_unlocked' : 'intro');
+      } else {
+        setStep(initialStep);
+      }
     }
-  }, [initialStep]);
+  }, [initialStep, shopId]);
 
   const [mobileNumber, setMobileNumber] = useState(() => {
     try {
@@ -437,7 +445,7 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
     window.dispatchEvent(new Event('menukit-realtime-update'));
   };
 
-  return (
+  const popupContent = (
     <div 
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
       onClick={(e) => {
@@ -693,9 +701,13 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
                 
                 <p className="text-xs text-center text-gray-500 mt-4">
                   By continuing, you accept our{' '}
-                  <a href="https://menukit.debuggerstechnologies.com/terms" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium">
-                    Terms and Conditions
-                  </a>
+                  <Link to="/terms" target="_blank" className="text-blue-600 hover:underline font-medium">
+                    Terms
+                  </Link>{' '}
+                  &{' '}
+                  <Link to="/privacy" target="_blank" className="text-blue-600 hover:underline font-medium">
+                    Privacy Policy
+                  </Link>
                 </p>
               </form>
             </motion.div>
@@ -881,4 +893,6 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
       </motion.div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(popupContent, document.body) : null;
 };

@@ -1,10 +1,11 @@
 import { cn } from '@/utils/cn';
+import { createPortal } from 'react-dom';
 import { LinkifiedText } from '../../components/LinkifiedText';
 import { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
 import {
   Plus, Tag, Trash2, Edit2, ToggleLeft, ToggleRight, Calendar, Percent,
-  ShoppingBag, Layers, Clock, CheckCircle2, AlertCircle, Timer, Sparkles, X, Search, Crown, ChevronLeft, ChevronRight, Gift, Copy, Loader2,
+  ShoppingBag, Layers, Clock, CheckCircle2, AlertCircle, Timer, X, Search, Crown, ChevronLeft, ChevronRight, Gift, Copy, Loader2,
   ShieldCheck, History, User, Phone, TrendingDown
 } from 'lucide-react';
 import { api } from '@/services/api';
@@ -41,66 +42,66 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 
 const SortableDiscountItem = ({ children, id }: { children: React.ReactNode, id: string }) => {
- const {
- attributes,
- listeners,
- setNodeRef,
- transform,
- transition,
- isDragging,
- } = useSortable({ id });
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
 
- const style = {
- transform: CSS.Transform.toString(transform),
- transition,
- zIndex: isDragging ? 10 : 1,
- position: 'relative'as const,
- };
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 10 : 1,
+    position: 'relative' as const,
+  };
 
- return (
- <div ref={setNodeRef} style={style} className={`flex items-stretch gap-2 ${isDragging ? 'opacity-50': ''}`}>
- <div className="flex items-center justify-center touch-none cursor-grab active:cursor-grabbing text-muted-foreground hover:text-muted-foreground px-1 py-4 mt-2 mb-2 bg-muted/50 rounded-xl border border-transparent hover:border-border dark:hover:border-slate-700 transition-colors" {...attributes} {...listeners}>
- <GripVertical size={20} />
- </div>
- <div className="flex-1 min-w-0">
- {children}
- </div>
- </div>
- );
+  return (
+    <div ref={setNodeRef} style={style} className={`flex items-stretch gap-2 ${isDragging ? 'opacity-50' : ''}`}>
+      <div className="flex items-center justify-center touch-none cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground px-1 py-3 my-1 bg-muted/40 rounded-md border border-border/60 hover:border-border transition-colors" {...attributes} {...listeners}>
+        <GripVertical size={16} />
+      </div>
+      <div className="flex-1 min-w-0">
+        {children}
+      </div>
+    </div>
+  );
 };
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-type DiscountStatus = 'active'| 'scheduled'| 'expired'| 'inactive';
+type DiscountStatus = 'active' | 'scheduled' | 'expired' | 'inactive';
 
 function getDiscountStatus(d: Discount): DiscountStatus {
- if (!d.is_active) return 'inactive';
- const now = new Date();
- if (d.start_date && new Date(d.start_date) > now) return 'scheduled';
- if (d.end_date && new Date(d.end_date) < now) return 'expired';
- return 'active';
+  if (!d.is_active) return 'inactive';
+  const now = new Date();
+  if (d.start_date && new Date(d.start_date) > now) return 'scheduled';
+  if (d.end_date && new Date(d.end_date) < now) return 'expired';
+  return 'active';
 }
 
 const STATUS_CONFIG: Record<DiscountStatus, { label: string; color: string; icon: React.ReactNode }> = {
- active: {
- label: 'Active',
- color: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
- icon: <CheckCircle2 size={12} />,
- },
- scheduled: {
- label: 'Scheduled',
- color: 'bg-blue-50 text-blue-700 ring-1 ring-blue-200',
- icon: <Timer size={12} />,
- },
- expired: {
- label: 'Expired',
- color: 'bg-muted text-muted-foreground ring-1 ring-slate-200',
- icon: <AlertCircle size={12} />,
- },
- inactive: {
- label: 'Inactive',
- color: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
- icon: <AlertCircle size={12} />,
- },
+  active: {
+    label: 'Active',
+    color: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30',
+    icon: <CheckCircle2 size={11} />,
+  },
+  scheduled: {
+    label: 'Scheduled',
+    color: 'bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/30',
+    icon: <Timer size={11} />,
+  },
+  expired: {
+    label: 'Expired',
+    color: 'bg-muted text-muted-foreground border border-border',
+    icon: <AlertCircle size={11} />,
+  },
+  inactive: {
+    label: 'Inactive',
+    color: 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/30',
+    icon: <AlertCircle size={11} />,
+  },
 };
 
 function formatDateTime(iso: string | null) {
@@ -228,7 +229,7 @@ export function DiscountsPage() {
   const { setTitle } = useHeaderStore();
 
   useEffect(() => {
-    setTitle('Discounts & Offers', 'Offers and promotional coupons.');
+    setTitle('Discounts');
   }, [setTitle]);
 
   const fetchAll = async (reset = false, search = searchQuery) => {
@@ -480,7 +481,7 @@ export function DiscountsPage() {
         discount_value: formData.discount_value ? parseFloat(formData.discount_value) : null,
         min_order_value: formData.min_order_value ? parseFloat(formData.min_order_value) : null,
         max_order_value: formData.max_order_value ? parseFloat(formData.max_order_value) : null,
-        is_price_drop: hasSpendThreshold ? false : formData.is_price_drop,
+        is_price_drop: Boolean(formData.is_price_drop),
         max_discount_amount: formData.max_discount_amount ? parseFloat(formData.max_discount_amount) : null,
         buy_quantity: formData.buy_quantity ? parseInt(formData.buy_quantity) : null,
         get_quantity: formData.get_quantity ? parseInt(formData.get_quantity) : (formData.discount_type === 'free_item' ? 1 : null),
@@ -759,52 +760,55 @@ export function DiscountsPage() {
 
  // ── Render ─────────────────────────────────────────────────────────────────
 
- return (
- <div className="space-y-6 max-w-4xl mx-auto animate-fade-in pb-24 lg:pb-12">
+  return (
+    <div className="space-y-4 w-full animate-fade-in pb-20">
       {canWrite && (
         <HeaderActions>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setIsVerifyModalOpen(true);
-              setVerifyCodeInput('');
-              setVerificationResult(null);
-            }}
-            leftIcon={<ShieldCheck size={16} className="text-emerald-600" />}
-          >
-            Verify Code
-          </Button>
-          <Button size="sm" onClick={() => setIsChooseTypeModalOpen(true)} leftIcon={<Plus size={16} />}>
-            New Offer
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setIsVerifyModalOpen(true);
+                setVerifyCodeInput('');
+                setVerificationResult(null);
+              }}
+              className="rounded-md border-border text-xs h-8 gap-1.5"
+              leftIcon={<ShieldCheck size={14} className="text-emerald-600" />}
+            >
+              Verify Code
+            </Button>
+            <Button size="sm" onClick={() => setIsChooseTypeModalOpen(true)} className="rounded-md text-xs h-8 gap-1" leftIcon={<Plus size={14} />}>
+              New Offer
+            </Button>
+          </div>
         </HeaderActions>
       )}
 
-      {/* Stats Row */}
-      <div className="grid grid-cols-3 gap-3">
+      {/* Stats Row (Boxy Subtle Curves) */}
+      <div className="grid grid-cols-3 gap-2.5 sm:gap-3.5">
         {[
-          { label: 'Total', value: discounts.length, color: 'bg-muted/50 border-border', textColor: 'text-foreground' },
-          { label: 'Active Now', value: activeCount, color: 'bg-emerald-50 border-emerald-200', textColor: 'text-emerald-700' },
-          { label: 'Scheduled', value: scheduledCount, color: 'bg-blue-50 border-blue-200', textColor: 'text-blue-700' },
+          { label: 'Total Offers', value: discounts.length, color: 'text-foreground' },
+          { label: 'Active Now', value: activeCount, color: 'text-emerald-600 dark:text-emerald-400' },
+          { label: 'Scheduled', value: scheduledCount, color: 'text-blue-600 dark:text-blue-400' },
         ].map(s => (
-          <div key={s.label} className={`rounded-xl border p-3 sm:p-4 text-center ${s.color}`}>
-            <p className={`text-2xl font-bold ${s.textColor}`}>{s.value}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">{s.label}</p>
+          <div key={s.label} className="rounded-lg border border-border/80 bg-card p-3 sm:p-3.5 text-center shadow-2xs">
+            <p className={`text-xl sm:text-2xl font-black font-heading ${s.color}`}>{s.value}</p>
+            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mt-0.5">{s.label}</p>
           </div>
         ))}
       </div>
 
-      {/* Sticky Search Bar */}
-      <div className="sticky top-[-16px] sm:top-[-24px] lg:top-[-32px] z-30 py-2 bg-[#f8fafc]/90 backdrop-blur-md -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 border-b border-border mb-6 flex gap-2 sm:gap-3 items-center">
+      {/* Sticky Search & Actions Bar */}
+      <div className="sticky top-[-14px] sm:top-[-20px] lg:top-[-24px] z-20 py-2 bg-background/95 backdrop-blur-md -mx-3.5 px-3.5 sm:-mx-5 sm:px-5 lg:-mx-6 lg:px-6 border-b border-border/80 mb-3.5 flex gap-2 items-center">
         <div className="relative w-full max-w-md flex-1 min-w-0">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" size={14} />
           <input
             type="text"
-            placeholder="Search offers..."
+            placeholder="Search offers and discounts..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full h-10 pl-10 pr-4 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+            className="w-full h-8.5 pl-8 pr-3 rounded-md border border-input bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-foreground placeholder:text-muted-foreground transition-all"
           />
         </div>
         <button
@@ -814,20 +818,21 @@ export function DiscountsPage() {
             setVerifyCodeInput('');
             setVerificationResult(null);
           }}
-          className="flex items-center justify-center gap-1.5 px-3 sm:px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-xs sm:text-sm transition-all shadow-sm shrink-0 h-10 cursor-pointer"
+          className="flex items-center justify-center gap-1.5 px-3 rounded-md bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-semibold text-xs transition-all shadow-2xs shrink-0 h-8.5 cursor-pointer"
           title="Verify customer discount code"
         >
-          <ShieldCheck size={16} />
+          <ShieldCheck size={14} />
           <span className="hidden sm:inline">Verify Code</span>
           <span className="sm:hidden">Verify</span>
         </button>
         {discounts.length > 0 && (
           <button
+            type="button"
             onClick={() => setShowDeleteAllConfirm(true)}
-            className="flex items-center justify-center gap-2 px-3 sm:px-4 rounded-xl bg-destructive/10 hover:bg-destructive/20 text-destructive font-medium text-sm transition-colors border border-destructive/20 shrink-0 h-10"
+            className="flex items-center justify-center gap-1.5 px-3 rounded-md bg-destructive/10 hover:bg-destructive/20 text-destructive font-semibold text-xs transition-colors border border-destructive/20 shrink-0 h-8.5 cursor-pointer"
             title="Delete All Discounts"
           >
-            <Trash2 size={16} />
+            <Trash2 size={13} />
             <span className="hidden sm:inline">Delete All</span>
           </button>
         )}
@@ -842,7 +847,7 @@ export function DiscountsPage() {
  <Card className="border-dashed">
  <CardContent className="flex flex-col items-center justify-center py-20 text-center">
  <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
- <Sparkles className="text-primary" size={28} />
+ <Tag className="text-primary" size={28} />
  </div>
  <h3 className="text-lg font-semibold mb-1">No discounts yet</h3>
  <p className="text-muted-foreground text-sm max-w-xs mb-6">
@@ -876,28 +881,33 @@ export function DiscountsPage() {
  const status = getDiscountStatus(d);
  const statusCfg = STATUS_CONFIG[status];
 
+ const discountCardStyle = (shop?.theme as any)?.discount_card_style || "modern";
  return (
- <SortableDiscountItem key={d.id} id={d.id}>
- <div
- className={`flex flex-col sm:flex-row p-3.5 sm:p-5 gap-3 sm:gap-4 bg-background rounded-2xl border transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 ${
- status === 'expired'|| status === 'inactive'? 'border-border opacity-75': 'border-border shadow-[0_2px_10px_rgb(0,0,0,0.02)] hover:border-primary/20'
- }`}
- >
- <div className="flex gap-3 sm:gap-4 flex-1 min-w-0">
- {/* Icon */}
- <div className={`w-12 h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0 shadow-sm ${
- d.discount_type === 'percentage'? 'bg-primary/10 text-primary': 
- d.discount_type === 'bogo'? 'bg-indigo-100 text-indigo-600':
- d.discount_type === 'combo'? 'bg-emerald-100 text-emerald-600':
- d.discount_type === 'free_item'? 'bg-rose-100 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400':
- 'bg-violet-50 text-violet-600'
- }`}>
- {d.discount_type === 'percentage'&& <Percent size={20} className="sm:w-6 sm:h-6" strokeWidth={2.5} />}
- {d.discount_type === 'flat'&& <span className="text-xl sm:text-2xl font-black">{currencySymbol}</span>}
- {d.discount_type === 'bogo'&& <Sparkles size={20} className="sm:w-6 sm:h-6" strokeWidth={2.5} />}
- {d.discount_type === 'combo'&& <Layers size={20} className="sm:w-6 sm:h-6" strokeWidth={2.5} />}
- {d.discount_type === 'free_item'&& <Gift size={20} className="sm:w-6 sm:h-6" strokeWidth={2.5} />}
- </div>
+  <SortableDiscountItem key={d.id} id={d.id}>
+  <div
+  className={`flex flex-col sm:flex-row p-3.5 sm:p-4 gap-3 bg-card rounded-lg border transition-all duration-150 hover:border-primary/40 shadow-2xs ${
+  status === 'expired' || status === 'inactive' ? 'border-border/60 opacity-80' : 'border-border/80'
+  } ${
+    discountCardStyle === 'minimal' ? 'border-2 border-primary/40' :
+    discountCardStyle === 'gradient' ? 'bg-gradient-to-r from-card to-primary/5' :
+    discountCardStyle === 'solid' ? 'border-l-4 border-l-primary' : ''
+  }`}
+  >
+  <div className="flex gap-3 flex-1 min-w-0">
+  {/* Icon */}
+  <div className={`w-11 h-11 sm:w-12 sm:h-12 rounded-md flex items-center justify-center shrink-0 border shadow-2xs ${
+  d.discount_type === 'percentage' ? 'bg-primary/10 text-primary border-primary/20' : 
+  d.discount_type === 'bogo' ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20' :
+  d.discount_type === 'combo' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' :
+  d.discount_type === 'free_item' ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20' :
+  'bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20'
+  }`}>
+  {d.discount_type === 'percentage' && <Percent size={18} strokeWidth={2.5} />}
+  {d.discount_type === 'flat' && <span className="text-lg font-black">{currencySymbol}</span>}
+  {d.discount_type === 'bogo' && <Copy size={18} strokeWidth={2.5} />}
+  {d.discount_type === 'combo' && <Layers size={18} strokeWidth={2.5} />}
+  {d.discount_type === 'free_item' && <Gift size={18} strokeWidth={2.5} />}
+  </div>
 
  {/* Content */}
  <div className="flex-1 min-w-0 flex flex-col justify-center">
@@ -947,7 +957,7 @@ export function DiscountsPage() {
  <span className="flex items-center gap-1 sm:gap-1.5 bg-muted/50 px-2 py-1 rounded-md border border-border">
  {d.discount_type === 'percentage'&& <><Percent size={12} className="text-muted-foreground" /> {d.discount_value}% off</>}
  {d.discount_type === 'flat'&& <><span className="text-muted-foreground text-[12px]">{currencySymbol}</span>{d.discount_value} off</>}
- {d.discount_type === 'bogo'&& <><Sparkles size={12} className="text-muted-foreground" /> Buy {d.buy_quantity} Get {d.get_quantity}</>}
+ {d.discount_type === 'bogo'&& <><Copy size={12} className="text-muted-foreground" /> Buy {d.buy_quantity} Get {d.get_quantity}</>}
  {d.discount_type === 'combo'&& <><Layers size={12} className="text-muted-foreground" /> {currencySymbol}{d.discount_value} Combo</>}
  {d.discount_type === 'free_item'&& <><Gift size={12} className="text-rose-500" /> Free Item</>}
  </span>
@@ -1001,17 +1011,18 @@ export function DiscountsPage() {
 
  {/* Actions */}
  {canWrite && (
- <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 justify-end sm:justify-start pt-2 sm:pt-0 mt-1 sm:mt-0 border-t sm:border-0 border-border">
+ <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 justify-end sm:justify-start pt-2 sm:pt-0 mt-1 sm:mt-0 border-t sm:border-0 border-border">
  <button
+ type="button"
  onClick={() => handleToggleActive(d)}
- className={`flex items-center justify-center p-2 rounded-xl transition-all ${
+ className={`flex items-center justify-center p-1.5 rounded-md transition-all cursor-pointer ${
  d.is_active
- ? 'text-emerald-600 bg-emerald-50 hover:bg-emerald-100 hover:scale-105'
- : 'text-muted-foreground bg-muted hover:bg-slate-200 hover:scale-105'
+ ? 'text-emerald-600 bg-emerald-500/10 hover:bg-emerald-500/20'
+ : 'text-muted-foreground bg-muted hover:bg-muted/80'
  }`}
- title={d.is_active ? 'Deactivate': 'Activate'}
+ title={d.is_active ? 'Deactivate' : 'Activate'}
  >
- {d.is_active ? <ToggleRight size={20} strokeWidth={2.5} /> : <ToggleLeft size={20} strokeWidth={2.5} />}
+ {d.is_active ? <ToggleRight size={18} strokeWidth={2.5} /> : <ToggleLeft size={18} strokeWidth={2.5} />}
  </button>
  <button
  type="button"
@@ -1019,17 +1030,18 @@ export function DiscountsPage() {
  e.stopPropagation();
  openModal(d);
  }}
- className="p-2 rounded-xl text-muted-foreground hover:bg-blue-50 hover:text-blue-600 transition-all hover:scale-105 cursor-pointer"
+ className="p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-all cursor-pointer"
  title="Edit"
  >
- <Edit2 size={18} strokeWidth={2.5} />
+ <Edit2 size={15} strokeWidth={2.5} />
  </button>
  <button
+ type="button"
  onClick={() => setDiscountToDelete(d.id)}
- className="p-2 rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-all hover:scale-105"
+ className="p-1.5 rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-all cursor-pointer"
  title="Delete"
  >
- <Trash2 size={18} strokeWidth={2.5} />
+ <Trash2 size={15} strokeWidth={2.5} />
  </button>
  </div>
  )}
@@ -1101,7 +1113,7 @@ export function DiscountsPage() {
             className="w-full flex items-start gap-4 p-4 rounded-2xl border border-border bg-card hover:border-indigo-500 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 transition-all text-left group cursor-pointer shadow-xs hover:shadow-md hover:-translate-y-0.5 active:scale-[0.99]"
           >
             <div className="w-12 h-12 rounded-xl bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-xs">
-              <Sparkles size={22} className="stroke-[2.5]" />
+              <Copy size={22} className="stroke-[2.5]" />
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between gap-2">
@@ -1266,7 +1278,7 @@ export function DiscountsPage() {
                                 : 'text-muted-foreground hover:text-foreground'
                             }`}
                           >
-                            {type === 'bogo' ? <Sparkles size={15} /> : <Layers size={15} />}
+                            {type === 'bogo' ? <Copy size={15} /> : <Layers size={15} />}
                             <span>{type === 'bogo' ? 'BOGO (Buy X Get Y)' : 'Combo Deal'}</span>
                           </button>
                         ))}
@@ -1626,12 +1638,16 @@ export function DiscountsPage() {
                     (formData.min_order_value && parseFloat(formData.min_order_value) > 0) ||
                     (formData.max_order_value && parseFloat(formData.max_order_value) > 0)
                   );
-                  const isChecked = !hasSpendThreshold && Boolean(formData.is_price_drop);
+                  const isChecked = Boolean(formData.is_price_drop);
+                  const spendRangeStr = formData.min_order_value && formData.max_order_value
+                    ? `${currencySymbol}${formData.min_order_value} - ${currencySymbol}${formData.max_order_value}`
+                    : formData.min_order_value
+                    ? `${currencySymbol}${formData.min_order_value}+`
+                    : `${currencySymbol}${formData.max_order_value}`;
+
                   return (
                     <div className={`p-4 rounded-2xl border transition-all mt-4 ${
-                      hasSpendThreshold 
-                        ? 'bg-muted/20 border-border opacity-70' 
-                        : isChecked 
+                      isChecked 
                         ? 'bg-gradient-to-r from-amber-50/90 to-orange-50/80 dark:from-amber-950/40 dark:to-orange-950/30 border-amber-300 dark:border-amber-700/60 shadow-xs ring-1 ring-amber-400/20' 
                         : 'bg-muted/40 border-border hover:bg-muted/60'
                     }`}>
@@ -1645,32 +1661,36 @@ export function DiscountsPage() {
                           <div>
                             <div className="flex items-center gap-2">
                               <label 
-                                onClick={() => {
-                                  if (!hasSpendThreshold) setFormData({ ...formData, is_price_drop: !formData.is_price_drop });
-                                }} 
-                                className={`text-sm font-bold transition-colors select-none ${
-                                  hasSpendThreshold ? 'text-muted-foreground cursor-not-allowed' : 'text-foreground cursor-pointer hover:text-amber-600'
-                                }`}
+                                onClick={() => setFormData({ ...formData, is_price_drop: !formData.is_price_drop })} 
+                                className="text-sm font-bold text-foreground cursor-pointer hover:text-amber-600 transition-colors select-none"
                               >
                                 Use as Price Drop
                               </label>
                               <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider ${
-                                hasSpendThreshold
-                                  ? 'bg-muted text-muted-foreground'
-                                  : isChecked 
+                                isChecked 
                                   ? 'bg-amber-200 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200' 
                                   : 'bg-muted text-muted-foreground'
                               }`}>
-                                {hasSpendThreshold ? 'Unavailable with Spend Range' : 'Always Discounted'}
+                                {isChecked 
+                                  ? (hasSpendThreshold ? 'Spend Range Drop' : 'Always Discounted') 
+                                  : (hasSpendThreshold ? 'One-Time Coupon' : 'Coupon Code')}
                               </span>
                             </div>
                             <p className="text-xs text-muted-foreground mt-1 leading-snug">
-                              {hasSpendThreshold ? (
-                                <span className="text-amber-600 dark:text-amber-400 font-medium">
-                                  Disabled because Spend Range ({formData.min_order_value && formData.max_order_value ? `${currencySymbol}${formData.min_order_value} - ${currencySymbol}${formData.max_order_value}` : `${currencySymbol}${formData.min_order_value || formData.max_order_value}`}) is set. Price drops apply to individual items directly on the menu, whereas spend range discounts apply automatically at checkout when the total cart falls within the range.
-                                </span>
+                              {isChecked ? (
+                                hasSpendThreshold ? (
+                                  <span className="text-amber-800 dark:text-amber-300 font-medium">
+                                    Direct Spend Drop Active: Automatically discounts orders within Spend Range ({spendRangeStr}) at checkout. Customers can use this discount <strong>unlimited times</strong> without entering coupon codes.
+                                  </span>
+                                ) : (
+                                  <>Items directly show a slashed original price and discounted selling price (e.g. <span className="line-through opacity-70">{currencySymbol}50</span> → <span className="font-bold text-amber-600 dark:text-amber-400">{currencySymbol}25</span>). Customers can use this discount unlimited times without entering coupon codes.</>
+                                )
                               ) : (
-                                <>Items directly show a slashed original price and discounted selling price (e.g. <span className="line-through opacity-70">{currencySymbol}50</span> → <span className="font-bold text-amber-600 dark:text-amber-400">{currencySymbol}25</span>). Customers can use this discount unlimited times without entering coupon codes.</>
+                                hasSpendThreshold ? (
+                                  <>When disabled, this offer will generate a unique promo coupon code for customers that can be redeemed once per customer on orders within {spendRangeStr}. Turn ON to allow repeat, code-free usage.</>
+                                ) : (
+                                  <>Items directly show a slashed original price and discounted selling price (e.g. <span className="line-through opacity-70">{currencySymbol}50</span> → <span className="font-bold text-amber-600 dark:text-amber-400">{currencySymbol}25</span>). Customers can use this discount unlimited times without entering coupon codes.</>
+                                )
                               )}
                             </p>
                           </div>
@@ -1681,16 +1701,11 @@ export function DiscountsPage() {
                           type="button"
                           role="switch"
                           aria-checked={isChecked}
-                          disabled={hasSpendThreshold}
-                          onClick={() => {
-                            if (!hasSpendThreshold) setFormData({ ...formData, is_price_drop: !formData.is_price_drop });
-                          }}
-                          className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 mt-0.5 ${
-                            hasSpendThreshold 
-                              ? 'bg-slate-200 dark:bg-slate-800 cursor-not-allowed opacity-50' 
-                              : isChecked 
-                              ? 'bg-amber-500 cursor-pointer' 
-                              : 'bg-slate-300 dark:bg-slate-700 cursor-pointer'
+                          onClick={() => setFormData({ ...formData, is_price_drop: !formData.is_price_drop })}
+                          className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 mt-0.5 cursor-pointer ${
+                            isChecked 
+                              ? 'bg-amber-500' 
+                              : 'bg-slate-300 dark:bg-slate-700'
                           }`}
                         >
                           <span
@@ -1706,7 +1721,9 @@ export function DiscountsPage() {
                         <div className="mt-3 pt-3 border-t border-amber-200/80 dark:border-amber-800/40 flex items-center gap-2 text-xs text-amber-800 dark:text-amber-300 font-medium">
                           <CheckCircle2 size={15} className="text-amber-600 dark:text-amber-400 shrink-0" />
                           <span>
-                            Direct Price Drop Active: Matching items will automatically display discounted prices with unlimited customer redemptions.
+                            {hasSpendThreshold
+                              ? `Direct Spend Range Drop Active: Automatically applies on cart orders within ${spendRangeStr} with unlimited customer redemptions.`
+                              : 'Direct Price Drop Active: Matching items will automatically display discounted prices with unlimited customer redemptions.'}
                           </span>
                         </div>
                       )}
@@ -1751,7 +1768,7 @@ export function DiscountsPage() {
                               : "text-muted-foreground hover:text-foreground"
                           )}
                         >
-                          <Sparkles size={13} className="text-indigo-500" />
+                          <Copy size={13} className="text-indigo-500" />
                           <span>Same Item</span>
                         </button>
                       )}
@@ -2552,66 +2569,71 @@ export function DiscountsPage() {
         </div>
       </Modal>
 
-      {/* Floating Action Button (FAB) Menu */}
-      <div className="fixed bottom-20 lg:bottom-8 right-4 lg:right-8 z-50 flex flex-col items-end gap-3">
-        {/* Action options */}
-        <div
-          className={`flex flex-col items-end gap-2.5 transition-all duration-300 ${
-            isFabOpen
-              ? 'opacity-100 translate-y-0 pointer-events-auto'
-              : 'opacity-0 translate-y-4 pointer-events-none'
-          }`}
-        >
-          {/* Free Item Action */}
-          <button
-            onClick={() => {
-              setIsFabOpen(false);
-              openModal('free_item');
-            }}
-            className="flex items-center gap-2 pr-2 hover:scale-105 transition-transform cursor-pointer"
+      {/* Square Floating Action Button (FAB) Menu */}
+      {!isModalOpen && createPortal(
+        <div className="fixed bottom-20 lg:bottom-8 right-4 lg:right-8 z-50 flex flex-col items-end gap-3">
+          {/* Action options */}
+          <div
+            className={`flex flex-col items-end gap-2.5 transition-all duration-300 ${
+              isFabOpen
+                ? 'opacity-100 translate-y-0 pointer-events-auto'
+                : 'opacity-0 translate-y-4 pointer-events-none'
+            }`}
           >
-            <span className="bg-background text-foreground text-sm font-medium px-3 py-1.5 rounded-lg shadow-sm border border-border">Free Item</span>
-            <div className="w-10 h-10 rounded-full bg-background text-amber-500 shadow-[0_4px_20px_rgb(0,0,0,0.1)] flex items-center justify-center border border-amber-100 dark:border-amber-900/40">
-              <Gift size={18} />
-            </div>
-          </button>
+            {/* Free Item Action */}
+            <button
+              onClick={() => {
+                setIsFabOpen(false);
+                openModal('free_item');
+              }}
+              className="flex items-center gap-2 pr-2 hover:scale-105 active:scale-95 transition-transform cursor-pointer"
+            >
+              <span className="bg-background text-foreground text-sm font-medium px-3 py-1.5 rounded-lg shadow-sm border border-border">Free Item</span>
+              <div className="w-10 h-10 rounded-xl bg-background text-amber-500 shadow-[0_4px_20px_rgb(0,0,0,0.1)] flex items-center justify-center border border-amber-100 dark:border-amber-900/40">
+                <Gift size={18} />
+              </div>
+            </button>
 
+            <button
+              onClick={() => {
+                setIsFabOpen(false);
+                openModal('bogo');
+              }}
+              className="flex items-center gap-2 pr-2 hover:scale-105 active:scale-95 transition-transform cursor-pointer"
+            >
+              <span className="bg-background text-foreground text-sm font-medium px-3 py-1.5 rounded-lg shadow-sm border border-border">Combos & Bogos</span>
+              <div className="w-10 h-10 rounded-xl bg-background text-indigo-600 shadow-[0_4px_20px_rgb(0,0,0,0.1)] flex items-center justify-center border border-indigo-50">
+                <Copy size={18} />
+              </div>
+            </button>
+
+            <button
+              onClick={() => {
+                setIsFabOpen(false);
+                openModal('percentage');
+              }}
+              className="flex items-center gap-2 pr-2 hover:scale-105 active:scale-95 transition-transform cursor-pointer"
+            >
+              <span className="bg-background text-foreground text-sm font-medium px-3 py-1.5 rounded-lg shadow-sm border border-border">Discount & Offer</span>
+              <div className="w-10 h-10 rounded-xl bg-background text-primary shadow-[0_4px_20px_rgb(0,0,0,0.1)] flex items-center justify-center border border-primary/10">
+                <Percent size={18} />
+              </div>
+            </button>
+          </div>
+
+          {/* Main FAB Toggle */}
           <button
-            onClick={() => {
-              setIsFabOpen(false);
-              openModal('bogo');
-            }}
-            className="flex items-center gap-2 pr-2 hover:scale-105 transition-transform"
+            onClick={() => setIsFabOpen(!isFabOpen)}
+            className={`w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-primary shadow-xl flex items-center justify-center text-white transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer border border-white/20 ${
+              isFabOpen ? 'bg-slate-800 rotate-45' : 'bg-primary hover:bg-primary-600'
+            }`}
+            title="New Offer"
           >
-            <span className="bg-background text-foreground text-sm font-medium px-3 py-1.5 rounded-lg shadow-sm border border-border">Combos & Bogos</span>
-            <div className="w-10 h-10 rounded-full bg-background text-indigo-600 shadow-[0_4px_20px_rgb(0,0,0,0.1)] flex items-center justify-center border border-indigo-50">
-              <Sparkles size={18} />
-            </div>
+            {isFabOpen ? <X size={24} className="transition-transform duration-300 rotate-90" /> : <Plus size={24} className="transition-transform duration-300" />}
           </button>
-
-          <button
-            onClick={() => {
-              setIsFabOpen(false);
-              openModal('percentage');
-            }}
-            className="flex items-center gap-2 pr-2 hover:scale-105 transition-transform"
-          >
-            <span className="bg-background text-foreground text-sm font-medium px-3 py-1.5 rounded-lg shadow-sm border border-border">Discount & Offer</span>
-            <div className="w-10 h-10 rounded-full bg-background text-primary shadow-[0_4px_20px_rgb(0,0,0,0.1)] flex items-center justify-center border border-primary/10">
-              <Percent size={18} />
-            </div>
-          </button>
-        </div>
-
-        {/* Main FAB */}
-        <button
-          onClick={() => setIsFabOpen(!isFabOpen)}
-          className="w-14 h-14 rounded-full bg-primary shadow-[0_8px_30px_rgb(0,0,0,0.12)] flex items-center justify-center text-white transition-all duration-300 hover:scale-105 cursor-pointer"
-          title="New Offer"
-        >
-          {isFabOpen ? <X size={24} className="transition-transform duration-300 rotate-90" /> : <Plus size={24} className="transition-transform duration-300" />}
-        </button>
-      </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

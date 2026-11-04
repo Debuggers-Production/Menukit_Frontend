@@ -52,6 +52,7 @@ export interface ShopSettings {
   serial_number_prefix?: string;
   serial_number_digits?: number;
   auto_serial_number_enabled?: boolean;
+  wholesale_pricing_enabled?: boolean;
   return_allowed?: boolean;
   return_window_days?: number;
   return_policy_notes?: string;
@@ -73,6 +74,7 @@ export interface ThemeSettings {
   theme_scope: 'public' | 'app' | 'all';
   discount_card_style: 'modern' | 'minimal' | 'gradient' | 'solid';
   menu_item_style: 'default' | 'elevated' | 'flat' | 'bordered';
+  border_radius?: 'sharp' | 'smooth' | 'pill';
 }
 
 export interface Chalkboard {
@@ -196,6 +198,7 @@ export interface MenuItem {
   is_bestseller: boolean;
   is_highlighted: boolean;
   is_available: boolean;
+  is_taxable?: boolean;
   display_order: number;
   image_url: string | null;
   thumbnail_url: string | null;

@@ -95,7 +95,7 @@ export function MCPAuthPage() {
           <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-white mb-3 shadow-lg shadow-primary/30">
             <img src={logo} alt="MenuKit-Logo" className="w-10 h-10" />
           </div>
-          <h1 className="text-2xl font-heading font-bold text-slate-900 dark:text-white">Menukit AI Assistant</h1>
+          <h1 className="text-2xl font-heading font-bold"><span className="text-orange-600 dark:text-orange-500">Menukit</span> <span className="text-slate-900 dark:text-white">AI Assistant</span></h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Connect your account with {aiName}</p>
         </div>
 

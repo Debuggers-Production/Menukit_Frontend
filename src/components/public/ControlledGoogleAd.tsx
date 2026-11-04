@@ -26,14 +26,29 @@ export const ControlledGoogleAd: React.FC<ControlledGoogleAdProps> = ({
   const adRef = useRef<HTMLDivElement>(null);
   const [adSenseFilled, setAdSenseFilled] = useState(false);
 
+  // Check if ads are stopped/disabled platform-wide
+  const isAdsStopped = 
+    import.meta.env.VITE_STOP_ADS === 'true' || 
+    import.meta.env.VITE_DISABLE_ADS === 'true' || 
+    import.meta.env.VITE_ENABLE_ADS === 'false' || 
+    APP_CONFIG.STOP_ADS === 'true' || 
+    APP_CONFIG.DISABLE_ADS === 'true' || 
+    APP_CONFIG.ENABLE_ADS === 'false' || 
+    (typeof window !== 'undefined' && (
+      (window as any).APP_CONFIG?.STOP_ADS === 'true' ||
+      (window as any).APP_CONFIG?.DISABLE_ADS === 'true' ||
+      (window as any).APP_CONFIG?.ENABLE_ADS === 'false'
+    ));
+
   // Check if simulation mode is enabled via environment variables or runtime Docker config
-  const isSimulationMode = 
+  const isSimulationMode = !isAdsStopped && (
     import.meta.env.VITE_FORCE_SHOW_ADS === 'true' || 
     import.meta.env.VITE_SIMULATE_SUBSCRIPTION_ENDED === 'true' ||
     APP_CONFIG.FORCE_SHOW_ADS === 'true' ||
-    (typeof window !== 'undefined' && (window as any).APP_CONFIG?.FORCE_SHOW_ADS === 'true');
+    (typeof window !== 'undefined' && (window as any).APP_CONFIG?.FORCE_SHOW_ADS === 'true')
+  );
 
-  const effectiveShowAds = showAds || isSimulationMode;
+  const effectiveShowAds = !isAdsStopped && (showAds || isSimulationMode);
 
   const rawClientId = 
     import.meta.env.VITE_GOOGLE_ADSENSE_CLIENT_ID || 

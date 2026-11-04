@@ -53,15 +53,15 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
     };
 
     return (
-      <div className="w-full space-y-1.5 text-left">
+      <div className="w-full space-y-1 text-left">
         {label && (
-          <label className="text-sm font-semibold text-foreground mb-1.5 block">
+          <label className="text-xs font-medium text-foreground block">
             {label}
           </label>
         )}
         <div className="relative">
           {leftIcon && (
-            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">
+            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">
               {leftIcon}
             </div>
           )}
@@ -72,8 +72,8 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             className={cn(
-              "flex h-10 w-full rounded-xl border border-input bg-background px-3.5 py-2 text-sm font-medium text-foreground shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring disabled:cursor-not-allowed disabled:opacity-50",
-              leftIcon && "pl-10",
+              "flex h-9 w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs sm:text-sm font-normal text-foreground shadow-2xs transition-colors file:border-0 file:bg-transparent file:text-xs file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1.5 focus-visible:ring-ring focus-visible:border-ring disabled:cursor-not-allowed disabled:opacity-50",
+              leftIcon && "pl-9",
               error && "border-destructive focus-visible:ring-destructive",
               className
             )}
@@ -81,7 +81,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           />
         </div>
         {error && (
-          <p className="text-xs font-medium text-destructive mt-1">
+          <p className="text-[11px] font-medium text-destructive mt-0.5">
             {typeof error === 'string' ? error : (error as any)?.msg || (error as any)?.message || JSON.stringify(error)}
           </p>
         )}

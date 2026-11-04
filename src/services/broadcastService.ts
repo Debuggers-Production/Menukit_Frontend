@@ -77,8 +77,9 @@ export const broadcastService = {
     return res.data;
   },
 
-  cancelCampaign: async (campaignId: string): Promise<void> => {
-    await api.delete(`/broadcasts/${campaignId}`);
+  cancelCampaign: async (campaignId: string): Promise<{ success: boolean; refunded_credits: number; message: string }> => {
+    const res = await api.delete(`/broadcasts/${campaignId}`);
+    return res.data;
   },
 
   sendTestMessage: async (phone_number: string, message: string, image_url?: string | null): Promise<any> => {

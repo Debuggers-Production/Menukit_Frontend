@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Coins, Plus, Search, Users, CheckCircle2, Clock, Calendar, 
   Trash2, Edit3, ArrowLeft, Eye, EyeOff, ShieldCheck, 
-  Gift, Sparkles, ChevronRight, AlertCircle, Phone, 
+  Gift, ChevronRight, AlertCircle, Phone, 
   User, Check, Wallet, ArrowUpRight, Filter,
   Minus, Receipt, Info, Layers, Tag, Building2, MapPin,
   CreditCard, ArrowRight, Lock, ChevronLeft
@@ -552,7 +552,7 @@ export default function SchemesPage() {
   }, [paymentModalData, currency]);
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-16">
+    <div className="space-y-6 w-full pb-16">
       {/* Top Bar Header Actions Portal */}
       <HeaderActions>
         {selectedScheme ? (
@@ -622,7 +622,7 @@ export default function SchemesPage() {
               ))}
             </div>
           ) : schemes.length === 0 ? (
-            <div className="bg-card border border-dashed border-border rounded-2xl p-12 text-center max-w-xl mx-auto space-y-4">
+            <div className="bg-card border border-dashed border-border rounded-2xl p-12 text-center w-full space-y-4">
               <div className="w-16 h-16 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto">
                 <Coins size={32} />
               </div>

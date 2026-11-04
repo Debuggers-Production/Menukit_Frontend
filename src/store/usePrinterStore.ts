@@ -12,6 +12,8 @@ export interface PrinterStation {
   ipAddress?: string;
   port?: number;
   soundBuzzer?: boolean;
+  autoCut?: boolean;
+  bottomText?: string;
 }
 
 export interface BillingPrinter {
@@ -23,6 +25,9 @@ export interface BillingPrinter {
   port: number;
   enabled: boolean;
   isDefault?: boolean;
+  autoCut?: boolean;
+  bottomText?: string;
+  language?: string; // 'store' | 'en' | 'ta' | 'hi' | 'te' | 'kn' | 'ml' | etc.
 }
 
 export interface BillingPrinterConfig {
@@ -35,6 +40,9 @@ export interface BillingPrinterConfig {
   enabled: boolean;
   autoPrintOnPayment?: boolean;
   isDefault?: boolean;
+  autoCut?: boolean;
+  bottomText?: string;
+  language?: string; // 'store' | 'en' | 'ta' | 'hi' | 'te' | 'kn' | 'ml' | etc.
 }
 
 export interface PrinterStoreState {
@@ -74,6 +82,9 @@ export const DEFAULT_BILLING_PRINTER: BillingPrinterConfig = {
   enabled: true,
   autoPrintOnPayment: false,
   isDefault: true,
+  autoCut: true,
+  bottomText: '',
+  language: 'store',
 };
 
 export const DEFAULT_BILLING_PRINTERS: BillingPrinter[] = [
@@ -86,6 +97,9 @@ export const DEFAULT_BILLING_PRINTERS: BillingPrinter[] = [
     port: 9100,
     enabled: true,
     isDefault: true,
+    autoCut: true,
+    bottomText: '',
+    language: 'store',
   },
 ];
 
@@ -101,6 +115,8 @@ export const DEFAULT_STATIONS: PrinterStation[] = [
     ipAddress: '127.0.0.1',
     port: 9100,
     soundBuzzer: true,
+    autoCut: true,
+    bottomText: '',
   },
 ];
 

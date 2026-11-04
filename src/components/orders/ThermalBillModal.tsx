@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
-import { Printer, Copy, Check, Sparkles, FileText } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Printer, Copy, Check, Clock, FileText, Globe } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
+import { SearchableSelect } from '@/components/ui/SearchableSelect';
 import toast from 'react-hot-toast';
 import { 
   formatReceiptDateTime, 
@@ -11,6 +12,7 @@ import {
 } from '@/utils/thermalPrinter';
 import { printOrderA4Invoice } from '@/utils/orderInvoice';
 import { usePrinterStore } from '@/store/usePrinterStore';
+import { BILL_LANGUAGES, getBillTranslation, getTranslatedShopInfo, formatPaymentMethod } from '@/utils/billTranslations';
 
 interface ThermalBillModalProps {
   isOpen: boolean;
@@ -31,6 +33,49 @@ export function ThermalBillModal({ isOpen, onClose, order, shop, initialMode }: 
   const is58mm = paperWidth === '58mm';
   const [isPrinting, setIsPrinting] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  const defaultLang = (activePrinters[0]?.language && activePrinters[0]?.language !== 'store')
+    ? activePrinters[0].language
+    : (shop?.settings?.language || 'en');
+  const [billLang, setBillLang] = useState<string>(defaultLang);
+  const t = getBillTranslation(billLang);
+
+  useEffect(() => {
+    const l = (activePrinters[0]?.language && activePrinters[0]?.language !== 'store')
+      ? activePrinters[0].language
+      : (shop?.settings?.language || 'en');
+    setBillLang(l);
+  }, [activePrinters[0]?.language, shop?.settings?.language]);
+
+  const langOptions = useMemo(() => {
+    return BILL_LANGUAGES.filter(l => l.id !== 'store').map(l => ({
+      id: l.id,
+      name: l.name,
+      icon: <Globe size={13} className="text-primary" />,
+    }));
+  }, []);
+
+  const [translatedDesc, setTranslatedDesc] = useState(shop?.description || '');
+  const [translatedAddrLines, setTranslatedAddrLines] = useState<string[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    if (!shop || billLang === 'en' || billLang === 'store') {
+      setTranslatedDesc(shop?.description || '');
+      const lines = (shop?.address || '').split('\n').map((l: string) => l.trim()).filter(Boolean);
+      setTranslatedAddrLines(lines);
+      return;
+    }
+
+    getTranslatedShopInfo(shop, billLang).then(info => {
+      if (active) {
+        setTranslatedDesc(info.description);
+        setTranslatedAddrLines(info.addressLines);
+      }
+    });
+
+    return () => { active = false; };
+  }, [shop?.description, shop?.address, billLang]);
 
   // Active (non-cancelled) items
   const allActiveItems = (order?.items || []).filter((it: any) => !it.is_cancelled);
@@ -67,9 +112,22 @@ export function ThermalBillModal({ isOpen, onClose, order, shop, initialMode }: 
   const totalItems = items.length;
 
   const subtotal = items.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+  let explicitDiscount = 0;
+  if (Array.isArray(order?.applied_discount_codes)) {
+    for (const code of order.applied_discount_codes) {
+      const match = typeof code === 'string' && code.match(/₹\s*([\d.]+)/);
+      if (match && match[1]) {
+        explicitDiscount += parseFloat(match[1]) || 0;
+      }
+    }
+  }
+  if (explicitDiscount === 0 && Number(order?.discount_amount || 0) > 0) {
+    explicitDiscount = Number(order.discount_amount);
+  }
+
   const rawTotalAmount = isNewOnlyMode ? subtotal : Number(order.total_amount ?? subtotal);
-  const discountAmount = isNewOnlyMode ? 0 : Math.max(0, subtotal - rawTotalAmount);
-  const receiptTitle = isNewOnlyMode ? 'TAX INVOICE (NEW ITEMS)' : 'TAX INVOICE';
+  const discountAmount = isNewOnlyMode ? 0 : (explicitDiscount > 0 ? explicitDiscount : Math.max(0, subtotal - rawTotalAmount));
+  const receiptTitle = isNewOnlyMode ? t.taxInvoiceNew : t.taxInvoice;
 
   // GST Compliance Calculation
   const isGstEnabled = Boolean(shop?.settings?.gst_enabled);
@@ -78,7 +136,28 @@ export function ThermalBillModal({ isOpen, onClose, order, shop, initialMode }: 
   const totalTaxRate = cgstRate + sgstRate;
   const isInclusive = Boolean(shop?.settings?.inclusive_tax);
 
-  let taxableValue = subtotal;
+  // Separate taxable vs non-taxable item subtotals
+  const taxableItems = items.filter((it: any) => it.is_taxable !== false);
+  const nonTaxableItems = items.filter((it: any) => it.is_taxable === false);
+
+  const taxableItemsSubtotal = taxableItems.reduce(
+    (sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)),
+    0
+  );
+  const nonTaxableItemsSubtotal = nonTaxableItems.reduce(
+    (sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)),
+    0
+  );
+
+  // Apportion discount across taxable and non-taxable proportionally
+  const taxableShare = subtotal > 0 ? (taxableItemsSubtotal / subtotal) : 1;
+  const taxableDiscount = discountAmount * taxableShare;
+  const nonTaxableDiscount = discountAmount - taxableDiscount;
+
+  const effTaxableAmount = Math.max(0, taxableItemsSubtotal - taxableDiscount);
+  const effNonTaxableAmount = Math.max(0, nonTaxableItemsSubtotal - nonTaxableDiscount);
+
+  let taxableValue = effTaxableAmount;
   let totalTax = 0;
   let cgstAmount = 0;
   let sgstAmount = 0;
@@ -86,32 +165,32 @@ export function ThermalBillModal({ isOpen, onClose, order, shop, initialMode }: 
 
   if (isGstEnabled && totalTaxRate > 0) {
     if (isInclusive) {
-      finalBillTotal = rawTotalAmount;
-      taxableValue = Math.round((finalBillTotal / (1 + totalTaxRate / 100)) * 100) / 100;
-      totalTax = Math.round((finalBillTotal - taxableValue) * 100) / 100;
+      taxableValue = Math.round((effTaxableAmount / (1 + totalTaxRate / 100)) * 100) / 100;
+      totalTax = Math.round((effTaxableAmount - taxableValue) * 100) / 100;
       cgstAmount = Math.round((totalTax * (cgstRate / totalTaxRate)) * 100) / 100;
       sgstAmount = Math.round((totalTax - cgstAmount) * 100) / 100;
+      finalBillTotal = rawTotalAmount;
     } else {
-      // EXCLUSIVE: Tax is added on top of food subtotal
-      taxableValue = Math.max(0, subtotal - discountAmount);
+      // EXCLUSIVE: Tax is added only on taxable items
+      taxableValue = effTaxableAmount;
       totalTax = Math.round((taxableValue * (totalTaxRate / 100)) * 100) / 100;
       cgstAmount = Math.round((totalTax * (cgstRate / totalTaxRate)) * 100) / 100;
       sgstAmount = Math.round((totalTax - cgstAmount) * 100) / 100;
 
       const orderAmountNum = Number(order.total_amount || 0);
-      if (!isNewOnlyMode && orderAmountNum >= taxableValue + totalTax - 0.05) {
+      if (!isNewOnlyMode && orderAmountNum >= effTaxableAmount + effNonTaxableAmount + totalTax - 0.05) {
         finalBillTotal = orderAmountNum;
       } else {
-        finalBillTotal = Math.round((taxableValue + totalTax) * 100) / 100;
+        finalBillTotal = Math.round((effTaxableAmount + effNonTaxableAmount + totalTax) * 100) / 100;
       }
     }
   }
 
   const orderTypeLabel = order.order_type === 'dine_in' 
-    ? (order.table_number ? `Dine-in (Table #${order.table_number})` : 'Dine-in')
+    ? (order.table_number ? `${t.dineIn} (${t.table} #${order.table_number})` : t.dineIn)
     : order.order_type === 'takeaway' 
-      ? 'Takeaway' 
-      : 'Online / Delivery';
+      ? t.takeaway 
+      : t.delivery;
 
   const addressLines = (shop?.address || '')
     .split('\n')
@@ -126,6 +205,9 @@ export function ThermalBillModal({ isOpen, onClose, order, shop, initialMode }: 
         customItems: items,
         receiptTitle,
         isNewOnly: isNewOnlyMode,
+        language: billLang,
+        translatedDescription: translatedDesc,
+        translatedAddress: translatedAddrLines.join('\n'),
       });
     } catch (e) {
       console.error('Print bill failed:', e);
@@ -143,6 +225,9 @@ export function ThermalBillModal({ isOpen, onClose, order, shop, initialMode }: 
         customItems: items,
         receiptTitle,
         isNewOnly: isNewOnlyMode,
+        language: billLang,
+        translatedDescription: translatedDesc,
+        translatedAddress: translatedAddrLines.join('\n'),
       });
     } catch (e) {
       console.error(e);
@@ -169,6 +254,7 @@ export function ThermalBillModal({ isOpen, onClose, order, shop, initialMode }: 
     if (isGstEnabled && totalTaxRate > 0) {
       gstText = `--------------------------------\n` +
         `Taxable Turnover: ${taxableValue.toFixed(2)}\n` +
+        (effNonTaxableAmount > 0 ? `Exempt / Non-Taxable: ${effNonTaxableAmount.toFixed(2)}\n` : '') +
         `CGST (${cgstRate}%): ${cgstAmount.toFixed(2)}\n` +
         `SGST (${sgstRate}%): ${sgstAmount.toFixed(2)}\n` +
         (isInclusive ? `(Prices include GST)\n` : `(Exclusive: Tax added on items)\n`);
@@ -263,6 +349,18 @@ export function ThermalBillModal({ isOpen, onClose, order, shop, initialMode }: 
 
           {/* Quick Actions */}
           <div className="flex items-center gap-2 shrink-0">
+            {/* Bill Print Language Custom Dropdown */}
+            <div className="w-48 shrink-0">
+              <SearchableSelect
+                options={langOptions}
+                value={billLang}
+                onChange={(val) => setBillLang(val)}
+                placeholder="Bill Language"
+                showSearch={false}
+                className="h-9 text-xs"
+              />
+            </div>
+
             <Button
               size="sm"
               variant="outline"
@@ -291,7 +389,7 @@ export function ThermalBillModal({ isOpen, onClose, order, shop, initialMode }: 
         {hasNewlyAdded && (
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl">
             <div className="flex items-center gap-2">
-              <Sparkles size={16} className="text-amber-600 dark:text-amber-400 shrink-0" />
+              <Clock size={16} className="text-amber-600 dark:text-amber-400 shrink-0" />
               <div>
                 <div className="font-extrabold text-xs text-amber-900 dark:text-amber-200">
                   Running Additions Detected
@@ -355,10 +453,10 @@ export function ThermalBillModal({ isOpen, onClose, order, shop, initialMode }: 
               <h2 className="font-black text-sm uppercase tracking-wide leading-tight text-black">
                 {shop?.name || 'STORE RECEIPT'}
               </h2>
-              {shop?.description && (
-                <p className="text-[10px] text-slate-700 mt-0.5">{shop.description}</p>
+              {translatedDesc && (
+                <p className="text-[10px] text-slate-700 mt-0.5">{translatedDesc}</p>
               )}
-              {addressLines.map((line: string, idx: number) => (
+              {translatedAddrLines.map((line: string, idx: number) => (
                 <p key={idx} className="text-[10px] text-slate-800 leading-tight">
                   {line}
                 </p>
@@ -396,25 +494,29 @@ export function ThermalBillModal({ isOpen, onClose, order, shop, initialMode }: 
             {/* Meta Information */}
             <div className="text-[11px] space-y-0.5">
               <div className="flex justify-between">
-                <span>Bill No</span>
+                <span>{t.billNo}</span>
                 <span className="font-bold">{billNo}</span>
               </div>
               <div className="flex justify-between">
-                <span>Date</span>
+                <span>{t.date}</span>
                 <span>{formattedDateTime}</span>
               </div>
-              <div className="flex justify-between">
-                <span>Customer</span>
-                <span className="font-bold">{order.customer_name || 'Walk-in'}</span>
-              </div>
-              {order.customer_phone && (
-                <div className="flex justify-between">
-                  <span>Mobile</span>
-                  <span className="font-bold">{order.customer_phone}</span>
-                </div>
+              {Boolean(order.customer_name) && !['walk-in', 'walk-in customer', 'walk in', 'walk in customer', 'walkin', 'walkin customer'].includes(order.customer_name.trim().toLowerCase()) && (
+                <>
+                  <div className="flex justify-between">
+                    <span>{t.customer}</span>
+                    <span className="font-bold">{order.customer_name}</span>
+                  </div>
+                  {order.customer_phone && (
+                    <div className="flex justify-between">
+                      <span>{t.mobile}</span>
+                      <span className="font-bold">{order.customer_phone}</span>
+                    </div>
+                  )}
+                </>
               )}
               <div className="flex justify-between">
-                <span>Type</span>
+                <span>{t.type}</span>
                 <span>{orderTypeLabel}</span>
               </div>
               {order.delivery_address && (
@@ -428,8 +530,8 @@ export function ThermalBillModal({ isOpen, onClose, order, shop, initialMode }: 
             {/* Items Header */}
             <div className="border-t border-dashed border-black my-2.5" />
             <div className="flex justify-between text-[11px] font-black">
-              <span>ITEM</span>
-              <span>AMOUNT</span>
+              <span>{t.item}</span>
+              <span>{t.amount}</span>
             </div>
             <div className="border-t border-dashed border-black my-2.5" />
 
@@ -449,6 +551,11 @@ export function ThermalBillModal({ isOpen, onClose, order, shop, initialMode }: 
                   <div key={idx}>
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="font-bold break-words leading-tight">{it.name}</span>
+                      {it.is_taxable === false && (
+                        <span className="text-[8.5px] font-bold text-amber-800 bg-amber-100 dark:bg-amber-900/40 dark:text-amber-300 px-1 py-0.5 rounded border border-amber-300/60 dark:border-amber-700/60 leading-none">
+                          0% Tax
+                        </span>
+                      )}
                     </div>
                     {variantLabel && (
                       <div className="text-[9.5px] text-slate-700">({variantLabel})</div>
@@ -473,12 +580,12 @@ export function ThermalBillModal({ isOpen, onClose, order, shop, initialMode }: 
             {/* Subtotal & Discounts */}
             <div className="text-[11px] space-y-0.5">
               <div className="flex justify-between">
-                <span>Subtotal</span>
+                <span>{t.subtotal}</span>
                 <span>{subtotal.toFixed(2)}</span>
               </div>
               {discountAmount > 0 && (
                 <div className="flex justify-between">
-                  <span>Discount</span>
+                  <span>{t.discount}</span>
                   <span>-{discountAmount.toFixed(2)}</span>
                 </div>
               )}
@@ -493,6 +600,12 @@ export function ThermalBillModal({ isOpen, onClose, order, shop, initialMode }: 
                     <span>Taxable Turnover:</span>
                     <span>{taxableValue.toFixed(2)}</span>
                   </div>
+                  {effNonTaxableAmount > 0 && (
+                    <div className="flex justify-between text-amber-800 dark:text-amber-400 font-medium">
+                      <span>Exempt / Non-Taxable:</span>
+                      <span>{effNonTaxableAmount.toFixed(2)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between">
                     <span>CGST ({cgstRate}%):</span>
                     <span>{cgstAmount.toFixed(2)}</span>
@@ -511,32 +624,62 @@ export function ThermalBillModal({ isOpen, onClose, order, shop, initialMode }: 
             {/* Grand Total */}
             <div className="border-t border-dashed border-black my-2.5" />
             <div className="flex justify-between items-center text-sm font-black py-0.5">
-              <span>TOTAL</span>
+              <span>{t.netPayable}</span>
               <span>{currencySymbol} {finalBillTotal.toFixed(2)}</span>
             </div>
             <div className="border-t border-dashed border-black my-2.5" />
 
-            {/* Payment Method & Status */}
-            <div className="flex justify-between text-[11px] uppercase">
-              <span>{order.payment_method || 'CASH'}</span>
-              <span className="font-bold">
-                {(order.payment_status || 'PENDING') === 'paid' ? 'PAID' : (order.payment_status || 'PENDING')}
-              </span>
-            </div>
+            {/* Payment Method & Status / Split Payments Breakdown */}
+            {(() => {
+              let splitList: any[] = [];
+              if (Array.isArray(order.split_payments)) {
+                splitList = order.split_payments;
+              } else if (typeof order.split_payments === 'string') {
+                try {
+                  const parsed = JSON.parse(order.split_payments);
+                  if (Array.isArray(parsed)) splitList = parsed;
+                } catch {}
+              }
+              const activeSplits = splitList.filter((sp: any) => Number(sp?.amount) > 0);
+              const isPaid = (order.payment_status || 'PENDING').toLowerCase() === 'paid';
+              const statusPrefix = isPaid ? t.paid : t.due;
+
+              if (activeSplits.length > 0) {
+                return (
+                  <div className="space-y-1 text-[11px]">
+                    {activeSplits.map((sp: any, idx: number) => (
+                      <div key={idx} className="flex justify-between uppercase">
+                        <span>{statusPrefix} {formatPaymentMethod(sp.method, t)}</span>
+                        <span className="font-bold">{currencySymbol} {Number(sp.amount || 0).toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              }
+
+              return (
+                <div className="flex justify-between text-[11px] uppercase">
+                  <span>{formatPaymentMethod(order.payment_method, t)}</span>
+                  <span className="font-bold">
+                    {isPaid ? t.paid : (order.payment_status || t.due)}
+                  </span>
+                </div>
+              );
+            })()}
 
             {/* Savings Callout */}
             {discountAmount > 0 && (
               <div className="border border-dashed border-black p-1.5 text-center font-bold text-[11px] my-2.5">
-                SAVED {currencySymbol} {discountAmount.toFixed(2)} ON THIS BILL
+                {t.saved} {currencySymbol} {discountAmount.toFixed(2)}
               </div>
             )}
 
             {/* Footer */}
             <div className="border-t border-dashed border-black my-2.5" />
             <div className="text-center text-[10px] space-y-0.5 text-slate-800 leading-tight pt-1">
-              <div>Thank you for ordering with us!</div>
-              <div className="text-[9px]">Goods once sold are not returnable without this receipt.</div>
-              <div className="font-bold text-[11px] pt-1.5">*** Visit again ***</div>
+              <div>{t.thankYou}</div>
+              <div className="text-[9px]">{t.returnPolicy}</div>
+              <div className="font-bold text-[11px] pt-1.5">{t.visitAgain}</div>
             </div>
           </div>
         </div>

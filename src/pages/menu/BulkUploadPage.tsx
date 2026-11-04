@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router';
 import { toast } from 'react-hot-toast';
-import { Upload, FileText, ImageIcon, Check, Sparkles, Loader2, ChevronLeft } from 'lucide-react';
+import { Upload, FileText, ImageIcon, Check, Loader2, ChevronLeft, FileSpreadsheet } from 'lucide-react';
 import { api } from '@/services/api';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -113,7 +113,7 @@ export function BulkUploadPage() {
         </button>
         <div>
           <h2 className="text-2xl font-bold font-heading flex items-center gap-2">
-            AI Bulk Upload <Sparkles size={20} className="text-amber-500" />
+            AI Bulk Upload <FileSpreadsheet size={20} className="text-amber-500" />
           </h2>
           <p className="text-slate-500">Upload a PDF or Image of your menu to automatically extract items.</p>
         </div>
@@ -163,7 +163,7 @@ export function BulkUploadPage() {
                     {isUploading ? (
                       <><Loader2 size={18} className="mr-2 animate-spin" /> Processing AI...</>
                     ) : (
-                      <><Sparkles size={18} className="mr-2" /> Extract Menu Items</>
+                      <><FileSpreadsheet size={18} className="mr-2" /> Extract Menu Items</>
                     )}
                   </Button>
                 </div>

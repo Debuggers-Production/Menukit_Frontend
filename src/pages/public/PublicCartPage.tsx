@@ -1,7 +1,7 @@
 import { LinkifiedText } from '../../components/LinkifiedText';
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router';
-import { ShoppingBag, Plus, Minus, Info, ChevronLeft, ChevronRight, ChevronDown, CheckCircle, XCircle, Key, MapPin, Navigation, Map, Armchair, Gift, Sparkles, Percent, Banknote, Truck, Tag, Clock, AlertTriangle, UtensilsCrossed, Gamepad2, History, Trophy, ChefHat, ShieldCheck, RotateCcw, Calendar, Copy, Crown, Lock, CheckCircle2, TrendingDown, Layers } from 'lucide-react';
+import { useParams, useNavigate, Link } from 'react-router';
+import { ShoppingBag, Plus, Minus, Info, ChevronLeft, ChevronRight, ChevronDown, CheckCircle, XCircle, Key, MapPin, Navigation, Map, Armchair, Gift, Percent, Banknote, Truck, Tag, Clock, AlertTriangle, UtensilsCrossed, Gamepad2, History, Trophy, ChefHat, ShieldCheck, RotateCcw, Calendar, Copy, Crown, Lock, CheckCircle2, TrendingDown, Layers } from 'lucide-react';
 import { useCartStore, useShopCart } from '@/store/cartStore';
 import { OrderTypeModal } from '@/components/public/OrderTypeModal';
 import { api } from '@/services/api';
@@ -14,6 +14,8 @@ import { Modal } from '@/components/ui/Modal';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { SearchableSelect } from '@/components/ui/SearchableSelect';
 import { DiscountUnlockPopup } from '@/components/public/DiscountUnlockPopup';
+import { CountryCodeSelect } from '@/components/ui/CountryCodeSelect';
+import { useGeoCountryCode } from '@/hooks/useGeoCountryCode';
 import confetti from 'canvas-confetti';
 import toast from 'react-hot-toast';
 import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
@@ -23,6 +25,7 @@ import { useActiveOrders } from '@/hooks/useActiveOrders';
 
 import { triggerHaptic, HAPTIC_PATTERNS } from '@/utils/haptic';
 import { loadGoogleFont } from '@/utils/fontLoader';
+import { applyThemeToElement } from '@/utils/themeApplier';
 import { calculateOrderPricing } from '@/utils/pricing';
 import { getItemMultiplier } from '@/utils/itemMultiplier';
 import { getUniqueCustomerDiscountCode } from '@/utils/discountCodeHelper';
@@ -112,11 +115,18 @@ export function PublicCartPage() {
   const [isOrderTypeModalOpen, setIsOrderTypeModalOpen] = useState(false);
   const [checkoutStep, setCheckoutStep] = useState<1 | 2>(1);
   const [customerName, setCustomerName] = useState('');
+  const [customerCountryCode, setCustomerCountryCode] = useGeoCountryCode('+91');
   const [customerPhone, setCustomerPhone] = useState('');
   const [tableNumber, setTableNumber] = useState('');
   const [occupiedTables, setOccupiedTables] = useState<any[]>([]);
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'online' | 'upi'>('online');
+
+  useEffect(() => {
+    if (shop?.theme) {
+      applyThemeToElement(shop.theme);
+    }
+  }, [shop?.theme]);
 
   // Fetch occupied tables for dine-in
   useEffect(() => {
@@ -301,7 +311,7 @@ export function PublicCartPage() {
   }, [items, orderType]);
 
   const isDiscountApplicable = useCallback((disc: Discount) => {
-    if (disc.is_already_used) return false;
+    if (disc.is_already_used && !disc.is_price_drop) return false;
     const minSpend = disc.min_order_value ? Number(disc.min_order_value) : (disc.discount_type === 'free_item' && disc.discount_value ? Number(disc.discount_value) : 0);
     let applicableSubtotal = 0;
     const checkItemMatches = (menuItem: any, selectedVariantIdx?: number) => {
@@ -665,7 +675,10 @@ export function PublicCartPage() {
     const savedLat = localStorage.getItem('customer_lat');
     const savedLng = localStorage.getItem('customer_lng');
 
-    let finalPhone = customerPhone;
+    let finalPhone = customerPhone.trim();
+    if (finalPhone && !finalPhone.startsWith('+')) {
+      finalPhone = `${customerCountryCode}${finalPhone.replace(/\D/g, '')}`;
+    }
     try {
       const payload = JSON.parse(atob(currentToken.split('.')[1]));
       if (payload?.sub) finalPhone = payload.sub;
@@ -733,7 +746,8 @@ export function PublicCartPage() {
             variant_info: it.menuItem.variants && it.menuItem.variants.length > 0
               ? { name: it.menuItem.variants[it.selectedVariantIdx].name }
               : null,
-            addons_info: it.selectedAddons.map(idx => ({ name: it.menuItem.addons![idx].name, price: it.menuItem.addons![idx].price }))
+            addons_info: it.selectedAddons.map(idx => ({ name: it.menuItem.addons![idx].name, price: it.menuItem.addons![idx].price })),
+            is_taxable: it.menuItem.is_taxable !== false
           };
         })
       };
@@ -995,7 +1009,7 @@ export function PublicCartPage() {
 
     if (manualDiscountId && manualDiscountId !== 'none') {
       const disc = availableDiscounts.find(d => d.id === manualDiscountId);
-      if (disc && disc.is_active !== false && !disc.is_already_used) {
+      if (disc && disc.is_active !== false && (!disc.is_already_used || disc.is_price_drop)) {
         const isMemberOk = !((disc.visibility_type === 'members_only_hidden' || disc.visibility_type === 'members_only_visible') && memberStatus !== 'verified-member');
         const isUnlockOk = !(disc.visibility_type === 'unlock_required' && !memberStatus);
         const isTypeOk = ['percentage', 'flat', 'fixed', 'bogo', 'combo', 'free_item'].includes(disc.discount_type);
@@ -1104,7 +1118,7 @@ export function PublicCartPage() {
     // Check if the currently applied discount is still valid and meets min_order_value
     if (manualDiscountId) {
       const activeDisc = availableDiscounts.find(d => d.id === manualDiscountId);
-      if (activeDisc && activeDisc.is_active !== false && !activeDisc.is_already_used) {
+      if (activeDisc && activeDisc.is_active !== false && (!activeDisc.is_already_used || activeDisc.is_price_drop)) {
         const minSpend = activeDisc.min_order_value 
           ? Number(activeDisc.min_order_value) 
           : (activeDisc.discount_type === 'free_item' && activeDisc.discount_value ? Number(activeDisc.discount_value) : 0);
@@ -1120,7 +1134,13 @@ export function PublicCartPage() {
 
     // Current discount is null or no longer valid — evaluate all qualifying discounts
     const qualifyingDiscounts = availableDiscounts.filter(disc => {
-      if (disc.is_active === false || disc.is_already_used || disc.is_price_drop) return false;
+      if (disc.is_active === false) return false;
+      if (disc.is_already_used && !disc.is_price_drop) return false;
+      const hasSpendRange = Boolean(
+        (disc.min_order_value && Number(disc.min_order_value) > 0) ||
+        (disc.max_order_value && Number(disc.max_order_value) > 0)
+      );
+      if (disc.is_price_drop && !hasSpendRange) return false;
       if (disc.visibility_type === 'hidden') return false;
       if ((disc.visibility_type === 'members_only_hidden' || disc.visibility_type === 'members_only_visible') && memberStatus !== 'verified-member') return false;
       if (disc.visibility_type === 'unlock_required' && !memberStatus) return false;
@@ -1408,7 +1428,12 @@ export function PublicCartPage() {
   }
 
   const { theme } = shop || {};
-  const borderRadiusClass = (theme as any)?.border_radius === 'sharp' ? 'rounded-none' : (theme as any)?.border_radius === 'pill' ? 'rounded-3xl' : 'rounded-xl';
+  const activeBorderRadius = (theme as any)?.border_radius || 'smooth';
+  const borderRadiusClass = activeBorderRadius === 'pill'
+    ? 'rounded-3xl'
+    : activeBorderRadius === 'smooth'
+    ? 'rounded-xl'
+    : 'rounded-none';
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col max-w-2xl mx-auto pb-[90px]" style={{ fontFamily: theme?.font_family || 'Inter' }}>
@@ -2106,9 +2131,16 @@ export function PublicCartPage() {
                     }
                   </div>
 
-                  <p className="text-[10px] text-amber-700/80 dark:text-amber-400/80 font-medium italic pt-0.5">
-                    *Terms & conditions applicable
-                  </p>
+                  <div className="flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400 font-medium pt-1 flex-wrap">
+                    <span>*Terms & conditions apply.</span>
+                    <Link to="/terms" target="_blank" className="text-orange-600 dark:text-orange-400 hover:underline font-bold">
+                      Terms of Service
+                    </Link>
+                    <span>•</span>
+                    <Link to="/privacy" target="_blank" className="text-orange-600 dark:text-orange-400 hover:underline font-bold">
+                      Privacy Policy
+                    </Link>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2310,24 +2342,39 @@ export function PublicCartPage() {
                     </button>
                   )}
                 </label>
-                <input
-                  type="tel"
-                  placeholder="Enter mobile number"
-                  value={customerPhone}
-                  disabled={!!token}
-                  onChange={(e) => setCustomerPhone(e.target.value)}
-                  className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:border-slate-300 transition-all font-medium text-sm ${
-                    token 
-                      ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200' 
-                      : 'bg-slate-50 text-slate-800 border-slate-200'
-                  }`}
-                />
+                <div className="flex items-center gap-2">
+                  {!token && (
+                    <CountryCodeSelect
+                      value={customerCountryCode}
+                      onChange={setCustomerCountryCode}
+                      heightClass="h-11"
+                      className="rounded-xl px-2.5 text-xs"
+                      autoDetect
+                    />
+                  )}
+                  <input
+                    type="tel"
+                    placeholder="Enter mobile number"
+                    value={customerPhone}
+                    disabled={!!token}
+                    onChange={(e) => setCustomerPhone(e.target.value)}
+                    className={`flex-1 min-w-0 px-4 py-3 border rounded-xl focus:outline-none focus:border-slate-300 transition-all font-medium text-sm ${
+                      token 
+                        ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200' 
+                        : 'bg-slate-50 text-slate-800 border-slate-200'
+                    }`}
+                  />
+                </div>
                 {!token && (
                   <p className="text-[10px] text-slate-500 mt-2">
                     By continuing, you accept our{' '}
-                    <a href="https://menukit.debuggerstechnologies.com/terms" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium">
-                      Terms and Conditions
-                    </a>
+                    <Link to="/terms" target="_blank" className="text-orange-600 dark:text-orange-400 hover:underline font-bold">
+                      Terms of Service
+                    </Link>{' '}
+                    and{' '}
+                    <Link to="/privacy" target="_blank" className="text-orange-600 dark:text-orange-400 hover:underline font-bold">
+                      Privacy Policy
+                    </Link>.
                   </p>
                 )}
               </div>
@@ -2613,9 +2660,16 @@ export function PublicCartPage() {
                         }
                       </div>
 
-                      <p className="text-[10px] text-amber-700/80 dark:text-amber-400/80 font-medium italic pt-0.5">
-                        *Terms & conditions applicable
-                      </p>
+                      <div className="flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400 font-medium pt-1 flex-wrap">
+                        <span>*Terms & conditions apply.</span>
+                        <Link to="/terms" target="_blank" className="text-orange-600 dark:text-orange-400 hover:underline font-bold">
+                          Terms of Service
+                        </Link>
+                        <span>•</span>
+                        <Link to="/privacy" target="_blank" className="text-orange-600 dark:text-orange-400 hover:underline font-bold">
+                          Privacy Policy
+                        </Link>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -2917,11 +2971,17 @@ export function PublicCartPage() {
                           </span>
                         </div>
                         <p className="text-xs text-emerald-900/90 dark:text-emerald-300/90 mt-1.5 font-medium leading-relaxed">
-                          No coupon code needed! This discount is already applied directly to the prices of all eligible items in your cart.
+                          {(disc.min_order_value && Number(disc.min_order_value) > 0) || (disc.max_order_value && Number(disc.max_order_value) > 0)
+                            ? 'No coupon code needed! This discount is automatically applied to your cart when your spend is in range. Order as many times as you like!'
+                            : 'No coupon code needed! This discount is already applied directly to the prices of all eligible items in your cart.'}
                         </p>
                         <div className="mt-2.5 flex items-center gap-1.5 text-[11px] font-bold text-emerald-800 dark:text-emerald-300">
                           <CheckCircle2 size={13} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
-                          <span>Automatically reflected in item totals</span>
+                          <span>
+                            {(disc.min_order_value && Number(disc.min_order_value) > 0) || (disc.max_order_value && Number(disc.max_order_value) > 0)
+                              ? 'Unlimited uses on all qualifying orders'
+                              : 'Automatically reflected in item totals'}
+                          </span>
                         </div>
                       </div>
                     </div>

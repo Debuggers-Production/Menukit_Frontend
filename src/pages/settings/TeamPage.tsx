@@ -1,3 +1,4 @@
+import { cn } from '@/utils/cn';
 import { useState, useEffect } from 'react';
 import { Mail, Shield, Trash2, Send, RefreshCw, UserPlus, ChevronDown, ChevronUp, Link } from 'lucide-react';
 import { api } from '@/services/api';
@@ -82,7 +83,7 @@ export function TeamPage() {
   const { setTitle } = useHeaderStore();
 
   useEffect(() => {
-    setTitle('Staff Management', 'Manage team members & access.');
+    setTitle('Staff & Team');
   }, [setTitle]);
 
   useEffect(() => {
@@ -264,164 +265,205 @@ export function TeamPage() {
   };
 
   return (
-    <div className="flex flex-col h-full gap-0 animate-in fade-in duration-300">
+    <div className="flex flex-col h-full gap-4 animate-in fade-in duration-200">
       
       <HeaderActions>
-        <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl shadow-inner shrink-0">
+        <div className="flex items-center gap-1 bg-card border border-border/80 p-1 rounded-lg shadow-2xs shrink-0">
           <button 
             onClick={() => setActiveTab('members')} 
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[13px] font-semibold transition-all ${activeTab === 'members' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
+            className={cn(
+              "flex items-center gap-1.5 px-3 h-7.5 rounded-md text-xs font-bold transition-all cursor-pointer",
+              activeTab === 'members'
+                ? "bg-primary text-white shadow-2xs"
+                : "text-muted-foreground hover:text-foreground"
+            )}
           >
-            Staff <span className="bg-slate-200 dark:bg-slate-600 text-[10px] px-2 py-0.5 rounded-full">{activeMembers.length + 1}</span>
+            <span>Staff</span>
+            <span className={cn(
+              "text-[9.5px] px-1.5 py-0.2 rounded-md font-bold",
+              activeTab === 'members' ? "bg-white/20 text-white" : "bg-muted text-muted-foreground"
+            )}>
+              {activeMembers.length + 1}
+            </span>
           </button>
           <button 
             onClick={() => setActiveTab('invitations')} 
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[13px] font-semibold transition-all ${activeTab === 'invitations' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
+            className={cn(
+              "flex items-center gap-1.5 px-3 h-7.5 rounded-md text-xs font-bold transition-all cursor-pointer",
+              activeTab === 'invitations'
+                ? "bg-primary text-white shadow-2xs"
+                : "text-muted-foreground hover:text-foreground"
+            )}
           >
-            Invitations <span className="bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-400 text-[10px] px-2 py-0.5 rounded-full">{pendingMembers.length}</span>
+            <span>Invitations</span>
+            <span className={cn(
+              "text-[9.5px] px-1.5 py-0.2 rounded-md font-bold",
+              activeTab === 'invitations' ? "bg-white/20 text-white" : "bg-amber-500/15 text-amber-600 dark:text-amber-400"
+            )}>
+              {pendingMembers.length}
+            </span>
           </button>
         </div>
       </HeaderActions>
 
-      {/* Mobile-Only Tab Switcher matching Menus & Orders sticky header UI */}
-      <div className="sticky top-[-16px] sm:top-[-24px] lg:top-[-32px] z-20 flex lg:hidden bg-background/95 backdrop-blur-md pb-3 pt-3 -mx-4 px-4 sm:-mx-6 sm:px-6 border-b border-border mb-4">
-        <div className="flex items-center gap-1.5 p-1 bg-slate-200/60 dark:bg-slate-800 rounded-xl">
-          <button 
-            onClick={() => setActiveTab('members')} 
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-[13px] font-extrabold transition-all cursor-pointer ${activeTab === 'members' ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'}`}
-          >
-            Staff <span className="bg-slate-200/80 dark:bg-slate-700 text-[10px] px-2 py-0.5 rounded-full">{activeMembers.length + 1}</span>
-          </button>
-          <button 
-            onClick={() => setActiveTab('invitations')} 
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-[13px] font-extrabold transition-all cursor-pointer ${activeTab === 'invitations' ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'}`}
-          >
-            Invitations <span className="bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 text-[10px] px-2 py-0.5 rounded-full font-black">{pendingMembers.length}</span>
-          </button>
-        </div>
+      {/* Mobile Tab Switcher */}
+      <div className="flex lg:hidden items-center gap-1 p-1 bg-card rounded-lg border border-border/80 shadow-2xs">
+        <button 
+          onClick={() => setActiveTab('members')} 
+          className={cn(
+            "flex-1 flex items-center justify-center gap-1.5 h-8 rounded-md text-xs font-bold transition-all cursor-pointer",
+            activeTab === 'members'
+              ? "bg-primary text-white shadow-2xs"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <span>Staff</span>
+          <span className="text-[9.5px] px-1.5 py-0.2 rounded-md bg-muted text-muted-foreground font-bold">
+            {activeMembers.length + 1}
+          </span>
+        </button>
+        <button 
+          onClick={() => setActiveTab('invitations')} 
+          className={cn(
+            "flex-1 flex items-center justify-center gap-1.5 h-8 rounded-md text-xs font-bold transition-all cursor-pointer",
+            activeTab === 'invitations'
+              ? "bg-primary text-white shadow-2xs"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <span>Invitations</span>
+          <span className="text-[9.5px] px-1.5 py-0.2 rounded-md bg-amber-500/15 text-amber-600 font-bold">
+            {pendingMembers.length}
+          </span>
+        </button>
       </div>
 
       {/* Main Layout Grid */}
-      <div className="flex flex-col lg:flex-row gap-6 items-start mt-4">
+      <div className="flex flex-col lg:flex-row gap-5 items-start">
         
-        {/* Left Column — Fixed / Pinned Active Staff View */}
-        <div className="flex-1 w-full min-w-0 space-y-6">
+        {/* Left Column — Active Staff / Invitations View */}
+        <div className="flex-1 w-full min-w-0 space-y-3.5">
           {isLoading ? (
             <div className="flex justify-center p-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-primary"></div>
             </div>
           ) : activeTab === 'members' ? (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="font-bold text-lg text-slate-800 dark:text-slate-200">Active Staff</h3>
-                  <p className="text-xs text-slate-500">{activeMembers.length + 1} user(s) with active workspace access</p>
+            <div className="space-y-3">
+              {/* Owner Card (Current User) */}
+              <div className="bg-card border border-border/80 rounded-lg p-3.5 shadow-2xs flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-md bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-bold text-sm shadow-2xs">
+                    {user?.email?.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-bold text-xs sm:text-sm text-foreground">You</h4>
+                      <span className="bg-primary/10 text-primary text-[9.5px] px-2 py-0.5 rounded-md font-bold uppercase tracking-wider border border-primary/20">
+                        Owner
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{user?.email}</p>
+                  </div>
+                </div>
+                <div className="text-xs text-muted-foreground flex items-center gap-1 font-semibold">
+                  <Shield size={13} className="text-primary" /> Full Workspace Access
                 </div>
               </div>
 
-              {/* Owner Card (Current User) */}
-              <Card className="overflow-hidden border-slate-200 dark:border-slate-800 shadow-sm">
-                <div className="p-4 sm:p-5 flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-full bg-primary text-white flex items-center justify-center font-bold">
-                      {user?.email?.charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h4 className="font-semibold text-slate-900 dark:text-white">You</h4>
-                        <span className="bg-blue-100 text-blue-700 text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Owner</span>
-                      </div>
-                      <p className="text-sm text-slate-500">{user?.email}</p>
-                    </div>
-                  </div>
-                  <div className="text-sm text-slate-400 flex items-center gap-1 font-medium">
-                    <Shield size={14} /> Owner
-                  </div>
-                </div>
-              </Card>
-
               {/* Active Employees */}
               {activeMembers.map(emp => (
-                <Card key={emp.id} className="overflow-hidden border-slate-200 dark:border-slate-800 shadow-sm transition-all hover:shadow-md">
-                  <div className="p-3.5 sm:p-5 flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2.5 sm:gap-4 min-w-0 flex-1">
-                      <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center font-bold uppercase shrink-0">
+                <div key={emp.id} className="bg-card border border-border/80 rounded-lg shadow-2xs transition-all hover:border-primary/40 overflow-hidden">
+                  <div className="p-3 sm:p-3.5 flex items-center justify-between gap-2.5">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <div className="w-8.5 h-8.5 rounded-md bg-muted text-foreground border border-border flex items-center justify-center font-bold uppercase shrink-0 text-xs shadow-2xs">
                         {emp.email.charAt(0)}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <h4 className="font-semibold text-slate-900 dark:text-white truncate text-xs sm:text-sm max-w-[130px] sm:max-w-xs">{emp.email.split('@')[0]}</h4>
-                        <p className="text-[11px] sm:text-sm text-slate-500 truncate max-w-[130px] sm:max-w-xs">{emp.email}</p>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold text-xs sm:text-sm text-foreground truncate max-w-[130px] sm:max-w-xs">{emp.email.split('@')[0]}</h4>
+                          <span className="text-[9.5px] px-1.5 py-0.2 rounded-md bg-muted text-muted-foreground font-semibold">Staff</span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground truncate max-w-[130px] sm:max-w-xs">{emp.email}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
-                      <span className="hidden sm:inline text-xs sm:text-sm text-slate-600 dark:text-slate-400 font-medium">Staff</span>
+                    <div className="flex items-center gap-1.5 shrink-0">
                       <button 
                         onClick={() => toggleExpand(emp.id, emp.permissions)}
-                        className={`p-1.5 sm:p-2 rounded-lg transition-colors ${expandedMember === emp.id ? 'bg-primary text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+                        className={cn(
+                          "h-7.5 px-2.5 rounded-md text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer border",
+                          expandedMember === emp.id 
+                            ? "bg-primary text-white border-primary" 
+                            : "bg-muted text-foreground border-border hover:bg-muted/80"
+                        )}
                         title="Edit Permissions"
                       >
-                        {expandedMember === emp.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                        <span>Permissions</span>
+                        {expandedMember === emp.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                       </button>
                       <button 
                         onClick={() => handleOpenDeleteModal(emp.id, emp.email)} 
                         disabled={sendingOtpForId === emp.id}
-                        className="p-1.5 sm:p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg transition-colors disabled:opacity-50"
-                        title="Remove member (Requires OTP verification)"
+                        className="w-7.5 h-7.5 flex items-center justify-center text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-md transition-colors disabled:opacity-50 border border-border hover:border-rose-300 cursor-pointer"
+                        title="Remove member"
                       >
-                        {sendingOtpForId === emp.id ? <RefreshCw size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                        {sendingOtpForId === emp.id ? <RefreshCw size={13} className="animate-spin" /> : <Trash2 size={13} />}
                       </button>
                     </div>
                   </div>
 
                   {/* Permissions Accordion Content */}
                   {expandedMember === emp.id && (
-                    <div className="bg-slate-50 dark:bg-slate-900/50 p-3.5 sm:p-4 border-t border-slate-100 dark:border-slate-800 animate-in slide-in-from-top-2 duration-200">
-                      <div className="flex items-center gap-1.5 text-xs font-semibold text-primary mb-2.5">
-                        <Shield size={14} /> Editing Permissions — {emp.email.split('@')[0]}
+                    <div className="bg-muted/20 p-3.5 border-t border-border/80 space-y-3 animate-in fade-in duration-150">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-foreground">
+                          <Shield size={13} className="text-primary" />
+                          <span>Configure Module Permissions — {emp.email.split('@')[0]}</span>
+                        </div>
+                        <span className="text-[10px] text-muted-foreground">Select access level per service</span>
                       </div>
                       
-                      <div className="w-full overflow-x-auto">
+                      <div className="rounded-md border border-border/80 overflow-hidden bg-card">
                         <table className="w-full text-xs text-left">
-                          <thead className="text-[10px] uppercase text-slate-500 dark:text-slate-400 font-bold border-b border-slate-200 dark:border-slate-700">
+                          <thead className="text-[10px] uppercase text-muted-foreground font-bold bg-muted/50 border-b border-border/80">
                             <tr>
-                              <th className="pb-1.5 font-bold">Service</th>
-                              <th className="pb-1.5 text-center w-14">None</th>
-                              <th className="pb-1.5 text-center text-blue-600 dark:text-blue-400 w-14">Read</th>
-                              <th className="pb-1.5 text-center text-emerald-600 dark:text-emerald-400 w-14">Write</th>
+                              <th className="py-2 px-3 font-bold">Module / Service</th>
+                              <th className="py-2 text-center w-14">None</th>
+                              <th className="py-2 text-center text-blue-600 dark:text-blue-400 w-14">Read</th>
+                              <th className="py-2 text-center text-emerald-600 dark:text-emerald-400 w-14">Write</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                          <tbody className="divide-y divide-border/60">
                             {services.map(s => {
                               const empPerms = editingPermissions[emp.id] || emp.permissions || {};
                               const currentLevel = getServiceLevelFromPerms(empPerms, s.id);
                               return (
-                                <tr key={s.id} className="hover:bg-slate-100/50 dark:hover:bg-slate-800/30 transition-colors">
-                                  <td className="py-1.5 font-medium text-slate-700 dark:text-slate-300">{s.label}</td>
-                                  <td className="py-1.5 text-center">
+                                <tr key={s.id} className="hover:bg-muted/40 transition-colors">
+                                  <td className="py-2 px-3 font-semibold text-foreground text-xs">{s.label}</td>
+                                  <td className="py-2 text-center">
                                     <input 
                                       type="radio" 
                                       name={`${emp.id}-${s.id}`} 
                                       checked={currentLevel === 'none'} 
                                       onChange={() => handleUpdatePermission(emp.id, s.id, 'none')}
-                                      className="w-3.5 h-3.5 text-slate-400 border-slate-300 focus:ring-slate-400 cursor-pointer" 
+                                      className="w-3.5 h-3.5 text-muted-foreground border-border cursor-pointer" 
                                     />
                                   </td>
-                                  <td className="py-1.5 text-center">
+                                  <td className="py-2 text-center">
                                     <input 
                                       type="radio" 
                                       name={`${emp.id}-${s.id}`} 
                                       checked={currentLevel === 'read'} 
                                       onChange={() => handleUpdatePermission(emp.id, s.id, 'read')}
-                                      className="w-3.5 h-3.5 text-blue-500 border-slate-300 focus:ring-blue-500 cursor-pointer" 
+                                      className="w-3.5 h-3.5 text-blue-600 border-border cursor-pointer" 
                                     />
                                   </td>
-                                  <td className="py-1.5 text-center">
+                                  <td className="py-2 text-center">
                                     <input 
                                       type="radio" 
                                       name={`${emp.id}-${s.id}`} 
                                       checked={currentLevel === 'write'} 
                                       onChange={() => handleUpdatePermission(emp.id, s.id, 'write')}
-                                      className="w-3.5 h-3.5 text-emerald-500 border-slate-300 focus:ring-emerald-500 cursor-pointer" 
+                                      className="w-3.5 h-3.5 text-emerald-600 border-border cursor-pointer" 
                                     />
                                   </td>
                                 </tr>
@@ -430,60 +472,55 @@ export function TeamPage() {
                           </tbody>
                         </table>
                       </div>
-                      <div className="flex justify-end mt-2.5">
+                      <div className="flex justify-end pt-1">
                         <Button 
                           onClick={() => saveUpdatedPermissions(emp.id)} 
                           disabled={isUpdating}
                           size="sm"
-                          className="h-8 text-xs px-3"
+                          className="h-8 text-xs px-3 rounded-md font-bold shadow-2xs cursor-pointer"
                         >
                           {isUpdating ? 'Saving...' : 'Save Permissions'}
                         </Button>
                       </div>
                     </div>
                   )}
-                </Card>
+                </div>
               ))}
               
               {activeMembers.length === 0 && (
-                <div className="text-center py-12 text-slate-500 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-dashed border-slate-200 dark:border-slate-800">
-                  <p>No additional active members.</p>
+                <div className="text-center py-10 text-muted-foreground bg-card rounded-lg border border-dashed border-border/80">
+                  <p className="text-xs font-semibold">No additional staff members added yet.</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">Use the invitation panel to invite colleagues.</p>
                 </div>
               )}
             </div>
           ) : (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="font-bold text-lg text-slate-800 dark:text-slate-200">Sent Invitations</h3>
-                  <p className="text-xs text-slate-500">All invitation links — pending, accepted, expired</p>
-                </div>
-              </div>
-
+            <div className="space-y-3">
               {pendingMembers.length === 0 ? (
-                 <div className="text-center py-12 text-slate-500 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-dashed border-slate-200 dark:border-slate-800">
-                   <Mail size={32} className="mx-auto mb-3 opacity-50" />
-                   <p>No pending invitations.</p>
+                 <div className="text-center py-10 text-muted-foreground bg-card rounded-lg border border-dashed border-border/80 space-y-1">
+                   <Mail size={24} className="mx-auto opacity-40" />
+                   <p className="text-xs font-bold text-foreground">No Pending Invitations</p>
+                   <p className="text-[11px] text-muted-foreground">Sent employee invitation links will appear here.</p>
                  </div>
               ) : (
                 pendingMembers.map(emp => (
-                  <Card key={emp.id} className="overflow-hidden border-slate-200 dark:border-slate-800 shadow-sm">
-                    <div className="p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                  <div key={emp.id} className="bg-card border border-border/80 rounded-lg p-3.5 sm:p-4 shadow-2xs space-y-2.5">
+                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
                       <div>
-                        <div className="flex items-center gap-3 mb-1">
-                          <h4 className="font-bold text-slate-900 dark:text-white">{emp.email}</h4>
-                          <span className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 text-[10px] px-2 py-0.5 rounded font-bold uppercase flex items-center gap-1">
-                            <div className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse"></div>
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <h4 className="font-bold text-xs sm:text-sm text-foreground">{emp.email}</h4>
+                          <span className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 text-[9.5px] px-2 py-0.5 rounded-md font-bold uppercase flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse"></span>
                             Pending
                           </span>
-                          <span className="bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 text-[10px] px-2 py-0.5 rounded font-medium border border-slate-200 dark:border-slate-700 flex items-center gap-1">
+                          <span className="bg-muted text-muted-foreground text-[9.5px] px-1.5 py-0.5 rounded-md font-medium border border-border flex items-center gap-1">
                             <Link size={10} /> Link only
                           </span>
                         </div>
-                        <p className="text-xs text-slate-500 mb-3">
-                          Invited by <span className="font-semibold text-slate-700 dark:text-slate-300">{user?.email}</span>
+                        <p className="text-[11px] text-muted-foreground mb-2">
+                          Invited by <span className="font-semibold text-foreground">{user?.email}</span>
                         </p>
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap gap-1.5">
                           {Object.entries(emp.permissions || {}).map(([res, perms]) => {
                              if (res === 'marketing' && (emp.permissions as any)?.['campaigns']) return null;
                              const pArr = perms as string[];
@@ -495,8 +532,8 @@ export function TeamPage() {
                                  ? 'Campaigns'
                                  : res.replace(/_/g, ' ');
                              return (
-                               <span key={res} className="text-[10px] font-medium px-2 py-1 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800/50 rounded-md capitalize">
-                                 {displayLabel} - {level}
+                               <span key={res} className="text-[9.5px] font-medium px-1.5 py-0.5 bg-muted text-foreground border border-border rounded-md capitalize">
+                                 {displayLabel} ({level})
                                </span>
                              );
                           })}
@@ -509,23 +546,23 @@ export function TeamPage() {
                           size="sm" 
                           onClick={() => handleResend(emp.id, emp.email)}
                           disabled={resendingId === emp.id}
-                          className="flex-1 md:flex-none text-xs h-8 px-3 text-blue-600 border-blue-200 hover:bg-blue-50 dark:border-blue-900/50 dark:hover:bg-blue-900/20"
+                          className="flex-1 md:flex-none text-xs h-7.5 px-3 rounded-md font-semibold text-primary border-primary/30 hover:bg-primary/10 cursor-pointer"
                         >
-                          <RefreshCw size={14} className={`mr-1.5 ${resendingId === emp.id ? 'animate-spin' : ''}`} />
+                          <RefreshCw size={12} className={`mr-1.5 ${resendingId === emp.id ? 'animate-spin' : ''}`} />
                           {resendingId === emp.id ? 'Sending...' : 'Resend'}
                         </Button>
                         <Button 
                           variant="ghost" 
                           size="sm" 
                           onClick={() => handleDirectRemove(emp.id, emp.email)} 
-                          className="h-8 w-8 p-0 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                          className="h-7.5 w-7.5 p-0 text-muted-foreground hover:text-rose-500 rounded-md border border-border cursor-pointer"
                           title="Revoke invitation"
                         >
-                          <Trash2 size={16} />
+                          <Trash2 size={13} />
                         </Button>
                       </div>
                     </div>
-                  </Card>
+                  </div>
                 ))
               )}
             </div>
@@ -533,25 +570,27 @@ export function TeamPage() {
         </div>
 
         {/* Right Column — Scrollable Invite Collaborator Panel */}
-        <div data-lenis-prevent className="w-full lg:w-[400px] shrink-0 lg:sticky lg:top-2 lg:max-h-[calc(100vh-130px)] lg:overflow-y-auto lg:pr-1 custom-scrollbar">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden flex flex-col">
+        <div data-lenis-prevent className="w-full lg:w-[380px] shrink-0 lg:sticky lg:top-2">
+          <div className="bg-card rounded-lg border border-border/80 shadow-2xs overflow-hidden flex flex-col">
             {/* Panel Header */}
-            <div className="bg-primary p-4 text-white shrink-0 sticky top-0 z-10 shadow-xs">
-              <div className="flex items-center gap-2 mb-0.5">
-                <UserPlus size={18} className="text-white/80" />
-                <h3 className="font-bold text-base">Invite Staff</h3>
+            <div className="p-3.5 border-b border-border/80 bg-muted/30 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-md bg-primary/10 text-primary flex items-center justify-center border border-primary/20 shadow-2xs">
+                  <UserPlus size={14} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-xs sm:text-sm text-foreground">Invite Staff</h3>
+                  <p className="text-[10px] text-muted-foreground">Send an invite link to colleague's email</p>
+                </div>
               </div>
-              <p className="text-primary-100 text-xs">
-                An invite link will be sent to their email
-              </p>
             </div>
 
             {/* Panel Body */}
             <div className="p-4 flex-1">
-              <form onSubmit={handleInvite}>
+              <form onSubmit={handleInvite} className="space-y-3.5">
                 {/* Email field */}
-                <div className="mb-4">
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
                     Email Address
                   </label>
                   <input
@@ -560,40 +599,40 @@ export function TeamPage() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="collaborator@example.com"
-                    className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all placeholder:text-slate-400"
+                    className="w-full px-3 h-8.5 text-xs rounded-md border border-border bg-background focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all placeholder:text-muted-foreground"
                   />
-                  <p className="text-[10px] text-slate-500 mt-1.5 leading-tight">
-                    Works for registered and new users — both receive a link to accept.
+                  <p className="text-[10px] text-muted-foreground">
+                    Works for existing or new accounts.
                   </p>
                 </div>
 
                 {/* Service Access */}
-                <div className="mb-4">
-                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
-                    <Shield size={13} /> Service Access
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                    <Shield size={12} className="text-primary" /> Service Access Matrix
                   </div>
                   
-                  <div className="rounded-lg border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 overflow-hidden">
+                  <div className="rounded-md border border-border/80 bg-card overflow-hidden">
                     <table className="w-full text-xs text-left">
-                      <thead className="bg-slate-100/80 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 sticky top-0 z-5">
+                      <thead className="bg-muted/50 border-b border-border/80">
                         <tr>
-                          <th className="py-2 px-2.5 font-semibold text-slate-600 dark:text-slate-300">Service</th>
-                          <th className="py-2 text-center font-semibold text-slate-500 w-11">None</th>
-                          <th className="py-2 text-center font-semibold text-blue-600 w-11">Read</th>
-                          <th className="py-2 text-center font-semibold text-emerald-600 w-11">Write</th>
+                          <th className="py-1.5 px-2.5 font-bold text-muted-foreground text-[10px] uppercase">Service</th>
+                          <th className="py-1.5 text-center font-bold text-muted-foreground text-[10px] uppercase w-11">None</th>
+                          <th className="py-1.5 text-center font-bold text-blue-600 dark:text-blue-400 text-[10px] uppercase w-11">Read</th>
+                          <th className="py-1.5 text-center font-bold text-emerald-600 dark:text-emerald-400 text-[10px] uppercase w-11">Write</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                      <tbody className="divide-y divide-border/60">
                         {services.map((s) => (
-                          <tr key={s.id} className="hover:bg-white dark:hover:bg-slate-800/40 transition-colors">
-                            <td className="py-1.5 px-2.5 font-medium text-slate-700 dark:text-slate-300 text-[11px]">{s.label}</td>
+                          <tr key={s.id} className="hover:bg-muted/40 transition-colors">
+                            <td className="py-1.5 px-2.5 font-semibold text-foreground text-[11px]">{s.label}</td>
                             <td className="py-1.5 text-center">
                               <input 
                                 type="radio" 
                                 name={`perm-${s.id}`} 
                                 checked={s.level === 'none'}
                                 onChange={() => handleServiceChange(s.id, 'none')}
-                                className="w-3.5 h-3.5 text-slate-400 border-slate-300 focus:ring-slate-400 cursor-pointer"
+                                className="w-3.5 h-3.5 text-muted-foreground border-border cursor-pointer"
                               />
                             </td>
                             <td className="py-1.5 text-center">
@@ -602,7 +641,7 @@ export function TeamPage() {
                                 name={`perm-${s.id}`}
                                 checked={s.level === 'read'}
                                 onChange={() => handleServiceChange(s.id, 'read')}
-                                className="w-3.5 h-3.5 text-blue-500 border-slate-300 focus:ring-blue-500 cursor-pointer"
+                                className="w-3.5 h-3.5 text-blue-600 border-border cursor-pointer"
                               />
                             </td>
                             <td className="py-1.5 text-center">
@@ -611,7 +650,7 @@ export function TeamPage() {
                                 name={`perm-${s.id}`}
                                 checked={s.level === 'write'}
                                 onChange={() => handleServiceChange(s.id, 'write')}
-                                className="w-3.5 h-3.5 text-emerald-500 border-slate-300 focus:ring-emerald-500 cursor-pointer"
+                                className="w-3.5 h-3.5 text-emerald-600 border-border cursor-pointer"
                               />
                             </td>
                           </tr>
@@ -625,17 +664,17 @@ export function TeamPage() {
                 <Button 
                   type="submit" 
                   disabled={isSending} 
-                  className="w-full h-10 text-sm shadow-md font-bold mt-1"
+                  className="w-full h-8.5 text-xs shadow-2xs font-bold rounded-md cursor-pointer mt-1"
                 >
                   {isSending ? (
-                    <div className="flex items-center gap-2">
-                      <RefreshCw size={15} className="animate-spin" />
-                      Sending...
+                    <div className="flex items-center gap-1.5">
+                      <RefreshCw size={13} className="animate-spin" />
+                      <span>Sending Invitation...</span>
                     </div>
                   ) : (
-                    <div className="flex items-center gap-2">
-                      <Send size={15} />
-                      Send Invitation
+                    <div className="flex items-center gap-1.5">
+                      <Send size={13} />
+                      <span>Send Invitation</span>
                     </div>
                   )}
                 </Button>
@@ -658,20 +697,20 @@ export function TeamPage() {
         title="Confirm Member Removal"
         className="max-w-md"
       >
-        <div className="space-y-4 pt-2">
-          <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-xs sm:text-sm font-semibold leading-relaxed flex items-start gap-2.5">
-            <Shield className="w-5 h-5 shrink-0 text-amber-600 mt-0.5" />
+        <div className="space-y-3.5 pt-1">
+          <div className="p-3 rounded-md bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs font-medium leading-relaxed flex items-start gap-2">
+            <Shield className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
             <div>
               Security Verification Required: A 6-digit verification OTP has been sent to your email (<span className="font-bold underline">{user?.email}</span>) to confirm removing <span className="font-bold">{memberToDelete?.email}</span> from workspace team access.
             </div>
           </div>
 
-          <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
-            Enter the 6-digit verification code below to authorize deletion:
+          <p className="text-xs text-muted-foreground">
+            Enter the 6-digit verification code below to authorize removal:
           </p>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+            <label className="block text-xs font-bold text-foreground mb-1">
               Enter 6-Digit Email OTP
             </label>
             <Input
@@ -679,13 +718,13 @@ export function TeamPage() {
               onChange={(e) => setDeleteOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
               placeholder="000000"
               maxLength={6}
-              className="text-center font-mono text-lg tracking-[6px] font-bold"
+              className="text-center font-mono text-base tracking-[4px] font-bold h-9 rounded-md"
               disabled={isDeletingMember}
               autoFocus
             />
           </div>
 
-          <div className="flex gap-2 pt-2">
+          <div className="flex gap-2 pt-1">
             <Button
               variant="secondary"
               onClick={() => {
@@ -693,7 +732,7 @@ export function TeamPage() {
                 setDeleteOtpCode('');
               }}
               disabled={isDeletingMember}
-              className="flex-1"
+              className="flex-1 h-8.5 rounded-md text-xs font-semibold"
             >
               Cancel
             </Button>
@@ -702,7 +741,7 @@ export function TeamPage() {
               onClick={confirmDeleteMember}
               isLoading={isDeletingMember}
               disabled={deleteOtpCode.length < 6}
-              className="flex-1 font-bold"
+              className="flex-1 h-8.5 rounded-md text-xs font-bold"
             >
               Confirm Removal
             </Button>

@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { createPortal } from 'react-dom';
-import { motion, AnimatePresence, useAnimation } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import { cn } from '@/utils/cn';
 
@@ -35,6 +35,9 @@ export function Modal({ isOpen, onClose, title, description, children, footer, c
     };
   }, [isOpen]);
 
+  const hasHeader = Boolean(title || description);
+  const isZeroPadding = className?.includes('p-0');
+
   const modalContent = (
     <AnimatePresence>
       {isOpen && (
@@ -49,53 +52,47 @@ export function Modal({ isOpen, onClose, title, description, children, footer, c
             className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs"
           />
           <motion.div
-            initial={{ opacity: 0, y: 30 }}
+            initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 30 }}
-            transition={{ type: "spring", damping: 25, stiffness: 220 }}
+            exit={{ opacity: 0, y: 16 }}
+            transition={{ type: "spring", damping: 25, stiffness: 260 }}
             className={cn(
-              "bg-background relative w-full max-w-lg rounded-t-3xl sm:rounded-2xl shadow-2xl z-10 max-h-[90vh] sm:max-h-[85vh] overflow-hidden flex flex-col border border-border",
+              "bg-background relative w-full max-w-lg rounded-t-2xl sm:rounded-2xl shadow-2xl z-10 max-h-[90vh] sm:max-h-[85vh] overflow-hidden flex flex-col border border-border",
               className
             )}
           >
-
-
-            {/* Fixed Header */}
-            {(title || description) ? (
-              <div className="relative z-30 bg-background pt-3.5 pb-3.5 px-4 sm:pt-4 sm:pb-4 sm:px-8 border-b border-border shrink-0">
+            {hasHeader ? (
+              <div className="flex items-center justify-between p-4 sm:p-4.5 border-b border-border shrink-0 bg-muted/20">
+                <div>
+                  {title && <h2 className="text-base font-semibold text-foreground tracking-tight">{title}</h2>}
+                  {description && <p className="text-xs text-muted-foreground mt-0.5">{description}</p>}
+                </div>
                 {!hideCloseButton && (
                   <button
                     onClick={onClose}
-                    className="absolute right-3.5 top-3.5 sm:right-4 sm:top-4 rounded-full p-1.5 text-muted-foreground hover:bg-muted transition-colors cursor-pointer"
+                    className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors cursor-pointer"
+                    aria-label="Close"
                   >
-                    <X className="h-4.5 w-4.5" />
-                    <span className="sr-only">Close</span>
+                    <X size={18} />
                   </button>
                 )}
-
-                <div className="space-y-1 pr-8 text-left">
-                  {title && <h2 className="text-base sm:text-xl font-bold tracking-tight font-heading text-foreground">{title}</h2>}
-                  {description && <p className="text-xs sm:text-sm text-muted-foreground">{description}</p>}
-                </div>
               </div>
             ) : !hideCloseButton ? (
               <button
                 onClick={onClose}
-                className="absolute right-3.5 top-3.5 sm:right-4 sm:top-4 rounded-full p-1.5 text-muted-foreground hover:bg-muted transition-colors z-40 cursor-pointer"
+                className="absolute top-3.5 right-3.5 z-50 p-1.5 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer"
+                aria-label="Close"
               >
-                <X className="h-4.5 w-4.5" />
-                <span className="sr-only">Close</span>
+                <X size={18} />
               </button>
             ) : null}
-
-            {/* Scrollable Content Container */}
-            <div className="flex-1 overflow-y-auto scrollbar-thin px-4 py-3.5 sm:px-8 sm:py-4 space-y-3 sm:space-y-4">
+            
+            <div className={cn("overflow-y-auto flex-1 custom-scrollbar", isZeroPadding ? "p-0" : "p-4 sm:p-5")}>
               {children}
             </div>
 
-            {/* Fixed Static Footer */}
             {footer && (
-              <div className="shrink-0 py-3 px-4 sm:py-4 sm:px-8 border-t border-border bg-background mt-auto z-20">
+              <div className="p-3.5 sm:p-4 border-t border-border bg-muted/20 shrink-0 flex items-center justify-end gap-2.5">
                 {footer}
               </div>
             )}
@@ -106,6 +103,5 @@ export function Modal({ isOpen, onClose, title, description, children, footer, c
   );
 
   if (!mounted) return null;
-
   return createPortal(modalContent, document.body);
 }

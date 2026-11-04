@@ -2,10 +2,12 @@ import { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
 
 // Global reference so any component accessing the hook shares the prompt
-let deferredInstallPrompt: any = null;
+let deferredInstallPrompt: any = typeof window !== 'undefined' ? (window as any).__deferredInstallPrompt : null;
 
 export function usePWAInstall() {
-  const [isInstallable, setIsInstallable] = useState<boolean>(() => Boolean(deferredInstallPrompt));
+  const [isInstallable, setIsInstallable] = useState<boolean>(() => {
+    return Boolean(deferredInstallPrompt || (typeof window !== 'undefined' && (window as any).__deferredInstallPrompt));
+  });
   const [isInstalled, setIsInstalled] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     return (
@@ -26,6 +28,12 @@ export function usePWAInstall() {
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
       deferredInstallPrompt = e;
+      if (typeof window !== 'undefined') (window as any).__deferredInstallPrompt = e;
+      setIsInstallable(true);
+    };
+
+    const handleCustomInstallable = () => {
+      deferredInstallPrompt = (window as any).__deferredInstallPrompt;
       setIsInstallable(true);
     };
 
@@ -33,6 +41,7 @@ export function usePWAInstall() {
       setIsInstalled(true);
       setIsInstallable(false);
       deferredInstallPrompt = null;
+      if (typeof window !== 'undefined') (window as any).__deferredInstallPrompt = null;
       toast.success('Menukit installed successfully as a desktop app!', {
         icon: '💻',
         duration: 4000,
@@ -40,25 +49,29 @@ export function usePWAInstall() {
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('menukit-pwa-installable', handleCustomInstallable);
     window.addEventListener('appinstalled', handleAppInstalled);
 
     return () => {
       mediaQuery.removeEventListener('change', handleDisplayModeChange);
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('menukit-pwa-installable', handleCustomInstallable);
       window.removeEventListener('appinstalled', handleAppInstalled);
     };
   }, []);
 
   const promptInstall = useCallback(async () => {
-    if (deferredInstallPrompt) {
+    const activePrompt = deferredInstallPrompt || (typeof window !== 'undefined' && (window as any).__deferredInstallPrompt);
+    if (activePrompt) {
       try {
-        deferredInstallPrompt.prompt();
-        const choiceResult = await deferredInstallPrompt.userChoice;
+        activePrompt.prompt();
+        const choiceResult = await activePrompt.userChoice;
         if (choiceResult.outcome === 'accepted') {
           setIsInstalled(true);
           setIsInstallable(false);
         }
         deferredInstallPrompt = null;
+        if (typeof window !== 'undefined') (window as any).__deferredInstallPrompt = null;
       } catch (err) {
         console.error('Error invoking install prompt:', err);
         setIsModalOpen(true);

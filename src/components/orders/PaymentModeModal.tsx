@@ -1,7 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
 import { 
   Banknote, 
   QrCode, 
@@ -9,9 +8,11 @@ import {
   ExternalLink, 
   Split, 
   Check, 
-  Wallet, 
-  Sparkles,
-  AlertCircle
+  AlertCircle,
+  CheckCircle2,
+  RotateCcw,
+  Percent,
+  Coins
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -31,6 +32,11 @@ export function PaymentModeModal({
   onConfirm,
 }: PaymentModeModalProps) {
   const [selectedMethod, setSelectedMethod] = useState<string>('cash');
+  
+  // Cash Tendered & Change assistant
+  const [cashTendered, setCashTendered] = useState<string>('');
+
+  // Split payment amounts
   const [splitCash, setSplitCash] = useState<string>('');
   const [splitUpi, setSplitUpi] = useState<string>('');
   const [splitCard, setSplitCard] = useState<string>('');
@@ -38,10 +44,12 @@ export function PaymentModeModal({
 
   const orderTotal = Number(order?.total_amount || 0);
 
+  // Initialize defaults on modal open
   useEffect(() => {
     if (isOpen && order) {
       const initialMethod = order.payment_method || 'cash';
       setSelectedMethod(initialMethod);
+      setCashTendered(orderTotal > 0 ? String(orderTotal) : '');
 
       if (initialMethod === 'split' && order.split_payments?.length) {
         const cashObj = order.split_payments.find((p: any) => p.method === 'cash');
@@ -51,29 +59,52 @@ export function PaymentModeModal({
         setSplitUpi(upiObj ? String(upiObj.amount) : '');
         setSplitCard(cardObj ? String(cardObj.amount) : '');
       } else {
-        const half = (orderTotal / 2).toFixed(2);
-        const rem = (orderTotal - Number(half)).toFixed(2);
-        setSplitCash(half);
-        setSplitUpi(rem);
+        const half = Math.round((orderTotal / 2) * 100) / 100;
+        const rem = Math.round((orderTotal - half) * 100) / 100;
+        setSplitCash(half > 0 ? String(half) : '');
+        setSplitUpi(rem > 0 ? String(rem) : '');
         setSplitCard('');
       }
     }
   }, [isOpen, order, orderTotal]);
 
-  if (!isOpen || !order) return null;
-
+  // Numbers & split balance validation
   const numCash = parseFloat(splitCash) || 0;
   const numUpi = parseFloat(splitUpi) || 0;
   const numCard = parseFloat(splitCard) || 0;
-  const splitTotal = numCash + numUpi + numCard;
-  const diff = orderTotal - splitTotal;
+  const splitTotal = Math.round((numCash + numUpi + numCard) * 100) / 100;
+  const diff = Math.round((orderTotal - splitTotal) * 100) / 100;
   const isSplitValid = Math.abs(diff) < 0.05 && splitTotal > 0;
 
+  // Cash change calculation
+  const numTendered = parseFloat(cashTendered) || 0;
+  const changeToReturn = Math.max(0, Math.round((numTendered - orderTotal) * 100) / 100);
+
+  // Quick cash note options based on order total
+  const quickCashPresets = useMemo(() => {
+    if (orderTotal <= 0) return [];
+    const notes = [100, 200, 500, 1000, 2000];
+    const suggestions: number[] = [orderTotal];
+    
+    for (const note of notes) {
+      if (note > orderTotal && !suggestions.includes(note)) {
+        suggestions.push(note);
+      }
+      if (suggestions.length >= 4) break;
+    }
+    const next100 = Math.ceil(orderTotal / 100) * 100;
+    if (next100 > orderTotal && !suggestions.includes(next100)) {
+      suggestions.push(next100);
+    }
+    return Array.from(new Set(suggestions)).sort((a, b) => a - b).slice(0, 4);
+  }, [orderTotal]);
+
+  // Split Fill Remaining handler
   const handleFillRemaining = (target: 'cash' | 'upi' | 'card') => {
     const currentWithoutTarget = (target === 'cash' ? 0 : numCash) + 
                                  (target === 'upi' ? 0 : numUpi) + 
                                  (target === 'card' ? 0 : numCard);
-    const needed = Math.max(0, orderTotal - currentWithoutTarget);
+    const needed = Math.max(0, Math.round((orderTotal - currentWithoutTarget) * 100) / 100);
     const neededStr = needed > 0 ? needed.toFixed(2) : '';
 
     if (target === 'cash') setSplitCash(neededStr);
@@ -81,10 +112,27 @@ export function PaymentModeModal({
     if (target === 'card') setSplitCard(neededStr);
   };
 
+  // 50/50 Split preset
+  const handleSplit5050 = () => {
+    const half = Math.round((orderTotal / 2) * 100) / 100;
+    const rem = Math.round((orderTotal - half) * 100) / 100;
+    setSplitCash(String(half));
+    setSplitUpi(String(rem));
+    setSplitCard('');
+  };
+
+  // Reset split
+  const handleResetSplit = () => {
+    setSplitCash('');
+    setSplitUpi('');
+    setSplitCard('');
+  };
+
+  // Submission handler
   const handleConfirm = async () => {
     if (selectedMethod === 'split') {
       if (!isSplitValid) {
-        toast.error(`Split amounts total (${currencySymbol}${splitTotal.toFixed(2)}) must equal order total (${currencySymbol}${orderTotal.toFixed(2)})`);
+        toast.error(`Split total (${currencySymbol}${splitTotal.toFixed(2)}) must equal bill total (${currencySymbol}${orderTotal.toFixed(2)})`);
         return;
       }
       const splitList: any[] = [];
@@ -111,56 +159,78 @@ export function PaymentModeModal({
     }
   };
 
+  // Keyboard shortcut support (1-5 for methods, Enter to confirm, Esc to close)
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA');
+
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+
+      if (e.key === 'Enter' && !isSubmitting) {
+        if (selectedMethod !== 'split' || isSplitValid) {
+          e.preventDefault();
+          handleConfirm();
+        }
+        return;
+      }
+
+      if (!isInput) {
+        if (e.key === '1' || e.key.toLowerCase() === 'c') setSelectedMethod('cash');
+        if (e.key === '2' || e.key.toLowerCase() === 'u') setSelectedMethod('upi');
+        if (e.key === '3') setSelectedMethod('card');
+        if (e.key === '4') setSelectedMethod('online');
+        if (e.key === '5' || e.key.toLowerCase() === 's') setSelectedMethod('split');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, selectedMethod, isSplitValid, isSubmitting, orderTotal]);
+
+  if (!isOpen || !order) return null;
+
   const paymentOptions = [
     {
       id: 'cash',
       label: 'Cash',
-      subtext: 'Direct cash received at counter',
+      shortcut: '1',
+      subtext: 'Direct counter cash',
       icon: Banknote,
-      color: 'emerald',
-      activeCls: 'bg-emerald-500/10 border-emerald-500 text-emerald-950 dark:text-emerald-200 ring-2 ring-emerald-500/20',
-      badgeCls: 'bg-emerald-500 text-white',
-      iconBg: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
     },
     {
       id: 'upi',
-      label: 'UPI / QR Code',
-      subtext: 'GPay, PhonePe, Paytm, QR scan',
+      label: 'UPI / QR',
+      shortcut: '2',
+      subtext: 'GPay, PhonePe, Paytm',
       icon: QrCode,
-      color: 'blue',
-      activeCls: 'bg-blue-500/10 border-blue-500 text-blue-950 dark:text-blue-200 ring-2 ring-blue-500/20',
-      badgeCls: 'bg-blue-500 text-white',
-      iconBg: 'bg-blue-500/15 text-blue-600 dark:text-blue-400',
     },
     {
       id: 'card',
-      label: 'Card (POS)',
-      subtext: 'Debit or Credit Card Swipe/Tap',
+      label: 'Card POS',
+      shortcut: '3',
+      subtext: 'Swipe/Tap terminal',
       icon: CreditCard,
-      color: 'purple',
-      activeCls: 'bg-purple-500/10 border-purple-500 text-purple-950 dark:text-purple-200 ring-2 ring-purple-500/20',
-      badgeCls: 'bg-purple-500 text-white',
-      iconBg: 'bg-purple-500/15 text-purple-600 dark:text-purple-400',
     },
     {
       id: 'online',
       label: 'Online Gateway',
-      subtext: 'Razorpay or Online link payment',
+      shortcut: '4',
+      subtext: 'Razorpay payment link',
       icon: ExternalLink,
-      color: 'indigo',
-      activeCls: 'bg-indigo-500/10 border-indigo-500 text-indigo-950 dark:text-indigo-200 ring-2 ring-indigo-500/20',
-      badgeCls: 'bg-indigo-500 text-white',
-      iconBg: 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-400',
     },
     {
       id: 'split',
       label: 'Split Payment',
-      subtext: 'Split between Cash & UPI / Card',
+      shortcut: '5',
+      subtext: 'Divide across channels',
       icon: Split,
-      color: 'amber',
-      activeCls: 'bg-amber-500/10 border-amber-500 text-amber-950 dark:text-amber-200 ring-2 ring-amber-500/20',
-      badgeCls: 'bg-amber-500 text-white',
-      iconBg: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
     },
   ];
 
@@ -168,103 +238,131 @@ export function PaymentModeModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Confirm Payment"
-      className="max-w-xl sm:max-w-2xl w-full overflow-hidden rounded-3xl shadow-2xl"
+      title="Confirm Order Payment"
+      className="max-w-xl sm:max-w-2xl w-full rounded-2xl shadow-xl p-0 overflow-hidden border border-slate-200 dark:border-slate-800"
       footer={
-        <div className="flex items-center justify-end gap-3 w-full">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onClose}
-            disabled={isSubmitting}
-            className="rounded-2xl px-5 py-2.5 font-bold cursor-pointer"
-          >
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            onClick={handleConfirm}
-            isLoading={isSubmitting}
-            disabled={selectedMethod === 'split' && !isSplitValid}
-            className="rounded-2xl px-6 py-2.5 font-bold bg-emerald-600 hover:bg-emerald-700 text-white gap-2 shadow-lg shadow-emerald-600/20 cursor-pointer"
-          >
-            <Check size={18} className="stroke-[2.5]" />
-            <span>Mark as Paid ({currencySymbol}{orderTotal.toFixed(2)})</span>
-          </Button>
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 w-full">
+          {/* Keyboard Helper chips */}
+          <div className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:flex items-center gap-2">
+            <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-slate-700 dark:text-slate-300">1-5</span>
+            <span>Method</span>
+            <span className="text-slate-300 dark:text-slate-700">•</span>
+            <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-slate-700 dark:text-slate-300">Enter ↵</span>
+            <span>Confirm</span>
+            <span className="text-slate-300 dark:text-slate-700">•</span>
+            <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-slate-700 dark:text-slate-300">Esc</span>
+            <span>Close</span>
+          </div>
+
+          <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose}
+              disabled={isSubmitting}
+              className="rounded-xl px-4 py-2 font-bold cursor-pointer text-xs"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleConfirm}
+              isLoading={isSubmitting}
+              disabled={selectedMethod === 'split' && !isSplitValid}
+              className="rounded-xl px-5 py-2 font-black bg-emerald-600 hover:bg-emerald-700 text-white gap-2 shadow-xs cursor-pointer text-xs sm:text-sm active:scale-98 transition-all"
+            >
+              <Check size={16} className="stroke-[3]" />
+              <span>Mark as Paid ({currencySymbol}{orderTotal.toFixed(2)})</span>
+            </Button>
+          </div>
         </div>
       }
     >
-      <div className="space-y-5">
-        {/* Order Header Financial Summary */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-transparent border border-orange-200/80 dark:border-orange-900/40 flex items-center justify-between gap-4">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider">
-                Order #{order.daily_order_number || order.id?.slice(0, 8)}
+      <div className="p-4 sm:p-6 space-y-4">
+        {/* 1. Structured Order & Financial Summary Box */}
+        <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200/90 dark:border-slate-800 flex items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-black text-slate-800 dark:text-slate-200">
+                ORDER #{order.order_number || order.id?.slice(-4) || '—'}
               </span>
-              <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 border border-orange-200 dark:border-orange-800">
-                {order.order_type || 'Dine-in'}
+              <span className="px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 text-[10px] font-extrabold text-amber-700 dark:text-amber-300 uppercase tracking-wide">
+                {order.order_type || 'DINE_IN'}
               </span>
             </div>
-            <div className="text-xs sm:text-sm text-slate-700 dark:text-slate-200 mt-1 font-semibold truncate">
+            <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">
               {order.customer_name || 'Walk-in Customer'}
-            </div>
+              {order.customer_phone ? ` • ${order.customer_phone}` : ''}
+            </p>
           </div>
-          <div className="text-right shrink-0">
-            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">Total Payable</span>
-            <span className="text-2xl sm:text-3xl font-black font-mono text-slate-900 dark:text-white tracking-tight">
+
+          <div className="text-right">
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
+              Total Payable
+            </span>
+            <span className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
               {currencySymbol}{orderTotal.toFixed(2)}
             </span>
           </div>
         </div>
 
-        {/* Payment Methods Grid */}
-        <div>
-          <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2.5">
-            Select Payment Method Received <span className="text-red-500">*</span>
-          </label>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        {/* 2. Structured Payment Method Selection Grid */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Select Payment Method Received <span className="text-rose-500">*</span>
+            </span>
+            <span className="text-[10px] text-slate-400 hidden sm:inline">
+              Press 1-5 to switch
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
             {paymentOptions.map((opt) => {
               const Icon = opt.icon;
               const isSelected = selectedMethod === opt.id;
-              const isSplit = opt.id === 'split';
+
               return (
                 <button
                   key={opt.id}
                   type="button"
                   onClick={() => setSelectedMethod(opt.id)}
-                  className={`w-full flex items-center justify-between p-3.5 rounded-2xl border transition-all text-left cursor-pointer ${
-                    isSplit ? 'sm:col-span-2' : ''
-                  } ${
-                    isSelected 
-                      ? opt.activeCls 
-                      : 'border-slate-200/90 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 hover:bg-slate-100/80 dark:hover:bg-slate-800/70 text-slate-800 dark:text-slate-200 shadow-xs'
+                  className={`p-3 rounded-xl border-2 text-left transition-all cursor-pointer flex flex-col justify-between relative group ${
+                    isSelected
+                      ? 'border-primary bg-primary/5 dark:bg-primary/10 shadow-xs ring-1 ring-primary/20'
+                      : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-50/50'
                   }`}
                 >
-                  <div className="flex items-center gap-3.5 min-w-0">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-xs ${
-                      isSelected ? opt.iconBg : 'bg-slate-200/80 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300'
+                  <div className="flex items-center justify-between w-full mb-2">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
+                      isSelected
+                        ? 'bg-primary text-white shadow-2xs'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 group-hover:text-primary group-hover:bg-primary/10'
                     }`}>
-                      <Icon size={20} className="stroke-[2.2]" />
+                      <Icon size={16} />
                     </div>
-                    <div className="min-w-0">
-                      <div className="font-bold text-xs sm:text-sm flex items-center gap-1.5 truncate">
-                        <span>{opt.label}</span>
-                        {isSelected && (
-                          <span className={`px-2 py-0.5 text-[9px] font-black rounded-full ${opt.badgeCls}`}>
-                            Selected
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[11px] text-muted-foreground mt-0.5 truncate">
-                        {opt.subtext}
-                      </div>
-                    </div>
+
+                    <span className={`text-[10px]  font-bold px-1.5 py-0.5 rounded border transition-colors ${
+                      isSelected
+                        ? 'bg-primary/15 border-primary/30 text-primary'
+                        : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
+                    }`}>
+                      {opt.shortcut}
+                    </span>
                   </div>
-                  <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ml-2 ${
-                    isSelected ? 'border-primary bg-primary text-white' : 'border-slate-300 dark:border-slate-600'
-                  }`}>
-                    {isSelected && <Check size={12} className="stroke-[3]" />}
+
+                  <div>
+                    <div className="flex items-center gap-1">
+                      <p className={`text-xs font-bold leading-tight ${
+                        isSelected ? 'text-primary' : 'text-slate-800 dark:text-slate-200'
+                      }`}>
+                        {opt.label}
+                      </p>
+                      {isSelected && <Check size={12} className="text-primary stroke-[3]" />}
+                    </div>
+                    <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                      {opt.subtext}
+                    </p>
                   </div>
                 </button>
               );
@@ -272,43 +370,140 @@ export function PaymentModeModal({
           </div>
         </div>
 
-        {/* Split Payment Form if Split is Selected */}
-        {selectedMethod === 'split' && (
-          <div className="p-4 sm:p-5 rounded-2xl bg-amber-50/70 dark:bg-amber-950/25 border border-amber-200 dark:border-amber-800/60 space-y-3.5 animate-in fade-in duration-200">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-400 flex items-center justify-center">
-                  <Split size={14} className="stroke-[2.5]" />
-                </div>
-                <span className="text-xs sm:text-sm font-bold text-amber-950 dark:text-amber-200">
-                  Split Amounts Breakdown
-                </span>
-              </div>
-              <span className={`text-xs font-mono font-bold px-2.5 py-1 rounded-lg shadow-xs ${
-                isSplitValid ? 'bg-emerald-600 text-white' : 'bg-amber-600 text-white'
-              }`}>
-                {currencySymbol}{splitTotal.toFixed(2)} / {currencySymbol}{orderTotal.toFixed(2)}
+        {/* 3. CASH ASSISTANT BOX (When Cash is Selected) */}
+        {selectedMethod === 'cash' && (
+          <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                <Coins size={14} className="text-emerald-600" />
+                <span>Cash Tendered & Change Assistant</span>
               </span>
+              {changeToReturn > 0 && (
+                <span className="text-xs font-black px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                  Return Change: {currencySymbol}{changeToReturn.toFixed(2)}
+                </span>
+              )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {/* Cash input */}
-              <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-emerald-200/80 dark:border-emerald-900/50 shadow-xs">
-                <div className="text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400">
-                    <Banknote size={15} className="stroke-[2.2]" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+              <div>
+                <label className="text-[10px] font-bold uppercase text-slate-500 dark:text-slate-400 block mb-1">
+                  Cash Amount Tendered
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">{currencySymbol}</span>
+                  <input
+                    type="number"
+                    step="1"
+                    min="0"
+                    value={cashTendered}
+                    onChange={(e) => setCashTendered(e.target.value)}
+                    placeholder={orderTotal.toFixed(2)}
+                    className="w-full pl-8 pr-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:border-primary shadow-2xs"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase text-slate-500 dark:text-slate-400 block mb-1">
+                  Quick Note Presets
+                </label>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {quickCashPresets.map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setCashTendered(String(preset))}
+                      className={`text-xs px-2.5 py-1.5 rounded-lg border  font-bold cursor-pointer transition-all ${
+                        numTendered === preset
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                          : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-slate-300'
+                      }`}
+                    >
+                      {preset === orderTotal ? 'Exact' : `${currencySymbol}${preset}`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 4. SPLIT PAYMENT STRUCTURED BOX (When Split is Selected) */}
+        {selectedMethod === 'split' && (
+          <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40 space-y-3.5">
+            {/* Split Header & Controls */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5">
+                <Split size={15} className="text-primary" />
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  Split Amount Allocation
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSplit5050}
+                  className="text-[11px] font-bold px-2 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer transition-colors"
+                >
+                  50 / 50 Split
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetSplit}
+                  className="text-[11px] font-bold px-2 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer transition-colors"
+                >
+                  Reset
+                </button>
+                <span className={`text-xs  font-black px-2.5 py-1 rounded-lg border ${
+                  isSplitValid
+                    ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                    : 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                }`}>
+                  {currencySymbol}{splitTotal.toFixed(2)} / {currencySymbol}{orderTotal.toFixed(2)}
+                </span>
+              </div>
+            </div>
+
+            {/* Segmented Distribution Bar */}
+            <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden flex">
+              <div 
+                className="bg-emerald-500 h-full transition-all duration-200" 
+                style={{ width: `${orderTotal > 0 ? Math.min(100, (numCash / orderTotal) * 100) : 0}%` }}
+                title={`Cash: ${currencySymbol}${numCash}`}
+              />
+              <div 
+                className="bg-sky-500 h-full transition-all duration-200" 
+                style={{ width: `${orderTotal > 0 ? Math.min(100, (numUpi / orderTotal) * 100) : 0}%` }}
+                title={`UPI: ${currencySymbol}${numUpi}`}
+              />
+              <div 
+                className="bg-purple-500 h-full transition-all duration-200" 
+                style={{ width: `${orderTotal > 0 ? Math.min(100, (numCard / orderTotal) * 100) : 0}%` }}
+                title={`Card: ${currencySymbol}${numCard}`}
+              />
+            </div>
+
+            {/* 3 Boxy Channel Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              {/* Cash Box */}
+              <div className="p-3 rounded-xl bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-750 shadow-2xs space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-400">
+                    <Banknote size={14} />
                     <span>Cash</span>
                   </div>
                   <button
                     type="button"
                     onClick={() => handleFillRemaining('cash')}
-                    className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 font-bold cursor-pointer transition-colors"
+                    className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800 cursor-pointer"
                   >
                     Balance
                   </button>
                 </div>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">{currencySymbol}</span>
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">{currencySymbol}</span>
                   <input
                     type="number"
                     step="0.01"
@@ -316,28 +511,28 @@ export function PaymentModeModal({
                     value={splitCash}
                     onChange={(e) => setSplitCash(e.target.value)}
                     placeholder="0.00"
-                    className="w-full pl-7 pr-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800 text-sm font-mono font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="w-full pl-6 pr-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
 
-              {/* UPI input */}
-              <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-blue-200/80 dark:border-blue-900/50 shadow-xs">
-                <div className="text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 text-blue-700 dark:text-blue-400">
-                    <QrCode size={15} className="stroke-[2.2]" />
+              {/* UPI Box */}
+              <div className="p-3 rounded-xl bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-750 shadow-2xs space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-sky-700 dark:text-sky-400">
+                    <QrCode size={14} />
                     <span>UPI / QR</span>
                   </div>
                   <button
                     type="button"
                     onClick={() => handleFillRemaining('upi')}
-                    className="px-1.5 py-0.5 rounded text-[10px] bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 font-bold cursor-pointer transition-colors"
+                    className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/60 dark:hover:bg-sky-900 text-sky-700 dark:text-sky-300 border border-sky-200/80 dark:border-sky-800 cursor-pointer"
                   >
                     Balance
                   </button>
                 </div>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">{currencySymbol}</span>
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">{currencySymbol}</span>
                   <input
                     type="number"
                     step="0.01"
@@ -345,28 +540,28 @@ export function PaymentModeModal({
                     value={splitUpi}
                     onChange={(e) => setSplitUpi(e.target.value)}
                     placeholder="0.00"
-                    className="w-full pl-7 pr-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800 text-sm font-mono font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full pl-6 pr-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-sky-500"
                   />
                 </div>
               </div>
 
-              {/* Card input */}
-              <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-purple-200/80 dark:border-purple-900/50 shadow-xs">
-                <div className="text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 text-purple-700 dark:text-purple-400">
-                    <CreditCard size={15} className="stroke-[2.2]" />
-                    <span>Card</span>
+              {/* Card Box */}
+              <div className="p-3 rounded-xl bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-750 shadow-2xs space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-purple-700 dark:text-purple-400">
+                    <CreditCard size={14} />
+                    <span>Card POS</span>
                   </div>
                   <button
                     type="button"
                     onClick={() => handleFillRemaining('card')}
-                    className="px-1.5 py-0.5 rounded text-[10px] bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 font-bold cursor-pointer transition-colors"
+                    className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/60 dark:hover:bg-purple-900 text-purple-700 dark:text-purple-300 border border-purple-200/80 dark:border-purple-800 cursor-pointer"
                   >
                     Balance
                   </button>
                 </div>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">{currencySymbol}</span>
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">{currencySymbol}</span>
                   <input
                     type="number"
                     step="0.01"
@@ -374,20 +569,37 @@ export function PaymentModeModal({
                     value={splitCard}
                     onChange={(e) => setSplitCard(e.target.value)}
                     placeholder="0.00"
-                    className="w-full pl-7 pr-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800 text-sm font-mono font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    className="w-full pl-6 pr-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-purple-500"
                   />
                 </div>
               </div>
             </div>
 
-            {!isSplitValid && (
-              <div className="flex items-center gap-2 text-xs font-medium text-amber-800 dark:text-amber-300 bg-amber-100/60 dark:bg-amber-900/30 p-2.5 rounded-xl">
-                <AlertCircle size={15} className="shrink-0 text-amber-600" />
-                <span>
-                  {diff > 0 
-                    ? `Remaining to allocate: ${currencySymbol}${diff.toFixed(2)}` 
-                    : `Over allocated by ${currencySymbol}${Math.abs(diff).toFixed(2)}`}
-                </span>
+            {/* Validation Message Banner */}
+            {!isSplitValid ? (
+              <div className="flex items-center justify-between p-2.5 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 text-xs font-semibold text-amber-800 dark:text-amber-300">
+                <div className="flex items-center gap-1.5">
+                  <AlertCircle size={14} className="text-amber-600 shrink-0" />
+                  <span>
+                    {diff > 0 
+                      ? `Remaining to allocate: ${currencySymbol}${diff.toFixed(2)}` 
+                      : `Over-allocated by ${currencySymbol}${Math.abs(diff).toFixed(2)}`}
+                  </span>
+                </div>
+                {diff > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => handleFillRemaining(numCash === 0 ? 'cash' : (numUpi === 0 ? 'upi' : 'card'))}
+                    className="text-[11px] font-bold underline cursor-pointer text-amber-700 dark:text-amber-300"
+                  >
+                    Fill Remainder
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 p-2.5 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
+                <span>Split amounts match the bill total perfectly. Ready to confirm.</span>
               </div>
             )}
           </div>

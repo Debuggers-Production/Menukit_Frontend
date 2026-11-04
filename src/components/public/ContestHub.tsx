@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
-  Trophy, Heart, Download, Play, Pause, Sparkles, Clock,
+  Trophy, Heart, Download, Play, Pause, Clock,
   Send, Eraser, Trash2, MessageSquare, Share2, X, Gift, FileText, Zap, Video, Check,
   Ticket, ThumbsUp, HeartCrack, ShieldCheck, AlertCircle, Palette, PenTool, ExternalLink
 } from 'lucide-react';
@@ -20,8 +20,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import Particles, { ParticlesProvider } from '@tsparticles/react';
 import { loadFull } from 'tsparticles';
 import { BrushReplayCanvas } from './BrushReplayCanvas';
-import { Excalidraw, exportToBlob, MainMenu } from '@excalidraw/excalidraw';
-import '@excalidraw/excalidraw/index.css';
+const ContestExcalidrawCanvas = React.lazy(() => import('./ContestExcalidrawCanvas'));
 import { cn } from '@/utils/cn';
 const loadRazorpayScript = () => {
   return new Promise((resolve) => {
@@ -1302,6 +1301,7 @@ export const ContestHub: React.FC<ContestHubProps> = ({
           try {
             const elements = excalidrawAPI.getSceneElements();
             const files = excalidrawAPI.getFiles();
+            const { exportToBlob } = await import('@excalidraw/excalidraw');
             blob = await exportToBlob({
               elements,
               mimeType: "image/jpeg",
@@ -2087,7 +2087,7 @@ export const ContestHub: React.FC<ContestHubProps> = ({
                   }}
                 >
                   {sparks}
-                  <Sparkles size={11} className="fill-white animate-pulse shrink-0 z-10" />
+                  <Trophy size={11} className="fill-white shrink-0 z-10" />
                   <span key={ctaTextIndex} className="cta-text-anim block truncate w-full z-10">
                     {(() => {
                       const labels = [
@@ -2440,7 +2440,7 @@ export const ContestHub: React.FC<ContestHubProps> = ({
 
           <div className="space-y-2 z-10">
             <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest bg-amber-50 text-amber-600 border border-amber-200 px-3 py-1 rounded-full">
-              <Sparkles size={11} className="fill-amber-600/20" /> New Contest Live!
+              <Trophy size={11} className="text-amber-600" /> New Contest Live!
             </span>
             <h3 className="font-black text-2xl uppercase tracking-wider text-slate-800 mt-2">
               Be the First to Shine!
@@ -2775,7 +2775,7 @@ export const ContestHub: React.FC<ContestHubProps> = ({
                 {/* Don't Miss Out — Offer Card */}
                 <div className="bg-gradient-to-r from-amber-500/10 via-primary/10 to-orange-500/10 dark:from-amber-500/15 dark:via-primary/15 dark:to-orange-500/15 border border-primary/30 dark:border-primary/25 rounded-2xl p-4 relative overflow-hidden group">
                   <div className="absolute -right-4 -bottom-4 text-primary/10 dark:text-primary/20 pointer-events-none group-hover:scale-110 transition-transform duration-500">
-                    <Sparkles size={68} />
+                    <Gift size={68} />
                   </div>
                   <div className="relative z-10 space-y-1">
                     <span className="text-[9px] bg-primary text-white font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider shadow-sm inline-block">
@@ -3026,24 +3026,14 @@ export const ContestHub: React.FC<ContestHubProps> = ({
             <div className="flex-1 w-full bg-white dark:bg-slate-900 relative flex flex-col min-h-0">
               {activeSession.content_type === 'drawing' ? (
                 <div className="flex-1 w-full min-h-0">
-                  <Excalidraw
-                    excalidrawAPI={(api: any) => setExcalidrawAPI(api)}
-                    UIOptions={{
-                      canvasActions: {
-                        imageUpload: false,
-                        loadScene: false,
-                        export: false,
-                        saveAsImage: false,
-                        saveToActiveFile: false,
-                      }
-                    }}
-                  >
-                    <MainMenu>
-                      <MainMenu.DefaultItems.ClearCanvas />
-                      <MainMenu.DefaultItems.ToggleTheme />
-                      <MainMenu.DefaultItems.ChangeCanvasBackground />
-                    </MainMenu>
-                  </Excalidraw>
+                  <React.Suspense fallback={
+                    <div className="flex-1 w-full h-full flex flex-col items-center justify-center p-8 text-slate-400">
+                      <Loader2 className="w-8 h-8 animate-spin text-orange-500 mb-2" />
+                      <p className="text-sm font-medium">Loading drawing canvas...</p>
+                    </div>
+                  }>
+                    <ContestExcalidrawCanvas onApiLoaded={(api: any) => setExcalidrawAPI(api)} />
+                  </React.Suspense>
                 </div>
               ) : (
                 <textarea
@@ -3098,9 +3088,9 @@ export const ContestHub: React.FC<ContestHubProps> = ({
                     href="https://debuggerstechnologies.com/menukit/"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-xs font-black bg-gradient-to-r from-orange-500 to-amber-500 bg-clip-text text-transparent no-underline flex items-center gap-1 hover:opacity-90 transition-opacity"
+                    className="text-xs font-black no-underline flex items-center gap-1 hover:opacity-90 transition-opacity"
                   >
-                    Menukit
+                    <span className="text-orange-600">Menukit</span>
                     <ExternalLink size={10} className="text-orange-500" />
                   </a>
                 </div>

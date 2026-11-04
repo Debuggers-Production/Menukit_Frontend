@@ -15,6 +15,7 @@ export const COUNTRY_CODES: CountryCode[] = [
   { code: '+44', flag: '🇬🇧', label: 'UK (+44)' },
   { code: '+971', flag: '🇦🇪', label: 'UAE (+971)' },
   { code: '+65', flag: '🇸🇬', label: 'Singapore (+65)' },
+  { code: '+60', flag: '🇲🇾', label: 'Malaysia (+60)' },
   { code: '+61', flag: '🇦🇺', label: 'Australia (+61)' },
   { code: '+966', flag: '🇸🇦', label: 'Saudi Arabia (+966)' },
   { code: '+974', flag: '🇶🇦', label: 'Qatar (+974)' },
@@ -22,13 +23,25 @@ export const COUNTRY_CODES: CountryCode[] = [
   { code: '+965', flag: '🇰🇼', label: 'Kuwait (+965)' },
   { code: '+973', flag: '🇧🇭', label: 'Bahrain (+973)' },
   { code: '+94', flag: '🇱🇰', label: 'Sri Lanka (+94)' },
+  { code: '+49', flag: '🇩🇪', label: 'Germany (+49)' },
+  { code: '+33', flag: '🇫🇷', label: 'France (+33)' },
+  { code: '+64', flag: '🇳🇿', label: 'New Zealand (+64)' },
+  { code: '+880', flag: '🇧🇩', label: 'Bangladesh (+880)' },
+  { code: '+977', flag: '🇳🇵', label: 'Nepal (+977)' },
+  { code: '+62', flag: '🇮🇩', label: 'Indonesia (+62)' },
+  { code: '+63', flag: '🇵🇭', label: 'Philippines (+63)' },
+  { code: '+66', flag: '🇹🇭', label: 'Thailand (+66)' },
+  { code: '+81', flag: '🇯🇵', label: 'Japan (+81)' },
 ];
+
+const GEO_IP_CACHE_KEY = 'menukit_detected_country_calling_code';
 
 interface CountryCodeSelectProps {
   value: string;
   onChange: (code: string) => void;
   className?: string;
   heightClass?: string;
+  autoDetect?: boolean;
 }
 
 export function CountryCodeSelect({
@@ -36,6 +49,7 @@ export function CountryCodeSelect({
   onChange,
   className,
   heightClass = 'h-11',
+  autoDetect = false,
 }: CountryCodeSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -48,8 +62,59 @@ export function CountryCodeSelect({
     width: number;
   }>({ left: 0, width: 230 });
 
+  // Auto-detect based on user's IP if enabled
+  useEffect(() => {
+    if (!autoDetect || typeof window === 'undefined') return;
+
+    const cached = localStorage.getItem(GEO_IP_CACHE_KEY);
+    if (cached) {
+      if (cached !== value) {
+        onChange(cached);
+      }
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+    fetch('https://ipapi.co/json/', { signal: controller.signal })
+      .then((res) => res.json())
+      .then((data) => {
+        clearTimeout(timeoutId);
+        if (data && data.country_calling_code) {
+          const raw = String(data.country_calling_code).trim();
+          const code = raw.startsWith('+') ? raw : `+${raw}`;
+          localStorage.setItem(GEO_IP_CACHE_KEY, code);
+          onChange(code);
+        }
+      })
+      .catch(() => {
+        fetch('https://ipwho.is/', { signal: controller.signal })
+          .then((res) => res.json())
+          .then((data) => {
+            clearTimeout(timeoutId);
+            if (data && data.calling_code) {
+              const raw = String(data.calling_code).trim();
+              const code = raw.startsWith('+') ? raw : `+${raw}`;
+              localStorage.setItem(GEO_IP_CACHE_KEY, code);
+              onChange(code);
+            }
+          })
+          .catch(() => {});
+      });
+
+    return () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [autoDetect]);
+
   const selectedCountry =
-    COUNTRY_CODES.find((c) => c.code === value) || COUNTRY_CODES[0];
+    COUNTRY_CODES.find((c) => c.code === value) || {
+      code: value || '+91',
+      flag: '🌐',
+      label: `International (${value || '+91'})`,
+    };
 
   useEffect(() => {
     function updatePosition() {
@@ -120,16 +185,16 @@ export function CountryCodeSelect({
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
           heightClass,
-          'px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-bold flex items-center gap-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0 shadow-2xs select-none',
+          'px-2.5 rounded-xl border border-border/80 bg-background hover:bg-muted/50 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 shadow-2xs select-none',
           className
         )}
       >
-        <span className="text-base">{selectedCountry.flag}</span>
-        <span className="text-slate-800 dark:text-slate-200">{selectedCountry.code}</span>
+        <span className="text-sm leading-none">{selectedCountry.flag}</span>
+        <span className="text-foreground text-[11px] font-bold">{selectedCountry.code}</span>
         <ChevronDown
-          size={14}
+          size={12}
           className={cn(
-            'text-slate-400 transition-transform duration-150',
+            'text-muted-foreground transition-transform duration-150',
             isOpen && 'rotate-180 text-primary'
           )}
         />
@@ -147,7 +212,7 @@ export function CountryCodeSelect({
               width: `${pos.width}px`,
               zIndex: 9999,
             }}
-            className="max-h-60 overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl py-1 divide-y divide-slate-100 dark:divide-slate-800 animate-in fade-in zoom-in-95 duration-100 scrollbar-thin"
+            className="max-h-60 overflow-y-auto bg-card border border-border rounded-xl shadow-2xl py-1 divide-y divide-border/40 animate-in fade-in zoom-in-95 duration-100 scrollbar-thin"
           >
             {COUNTRY_CODES.map((c) => {
               const isSelected = c.code === selectedCountry.code;
@@ -160,15 +225,15 @@ export function CountryCodeSelect({
                     setIsOpen(false);
                   }}
                   className={cn(
-                    'w-full px-3.5 py-2.5 text-left text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2.5 cursor-pointer transition-colors',
+                    'w-full px-3 py-2 text-left text-xs font-semibold hover:bg-muted/70 flex items-center gap-2 cursor-pointer transition-colors',
                     isSelected
                       ? 'bg-primary/10 text-primary font-bold'
-                      : 'text-slate-800 dark:text-slate-200'
+                      : 'text-foreground'
                   )}
                 >
-                  <span className="text-base">{c.flag}</span>
+                  <span className="text-sm leading-none">{c.flag}</span>
                   <span className="flex-1 truncate">{c.label}</span>
-                  {isSelected && <Check size={14} className="text-primary shrink-0" />}
+                  {isSelected && <Check size={13} className="text-primary shrink-0" />}
                 </button>
               );
             })}

@@ -11,6 +11,8 @@ import {
 } from './webBluetoothPrinter';
 import type { BillingPrinterConfig } from '@/store/usePrinterStore';
 import { parseDateSafe } from './dateTime';
+import { getBusinessCategory } from '@/config/businessCategories';
+import { getBillTranslation, formatPaymentMethod } from './billTranslations';
 
 /**
  * Checks the status of the local Menukit Print Bridge (running on the user's laptop/PC at port 9101).
@@ -53,16 +55,12 @@ export async function testNetworkPrinterConnection(
   // 1. Try Local Print Bridge first (local HTTP server on port 9101)
   const bridgeEndpoints = [
     'http://127.0.0.1:9101/api/bridge/test',
-    'http://localhost:9101/api/bridge/test',
   ];
-  if (targetIp !== '127.0.0.1' && targetIp !== 'localhost') {
-    bridgeEndpoints.push(`http://${targetIp}:9101/api/bridge/test`);
-  }
 
   for (const endpoint of bridgeEndpoints) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const timeoutId = setTimeout(() => controller.abort(), 500);
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -162,16 +160,12 @@ export async function sendEscPosToNetworkPrinter(
   // 1. Try Local Print Bridge
   const bridgeEndpoints = [
     'http://127.0.0.1:9101/api/bridge/print',
-    'http://localhost:9101/api/bridge/print',
   ];
-  if (targetIp !== '127.0.0.1' && targetIp !== 'localhost') {
-    bridgeEndpoints.push(`http://${targetIp}:9101/api/bridge/print`);
-  }
 
   for (const endpoint of bridgeEndpoints) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const timeoutId = setTimeout(() => controller.abort(), 500);
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -215,22 +209,41 @@ export interface ThermalPrintOptions {
   customItems?: any[];
   receiptTitle?: string;
   isNewOnly?: boolean;
+  autoCut?: boolean;
+  bottomText?: string;
+  language?: string;
+  translatedDescription?: string;
+  translatedAddress?: string;
 }
 
-export function formatReceiptDateTime(dateStr: string) {
-  if (!dateStr) return { date: '—', time: '—', full: '—' };
-  const d = parseDateSafe(dateStr);
-  if (!d) return { date: '—', time: '—', full: '—' };
+export function formatReceiptDateTime(input?: string | number | Date | null) {
+  const d = parseDateSafe(input) || new Date();
   const day = String(d.getDate()).padStart(2, '0');
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const year = String(d.getFullYear()).slice(-2);
-  const hours = String(d.getHours()).padStart(2, '0');
-  const minutes = String(d.getMinutes()).padStart(2, '0');
-  
+  const fullYear = String(d.getFullYear());
+
+  let hours12 = d.getHours() % 12;
+  if (hours12 === 0) hours12 = 12;
+  const hours12Str = String(hours12).padStart(2, '0');
+  const minutesStr = String(d.getMinutes()).padStart(2, '0');
+  const ampm = d.getHours() >= 12 ? 'PM' : 'AM';
+  const time12 = `${hours12Str}:${minutesStr} ${ampm}`;
+
+  const hours24 = String(d.getHours()).padStart(2, '0');
+  const time24 = `${hours24}:${minutesStr}`;
+
+  const shortMonth = d.toLocaleDateString('en-US', { month: 'short' });
+
   return {
     date: `${day}/${month}/${year}`,
-    time: `${hours}:${minutes}`,
-    full: `${day}/${month}/${year} ${hours}:${minutes}`,
+    time: time12,
+    time24,
+    dateWithMonth: `${day} ${shortMonth}`,
+    full: `${day}/${month}/${year} ${time12}`,
+    full24: `${day}/${month}/${year} ${time24}`,
+    kotTimeStr: `${time12} (${day} ${shortMonth})`,
+    d,
   };
 }
 
@@ -290,7 +303,7 @@ export function generateThermalReceiptHtml(
   const { full: formattedDateTime } = formatReceiptDateTime(order?.created_at);
   const billNo = `INV-${new Date(order?.created_at || Date.now()).getFullYear()}-${order?.id ? String(order.daily_order_number || (order.daily_order_number || order.id.slice(0, 8))).toUpperCase() : '00000000'}`;
   
-  const isNewOnly = Boolean(options.isNewOnly || (options.customItems && options.customItems.length > 0));
+  const isNewOnly = Boolean(options.isNewOnly);
   const items = (options.customItems && options.customItems.length > 0)
     ? options.customItems
     : (order?.items || []).filter((it: any) => !it.is_cancelled);
@@ -300,8 +313,27 @@ export function generateThermalReceiptHtml(
   // Calculate items subtotal from finalized active items (or custom items)
   const subtotal = items.reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
   const totalAmount = isNewOnly ? subtotal : Number(order?.total_amount ?? subtotal);
-  const discountAmount = isNewOnly ? 0 : Math.max(0, subtotal - totalAmount);
-  const receiptTitle = options.receiptTitle || (isNewOnly ? 'TAX INVOICE (NEW ITEMS)' : 'TAX INVOICE');
+
+  let explicitDiscount = 0;
+  if (Array.isArray(order?.applied_discount_codes)) {
+    for (const code of order.applied_discount_codes) {
+      const match = typeof code === 'string' && code.match(/₹\s*([\d.]+)/);
+      if (match && match[1]) {
+        explicitDiscount += parseFloat(match[1]) || 0;
+      }
+    }
+  }
+  if (explicitDiscount === 0 && Number(order?.discount_amount || 0) > 0) {
+    explicitDiscount = Number(order.discount_amount);
+  }
+
+  const targetLang = (options.language && options.language !== 'store')
+    ? options.language
+    : (shop?.settings?.language || 'en');
+  const t = getBillTranslation(targetLang);
+
+  const discountAmount = isNewOnly ? 0 : (explicitDiscount > 0 ? explicitDiscount : Math.max(0, subtotal - totalAmount));
+  const receiptTitle = options.receiptTitle || (isNewOnly ? t.taxInvoiceNew : t.taxInvoice);
 
   // GST Compliance Calculation
   const isGstEnabled = Boolean(shop?.settings?.gst_enabled);
@@ -310,7 +342,27 @@ export function generateThermalReceiptHtml(
   const totalTaxRate = cgstRate + sgstRate;
   const isInclusive = Boolean(shop?.settings?.inclusive_tax);
 
-  let taxableValue = subtotal;
+  // Separate taxable vs non-taxable item subtotals
+  const taxableItems = items.filter((it: any) => it.is_taxable !== false);
+  const nonTaxableItems = items.filter((it: any) => it.is_taxable === false);
+
+  const taxableItemsSubtotal = taxableItems.reduce(
+    (sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)),
+    0
+  );
+  const nonTaxableItemsSubtotal = nonTaxableItems.reduce(
+    (sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)),
+    0
+  );
+
+  const taxableShare = subtotal > 0 ? (taxableItemsSubtotal / subtotal) : 1;
+  const taxableDiscount = discountAmount * taxableShare;
+  const nonTaxableDiscount = discountAmount - taxableDiscount;
+
+  const effTaxableAmount = Math.max(0, taxableItemsSubtotal - taxableDiscount);
+  const effNonTaxableAmount = Math.max(0, nonTaxableItemsSubtotal - nonTaxableDiscount);
+
+  let taxableValue = effTaxableAmount;
   let totalTax = 0;
   let cgstAmount = 0;
   let sgstAmount = 0;
@@ -318,33 +370,32 @@ export function generateThermalReceiptHtml(
 
   if (isGstEnabled && totalTaxRate > 0) {
     if (isInclusive) {
-      // INCLUSIVE: Tax is already inside item prices
       finalBillTotal = isNewOnly ? subtotal : Number(order?.total_amount ?? subtotal);
-      taxableValue = Math.round((finalBillTotal / (1 + totalTaxRate / 100)) * 100) / 100;
-      totalTax = Math.round((finalBillTotal - taxableValue) * 100) / 100;
+      taxableValue = Math.round((effTaxableAmount / (1 + totalTaxRate / 100)) * 100) / 100;
+      totalTax = Math.round((effTaxableAmount - taxableValue) * 100) / 100;
       cgstAmount = Math.round((totalTax * (cgstRate / totalTaxRate)) * 100) / 100;
       sgstAmount = Math.round((totalTax - cgstAmount) * 100) / 100;
     } else {
-      // EXCLUSIVE: Tax is added on top of food items
-      taxableValue = Math.max(0, subtotal - discountAmount);
+      // EXCLUSIVE: Tax is added only on taxable items
+      taxableValue = effTaxableAmount;
       totalTax = Math.round((taxableValue * (totalTaxRate / 100)) * 100) / 100;
       cgstAmount = Math.round((totalTax * (cgstRate / totalTaxRate)) * 100) / 100;
       sgstAmount = Math.round((totalTax - cgstAmount) * 100) / 100;
 
       const orderAmountNum = Number(order?.total_amount || 0);
-      if (!isNewOnly && orderAmountNum >= taxableValue + totalTax - 0.05) {
+      if (!isNewOnly && orderAmountNum >= effTaxableAmount + effNonTaxableAmount + totalTax - 0.05) {
         finalBillTotal = orderAmountNum;
       } else {
-        finalBillTotal = Math.round((taxableValue + totalTax) * 100) / 100;
+        finalBillTotal = Math.round((effTaxableAmount + effNonTaxableAmount + totalTax) * 100) / 100;
       }
     }
   }
 
   const orderTypeLabel = order?.order_type === 'dine_in' 
-    ? (order?.table_number ? `Dine-in (Table #${order.table_number})` : 'Dine-in')
+    ? (order?.table_number ? `${t.dineIn} (${t.table} #${order.table_number})` : t.dineIn)
     : order?.order_type === 'takeaway' 
-      ? 'Takeaway' 
-      : 'Online / Delivery';
+      ? t.takeaway 
+      : t.delivery;
 
   const logoHtml = shop?.logo_url ? `
     <div style="text-align: center; margin-bottom: 8px;">
@@ -356,7 +407,9 @@ export function generateThermalReceiptHtml(
     </div>
   ` : '';
 
-  const addressLines = (shop?.address || '')
+  const shopDescription = options.translatedDescription ?? shop?.description;
+  const shopAddress = options.translatedAddress ?? shop?.address;
+  const addressLines = (shopAddress || '')
     .split('\n')
     .map((line: string) => line.trim())
     .filter(Boolean);
@@ -378,7 +431,7 @@ export function generateThermalReceiptHtml(
 
     return `
       <div style="margin-bottom: 6px; page-break-inside: avoid;">
-        <div style="font-weight: bold; word-break: break-word;">${it.name || 'Item'}</div>
+        <div style="font-weight: bold; word-break: break-word;">${it.name || 'Item'}${it.is_taxable === false ? ' <span style="font-size: 9px; font-weight: normal; background: #eee; padding: 1px 4px; border-radius: 2px;">(0% Tax)</span>' : ''}</div>
         ${variantDetails}
         <div style="display: flex; justify-content: space-between; font-size: ${baseFontSize}; margin-top: 1px;">
           <span>${it.quantity || 1} pc x ${itemUnitPrice}</span>
@@ -478,7 +531,7 @@ export function generateThermalReceiptHtml(
     ${logoHtml}
     <div class="text-center">
       <div class="shop-title">${shop?.name || 'STORE RECEIPT'}</div>
-      ${shop?.description ? `<div style="font-size: 10px; margin-bottom: 2px;">${shop.description}</div>` : ''}
+      ${shopDescription ? `<div style="font-size: 10px; margin-bottom: 2px;">${shopDescription}</div>` : ''}
       ${addressLines.map((l: string) => `<div style="font-size: 10px;">${l}</div>`).join('')}
       ${shop?.phone ? `<div style="font-size: 10px;">Ph: ${shop.phone}</div>` : ''}
       ${shop?.whatsapp && shop?.whatsapp !== shop?.phone ? `<div style="font-size: 10px;">WhatsApp: ${shop.whatsapp}</div>` : ''}
@@ -495,25 +548,27 @@ export function generateThermalReceiptHtml(
 
     <!-- Meta Details -->
     <div class="flex-row">
-      <span>Bill No</span>
+      <span>${t.billNo}</span>
       <span class="bold">${billNo}</span>
     </div>
     <div class="flex-row">
-      <span>Date</span>
+      <span>${t.date}</span>
       <span>${formattedDateTime}</span>
     </div>
+    ${Boolean(order?.customer_name) && !['walk-in', 'walk-in customer', 'walk in', 'walk in customer', 'walkin', 'walkin customer'].includes(order.customer_name.trim().toLowerCase()) ? `
     <div class="flex-row">
-      <span>Customer</span>
-      <span class="bold">${order?.customer_name || 'Walk-in'}</span>
+      <span>${t.customer}</span>
+      <span class="bold">${order.customer_name}</span>
     </div>
     ${order?.customer_phone ? `
     <div class="flex-row">
-      <span>Mobile</span>
+      <span>${t.mobile}</span>
       <span class="bold">${order.customer_phone}</span>
     </div>
     ` : ''}
+    ` : ''}
     <div class="flex-row">
-      <span>Type</span>
+      <span>${t.type}</span>
       <span>${orderTypeLabel}</span>
     </div>
     ${order?.delivery_address ? `
@@ -526,8 +581,8 @@ export function generateThermalReceiptHtml(
     <!-- Table Header -->
     <div class="dashed-line"></div>
     <div class="flex-row bold" style="font-size: ${baseFontSize};">
-      <span>ITEM</span>
-      <span>AMOUNT</span>
+      <span>${t.item}</span>
+      <span>${t.amount}</span>
     </div>
     <div class="dashed-line"></div>
 
@@ -546,12 +601,12 @@ export function generateThermalReceiptHtml(
 
     <!-- Subtotal & Taxes -->
     <div class="flex-row">
-      <span>Subtotal</span>
+      <span>${t.subtotal}</span>
       <span>${subtotal.toFixed(2)}</span>
     </div>
     ${discountAmount > 0 ? `
     <div class="flex-row">
-      <span>Discount</span>
+      <span>${t.discount}</span>
       <span>-${discountAmount.toFixed(2)}</span>
     </div>
     ` : ''}
@@ -561,6 +616,11 @@ export function generateThermalReceiptHtml(
       <span>Taxable Value</span>
       <span>${taxableValue.toFixed(2)}</span>
     </div>
+    ${effNonTaxableAmount > 0 ? `
+    <div class="flex-row" style="font-size: 11px;">
+      <span>Exempt / Non-Taxable</span>
+      <span>${effNonTaxableAmount.toFixed(2)}</span>
+    </div>` : ''}
     <div class="flex-row" style="font-size: 11px;">
       <span>CGST (${cgstRate}%)</span>
       <span>${cgstAmount.toFixed(2)}</span>
@@ -575,31 +635,58 @@ export function generateThermalReceiptHtml(
     <!-- Total -->
     <div class="dashed-line"></div>
     <div class="grand-total-row">
-      <span>TOTAL</span>
+      <span>${t.netPayable}</span>
       <span>${currencySymbol} ${finalBillTotal.toFixed(2)}</span>
     </div>
     <div class="dashed-line"></div>
 
-    <!-- Payment Status -->
-    <div class="flex-row" style="font-size: ${baseFontSize};">
-      <span style="text-transform: uppercase;">${order?.payment_method || 'CASH'}</span>
-      <span class="bold" style="text-transform: uppercase;">${(order?.payment_status || 'PENDING') === 'paid' ? 'PAID' : (order?.payment_status || 'PENDING')}</span>
-    </div>
+    <!-- Payment Status / Split Payments Breakdown -->
+    ${(() => {
+      let splitList: any[] = [];
+      if (Array.isArray(order?.split_payments)) {
+        splitList = order.split_payments;
+      } else if (typeof order?.split_payments === 'string') {
+        try {
+          const parsed = JSON.parse(order.split_payments);
+          if (Array.isArray(parsed)) splitList = parsed;
+        } catch {}
+      }
+      const activeSplits = splitList.filter((sp: any) => Number(sp?.amount) > 0);
+      const isPaid = (order?.payment_status || 'PENDING').toLowerCase() === 'paid';
+      const statusPrefix = isPaid ? t.paid : t.due;
+
+      if (activeSplits.length > 0) {
+        return activeSplits.map((sp: any) => `
+          <div class="flex-row" style="font-size: ${baseFontSize};">
+            <span style="text-transform: uppercase;">${statusPrefix} ${formatPaymentMethod(sp.method, t)}</span>
+            <span class="bold">${currencySymbol} ${Number(sp.amount || 0).toFixed(2)}</span>
+          </div>
+        `).join('');
+      }
+
+      return `
+        <div class="flex-row" style="font-size: ${baseFontSize};">
+          <span style="text-transform: uppercase;">${formatPaymentMethod(order?.payment_method, t)}</span>
+          <span class="bold" style="text-transform: uppercase;">${isPaid ? t.paid : (order?.payment_status || t.due)}</span>
+        </div>
+      `;
+    })()}
 
     <!-- Savings Callout if applicable -->
     ${discountAmount > 0 ? `
     <div class="saved-box">
-      SAVED ${currencySymbol} ${discountAmount.toFixed(2)} ON THIS BILL
+      ${t.saved} ${currencySymbol} ${discountAmount.toFixed(2)}
     </div>
     ` : ''}
 
     <!-- Footer Notes -->
     <div class="dashed-line" style="margin-top: 8px;"></div>
     <div class="text-center" style="font-size: 10px; margin-top: 6px; line-height: 1.4;">
-      <div>Thank you for ordering with us!</div>
+      <div>${t.thankYou}</div>
       ${shop?.settings?.tax_invoice_notes ? `<div style="font-size: 9px; margin-top: 3px; color: #444;">${shop.settings.tax_invoice_notes}</div>` : ''}
-      <div style="font-size: 9px; margin-top: 2px;">Goods once sold are not returnable without this receipt.</div>
-      <div style="margin-top: 6px; font-weight: bold; font-size: 11px;">*** Visit again ***</div>
+      ${options.bottomText ? `<div style="font-size: 10px; margin-top: 4px; font-weight: 700; color: #222;">${options.bottomText}</div>` : ''}
+      <div style="font-size: 9px; margin-top: 2px;">${t.returnPolicy}</div>
+      <div style="margin-top: 6px; font-weight: bold; font-size: 11px;">${t.visitAgain}</div>
     </div>
   </div>
 </body>
@@ -713,6 +800,11 @@ export async function printBillToPrinter(
     customItems?: any[];
     receiptTitle?: string;
     isNewOnly?: boolean;
+    autoCut?: boolean;
+    bottomText?: string;
+    language?: string;
+    translatedDescription?: string;
+    translatedAddress?: string;
   }
 ): Promise<boolean> {
   const printerName = config?.name || 'Cashier Receipt Printer';
@@ -723,16 +815,24 @@ export async function printBillToPrinter(
   const customItems = config?.customItems;
   const receiptTitle = config?.receiptTitle;
   const isNewOnly = config?.isNewOnly;
+  const autoCut = config?.autoCut !== false;
+  const bottomText = config?.bottomText;
+  const language = config?.language;
 
   if (connectionType === 'network') {
     const toastId = toast.loading(`Sending bill to ${printerName} (${ipAddress}:${port})...`);
     try {
       const escPosBytes = buildReceiptEscPos(order, shop, { 
         paperWidth, 
-        cutPaper: true, 
+        cutPaper: autoCut,
+        autoCut,
+        bottomText, 
         customItems, 
         receiptTitle, 
-        isNewOnly 
+        isNewOnly,
+        language,
+        translatedDescription: config?.translatedDescription,
+        translatedAddress: config?.translatedAddress,
       });
       let binary = '';
       for (let i = 0; i < escPosBytes.length; i++) {
@@ -740,7 +840,7 @@ export async function printBillToPrinter(
       }
       const base64Data = window.btoa(binary);
       const printResult = await sendEscPosToNetworkPrinter(ipAddress, Number(port) || 9100, base64Data, {
-        cutPaper: true,
+        cutPaper: autoCut,
         soundBuzzer: false,
         stationName: printerName,
       });
@@ -748,13 +848,19 @@ export async function printBillToPrinter(
       return true;
     } catch (err: any) {
       console.warn(`Network bill print failed for ${printerName} (${ipAddress}:${port}):`, err);
-      toast.error(`Printer (${ipAddress}:${port}) unreachable. Opening browser print dialog...`, { id: toastId, duration: 4000 });
+      const errorDetail = err.response?.data?.detail || err.message || 'Printer unreachable';
+      toast.error(`Printer (${ipAddress}:${port}) error: ${errorDetail}. Opening browser print dialog...`, { id: toastId, duration: 5000 });
       // Clean fallback so cashier can always print
       return await printThermalReceipt(order, shop, { 
         paperWidth, 
         customItems, 
         receiptTitle, 
-        isNewOnly 
+        isNewOnly,
+        autoCut,
+        bottomText,
+        language,
+        translatedDescription: config?.translatedDescription,
+        translatedAddress: config?.translatedAddress,
       });
     }
   } else if (connectionType === 'bluetooth') {
@@ -762,10 +868,15 @@ export async function printBillToPrinter(
     try {
       const escPosBytes = buildReceiptEscPos(order, shop, { 
         paperWidth, 
-        cutPaper: true, 
+        cutPaper: autoCut,
+        autoCut,
+        bottomText, 
         customItems, 
         receiptTitle, 
-        isNewOnly 
+        isNewOnly,
+        language,
+        translatedDescription: config?.translatedDescription,
+        translatedAddress: config?.translatedAddress,
       });
       await sendEscPosToBluetooth(escPosBytes);
       toast.success(`Bill printed to Bluetooth printer (${printerName})!`, { id: toastId });
@@ -777,7 +888,10 @@ export async function printBillToPrinter(
         paperWidth, 
         customItems, 
         receiptTitle, 
-        isNewOnly 
+        isNewOnly,
+        language,
+        translatedDescription: config?.translatedDescription,
+        translatedAddress: config?.translatedAddress,
       });
     }
   } else if (connectionType === 'usb') {
@@ -788,7 +902,10 @@ export async function printBillToPrinter(
         cutPaper: true, 
         customItems, 
         receiptTitle, 
-        isNewOnly 
+        isNewOnly,
+        language,
+        translatedDescription: config?.translatedDescription,
+        translatedAddress: config?.translatedAddress,
       });
       const sent = await sendEscPosToDevice(escPosBytes);
       if (sent) {
@@ -800,7 +917,10 @@ export async function printBillToPrinter(
           paperWidth, 
           customItems, 
           receiptTitle, 
-          isNewOnly 
+          isNewOnly,
+          language,
+          translatedDescription: config?.translatedDescription,
+          translatedAddress: config?.translatedAddress,
         });
       }
     } catch (usbErr) {
@@ -810,7 +930,10 @@ export async function printBillToPrinter(
         paperWidth, 
         customItems, 
         receiptTitle, 
-        isNewOnly 
+        isNewOnly,
+        language,
+        translatedDescription: config?.translatedDescription,
+        translatedAddress: config?.translatedAddress,
       });
     }
   } else {
@@ -819,7 +942,10 @@ export async function printBillToPrinter(
       paperWidth, 
       customItems, 
       receiptTitle, 
-      isNewOnly 
+      isNewOnly,
+      language,
+      translatedDescription: config?.translatedDescription,
+      translatedAddress: config?.translatedAddress,
     });
   }
 }
@@ -836,6 +962,9 @@ export async function printBillToAllPrinters(
     customItems?: any[];
     receiptTitle?: string;
     isNewOnly?: boolean;
+    language?: string;
+    translatedDescription?: string;
+    translatedAddress?: string;
   }
 ): Promise<boolean> {
   const activePrinters = (printers || []).filter((p: any) => p && p.enabled !== false);
@@ -860,6 +989,10 @@ export async function printBillToAllPrinters(
           customItems: options?.customItems,
           receiptTitle: options?.receiptTitle,
           isNewOnly: options?.isNewOnly,
+          // Explicitly requested bill language from options takes precedence over default printer language
+          language: options?.language || printer.language,
+          translatedDescription: options?.translatedDescription,
+          translatedAddress: options?.translatedAddress,
         });
       })
     );
@@ -871,7 +1004,11 @@ export async function printBillToAllPrinters(
     const fallbackPaperWidth = activePrinters[0]?.paperWidth || options?.paperWidth || '80mm';
     return await printThermalReceipt(order, shop, {
       ...options,
+      autoCut: activePrinters[0]?.autoCut,
+      bottomText: activePrinters[0]?.bottomText,
       paperWidth: fallbackPaperWidth,
+      // Explicitly requested bill language takes precedence
+      language: options?.language || activePrinters[0]?.language,
     });
   }
 
@@ -883,11 +1020,15 @@ export interface ThermalKotOptions {
   paperWidth?: '80mm' | '58mm';
   invocationMode?: 'full' | 'new_only' | 'cancelled';
   kotTitle?: string;
+  kotShort?: string;
   reason?: string;
   kotNumber?: string;
   serverName?: string;
   stationName?: string;
   customItems?: any[];
+  autoCut?: boolean;
+  bottomText?: string;
+  silent?: boolean;
 }
 
 /**
@@ -927,7 +1068,14 @@ export function generateThermalKotHtml(
 
   const { full: formattedDateTime } = formatReceiptDateTime(order?.created_at);
   const rawId = order?.id ? String(order.daily_order_number || (order.daily_order_number || order.id.slice(0, 8))).toUpperCase() : '00000000';
-  const kotNo = options.kotNumber || `KOT-${new Date(order?.created_at || Date.now()).getFullYear()}-${rawId}`;
+  
+  const bCat = getBusinessCategory(shop?.category);
+  const defaultSlipTitle = bCat.kotSlipTitle || 'KITCHEN ORDER TICKET';
+  const customSlipTitle = shop?.settings?.kot_slip_title || shop?.settings?.kot_title || options.kotTitle;
+  const slipTitle = (customSlipTitle || defaultSlipTitle).toUpperCase();
+  const shortCode = (shop?.settings?.kot_short || options.kotShort || bCat.kotShort || 'KOT').toUpperCase();
+
+  const kotNo = options.kotNumber || `${shortCode}-${new Date(order?.created_at || Date.now()).getFullYear()}-${rawId}`;
 
   const items = options.customItems || getKotInvocationItems(order, mode);
   const totalUnits = items.reduce((sum: number, it: any) => sum + (it.quantity || 1), 0);
@@ -938,16 +1086,16 @@ export function generateThermalKotHtml(
       ? 'TAKEAWAY'
       : 'DELIVERY';
 
-  let bannerText = '*** KITCHEN ORDER TICKET (KOT) ***';
+  let bannerText = `*** ${slipTitle} ***`;
   let bannerBg = '#000';
   let bannerColor = '#fff';
 
   if (mode === 'cancelled') {
-    bannerText = '*** KOT: VOID / CANCELLED ***';
+    bannerText = `*** ${shortCode}: VOID / CANCELLED ***`;
     bannerBg = '#d32f2f';
     bannerColor = '#fff';
   } else if (mode === 'new_only') {
-    bannerText = '*** KOT: RUNNING (NEW ITEMS) ***';
+    bannerText = `*** ${shortCode}: RUNNING (NEW ITEMS) ***`;
     bannerBg = '#2e7d32';
     bannerColor = '#fff';
   }
@@ -1000,12 +1148,19 @@ export function generateThermalKotHtml(
     `;
   }).join('');
 
+  const rawCustomer = (order?.customer_name || '').trim();
+  const isCustWalkIn = !rawCustomer || 
+    ['walk-in', 'walk-in customer', 'walk in', 'walk in customer', 'walkin', 'walkin customer', 'guest', 'customer'].includes(
+      rawCustomer.toLowerCase()
+    );
+  const customerPhone = order?.customer_phone ? ` (${order.customer_phone})` : '';
+
   return `
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
-  <title>KOT #${kotNo}</title>
+  <title>${shortCode} #${kotNo}</title>
   <style>
     @page {
       size: ${paperWidth} auto;
@@ -1057,7 +1212,7 @@ export function generateThermalKotHtml(
   </div>
 
   <div class="text-center" style="margin-top: 5px;">
-    <div style="font-size: ${is58mm ? '13px' : '15px'}; font-weight: 900;">${shop?.name || 'KITCHEN'}</div>
+    <div style="font-size: ${is58mm ? '13px' : '15px'}; font-weight: 900;">${(shop?.name || 'ORDER DISPATCH').toUpperCase()}</div>
     ${options.stationName ? `<div style="font-size: 11px; font-weight: 800; color: #333; margin-top: 1px;">[ STATION: ${options.stationName.toUpperCase()} ]</div>` : ''}
   </div>
 
@@ -1069,16 +1224,22 @@ export function generateThermalKotHtml(
   <!-- Metadata Grid -->
   <div style="font-size: ${baseFontSize}; margin: 4px 0;">
     <div style="display: flex; justify-content: space-between;">
-      <span><strong>KOT No:</strong> ${kotNo}</span>
+      <span><strong>${shortCode} No:</strong> ${kotNo}</span>
       <span><strong>Inv:</strong> #${rawId}</span>
     </div>
     <div style="display: flex; justify-content: space-between;">
-      <span><strong>Date:</strong> ${formattedDateTime}</span>
+      <span><strong>Time:</strong> ${formatReceiptDateTime(order?.created_at).kotTimeStr}</span>
     </div>
-    <div style="display: flex; justify-content: space-between;">
-      <span><strong>Guest:</strong> ${order?.customer_name || 'Walk-in'}</span>
+    ${!isCustWalkIn ? `
+    <div style="display: flex; justify-content: space-between; word-break: break-word;">
+      <span><strong>Customer:</strong> ${rawCustomer}${customerPhone}</span>
       ${order?.table_number ? `<span><strong>Table:</strong> ${order.table_number}</span>` : ''}
     </div>
+    ` : (order?.table_number ? `
+    <div style="display: flex; justify-content: space-between;">
+      <span><strong>Table:</strong> ${order.table_number}</span>
+    </div>
+    ` : '')}
   </div>
 
   <div class="double-divider"></div>
@@ -1109,6 +1270,12 @@ export function generateThermalKotHtml(
     </div>
   ` : ''}
 
+  ${options.bottomText ? `
+    <div style="text-align: center; font-size: 11px; margin-top: 6px; font-weight: 700; color: #333; word-break: break-word;">
+      ${options.bottomText}
+    </div>
+  ` : ''}
+
   <div style="text-align: center; font-size: 10px; margin-top: 8px; color: #444;">
     *** END OF KOT ***
   </div>
@@ -1128,7 +1295,14 @@ export function generateKotText(
   const mode = options.invocationMode || 'full';
   const { full: formattedDateTime } = formatReceiptDateTime(order?.created_at);
   const rawId = order?.id ? String(order.daily_order_number || (order.daily_order_number || order.id.slice(0, 8))).toUpperCase() : '00000000';
-  const kotNo = options.kotNumber || `KOT-${new Date(order?.created_at || Date.now()).getFullYear()}-${rawId}`;
+
+  const bCat = getBusinessCategory(shop?.category);
+  const defaultSlipTitle = bCat.kotSlipTitle || 'KITCHEN ORDER TICKET';
+  const customSlipTitle = shop?.settings?.kot_slip_title || shop?.settings?.kot_title || options.kotTitle;
+  const slipTitle = (customSlipTitle || defaultSlipTitle).toUpperCase();
+  const shortCode = (shop?.settings?.kot_short || options.kotShort || bCat.kotShort || 'KOT').toUpperCase();
+
+  const kotNo = options.kotNumber || `${shortCode}-${new Date(order?.created_at || Date.now()).getFullYear()}-${rawId}`;
   const items = options.customItems || getKotInvocationItems(order, mode);
   const totalUnits = items.reduce((sum: number, it: any) => sum + (it.quantity || 1), 0);
 
@@ -1138,9 +1312,19 @@ export function generateKotText(
       ? 'TAKEAWAY'
       : 'DELIVERY';
 
-  let title = '*** KITCHEN ORDER TICKET (KOT) ***';
-  if (mode === 'cancelled') title = '*** KOT: VOID / CANCELLED ***';
-  if (mode === 'new_only') title = '*** KOT: RUNNING (NEW ITEMS) ***';
+  let title = `*** ${slipTitle} ***`;
+  if (mode === 'cancelled') title = `*** ${shortCode}: VOID / CANCELLED ***`;
+  if (mode === 'new_only') title = `*** ${shortCode}: RUNNING (NEW ITEMS) ***`;
+
+  const rawCustomer = (order?.customer_name || '').trim();
+  const isCustWalkIn = !rawCustomer || 
+    ['walk-in', 'walk-in customer', 'walk in', 'walk in customer', 'walkin', 'walkin customer', 'guest', 'customer'].includes(
+      rawCustomer.toLowerCase()
+    );
+
+  const customerLine = !isCustWalkIn
+    ? `Customer : ${rawCustomer}${order?.customer_phone ? ` (${order.customer_phone})` : ''}\n`
+    : '';
 
   const itemsLines = items.map((it: any) => {
     let line = `${String(it.quantity || 1).padStart(2, ' ')}x ${it.name}`;
@@ -1158,23 +1342,24 @@ export function generateKotText(
 
   return (
     `========================================\n` +
-    `         ${(shop?.name || 'KITCHEN').toUpperCase()}\n` +
+    `         ${(shop?.name || 'STORE').toUpperCase()}\n` +
     (options.stationName ? `       [ STATION: ${options.stationName.toUpperCase()} ]\n` : '') +
     `   ${title}\n` +
     `========================================\n` +
-    `KOT No   : ${kotNo}\n` +
-    `Date     : ${formattedDateTime}\n` +
+    `${shortCode} No   : ${kotNo}\n` +
+    `Time     : ${formatReceiptDateTime(order?.created_at).kotTimeStr}\n` +
     `Type     : ${orderTypeLabel}\n` +
     `Order    : #${rawId}\n` +
-    `Customer : ${order?.customer_name || 'Walk-in'}\n` +
+    customerLine +
     `----------------------------------------\n` +
     `Qty  Item Description\n` +
     `----------------------------------------\n` +
     `${itemsLines}\n` +
     `----------------------------------------\n` +
     `Total Items: ${items.length}          Total Qty: ${totalUnits}\n` +
+    (options.bottomText ? `----------------------------------------\n${options.bottomText}\n` : '') +
     `========================================\n` +
-    `         *** END OF KOT ***\n`
+    `         *** END OF ${shortCode} ***\n`
   );
 }
 
@@ -1257,6 +1442,7 @@ export async function printOrderToStations(
     customItems?: any[];
     reason?: string;
     kotTitle?: string;
+    kotShort?: string;
     kotNumber?: string;
     silent?: boolean;
   }
@@ -1270,17 +1456,21 @@ export async function printOrderToStations(
   if (!baseItems || baseItems.length === 0) {
     return true;
   }
+
+  const effectiveKotTitle = options?.kotTitle || shop?.settings?.kot_slip_title || shop?.settings?.kot_title;
+  const effectiveKotShort = options?.kotShort || shop?.settings?.kot_short;
   
   // If no stations configured, attempt direct network LAN socket to local port 9100
   if (activeStations.length === 0) {
     try {
       const escPosBytes = buildKotEscPos(order, shop, {
         paperWidth: defaultPaperWidth,
-        stationName: 'Kitchen Printer',
+        stationName: 'Order Printer',
         soundBuzzer: true,
         invocationMode,
         customItems: baseItems,
-        kotTitle: options?.kotTitle,
+        kotTitle: effectiveKotTitle,
+        kotShort: effectiveKotShort,
         reason: options?.reason,
         kotNumber: options?.kotNumber,
       });
@@ -1336,8 +1526,12 @@ export async function printOrderToStations(
             stationName: station.name,
             customItems: stationItems,
             soundBuzzer: station.soundBuzzer !== false,
+            cutPaper: station.autoCut !== false,
+            autoCut: station.autoCut !== false,
+            bottomText: station.bottomText,
             invocationMode,
-            kotTitle: options?.kotTitle,
+            kotTitle: effectiveKotTitle,
+            kotShort: effectiveKotShort,
             reason: options?.reason,
             kotNumber: options?.kotNumber,
           });
@@ -1347,7 +1541,7 @@ export async function printOrderToStations(
           }
           const base64Data = window.btoa(binary);
           await sendEscPosToNetworkPrinter(ipAddress, port, base64Data, {
-            cutPaper: true,
+            cutPaper: station.autoCut !== false,
             soundBuzzer: station.soundBuzzer !== false,
             stationName: station.name,
           });
@@ -1368,14 +1562,18 @@ export async function printOrderToStations(
             stationName: station.name,
             customItems: stationItems,
             soundBuzzer: station.soundBuzzer !== false,
+            cutPaper: station.autoCut !== false,
+            autoCut: station.autoCut !== false,
+            bottomText: station.bottomText,
             invocationMode,
-            kotTitle: options?.kotTitle,
+            kotTitle: effectiveKotTitle,
+            kotShort: effectiveKotShort,
             reason: options?.reason,
             kotNumber: options?.kotNumber,
           });
           await sendEscPosToBluetooth(escPosBytes);
           if (!options?.silent) {
-            toast.success(`KOT sent to Bluetooth station "${station.name}"!`);
+            toast.success(`Ticket sent to Bluetooth station "${station.name}"!`);
           }
         } catch (btErr: any) {
           console.error(`Direct Bluetooth print failed for ${station.name}:`, btErr);
@@ -1394,8 +1592,12 @@ export async function printOrderToStations(
             stationName: station.name,
             customItems: stationItems,
             soundBuzzer: station.soundBuzzer !== false,
+            cutPaper: station.autoCut !== false,
+            autoCut: station.autoCut !== false,
+            bottomText: station.bottomText,
             invocationMode,
-            kotTitle: options?.kotTitle,
+            kotTitle: effectiveKotTitle,
+            kotShort: effectiveKotShort,
             reason: options?.reason,
             kotNumber: options?.kotNumber,
           });

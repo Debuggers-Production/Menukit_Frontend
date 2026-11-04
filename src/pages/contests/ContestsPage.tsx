@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'react-hot-toast';
 import {
-  Plus, Trophy, Award, Sparkles, Heart, RefreshCw, Download, ChevronLeft, ChevronRight, X, Search, User, Phone, ExternalLink, Flame, ShieldAlert, CheckCircle2, XCircle, Eye, MessageSquare, Palette, PenTool, Medal, Gift, AlertCircle
+  Plus, Trophy, Award, Heart, RefreshCw, Download, ChevronLeft, ChevronRight, X, Search, User, Phone, ExternalLink, Flame, ShieldAlert, CheckCircle2, XCircle, Eye, MessageSquare, Palette, PenTool, Medal, Gift, AlertCircle
 } from 'lucide-react';
 import { useShopStore } from '@/store/shopStore';
 import { Card, CardContent } from '@/components/ui/Card';
@@ -19,6 +19,7 @@ import { contestService } from '@/services/contestService';
 import { Contest, ContestParticipation } from '@/types/contest';
 import { api } from '@/services/api';
 import { BottomSheet } from '@/components/ui/BottomSheet';
+import { SquareFAB } from '@/components/ui/SquareFAB';
 import { InfiniteScrollTrigger } from '@/components/ui/InfiniteScrollTrigger';
 
 import { usePermissions } from '@/hooks/usePermissions';
@@ -144,7 +145,7 @@ export function ContestsPage() {
   const { setTitle: setHeaderTitle } = useHeaderStore();
 
   useEffect(() => {
-    setHeaderTitle('Contests Manager', 'Customer drawing & contest campaigns.');
+    setHeaderTitle('Contests');
   }, [setHeaderTitle]);
 
   // Search & Pagination State
@@ -471,7 +472,7 @@ export function ContestsPage() {
                       </span>
                       {criterion === 'all' && (
                         <span className="flex items-center gap-1 text-[11px] font-black text-amber-600 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-0.5 rounded-full border border-amber-300/40">
-                          <Sparkles size={11} className="text-amber-500" /> Score: {calculatePartScore(part, 'all')}
+                          <Award size={11} className="text-amber-500" /> Score: {calculatePartScore(part, 'all')}
                         </span>
                       )}
                     </div>
@@ -530,7 +531,7 @@ export function ContestsPage() {
   };
 
   return (
-    <div className="space-y-4 max-w-5xl mx-auto pb-36 lg:pb-24 animate-fade-in">
+    <div className="space-y-4 w-full pb-36 lg:pb-24 animate-fade-in">
       
       {canWrite && (
       <HeaderActions>
@@ -1342,17 +1343,13 @@ export function ContestsPage() {
         </div>
       </Modal>
 
-      {/* Circular Floating Action Button (FAB) (Mobile) */}
-      {canWrite && !isModalOpen && createPortal(
-        <button
-          onClick={handleCreateClick}
-          className="lg:hidden fixed bottom-20 lg:bottom-8 right-4 lg:right-8 z-50 w-14 h-14 rounded-full bg-primary hover:bg-primary-600 hover:scale-105 shadow-xl flex items-center justify-center text-white transition-all duration-200 cursor-pointer"
-          title="Create Contest"
-        >
-          <Plus size={24} />
-        </button>,
-        document.body
-      )}
+      {/* Reusable Square FAB for Create Contest */}
+      <SquareFAB
+        icon={Plus}
+        onClick={handleCreateClick}
+        title="Create Contest"
+        visible={Boolean(canWrite && !isModalOpen)}
+      />
     </div>
   );
 }

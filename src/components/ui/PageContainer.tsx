@@ -12,7 +12,7 @@ export const PageContainer = React.forwardRef<HTMLDivElement, PageContainerProps
       <div
         ref={ref}
         className={cn(
-          "w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 min-h-screen",
+          "w-full mx-auto",
           narrow ? "max-w-4xl" : "max-w-7xl",
           className
         )}

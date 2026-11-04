@@ -20,12 +20,14 @@ export function parseDateSafe(input: string | number | Date | null | undefined):
   let str = String(input).trim();
   if (!str) return null;
 
-  // Format: "2026-10-03 07:44:00" or "2026-10-03 07:44:00.123456"
-  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?(\.\d+)?$/.test(str)) {
-    str = str.replace(' ', 'T') + 'Z';
-  } 
+  // Normalize space separator between date and time to 'T'
+  if (/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/.test(str)) {
+    str = str.replace(/\s+/, 'T');
+  }
+
   // Format: "2026-10-03T07:44:00" (ISO missing 'Z' or timezone offset)
-  else if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(\.\d+)?$/.test(str)) {
+  // Backend UTC timestamps without offset must append 'Z' so browser converts to local timezone
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(\.\d+)?$/.test(str)) {
     str = str + 'Z';
   } 
   // Format: "Oct 03, 2026 07:44 AM" or "Oct 3, 2026 7:44 PM" (Backend strftime UTC legacy output)

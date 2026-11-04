@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { X, Store, Sparkles, Check, Building2, CreditCard, Loader2, ArrowRight } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { X, Store, Check, Building2, CreditCard, Loader2, ArrowRight } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { api } from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
-import { BUSINESS_CATEGORIES } from '@/config/businessCategories';
+import { BUSINESS_CATEGORIES, getCategoryIcon } from '@/config/businessCategories';
 import { SearchableSelect } from '@/components/ui/SearchableSelect';
 
 interface CreateShopModalProps {
@@ -211,17 +212,17 @@ export function CreateShopModal({ isOpen, onClose, ownedShops = [], onSuccess }:
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+  return createPortal(
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+      <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-xl overflow-hidden flex flex-col max-h-[92vh]">
         {/* Modal Header */}
-        <div className="relative px-6 py-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-gradient-to-r from-orange-500/10 via-amber-500/5 to-transparent">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-orange-500 to-amber-500 flex items-center justify-center text-white shadow-md shadow-orange-500/20">
-              <Store size={20} className="stroke-[2.5]" />
+        <div className="relative px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-gradient-to-r from-orange-500/10 via-amber-500/5 to-transparent">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-md bg-gradient-to-tr from-orange-500 to-amber-500 flex items-center justify-center text-white shadow-xs">
+              <Store size={16} className="stroke-[2.5]" />
             </div>
             <div>
-              <h3 className="font-heading font-black text-lg text-slate-900 dark:text-white leading-tight">
+              <h3 className="font-heading font-bold text-base text-slate-900 dark:text-white leading-tight">
                 {isAdditionalShop ? 'Create New Branch / Shop' : 'Create New Shop'}
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
@@ -232,36 +233,37 @@ export function CreateShopModal({ isOpen, onClose, ownedShops = [], onSuccess }:
           <button
             type="button"
             onClick={onClose}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            className="w-7 h-7 rounded-md flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           >
-            <X size={18} />
+            <X size={16} />
           </button>
         </div>
 
         {/* Modal Form Content */}
-        <form onSubmit={handleSubmit} className="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-4">
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+          <div className="p-5 overflow-y-auto custom-scrollbar flex-1 space-y-4">
           {/* Shop Creation Pricing Badge */}
           {pricingInfo?.required && (
-            <div className="p-4 rounded-2xl bg-orange-50/80 dark:bg-orange-950/30 border border-orange-200/80 dark:border-orange-800/50 flex items-start gap-3">
-              <div className="w-8 h-8 rounded-xl bg-orange-500/10 text-orange-600 dark:text-orange-400 flex items-center justify-center shrink-0 mt-0.5">
-                <CreditCard size={18} />
+            <div className="p-3.5 rounded-md bg-orange-50/80 dark:bg-orange-950/30 border border-orange-200/80 dark:border-orange-800/50 flex items-start gap-2.5">
+              <div className="w-7 h-7 rounded-md bg-orange-500/10 text-orange-600 dark:text-orange-400 flex items-center justify-center shrink-0 mt-0.5">
+                <CreditCard size={15} />
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-heading font-black text-sm text-orange-950 dark:text-orange-200">
+                  <span className="font-heading font-bold text-xs sm:text-sm text-orange-950 dark:text-orange-200">
                     {isAdditionalShop ? 'Additional Branch Fee' : 'One-Time Shop Creation Fee'}
                   </span>
-                  <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-orange-500 text-white shadow-sm">
+                  <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-orange-500 text-white shadow-2xs">
                     ₹{pricingInfo.amount.toFixed(2)} Total
                   </span>
                 </div>
-                <p className="text-xs text-orange-800/80 dark:text-orange-300/80 mt-1 leading-relaxed">
+                <p className="text-xs text-orange-800/80 dark:text-orange-300/80 mt-0.5 leading-relaxed">
                   {isAdditionalShop 
-                    ? `One-time ₹${pricingInfo.base_amount.toFixed(0)} fee + ₹${(pricingInfo.pg_fee + pricingInfo.gst_on_fee).toFixed(2)} payment gateway fee (3% + 18% GST). Automatically links with your account.` 
+                    ? `One-time ₹${pricingInfo.base_amount.toFixed(0)} fee + ₹${(pricingInfo.pg_fee + pricingInfo.gst_on_fee).toFixed(2)} payment gateway fee (3% + 18% GST).` 
                     : `One-time ₹${pricingInfo.base_amount.toFixed(0)} setup fee + ₹${(pricingInfo.pg_fee + pricingInfo.gst_on_fee).toFixed(2)} payment gateway fee (3% + 18% GST).`}
                 </p>
-                <div className="mt-2.5 pt-2 border-t border-orange-200/60 dark:border-orange-800/40 flex items-center justify-between text-[11px] text-orange-900/80 dark:text-orange-200/80 font-medium">
-                  <span>Base: ₹{pricingInfo.base_amount.toFixed(2)} • PG (3%): ₹{pricingInfo.pg_fee.toFixed(2)} • GST (18%): ₹{pricingInfo.gst_on_fee.toFixed(2)}</span>
+                <div className="mt-2 pt-1.5 border-t border-orange-200/60 dark:border-orange-800/40 flex items-center justify-between text-[10.5px] text-orange-900/80 dark:text-orange-200/80 font-medium">
+                  <span>Base: ₹{pricingInfo.base_amount.toFixed(2)} • PG: ₹{(pricingInfo.pg_fee + pricingInfo.gst_on_fee).toFixed(2)}</span>
                   <strong className="font-bold text-orange-700 dark:text-orange-300">Total: ₹{pricingInfo.amount.toFixed(2)}</strong>
                 </div>
               </div>
@@ -270,7 +272,7 @@ export function CreateShopModal({ isOpen, onClose, ownedShops = [], onSuccess }:
 
           {/* Shop Name */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
               Shop / Branch Name <span className="text-red-500">*</span>
             </label>
             <input
@@ -279,20 +281,22 @@ export function CreateShopModal({ isOpen, onClose, ownedShops = [], onSuccess }:
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Siva Hotel & Cafe"
-              className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 text-slate-900 dark:text-white placeholder:text-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-medium"
+              className="w-full px-3 py-2 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 text-slate-900 dark:text-white placeholder:text-slate-400 text-xs sm:text-sm focus:outline-none focus:ring-1.5 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-medium"
             />
           </div>
 
           {/* Category */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
               Business Category
             </label>
             <SearchableSelect
               options={BUSINESS_CATEGORIES.map((cat) => ({
                 id: cat.id,
-                name: `${cat.label} (${cat.shortLabel})`,
-                subtext: cat.description
+                name: cat.label,
+                badge: cat.shortLabel,
+                subtext: cat.description,
+                icon: getCategoryIcon(cat.id, 14)
               }))}
               value={category}
               onChange={(val) => setCategory(val)}
@@ -304,41 +308,41 @@ export function CreateShopModal({ isOpen, onClose, ownedShops = [], onSuccess }:
           {/* Menu Sharing / Clone Option (if user has existing shops) */}
           {isAdditionalShop && ownedShops.length > 0 && (
             <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                 Menu Setup Option
               </label>
-              <div className="space-y-2">
-                <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/30 dark:bg-slate-800/30 hover:bg-slate-100/50 dark:hover:bg-slate-800/60 cursor-pointer transition-colors">
+              <div className="space-y-1.5">
+                <label className="flex items-center gap-2.5 p-2.5 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50/30 dark:bg-slate-800/30 hover:bg-slate-100/50 dark:hover:bg-slate-800/60 cursor-pointer transition-colors">
                   <input
                     type="radio"
                     name="menu_option"
                     checked={Boolean(cloneFromShopId)}
                     onChange={() => setCloneFromShopId(ownedShops[0]?.id || '')}
-                    className="w-4 h-4 text-orange-500 focus:ring-orange-500 border-slate-300"
+                    className="w-3.5 h-3.5 text-orange-500 focus:ring-orange-500 border-slate-300"
                   />
                   <div className="min-w-0 flex-1">
-                    <span className="text-sm font-bold text-slate-800 dark:text-slate-200 block">
+                    <span className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200 block">
                       Share Menu from existing shop
                     </span>
-                    <span className="text-xs text-slate-500 dark:text-slate-400">
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
                       Syncs categories and menu items with {ownedShops[0]?.name || 'Primary Store'}
                     </span>
                   </div>
                 </label>
 
-                <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/30 dark:bg-slate-800/30 hover:bg-slate-100/50 dark:hover:bg-slate-800/60 cursor-pointer transition-colors">
+                <label className="flex items-center gap-2.5 p-2.5 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50/30 dark:bg-slate-800/30 hover:bg-slate-100/50 dark:hover:bg-slate-800/60 cursor-pointer transition-colors">
                   <input
                     type="radio"
                     name="menu_option"
                     checked={!cloneFromShopId}
                     onChange={() => setCloneFromShopId('')}
-                    className="w-4 h-4 text-orange-500 focus:ring-orange-500 border-slate-300"
+                    className="w-3.5 h-3.5 text-orange-500 focus:ring-orange-500 border-slate-300"
                   />
                   <div className="min-w-0 flex-1">
-                    <span className="text-sm font-bold text-slate-800 dark:text-slate-200 block">
+                    <span className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200 block">
                       Start with clean / empty menu
                     </span>
-                    <span className="text-xs text-slate-500 dark:text-slate-400">
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
                       Create brand new categories and dishes from scratch
                     </span>
                   </div>
@@ -346,17 +350,26 @@ export function CreateShopModal({ isOpen, onClose, ownedShops = [], onSuccess }:
               </div>
             </div>
           )}
+          </div>
 
-          {/* Action Button */}
-          <div className="pt-2">
+          {/* Sticky Modal Footer Actions */}
+          <div className="px-5 py-3.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/80 flex items-center justify-between gap-3 shrink-0">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-md border border-slate-200 dark:border-slate-700 text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+
             <button
               type="submit"
               disabled={isSubmitting || loadingPricing}
-              className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-orange-500 via-orange-600 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white font-heading font-black text-sm shadow-lg shadow-orange-500/25 hover:shadow-orange-500/40 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+              className="py-2 px-5 rounded-md bg-gradient-to-r from-orange-500 via-orange-600 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white font-semibold text-xs sm:text-sm shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {isSubmitting ? (
                 <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <Loader2 className="w-4 h-4 animate-spin" />
                   <span>Processing Setup...</span>
                 </>
               ) : pricingInfo?.required ? (
@@ -367,7 +380,7 @@ export function CreateShopModal({ isOpen, onClose, ownedShops = [], onSuccess }:
                 </>
               ) : (
                 <>
-                  <Sparkles className="w-4 h-4" />
+                  <Store className="w-4 h-4" />
                   <span>{isAdditionalShop ? 'Create Branch' : 'Create Shop'}</span>
                 </>
               )}
@@ -375,6 +388,7 @@ export function CreateShopModal({ isOpen, onClose, ownedShops = [], onSuccess }:
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

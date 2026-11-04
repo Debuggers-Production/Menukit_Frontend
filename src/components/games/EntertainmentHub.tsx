@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Modal } from '@/components/ui/Modal';
-import { Gamepad2, Lightbulb, Trophy, RefreshCcw, Cookie, Palette, HelpCircle, XCircle, Circle, Heart, X, PlaySquare, CheckCircle2, Loader2, Sparkles, Globe } from 'lucide-react';
+import { Gamepad2, Lightbulb, Trophy, RefreshCcw, Cookie, Palette, HelpCircle, XCircle, Circle, Heart, X, PlaySquare, CheckCircle2, Loader2, Globe } from 'lucide-react';
 import { MenuItem } from '@/types';
 
 interface EntertainmentHubProps {
@@ -842,13 +842,13 @@ export const EntertainmentHub: React.FC<EntertainmentHubProps> = ({ isOpen, onCl
                   <div className="w-40 h-40 bg-amber-200 rounded-full flex items-center justify-center shadow-2xl animate-bounce border-4 border-amber-300">
                     <Cookie size={80} className="text-amber-600 drop-shadow-md" />
                     <div className="absolute -bottom-6 font-black text-amber-800 text-sm uppercase tracking-widest whitespace-nowrap bg-white/80 backdrop-blur-sm px-4 py-1 rounded-full shadow-sm flex items-center gap-1">
-                      <Sparkles size={13} className="text-amber-600" /> Tap to Crack
+                      <Cookie size={13} className="text-amber-600" /> Tap to Crack
                     </div>
                   </div>
                 ) : (
                   <div className="w-full max-w-sm flex flex-col items-center animate-in fade-in zoom-in duration-500">
                     <div className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-[11px] font-bold mb-4 shadow-xs border border-amber-200">
-                      <Sparkles size={12} className="text-amber-600" /> Live Realtime Fortune
+                      <Lightbulb size={12} className="text-amber-600" /> Live Realtime Fortune
                     </div>
 
                     <div className="flex gap-4 mb-5 opacity-50">

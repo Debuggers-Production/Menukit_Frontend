@@ -18,7 +18,8 @@ import {
   ShoppingBag,
   Trophy,
   MoreHorizontal,
-  Sparkles,
+  FileSpreadsheet,
+  ShieldCheck,
   Zap,
   Wallet,
   ArrowRight,
@@ -31,6 +32,7 @@ import {
   ArrowRightLeft,
   ChevronDown,
   ChevronRight,
+  ChevronLeft,
   Folder,
   FolderOpen,
   TrendingUp,
@@ -99,26 +101,26 @@ export function DashboardLayout() {
 
   // Fast route titles for instant header synchronization on click
   const ROUTE_META: Record<string, { title: string; subtitle: string }> = {
-    '/dashboard': { title: 'Dashboard', subtitle: 'Overview of your shop' },
-    '/campaigns': { title: 'Campaigns', subtitle: 'WhatsApp broadcast campaigns' },
-    '/contests': { title: 'Contests Manager', subtitle: 'Customer drawing & contest campaigns' },
-    '/orders': { title: 'Orders', subtitle: 'Manage live orders & deliveries' },
-    '/categories': { title: 'Categories', subtitle: 'Manage menu categories' },
-    '/menu-items': { title: 'Menus', subtitle: 'Manage catalog & items' },
-    '/schemes': { title: 'Savings Schemes (Fund)', subtitle: 'Customer installment schemes, member enrollments & payment tracking' },
-    '/discounts': { title: 'Discounts', subtitle: 'Offers and promotional coupons' },
-    '/members': { title: 'Members', subtitle: 'Customer loyalty & profiles' },
-    '/qr-code': { title: 'QR Code', subtitle: 'Shop QR code & table cards' },
-    '/analytics': { title: 'Analytics', subtitle: 'Revenue & sales reports' },
-    '/customize': { title: 'Customize Theme', subtitle: 'Digital menu design & theme' },
-    '/chalkboard': { title: 'Chalkboard Sign', subtitle: 'Sidewalk chalkboard specials' },
-    '/shop-setup': { title: 'Shop Settings', subtitle: 'Manage shop profile' },
-    '/settings/team': { title: 'Staff & Team', subtitle: 'Manage staff access' },
-    '/subscription': { title: 'Plans & Subscriptions', subtitle: 'Review your current plan entitlements, explore modular add-ons, and download official invoices.' },
-    '/settlements': { title: 'Settlements', subtitle: 'Payouts and finances' },
-    '/settings': { title: 'Settings', subtitle: 'Shop preferences & rules' },
-    '/notifications': { title: 'Notifications', subtitle: 'Shop alerts and updates' },
-    '/internal-bulk': { title: 'Bulk Data Upload', subtitle: 'Bulk catalog import' },
+    '/dashboard': { title: 'Dashboard', subtitle: '' },
+    '/campaigns': { title: 'Campaigns', subtitle: '' },
+    '/contests': { title: 'Contests Manager', subtitle: '' },
+    '/orders': { title: 'Orders', subtitle: '' },
+    '/categories': { title: 'Categories', subtitle: '' },
+    '/menu-items': { title: 'Menus', subtitle: '' },
+    '/schemes': { title: 'Savings Schemes', subtitle: '' },
+    '/discounts': { title: 'Discounts', subtitle: '' },
+    '/members': { title: 'Members', subtitle: '' },
+    '/qr-code': { title: 'QR Code', subtitle: '' },
+    '/analytics': { title: 'Analytics', subtitle: '' },
+    '/customize': { title: 'Customize Theme', subtitle: '' },
+    '/chalkboard': { title: 'Chalkboard Sign', subtitle: '' },
+    '/shop-setup': { title: 'Shop Settings', subtitle: '' },
+    '/settings/team': { title: 'Staff & Team', subtitle: '' },
+    '/subscription': { title: 'Plans & Subscriptions', subtitle: '' },
+    '/settlements': { title: 'Settlements', subtitle: '' },
+    '/settings': { title: 'Settings', subtitle: '' },
+    '/notifications': { title: 'Notifications', subtitle: '' },
+    '/internal-bulk': { title: 'Bulk Data Upload', subtitle: '' },
   };
 
   // Immediate title synchronization on route change so previous page title doesn't linger
@@ -439,8 +441,14 @@ export function DashboardLayout() {
     if (path.startsWith('/notifications')) {
       return { icon: Bell, iconColor: 'text-indigo-500 dark:text-indigo-400', bg: 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200/80 dark:border-indigo-800/50' };
     }
+    if (path.startsWith('/bulk-upload') || path.startsWith('/json-bulk-upload') || path.startsWith('/internal-bulk')) {
+      return { icon: FileSpreadsheet, iconColor: 'text-amber-500 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-950/40 border-amber-200/80 dark:border-amber-800/50' };
+    }
+    if (path.startsWith('/terms') || path.startsWith('/privacy') || path.startsWith('/refund')) {
+      return { icon: ShieldCheck, iconColor: 'text-slate-600 dark:text-slate-300', bg: 'bg-slate-100 dark:bg-slate-800/60 border-slate-200/80 dark:border-slate-700/60' };
+    }
 
-    return { icon: Sparkles, iconColor: 'text-primary', bg: 'bg-primary/10 border-primary/20' };
+    return { icon: Store, iconColor: 'text-primary', bg: 'bg-primary/10 border-primary/20' };
   };
 
   const navGroups: NavGroup[] = [
@@ -578,34 +586,40 @@ export function DashboardLayout() {
     <div className="h-screen max-h-screen overflow-hidden bg-slate-50/50 dark:bg-slate-950 flex flex-col lg:flex-row">
       {/* Desktop Sidebar Navigation */}
       <aside className={cn(
-        "hidden lg:flex flex-col border-r border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0 h-screen overflow-hidden transition-all duration-300 ease-in-out select-none",
-        isSidebarCollapsed ? "w-18" : "w-64"
+        "hidden lg:flex flex-col border-r border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0 h-screen transition-all duration-300 ease-in-out select-none relative z-30",
+        isSidebarCollapsed ? "w-16" : "w-64"
       )}>
-        {/* Desktop Sidebar Top Header (Shop Switcher & Collapse Toggle) */}
+        {/* Border Adjust Controller - Floating collapse handle without blocking scrollbar */}
+        <div 
+          className="absolute -right-3 top-1/2 -translate-y-1/2 z-40 pointer-events-none select-none"
+        >
+          <button
+            id="sidebar-collapse-toggle-btn"
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleSidebar();
+            }}
+            title={isSidebarCollapsed ? "Click to expand sidebar" : "Click to collapse sidebar"}
+            aria-label={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            className="pointer-events-auto w-4 h-9 rounded-r-md bg-white dark:bg-slate-900 border border-l-0 border-slate-300 dark:border-slate-700 shadow-xs text-slate-400 hover:text-primary hover:border-primary dark:hover:border-primary flex items-center justify-center transition-all cursor-pointer hover:w-5 group"
+          >
+            {isSidebarCollapsed ? <ChevronRight size={10} strokeWidth={2.5} /> : <ChevronLeft size={10} strokeWidth={2.5} />}
+          </button>
+        </div>
+
+        {/* Desktop Sidebar Top Header (Shop Switcher) */}
         <div className={cn(
-          "border-b border-slate-100 dark:border-slate-800 shrink-0 flex items-center gap-1.5",
-          isSidebarCollapsed ? "p-2.5 flex-col justify-center" : "p-3.5 justify-between"
+          "h-14 border-b border-slate-100 dark:border-slate-800 shrink-0 flex items-center",
+          isSidebarCollapsed ? "px-2 justify-center" : "px-3 justify-between"
         )}>
           <div className={cn("min-w-0", isSidebarCollapsed ? "w-full flex justify-center" : "flex-1")}>
             <ShopSwitcherDropdown collapsed={isSidebarCollapsed} />
           </div>
-          <button
-            id="sidebar-collapse-toggle-btn"
-            type="button"
-            onClick={toggleSidebar}
-            className={cn(
-              "rounded-xl transition-all cursor-pointer shrink-0 flex items-center justify-center",
-              "bg-primary/10 hover:bg-primary text-primary hover:text-white border border-primary/20 hover:border-primary shadow-2xs hover:scale-105 active:scale-95",
-              isSidebarCollapsed ? "w-8 h-8 mt-1 p-0" : "p-1.5"
-            )}
-            title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-          >
-            {isSidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
-          </button>
         </div>
 
         {/* Scrollable Navigation Items */}
-        <nav className={cn("flex-1 overflow-y-auto custom-scrollbar", isSidebarCollapsed ? "p-2 space-y-2" : "p-3 space-y-2.5")}>
+        <nav className={cn("flex-1 overflow-y-auto custom-scrollbar", isSidebarCollapsed ? "p-1.5 space-y-1.5" : "p-2.5 space-y-2")}>
           {navGroups.map((group) => {
             const visibleItems = group.items.filter(item => hasPermission(item.permissionModule));
             if (visibleItems.length === 0) return null;
@@ -637,13 +651,13 @@ export function DashboardLayout() {
                         onTouchStart={() => preloadRoute(item.path)}
                         title={`${item.name} (${group.section})`}
                         className={cn(
-                          "w-full flex items-center justify-center p-2.5 rounded-xl transition-all relative group",
+                          "w-9 h-9 mx-auto flex items-center justify-center rounded-md transition-all relative group",
                           isActive
-                            ? "bg-primary text-white shadow-xs"
+                            ? "bg-primary text-white shadow-2xs"
                             : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-white"
                         )}
                       >
-                        <Icon size={18} className={isActive ? "text-white" : (item.iconColor ?? theme.icon)} />
+                        <Icon size={16} className={isActive ? "text-white" : (item.iconColor ?? theme.icon)} />
                       </NavLink>
                     );
                   })}
@@ -652,41 +666,41 @@ export function DashboardLayout() {
             }
 
             return (
-              <div key={group.section} className="space-y-1">
-                {/* Vibrant Folder Header Card */}
+              <div key={group.section} className="space-y-0.5">
+                {/* Structured Group Header */}
                 <button
                   type="button"
                   onClick={() => toggleSection(group.section)}
                   className={cn(
-                    "w-full flex items-center justify-between p-2 rounded-2xl border transition-all duration-200 group cursor-pointer select-none",
+                    "w-full flex items-center justify-between px-2 py-1.5 rounded-md border transition-all duration-150 group cursor-pointer select-none",
                     hasActiveChild
                       ? secTheme.activeHeader
-                      : "border-transparent hover:border-slate-200 dark:hover:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                      : "border-transparent hover:border-slate-200 dark:hover:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40"
                   )}
                 >
-                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                    <div className={cn("w-7 h-7 rounded-xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-105", secTheme.iconBg)}>
-                      <SecIcon size={14} />
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <div className={cn("w-5.5 h-5.5 rounded-md flex items-center justify-center shrink-0 transition-transform group-hover:scale-105", secTheme.iconBg)}>
+                      <SecIcon size={13} />
                     </div>
-                    <span className="text-[11px] font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 truncate">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 truncate">
                       {group.section}
                     </span>
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0 ml-1">
-                    <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full transition-colors", secTheme.badge)}>
+                  <div className="flex items-center gap-1 shrink-0 ml-1">
+                    <span className={cn("text-[9.5px] font-semibold px-1.5 py-0.2 rounded-md transition-colors", secTheme.badge)}>
                       {visibleItems.length}
                     </span>
                     {isOpen ? (
-                      <ChevronDown size={14} className="text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-200 transition-transform" />
+                      <ChevronDown size={13} className="text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-200 transition-transform" />
                     ) : (
-                      <ChevronRight size={14} className="text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-200 transition-transform" />
+                      <ChevronRight size={13} className="text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-200 transition-transform" />
                     )}
                   </div>
                 </button>
 
                 {/* Sub-items (Tree Node Branch Contents) */}
                 {isOpen && (
-                  <div className="pl-4 ml-3.5 space-y-1 my-1">
+                  <div className="pl-3.5 ml-2.5 space-y-0.5 my-0.5">
                     {visibleItems.map((item, idx) => {
                       const isLast = idx === visibleItems.length - 1;
                       const isActive = item.path === '/settings'
@@ -698,12 +712,12 @@ export function DashboardLayout() {
                       return (
                         <div key={item.path} className="relative flex items-center">
                           {/* Tree Line Connector Arms */}
-                          <div className="absolute -left-3.5 top-0 bottom-0 w-3.5 pointer-events-none">
+                          <div className="absolute -left-3 top-0 bottom-0 w-3 pointer-events-none">
                             <div className="absolute left-0 top-0 w-0.5 h-1/2 bg-slate-200 dark:bg-slate-800" />
                             {!isLast && (
                               <div className="absolute left-0 top-1/2 w-0.5 h-1/2 bg-slate-200 dark:bg-slate-800" />
                             )}
-                            <div className="absolute left-0 top-1/2 w-3.5 h-0.5 bg-slate-200 dark:bg-slate-800 rounded-r" />
+                            <div className="absolute left-0 top-1/2 w-3 h-0.5 bg-slate-200 dark:bg-slate-800 rounded-r" />
                           </div>
 
                           <NavLink id={item.path === '/schemes' ? 'sidebar-nav-schemes' : item.path === '/subscription' ? 'sidebar-nav-subscription' : item.path === '/chalkboard' ? 'sidebar-nav-chalkboard' : undefined} to={item.path}
@@ -711,13 +725,13 @@ export function DashboardLayout() {
                             onFocus={() => preloadRoute(item.path)}
                             onTouchStart={() => preloadRoute(item.path)}
                             className={cn(
-                              "w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-bold transition-all ml-1",
+                              "w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] font-semibold transition-all ml-0.5",
                               isActive
-                                ? "bg-primary text-white shadow-xs"
-                                : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-white"
+                                ? "bg-primary text-white font-bold shadow-2xs"
+                                : "text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-950 dark:hover:text-white"
                             )}
                           >
-                            <Icon size={16} className={isActive ? "text-white" : (item.iconColor ?? theme.icon)} />
+                            <Icon size={15} className={isActive ? "text-white" : (item.iconColor ?? theme.icon)} />
                             <span className="truncate">{item.name}</span>
                           </NavLink>
                         </div>
@@ -732,33 +746,33 @@ export function DashboardLayout() {
 
         {/* PWA Desktop Web App Installation Banner in Sidebar */}
         {!isInstalled && (
-          <div className={cn("border-t border-slate-100 dark:border-slate-800", isSidebarCollapsed ? "p-2 flex justify-center" : "p-2.5")}>
+          <div className={cn("border-t border-slate-100 dark:border-slate-800", isSidebarCollapsed ? "p-1.5 flex justify-center" : "p-2")}>
             {isSidebarCollapsed ? (
               <button
                 type="button"
                 onClick={promptInstall}
-                className="w-10 h-10 rounded-xl bg-gradient-to-r from-orange-500/10 to-amber-500/10 hover:from-orange-500/20 hover:to-amber-500/20 border border-orange-500/20 text-primary flex items-center justify-center transition-all cursor-pointer shadow-2xs"
+                className="w-9 h-9 rounded-md bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/20 text-primary flex items-center justify-center transition-all cursor-pointer shadow-2xs"
                 title="Install Menukit Desktop App"
               >
-                <Laptop size={16} />
+                <Laptop size={14} />
               </button>
             ) : (
               <button
                 type="button"
                 onClick={promptInstall}
-                className="w-full p-2.5 rounded-xl bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-orange-500/5 hover:from-orange-500/20 hover:to-amber-500/20 border border-orange-500/20 text-left transition-all group cursor-pointer flex items-center justify-between shadow-2xs"
+                className="w-full p-2 rounded-md bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/20 text-left transition-all group cursor-pointer flex items-center justify-between shadow-2xs"
                 title="Install Menukit Desktop Web App"
               >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-7 h-7 rounded-lg bg-primary text-white flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform">
-                    <Laptop size={14} />
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-6 h-6 rounded-md bg-primary text-white flex items-center justify-center shrink-0 shadow-2xs group-hover:scale-105 transition-transform">
+                    <Laptop size={12} />
                   </div>
                   <div className="min-w-0">
                     <p className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-tight">Install Desktop App</p>
                     <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">Faster POS & Printing</p>
                   </div>
                 </div>
-                <Download size={14} className="text-primary shrink-0 opacity-70 group-hover:opacity-100 transition-opacity ml-1" />
+                <Download size={13} className="text-primary shrink-0 opacity-70 group-hover:opacity-100 transition-opacity ml-1" />
               </button>
             )}
           </div>
@@ -767,18 +781,18 @@ export function DashboardLayout() {
         {/* Sidebar Footer - Logged in user info */}
         <div className={cn(
           "border-t border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/60 shrink-0 flex items-center",
-          isSidebarCollapsed ? "p-2 flex-col gap-2 justify-center" : "p-3 justify-between gap-2.5"
+          isSidebarCollapsed ? "p-2 flex-col gap-1.5 justify-center" : "p-2.5 justify-between gap-2"
         )}>
-          <div className="flex items-center gap-2.5 min-w-0 flex-1" title={user?.email || ''}>
-            <div className="w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-xs flex items-center justify-center shrink-0 border border-primary/20">
+          <div className="flex items-center gap-2 min-w-0 flex-1" title={user?.email || ''}>
+            <div className="w-7 h-7 rounded-md bg-primary/10 text-primary font-bold text-xs flex items-center justify-center shrink-0 border border-primary/20">
               {user?.email ? user.email.charAt(0).toUpperCase() : 'U'}
             </div>
             {!isSidebarCollapsed && (
               <div className="flex flex-col min-w-0 flex-1">
-                <span className="text-[12px] font-semibold text-slate-800 dark:text-slate-200 truncate leading-tight">
+                <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate leading-tight">
                   {user?.email || 'Logged in user'}
                 </span>
-                <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium capitalize leading-tight">
+                <span className="text-[10.5px] text-slate-400 dark:text-slate-500 font-medium capitalize leading-tight">
                   {isOwner ? 'Shop Owner' : 'Collaborator'}
                 </span>
               </div>
@@ -787,10 +801,10 @@ export function DashboardLayout() {
           <button
             type="button"
             onClick={() => setIsSignOutModalOpen(true)}
-            className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors shrink-0 cursor-pointer"
+            className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-md transition-colors shrink-0 cursor-pointer"
             title="Sign Out"
           >
-            <LogOut size={16} />
+            <LogOut size={14} />
           </button>
         </div>
       </aside>
@@ -798,72 +812,52 @@ export function DashboardLayout() {
       {/* Main Container Area */}
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
         {/* DESKTOP Top Bar Header */}
-        <div className="hidden lg:flex h-16 border-b border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 px-6 items-center justify-between shrink-0 z-40 relative">
-          <div className="flex items-center gap-3 min-w-0">
-            {/* Collapse toggle button when sidebar is collapsed */}
-            {isSidebarCollapsed && (
-              <button
-                type="button"
-                onClick={toggleSidebar}
-                className="p-2 rounded-xl bg-primary/10 hover:bg-primary text-primary hover:text-white border border-primary/20 hover:border-primary transition-all cursor-pointer shrink-0 shadow-2xs hover:scale-105 active:scale-95"
-                title="Expand sidebar"
-              >
-                <PanelLeftOpen size={18} />
-              </button>
-            )}
-
+        <div className="hidden lg:flex h-13 border-b border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 px-5 items-center justify-between shrink-0 z-40 relative">
+          <div className="flex items-center gap-2.5 min-w-0">
             {/* Page Module Icon Badge matching Title */}
             {(() => {
               const page = getPageDetails();
               const PageIcon = page.icon;
               return (
                 <div className={cn(
-                  "w-10 h-10 rounded-xl flex items-center justify-center border shrink-0 shadow-2xs transition-all",
+                  "w-8 h-8 rounded-md flex items-center justify-center border shrink-0 shadow-2xs transition-all",
                   page.bg
                 )}>
-                  <PageIcon size={20} className={page.iconColor} />
+                  <PageIcon size={16} className={page.iconColor} />
                 </div>
               );
             })()}
 
-            <div className="flex flex-col min-w-0">
-              <h1 className="text-lg font-bold text-slate-900 dark:text-white leading-tight font-heading truncate">{headerTitle}</h1>
-              {headerSubtitle && <p className="text-xs font-normal text-slate-400 dark:text-slate-500 mt-0.5 truncate max-w-lg">{headerSubtitle}</p>}
+            <div className="flex items-center min-w-0">
+              <h1 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white leading-tight font-heading truncate">{headerTitle}</h1>
             </div>
           </div>
-          <div className="flex items-center gap-4">
-            <div id="header-actions-portal" className="flex items-center gap-3"></div>
-            <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 mx-2"></div>
-            <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            <div id="header-actions-portal" className="flex items-center gap-2"></div>
+            <div className="h-5 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
+            <div className="flex items-center gap-1.5">
               {!isInstalled && (
                 <button
                   onClick={promptInstall}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 hover:bg-primary/20 text-primary font-bold text-xs border border-primary/25 transition-all shadow-2xs hover:scale-105 active:scale-95 cursor-pointer shrink-0 mr-1"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-primary/10 hover:bg-primary/20 text-primary font-medium text-xs border border-primary/25 transition-all shadow-2xs hover:scale-105 active:scale-95 cursor-pointer shrink-0 mr-1"
                   title="Install Menukit as Desktop App"
                 >
-                  <Laptop size={13} />
+                  <Laptop size={12} />
                   <span>Install Desktop App</span>
                 </button>
               )}
               <WsConnectionTracker />
               <NotificationBell />
-              <button
-                onClick={() => setIsLanguageModalOpen(true)}
-                className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-                title="Change Language"
-              >
-                <Languages size={15} />
-              </button>
 
-              <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
+              <div className="h-5 w-px bg-slate-200 dark:bg-slate-700 mx-0.5"></div>
 
               {/* Top Bar Sign Out */}
               <button
                 onClick={() => setIsSignOutModalOpen(true)}
-                className="w-8 h-8 ml-1 rounded-full bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center hover:bg-rose-100 dark:hover:bg-rose-900/80 transition-colors"
+                className="w-7 h-7 ml-0.5 rounded-md bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center hover:bg-rose-100 dark:hover:bg-rose-900/80 transition-colors"
                 title="Sign Out"
               >
-                <LogOut size={15} />
+                <LogOut size={14} />
               </button>
             </div>
           </div>
@@ -877,31 +871,24 @@ export function DashboardLayout() {
           </div>
 
           {/* Right Action Icons */}
-          <div className="flex items-center gap-1.5 shrink-0 z-20">
+          <div className="flex items-center gap-1 shrink-0 z-20">
             {!isInstalled && (
               <button
                 onClick={promptInstall}
-                className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center hover:bg-primary/20 transition-colors border border-primary/25"
+                className="w-7 h-7 rounded-md bg-primary/10 text-primary flex items-center justify-center hover:bg-primary/20 transition-colors border border-primary/25"
                 title="Install Web App"
               >
-                <Download size={15} />
+                <Download size={14} />
               </button>
             )}
             <WsConnectionTracker />
             <NotificationBell />
             <button
-              onClick={() => setIsLanguageModalOpen(true)}
-              className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-              title="Change Language"
-            >
-              <Languages size={16} />
-            </button>
-            <button
               onClick={() => setIsSignOutModalOpen(true)}
-              className="w-8 h-8 rounded-full bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-100 dark:border-rose-900/50 flex items-center justify-center hover:bg-rose-100 dark:hover:bg-rose-900/80 transition-colors"
+              className="w-7 h-7 rounded-md bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-100 dark:border-rose-900/50 flex items-center justify-center hover:bg-rose-100 dark:hover:bg-rose-900/80 transition-colors"
               title="Sign Out"
             >
-              <LogOut size={15} />
+              <LogOut size={14} />
             </button>
           </div>
         </div>
@@ -968,7 +955,7 @@ export function DashboardLayout() {
         {/* Scrollable Main Content View */}
         <main
           ref={mainRef}
-          className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8 pb-20 lg:pb-8 relative"
+          className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 lg:p-5 pb-20 lg:pb-8 relative"
           onScroll={(e) => setIsScrolled(e.currentTarget.scrollTop > 20)}
         >
           <div className="min-h-full">
@@ -1028,7 +1015,7 @@ export function DashboardLayout() {
         <div className="space-y-5 py-2">
           {navGroups.map((group) => (
             <div key={group.section}>
-              <h4 className="text-[10px] font-black tracking-widest text-slate-400 dark:text-slate-500 uppercase mb-2.5">
+              <h4 className="text-[11px] font-black tracking-widest text-slate-400 dark:text-slate-500 uppercase mb-2.5">
                 {group.section}
               </h4>
               <div className="grid grid-cols-3 gap-2.5">
@@ -1048,14 +1035,14 @@ export function DashboardLayout() {
                         setIsMoreMenuOpen(false);
                       }}
                       className={cn(
-                        "flex flex-col items-center justify-center p-3 rounded-2xl border transition-all text-center gap-1.5 shadow-2xs",
+                        "flex flex-col items-center justify-center p-2.5 rounded-md border transition-all text-center gap-1 shadow-2xs",
                         theme.bg,
                         theme.border,
-                        isActive && "ring-2 ring-primary ring-offset-1 font-black"
+                        isActive && "ring-2 ring-primary ring-offset-1 font-bold"
                       )}
                     >
-                      <Icon size={22} className={theme.icon} />
-                      <span className={cn("text-[11px] font-bold truncate w-full", theme.text)}>
+                      <Icon size={18} className={theme.icon} />
+                      <span className={cn("text-xs font-semibold truncate w-full", theme.text)}>
                         {item.name}
                       </span>
                     </NavLink>
@@ -1066,15 +1053,15 @@ export function DashboardLayout() {
           ))}
 
           {/* Mobile Sign Out Button */}
-          <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
+          <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800">
             <button
               onClick={() => {
                 setIsMoreMenuOpen(false);
                 setIsSignOutModalOpen(true);
               }}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-950/60 border border-rose-100 dark:border-rose-900/50 transition-colors shadow-2xs cursor-pointer"
+              className="w-full flex items-center justify-center gap-2 px-3.5 py-2 rounded-md text-xs font-semibold bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-950/60 border border-rose-100 dark:border-rose-900/50 transition-colors shadow-2xs cursor-pointer"
             >
-              <LogOut size={16} />
+              <LogOut size={14} />
               <span>Sign Out</span>
             </button>
           </div>
@@ -1088,14 +1075,14 @@ export function DashboardLayout() {
         title="Sign Out Confirmation"
         className="max-w-xs"
       >
-        <div className="space-y-4 pt-2">
+        <div className="space-y-3 pt-1">
           <p className="text-xs text-slate-600 dark:text-slate-300">
-            Are you sure you want to sign out of your Menukit account?
+            Are you sure you want to sign out of your <span className="font-semibold text-orange-600 dark:text-orange-500">Menukit</span> account?
           </p>
           <div className="flex justify-end gap-2 pt-2">
             <button
               onClick={() => setIsSignOutModalOpen(false)}
-              className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
+              className="px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md transition-colors cursor-pointer"
             >
               Cancel
             </button>
@@ -1104,7 +1091,7 @@ export function DashboardLayout() {
                 setIsSignOutModalOpen(false);
                 logout();
               }}
-              className="px-4 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-xl transition-colors shadow-xs"
+              className="px-3.5 py-1.5 text-xs font-medium bg-rose-600 hover:bg-rose-700 text-white rounded-md transition-colors shadow-2xs cursor-pointer"
             >
               Sign Out
             </button>

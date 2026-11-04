@@ -1,19 +1,23 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
-import { Users, ShieldCheck, Smartphone, Plus, Edit2, Search, Lock, RefreshCw, AlertCircle, Trophy, Clock, CheckCircle2 } from 'lucide-react';
+import { Users, ShieldCheck, Smartphone, Plus, Search, Lock, RefreshCw, AlertCircle, Trophy, Clock, CheckCircle2, Trash2 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
+import { CountryCodeSelect, COUNTRY_CODES } from '@/components/ui/CountryCodeSelect';
 import { membershipService, MembershipAnalytics, Member } from '@/services/memberships';
 import { useShopStore } from '@/store/shopStore';
 import { useHeaderStore } from '@/store/useHeaderStore';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
+import { SquareFAB } from '@/components/ui/SquareFAB';
 import { InfiniteScrollTrigger } from '@/components/ui/InfiniteScrollTrigger';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { api } from '@/services/api';
+import { HeaderActions } from '@/components/HeaderActions';
+import { HorizontalScrollContainer } from '@/components/ui/HorizontalScrollContainer';
 
 const PAGE_SIZE = 20;
 
@@ -28,7 +32,7 @@ export function MembersPage() {
   const { setTitle: setHeaderTitle } = useHeaderStore();
 
   useEffect(() => {
-    setHeaderTitle('Members & Verified Customers', 'Customer loyalty & profiles.');
+    setHeaderTitle('Members');
   }, [setHeaderTitle]);
 
   useEffect(() => {
@@ -48,14 +52,9 @@ export function MembersPage() {
   const [debouncedSearch, setDebouncedSearch] = useState('');
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [memberToDelete, setMemberToDelete] = useState<string | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({ name: '', mobile_number: '' });
-  const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
-  const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
-  const [isDeletingAll, setIsDeletingAll] = useState(false);
+  const [countryCode, setCountryCode] = useState('+91');
   const [isConverting, setIsConverting] = useState(false);
   const [selectedCustomerIds, setSelectedCustomerIds] = useState<string[]>([]);
 
@@ -216,185 +215,180 @@ export function MembersPage() {
     );
   };
 
+  const isDuplicateNumber = useMemo(() => {
+    const cleanDigits = formData.mobile_number.replace(/\D/g, '');
+    if (!cleanDigits || cleanDigits.length < 6) return false;
+    const fullMobile = `${countryCode}${cleanDigits}`;
+    const last10 = cleanDigits.slice(-10);
+    return membersList.some((m) => {
+      const existingDigits = (m.customer?.mobile_number || '').replace(/\D/g, '');
+      const existingLast10 = existingDigits.slice(-10);
+      return (
+        existingDigits === cleanDigits ||
+        (last10.length >= 10 && existingLast10 === last10) ||
+        m.customer?.mobile_number === fullMobile
+      );
+    });
+  }, [formData.mobile_number, countryCode, membersList]);
+
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!shop?.id) return;
 
-    if (!formData.mobile_number.trim() || formData.mobile_number.length < 10) {
+    const cleanDigits = formData.mobile_number.replace(/\D/g, '');
+    if (!cleanDigits || cleanDigits.length < 6) {
       toast.error('Please enter a valid mobile number');
       return;
     }
 
+    if (isDuplicateNumber) {
+      toast.error('This mobile number is already registered as a member in your shop');
+      return;
+    }
+
+    const fullMobile = `${countryCode}${cleanDigits}`;
+
     setIsSubmitting(true);
     try {
-      if (editingMemberId) {
-        await membershipService.editMember(shop.id, editingMemberId, formData.name, formData.mobile_number);
-        toast.success('Member updated successfully!');
-        setIsEditModalOpen(false);
-      } else {
-        await membershipService.addMember(shop.id, formData.name, formData.mobile_number);
-        toast.success('Member verified and added successfully!');
-        setIsAddModalOpen(false);
-      }
+      await membershipService.addMember(shop.id, formData.name, fullMobile);
+      toast.success('Member verified and added successfully!');
+      setIsAddModalOpen(false);
       setFormData({ name: '', mobile_number: '' });
-      setEditingMemberId(null);
+      setCountryCode('+91');
       fetchAnalyticsSummary();
       loadMembersData(0, true);
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || (editingMemberId ? 'Failed to update member' : 'Failed to add member'));
+      toast.error(err.response?.data?.detail || 'Failed to add member');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleDeleteMember = async () => {
-    if (!shop?.id || !memberToDelete) return;
-    setIsDeleting(true);
-    try {
-      await membershipService.deleteMember(shop.id, memberToDelete);
-      toast.success('Member removed successfully');
-      fetchAnalyticsSummary();
-      loadMembersData(0, true);
-    } catch (err: any) {
-      toast.error(err.response?.data?.detail || 'Failed to remove member');
-    } finally {
-      setIsDeleting(false);
-      setMemberToDelete(null);
-    }
-  };
 
-  const handleDeleteAll = async (type: 'existing' | 'new' | 'all') => {
-    if (!shop?.id) return;
-    setIsDeletingAll(true);
-    try {
-      await membershipService.deleteAllMembers(shop.id, type);
-      fetchAnalyticsSummary();
-      loadMembersData(0, true);
-      setShowDeleteAllConfirm(false);
-      toast.success(
-        type === 'existing' ? 'All verified members deleted' :
-        type === 'new' ? 'All new customers deleted' :
-        'All members deleted successfully'
-      );
-    } catch {
-      toast.error('Failed to delete members');
-    } finally {
-      setIsDeletingAll(false);
-    }
-  };
-
-  const openEditModal = (member: Member) => {
-    setEditingMemberId(member.id);
-    setFormData({ name: member.name || '', mobile_number: member.mobile_number });
-    setIsEditModalOpen(true);
-  };
 
   const isModuleLocked = isLocked || (subStatus && (subStatus.is_expired || (!subStatus.is_all_access && Array.isArray(subStatus.active_modules) && !subStatus.active_modules.includes('member-details') && !subStatus.active_modules.includes('member-count'))));
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto animate-fade-in pb-24 lg:pb-12">
+    <div className="space-y-4 w-full animate-fade-in pb-20">
+      {/* Top Header Actions */}
+      <HeaderActions>
+        <div className="flex items-center gap-2">
+          {activeTab === 'existing' && !isDetailsLocked && (
+            <Button
+              onClick={() => {
+                setFormData({ name: '', mobile_number: '' });
+                setCountryCode('+91');
+                setIsAddModalOpen(true);
+              }}
+              size="sm"
+              className="bg-primary hover:bg-primary/90 text-white rounded-md text-xs font-semibold h-8 gap-1 shadow-2xs"
+            >
+              <Plus size={13} /> Add Member
+            </Button>
+          )}
+
+        </div>
+      </HeaderActions>
+
       {/* Module Lock Banner */}
       {isModuleLocked && (
-        <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/40 dark:to-orange-950/40 border-2 border-amber-200 dark:border-amber-800/80 p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0">
-              <Lock size={20} />
+        <div className="bg-amber-500/10 border border-amber-500/30 p-3 sm:p-4 rounded-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-md bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+              <Lock size={16} />
             </div>
             <div>
-              <h4 className="font-black text-sm text-slate-900 dark:text-white">Customer Insights & Member Modules Locked</h4>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Subscribe to Member Count / Details modules or renew your subscription to access member data.</p>
+              <h4 className="font-bold text-xs sm:text-sm text-foreground">Customer Insights & Member Modules Locked</h4>
+              <p className="text-[11px] text-muted-foreground">Subscribe to Member Count / Details modules or renew your plan to access customer data.</p>
             </div>
           </div>
-          <Button onClick={() => navigate('/subscription')} className="bg-amber-600 hover:bg-amber-700 text-white shrink-0 text-xs font-extrabold uppercase tracking-wider">
+          <Button onClick={() => navigate('/subscription')} size="sm" className="bg-amber-600 hover:bg-amber-700 text-white shrink-0 text-xs font-bold rounded-md h-8">
             Unlock Modules →
           </Button>
         </div>
       )}
 
-      {/* Analytics Cards (Lightweight Count Metrics) */}
-      <div className="grid grid-cols-3 gap-2 sm:gap-4">
-        <Card className="bg-gradient-to-br from-indigo-50 to-white border-indigo-100 dark:from-indigo-950/20 dark:to-slate-900 dark:border-indigo-900/30">
-          <CardHeader className="p-3 sm:p-4 pb-0 sm:pb-1 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-0">
-            <CardTitle className="text-[10px] sm:text-xs font-semibold text-slate-600 dark:text-slate-300 leading-tight">Total Members</CardTitle>
-            <Users size={16} className="text-indigo-500 shrink-0" />
-          </CardHeader>
-          <CardContent className="p-3 sm:p-4 pt-1 sm:pt-2">
-            <div className="text-xl sm:text-3xl font-black text-indigo-950 dark:text-indigo-200">
-              {analytics?.total_members ?? 0}
-            </div>
-          </CardContent>
-        </Card>
+      {/* Analytics KPI Cards (Boxy Subtle Curves) */}
+      <div className="grid grid-cols-3 gap-2.5 sm:gap-3.5">
+        <div className="bg-card border border-border/80 rounded-lg p-3 sm:p-4 shadow-2xs transition-all hover:border-indigo-500/30">
+          <div className="flex items-center justify-between gap-1 mb-1">
+            <span className="text-[10px] sm:text-xs font-bold text-muted-foreground uppercase tracking-wider">Total Members</span>
+            <Users size={14} className="text-indigo-500 shrink-0" />
+          </div>
+          <div className="text-xl sm:text-2xl font-black text-foreground font-heading">
+            {analytics?.total_members ?? 0}
+          </div>
+        </div>
 
-        <Card className="bg-gradient-to-br from-emerald-50 to-white border-emerald-100 dark:from-emerald-950/20 dark:to-slate-900 dark:border-emerald-900/30">
-          <CardHeader className="p-3 sm:p-4 pb-0 sm:pb-1 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-0">
-            <CardTitle className="text-[10px] sm:text-xs font-semibold text-slate-600 dark:text-slate-300 leading-tight">Manually Verified</CardTitle>
-            <ShieldCheck size={16} className="text-emerald-500 shrink-0" />
-          </CardHeader>
-          <CardContent className="p-3 sm:p-4 pt-1 sm:pt-2">
-            <div className="text-xl sm:text-3xl font-black text-emerald-950 dark:text-emerald-200">
-              {analytics?.manually_added ?? 0}
-            </div>
-          </CardContent>
-        </Card>
+        <div className="bg-card border border-border/80 rounded-lg p-3 sm:p-4 shadow-2xs transition-all hover:border-emerald-500/30">
+          <div className="flex items-center justify-between gap-1 mb-1">
+            <span className="text-[10px] sm:text-xs font-bold text-muted-foreground uppercase tracking-wider">Verified</span>
+            <ShieldCheck size={14} className="text-emerald-500 shrink-0" />
+          </div>
+          <div className="text-xl sm:text-2xl font-black text-foreground font-heading">
+            {analytics?.manually_added ?? 0}
+          </div>
+        </div>
 
-        <Card className="bg-gradient-to-br from-amber-50 to-white border-amber-100 dark:from-amber-950/20 dark:to-slate-900 dark:border-amber-900/30">
-          <CardHeader className="p-3 sm:p-4 pb-0 sm:pb-1 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-0">
-            <CardTitle className="text-[10px] sm:text-xs font-semibold text-slate-600 dark:text-slate-300 leading-tight">Auto Registered</CardTitle>
-            <Smartphone size={16} className="text-amber-500 shrink-0" />
-          </CardHeader>
-          <CardContent className="p-3 sm:p-4 pt-1 sm:pt-2">
-            <div className="text-xl sm:text-3xl font-black text-amber-950 dark:text-amber-200">
-              {analytics?.auto_registered ?? 0}
-            </div>
-          </CardContent>
-        </Card>
+        <div className="bg-card border border-border/80 rounded-lg p-3 sm:p-4 shadow-2xs transition-all hover:border-amber-500/30">
+          <div className="flex items-center justify-between gap-1 mb-1">
+            <span className="text-[10px] sm:text-xs font-bold text-muted-foreground uppercase tracking-wider">Auto Registered</span>
+            <Smartphone size={14} className="text-amber-500 shrink-0" />
+          </div>
+          <div className="text-xl sm:text-2xl font-black text-foreground font-heading">
+            {analytics?.auto_registered ?? 0}
+          </div>
+        </div>
       </div>
 
       {/* Main Content Area */}
-      <Card className="shadow-xs overflow-hidden border-slate-200 dark:border-slate-800">
-        <div className="p-4 sm:p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            {/* Custom Tab Switcher */}
-            <div className="flex items-center gap-1.5 p-1 bg-slate-200/60 dark:bg-slate-800 rounded-xl max-w-fit">
+      <Card className="shadow-2xs overflow-hidden border-border/80 rounded-lg bg-card">
+        {/* Sticky Controls & Filter Toolbar */}
+        <div className="sticky top-[-14px] sm:top-[-20px] lg:top-[-24px] z-20 bg-background/95 backdrop-blur-md p-3 sm:p-3.5 border-b border-border/80 -mx-0">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            {/* Custom Segmented Tab Switcher */}
+            <div className="flex items-center gap-1 p-1 bg-muted/60 rounded-md border border-border/60 max-w-fit">
               <button
+                type="button"
                 onClick={() => { setActiveTab('existing'); setSelectedCustomerIds([]); }}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 ${
+                className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   activeTab === 'existing'
-                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                    ? 'bg-background text-foreground shadow-2xs border border-border/60'
+                    : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                Existing
-                <span className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300 px-1.5 py-0.5 rounded-full text-[10px] font-black">
+                <span>Existing</span>
+                <span className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.2 rounded font-mono text-[10px] font-bold">
                   {analytics?.manually_added ?? 0}
                 </span>
               </button>
 
-
               <button
+                type="button"
                 onClick={() => { setActiveTab('new'); setSelectedCustomerIds([]); }}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 ${
+                className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   activeTab === 'new'
-                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                    ? 'bg-background text-foreground shadow-2xs border border-border/60'
+                    : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                New
-                <span className="bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300 px-1.5 py-0.5 rounded-full text-[10px] font-black">
+                <span>New</span>
+                <span className="bg-amber-500/10 text-amber-700 dark:text-amber-300 px-1.5 py-0.2 rounded font-mono text-[10px] font-bold">
                   {analytics?.auto_registered ?? 0}
                 </span>
               </button>
 
               <button
+                type="button"
                 onClick={() => { setActiveTab('repeated'); setSelectedCustomerIds([]); }}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 ${
+                className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   activeTab === 'repeated'
-                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                    ? 'bg-background text-foreground shadow-2xs border border-border/60'
+                    : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                Repeated
-                <span className="bg-indigo-100 text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-300 px-1.5 py-0.5 rounded-full text-[10px] font-black">
+                <span>Repeated</span>
+                <span className="bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.2 rounded font-mono text-[10px] font-bold">
                   {analytics?.repeated_count ?? 0}
                 </span>
               </button>
@@ -403,12 +397,12 @@ export function MembersPage() {
             {/* Action Buttons & Min Visits filter */}
             <div className="flex items-center gap-2">
               {activeTab === 'repeated' && (
-                <div className="flex items-center gap-1 bg-white dark:bg-slate-900 px-2.5 py-1 rounded-xl border border-slate-200 dark:border-slate-700 text-xs">
-                  <span className="text-slate-500 font-bold text-[11px]">Min Visits:</span>
+                <div className="flex items-center gap-1 bg-background px-2.5 py-1 rounded-md border border-border text-xs h-8">
+                  <span className="text-muted-foreground font-semibold text-[11px]">Min Visits:</span>
                   <select
                     value={minVisits}
                     onChange={(e) => setMinVisits(Number(e.target.value))}
-                    className="bg-transparent font-black text-slate-800 dark:text-white focus:outline-none"
+                    className="bg-transparent font-bold text-foreground focus:outline-none cursor-pointer"
                   >
                     <option value={2}>2+</option>
                     <option value={3}>3+</option>
@@ -418,17 +412,17 @@ export function MembersPage() {
               )}
 
               {activeTab === 'new' && !isDetailsLocked && membersList.length > 0 && (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   <button
                     type="button"
                     onClick={handleToggleSelectAll}
-                    className="text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                    className="text-xs font-semibold text-muted-foreground hover:text-foreground px-2.5 py-1 rounded-md border border-border bg-background transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs h-8"
                   >
                     <input
                       type="checkbox"
                       checked={membersList.length > 0 && selectedCustomerIds.length === membersList.length}
                       onChange={handleToggleSelectAll}
-                      className="w-3.5 h-3.5 rounded border-slate-300 dark:border-slate-600 text-emerald-600 focus:ring-emerald-500 cursor-pointer pointer-events-none accent-emerald-600"
+                      className="w-3.5 h-3.5 rounded border-border text-emerald-600 focus:ring-emerald-500 cursor-pointer pointer-events-none accent-emerald-600"
                     />
                     <span>{selectedCustomerIds.length === membersList.length ? 'Deselect All' : 'Select All'}</span>
                   </button>
@@ -437,9 +431,9 @@ export function MembersPage() {
                     onClick={() => handleBatchConvert()}
                     disabled={isConverting}
                     size="sm"
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold gap-1.5 shadow-xs transition-all"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-xs font-semibold gap-1.5 shadow-2xs h-8"
                   >
-                    <ShieldCheck size={14} />
+                    <ShieldCheck size={13} />
                     {selectedCustomerIds.length > 0
                       ? `Verify & Add (${selectedCustomerIds.length})`
                       : `Verify & Add All (${analytics?.auto_registered ?? membersList.length})`}
@@ -450,52 +444,51 @@ export function MembersPage() {
               {activeTab === 'existing' && !isDetailsLocked && (
                 <Button
                   onClick={() => {
-                    setEditingMemberId(null);
                     setFormData({ name: '', mobile_number: '' });
                     setIsAddModalOpen(true);
                   }}
                   size="sm"
-                  className="hidden sm:inline-flex bg-primary hover:bg-primary/90 text-white rounded-xl text-xs font-bold gap-1 shadow-xs"
+                  className="sm:hidden bg-primary hover:bg-primary/90 text-white rounded-md text-xs font-semibold gap-1 shadow-2xs h-8"
                 >
-                  <Plus size={14} /> Add Member
+                  <Plus size={13} /> Add
                 </Button>
               )}
             </div>
           </div>
 
-          {/* API Search Input */}
-          <div className="relative mt-3">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+          {/* Search Input */}
+          <div className="relative mt-2.5">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={14} />
             <input
               type="text"
               placeholder="Search member by name or mobile..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-primary font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400"
+              className="w-full h-8.5 pl-8 pr-3 text-xs bg-background border border-input rounded-md focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary font-medium text-foreground placeholder:text-muted-foreground transition-all"
             />
           </div>
 
           {/* Active selection banner for New tab */}
           {activeTab === 'new' && selectedCustomerIds.length > 0 && (
-            <div className="flex items-center justify-between bg-emerald-50/90 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-xl px-3.5 py-2 mt-2.5 text-xs animate-fade-in">
-              <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-200 font-bold">
-                <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+            <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/30 rounded-md px-3 py-1.5 mt-2 text-xs animate-fade-in">
+              <div className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300 font-bold">
+                <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
                 <span>{selectedCustomerIds.length} customer{selectedCustomerIds.length > 1 ? 's' : ''} selected</span>
                 <button
                   type="button"
                   onClick={() => setSelectedCustomerIds([])}
                   className="text-emerald-600 dark:text-emerald-400 underline font-normal ml-1.5 hover:text-emerald-700 cursor-pointer text-[11px]"
                 >
-                  Clear selection
+                  Clear
                 </button>
               </div>
               <Button
                 size="sm"
                 onClick={() => handleBatchConvert()}
                 disabled={isConverting}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold h-7 px-3 rounded-lg shadow-xs"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold h-7 px-2.5 rounded-md shadow-2xs"
               >
-                <ShieldCheck size={13} /> Verify & Add Selected ({selectedCustomerIds.length})
+                <ShieldCheck size={12} /> Verify Selected ({selectedCustomerIds.length})
               </Button>
             </div>
           )}
@@ -504,22 +497,22 @@ export function MembersPage() {
         <CardContent className="p-0">
           {isDetailsLocked ? (
             <div className="p-8 text-center space-y-3">
-              <Lock size={32} className="mx-auto text-amber-500" />
-              <h4 className="font-extrabold text-sm text-slate-800 dark:text-slate-200">Member Details Module Required</h4>
-              <p className="text-xs text-slate-500 max-w-sm mx-auto">Subscribe to the Member Details module to view individual member customer phone numbers and profiles.</p>
-              <Button onClick={() => navigate('/subscription')} size="sm" className="bg-primary text-white text-xs font-extrabold">Upgrade Now</Button>
+              <Lock size={28} className="mx-auto text-amber-500" />
+              <h4 className="font-bold text-sm text-foreground">Member Details Module Required</h4>
+              <p className="text-xs text-muted-foreground max-w-sm mx-auto">Subscribe to the Member Details module to view individual member customer phone numbers and profiles.</p>
+              <Button onClick={() => navigate('/subscription')} size="sm" className="bg-primary text-white text-xs font-bold rounded-md">Upgrade Now</Button>
             </div>
           ) : isLoading && membersList.length === 0 ? (
-            <div className="p-6 space-y-3">
+            <div className="p-5 space-y-2.5">
               {[1, 2, 3, 4].map(i => (
-                <Skeleton key={i} className="h-10 w-full rounded-xl" />
+                <Skeleton key={i} className="h-9 w-full rounded-md" />
               ))}
             </div>
           ) : membersList.length === 0 ? (
             <div className="p-12 text-center space-y-2">
-              <Users size={32} className="mx-auto text-slate-400" />
-              <h4 className="font-bold text-slate-700 dark:text-slate-300 text-sm">No Members Found</h4>
-              <p className="text-xs text-slate-400">
+              <Users size={28} className="mx-auto text-muted-foreground" />
+              <h4 className="font-bold text-foreground text-sm">No Members Found</h4>
+              <p className="text-xs text-muted-foreground">
                 {debouncedSearch ? `No records match "${debouncedSearch}".` : 'No customers recorded in this list yet.'}
               </p>
             </div>
@@ -527,62 +520,62 @@ export function MembersPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
-                  <tr className="bg-slate-50 dark:bg-slate-800/50 text-[10px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800">
+                  <tr className="bg-muted/40 text-[10px] font-bold uppercase tracking-wider text-muted-foreground border-b border-border">
                     {activeTab === 'new' && (
-                      <th className="py-3 px-4 w-10 text-center">
+                      <th className="py-2.5 px-3.5 w-10 text-center">
                         <input
                           type="checkbox"
                           checked={membersList.length > 0 && selectedCustomerIds.length === membersList.length}
                           onChange={handleToggleSelectAll}
-                          className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-emerald-600 focus:ring-emerald-500 cursor-pointer accent-emerald-600"
+                          className="w-3.5 h-3.5 rounded border-border text-emerald-600 focus:ring-emerald-500 cursor-pointer accent-emerald-600"
                           title={selectedCustomerIds.length === membersList.length ? 'Deselect all' : 'Select all'}
                         />
                       </th>
                     )}
-                    <th className="py-3 px-4">Name</th>
-                    <th className="py-3 px-4">Mobile Number</th>
-                    <th className="py-3 px-4">Joined On</th>
-                    <th className="py-3 px-4">Time</th>
-                    <th className="py-3 px-4 text-center">Visits</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
+                    <th className="py-2.5 px-3.5">Name</th>
+                    <th className="py-2.5 px-3.5">Mobile Number</th>
+                    <th className="py-2.5 px-3.5">Joined Date</th>
+                    <th className="py-2.5 px-3.5">Time</th>
+                    <th className="py-2.5 px-3.5 text-center">Visits</th>
+                    {activeTab === 'new' && <th className="py-2.5 px-3.5 text-right">Actions</th>}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 font-medium">
+                <tbody className="divide-y divide-border/60 font-medium">
                   {membersList.map((m, index) => {
                     const isSelected = selectedCustomerIds.includes(m.id);
                     return (
                     <tr
                       key={`${m.id}-${index}`}
-                      className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors ${
-                        isSelected ? 'bg-emerald-50/40 dark:bg-emerald-950/20' : ''
+                      className={`hover:bg-muted/50 transition-colors ${
+                        isSelected ? 'bg-emerald-500/10' : ''
                       }`}
                     >
                       {activeTab === 'new' && (
-                        <td className="py-3 px-4 w-10 text-center">
+                        <td className="py-2.5 px-3.5 w-10 text-center">
                           <input
                             type="checkbox"
                             checked={isSelected}
                             onChange={() => handleToggleSelectOne(m.id)}
-                            className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-emerald-600 focus:ring-emerald-500 cursor-pointer accent-emerald-600"
+                            className="w-3.5 h-3.5 rounded border-border text-emerald-600 focus:ring-emerald-500 cursor-pointer accent-emerald-600"
                           />
                         </td>
                       )}
-                      <td className="py-3 px-4 font-bold text-slate-800 dark:text-slate-200">
+                      <td className="py-2.5 px-3.5 font-bold text-foreground">
                         {m.name || 'Unnamed Customer'}
                       </td>
-                      <td className="py-3 px-4 font-mono text-slate-600 dark:text-slate-400">
+                      <td className="py-2.5 px-3.5 font-mono text-muted-foreground">
                         {m.mobile_number}
                       </td>
-                      <td className="py-3 px-4 font-mono text-[11px] whitespace-nowrap font-semibold text-slate-700 dark:text-slate-300">
+                      <td className="py-2.5 px-3.5 font-mono text-[11px] whitespace-nowrap font-semibold text-foreground">
                         {new Date(m.joined_at).toLocaleDateString(undefined, {
                           year: 'numeric',
                           month: 'numeric',
                           day: 'numeric'
                         })}
                       </td>
-                      <td className="py-3 px-4 font-mono text-[11px] whitespace-nowrap text-slate-500 dark:text-slate-400">
-                        <div className="flex items-center gap-1.5 font-sans">
-                          <Clock size={12} className="text-slate-400 shrink-0" />
+                      <td className="py-2.5 px-3.5 font-mono text-[11px] whitespace-nowrap text-muted-foreground">
+                        <div className="flex items-center gap-1 font-sans">
+                          <Clock size={11} className="text-muted-foreground shrink-0" />
                           <span>
                             {new Date(m.joined_at).toLocaleTimeString([], {
                               hour: '2-digit',
@@ -592,34 +585,24 @@ export function MembersPage() {
                           </span>
                         </div>
                       </td>
-                      <td className="py-3 px-4 text-center font-extrabold">
-                        <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full text-[11px] font-black bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/60 min-w-[24px]">
+                      <td className="py-2.5 px-3.5 text-center font-bold">
+                        <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-md text-[11px] font-mono font-bold bg-muted text-foreground border border-border min-w-[22px]">
                           {m.visit_count ?? 1}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-right">
-                        {activeTab === 'new' ? (
+                      {activeTab === 'new' && (
+                        <td className="py-2.5 px-3.5 text-right">
                           <Button
                             onClick={() => handleConvertToMember(m.id)}
                             disabled={isConverting}
                             size="sm"
                             variant="outline"
-                            className="text-[11px] h-7 px-2.5 font-bold text-emerald-600 border-emerald-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
+                            className="text-[11px] h-7 px-2 font-semibold text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/10 rounded-md"
                           >
                             Verify & Add
                           </Button>
-                        ) : activeTab === 'existing' ? (
-                          <div className="flex items-center justify-end gap-1">
-                            <button
-                              onClick={() => openEditModal(m)}
-                              className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
-                              title="Edit Member"
-                            >
-                              <Edit2 size={14} />
-                            </button>
-                          </div>
-                        ) : null}
-                      </td>
+                        </td>
+                      )}
                     </tr>
                     );
                   })}
@@ -637,16 +620,15 @@ export function MembersPage() {
         </CardContent>
       </Card>
 
-      {/* Add / Edit Member Modal */}
+      {/* Add Member Modal */}
       <Modal
-        isOpen={isAddModalOpen || isEditModalOpen}
+        isOpen={isAddModalOpen}
         onClose={() => {
           setIsAddModalOpen(false);
-          setIsEditModalOpen(false);
-          setEditingMemberId(null);
           setFormData({ name: '', mobile_number: '' });
+          setCountryCode('+91');
         }}
-        title={editingMemberId ? 'Edit Member Details' : 'Add New Verified Member'}
+        title="Add New Verified Member"
       >
         <form onSubmit={handleAddMember} className="space-y-4 pt-2">
           <div>
@@ -661,14 +643,29 @@ export function MembersPage() {
           </div>
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Mobile Number *</label>
-            <Input
-              type="tel"
-              placeholder="e.g. 9876543210"
-              value={formData.mobile_number}
-              onChange={(e) => setFormData({ ...formData, mobile_number: e.target.value })}
-              required
-              className="text-xs font-mono"
-            />
+            <div className="flex items-center gap-2">
+              <CountryCodeSelect
+                value={countryCode}
+                onChange={setCountryCode}
+                heightClass="h-9"
+                className="rounded-md"
+              />
+              <div className="flex-1">
+                <Input
+                  type="tel"
+                  placeholder="e.g. 9876543210"
+                  value={formData.mobile_number}
+                  onChange={(e) => setFormData({ ...formData, mobile_number: e.target.value.replace(/\D/g, '') })}
+                  required
+                  className={`text-xs font-mono ${isDuplicateNumber ? 'border-destructive focus-visible:ring-destructive' : ''}`}
+                />
+              </div>
+            </div>
+            {isDuplicateNumber && (
+              <p className="text-[11px] text-destructive font-semibold mt-1.5 flex items-center gap-1 animate-in fade-in duration-200">
+                <span>⚠️ This mobile number is already registered as a member in your shop.</span>
+              </p>
+            )}
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button
@@ -676,35 +673,31 @@ export function MembersPage() {
               variant="outline"
               onClick={() => {
                 setIsAddModalOpen(false);
-                setIsEditModalOpen(false);
-                setEditingMemberId(null);
+                setFormData({ name: '', mobile_number: '' });
+                setCountryCode('+91');
               }}
               size="sm"
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={isSubmitting} size="sm" className="bg-primary text-white">
-              {isSubmitting ? 'Saving...' : editingMemberId ? 'Update Member' : 'Save Member'}
+            <Button type="submit" disabled={isSubmitting || isDuplicateNumber} size="sm" className="bg-primary text-white disabled:opacity-50 disabled:cursor-not-allowed">
+              {isSubmitting ? 'Saving...' : 'Save Member'}
             </Button>
           </div>
         </form>
       </Modal>
 
-      {/* FAB for Add Member (Mobile) */}
-      {!isAddModalOpen && !isEditModalOpen && !isDetailsLocked && createPortal(
-        <button
-          onClick={() => {
-            setEditingMemberId(null);
-            setFormData({ name: '', mobile_number: '' });
-            setIsAddModalOpen(true);
-          }}
-          className="lg:hidden fixed bottom-20 lg:bottom-8 right-4 lg:right-8 z-50 w-14 h-14 rounded-full bg-primary hover:bg-primary-600 hover:scale-105 shadow-xl flex items-center justify-center text-white transition-all duration-200 cursor-pointer"
-          title="Add Member"
-        >
-          <Plus size={24} />
-        </button>,
-        document.body
-      )}
+      {/* Reusable Square FAB for Add Member */}
+      <SquareFAB
+        icon={Plus}
+        onClick={() => {
+          setFormData({ name: '', mobile_number: '' });
+          setCountryCode('+91');
+          setIsAddModalOpen(true);
+        }}
+        title="Add Member"
+        visible={!isAddModalOpen && !isDetailsLocked}
+      />
     </div>
   );
 }

@@ -1175,7 +1175,7 @@ export function PublicOrdersPage() {
               triggerHaptic(HAPTIC_PATTERNS.SELECTION);
               setIsFilterSheetOpen(true);
             }}
-            className="w-12 h-12 rounded-full text-white shadow-lg hover:brightness-110 active:scale-95 transition-all flex items-center justify-center cursor-pointer relative"
+            className="w-12 h-12 rounded-xl text-white shadow-lg hover:brightness-110 active:scale-95 transition-all flex items-center justify-center cursor-pointer relative border border-white/20"
             style={{ backgroundColor: primaryColor }}
           >
             <SlidersHorizontal size={20} />

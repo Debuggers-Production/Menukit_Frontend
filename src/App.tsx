@@ -21,6 +21,11 @@ import { DashboardLayout } from '@/layouts/DashboardLayout';
 import { ProtectedRoute } from '@/routes/ProtectedRoute';
 import { PermissionGuard } from '@/components/PermissionGuard';
 import { VersionUpdateNotifier } from '@/components/VersionUpdateNotifier';
+import { CookieBanner } from '@/components/ui/CookieBanner';
+import { GlobalTooltip } from '@/components/ui/GlobalTooltip';
+import { GoogleTranslate } from '@/components/GoogleTranslate';
+import { useShopStore } from '@/store/shopStore';
+import { getActiveSystemLanguage, setSystemLanguage } from '@/utils/language';
 
 const LoginPage = lazy(() => import('@/pages/auth/LoginPage').then(m => ({ default: m.LoginPage })));
 const OTPVerifyPage = lazy(() => import('@/pages/auth/OTPVerifyPage').then(m => ({ default: m.OTPVerifyPage })));
@@ -90,6 +95,7 @@ const OrderStatusPage = lazy(() => import('@/pages/public/OrderStatusPage').then
 const PublicOrdersPage = lazy(() => import('@/pages/public/PublicOrdersPage').then(m => ({ default: m.PublicOrdersPage })));
 const TermsPage = lazy(() => import('@/pages/public/TermsPage').then(m => ({ default: m.TermsPage })));
 const PrivacyPolicyPage = lazy(() => import('@/pages/public/PrivacyPolicyPage').then(m => ({ default: m.PrivacyPolicyPage })));
+const RefundPolicyPage = lazy(() => import('@/pages/public/RefundPolicyPage').then(m => ({ default: m.RefundPolicyPage })));
 const StoreDiscoveryPage = lazy(() => import('@/pages/public/StoreDiscoveryPage').then(m => ({ default: m.StoreDiscoveryPage })));
 const BrandLandingPage = lazy(() => import('@/pages/public/BrandLandingPage').then(m => ({ default: m.BrandLandingPage })));
 const PublicContestPage = lazy(() => import('./pages/public/PublicContestPage').then(m => ({ default: m.PublicContestPage })));
@@ -99,10 +105,22 @@ const CustomerProfilePage = lazy(() => import('./pages/public/CustomerProfilePag
 
 function App() {
   const { fetchUser, isLoading } = useAuthStore();
+  const { shop } = useShopStore();
 
   useEffect(() => {
     fetchUser();
   }, [fetchUser]);
+
+  // Synchronize system language with shop's configured language
+  useEffect(() => {
+    const configuredLang = shop?.settings?.language;
+    if (configuredLang) {
+      const currentActive = getActiveSystemLanguage();
+      if (currentActive !== configuredLang) {
+        setSystemLanguage(configuredLang, false);
+      }
+    }
+  }, [shop?.settings?.language]);
 
   if (isLoading) {
     return (
@@ -184,12 +202,17 @@ function App() {
       <Route path="/profile" element={<CustomerProfilePage />} />
       <Route path="/terms" element={<TermsPage />} />
       <Route path="/privacy" element={<PrivacyPolicyPage />} />
+      <Route path="/refund-policy" element={<RefundPolicyPage />} />
+      <Route path="/refunds" element={<RefundPolicyPage />} />
 
       {/* Fallback routes */}
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
     <VersionUpdateNotifier />
+    <CookieBanner />
+    <GlobalTooltip />
+    <GoogleTranslate />
     </Suspense>
   )
 }

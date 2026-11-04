@@ -68,7 +68,27 @@ export function generateOrderA4InvoiceHtml(order: any, shop: any): string {
   const totalTaxRate = cgstRate + sgstRate;
   const isInclusive = Boolean(shop?.settings?.inclusive_tax);
 
-  let taxableValue = subtotal;
+  // Separate taxable vs non-taxable item subtotals
+  const taxableItems = items.filter((it: any) => it.is_taxable !== false);
+  const nonTaxableItems = items.filter((it: any) => it.is_taxable === false);
+
+  const taxableItemsSubtotal = taxableItems.reduce(
+    (sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)),
+    0
+  );
+  const nonTaxableItemsSubtotal = nonTaxableItems.reduce(
+    (sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 1)),
+    0
+  );
+
+  const taxableShare = subtotal > 0 ? (taxableItemsSubtotal / subtotal) : 1;
+  const taxableDiscount = discountAmount * taxableShare;
+  const nonTaxableDiscount = discountAmount - taxableDiscount;
+
+  const effTaxableAmount = Math.max(0, taxableItemsSubtotal - taxableDiscount);
+  const effNonTaxableAmount = Math.max(0, nonTaxableItemsSubtotal - nonTaxableDiscount);
+
+  let taxableValue = effTaxableAmount;
   let totalTax = 0;
   let cgstAmount = 0;
   let sgstAmount = 0;
@@ -77,22 +97,38 @@ export function generateOrderA4InvoiceHtml(order: any, shop: any): string {
   if (isGstEnabled && totalTaxRate > 0) {
     if (isInclusive) {
       finalBillTotal = totalAmount;
-      taxableValue = Math.round((finalBillTotal / (1 + totalTaxRate / 100)) * 100) / 100;
-      totalTax = Math.round((finalBillTotal - taxableValue) * 100) / 100;
+      taxableValue = Math.round((effTaxableAmount / (1 + totalTaxRate / 100)) * 100) / 100;
+      totalTax = Math.round((effTaxableAmount - taxableValue) * 100) / 100;
       cgstAmount = Math.round((totalTax * (cgstRate / totalTaxRate)) * 100) / 100;
       sgstAmount = Math.round((totalTax - cgstAmount) * 100) / 100;
     } else {
-      taxableValue = Math.max(0, subtotal - discountAmount);
+      // EXCLUSIVE: Tax is added only on taxable items
+      taxableValue = effTaxableAmount;
       totalTax = Math.round((taxableValue * (totalTaxRate / 100)) * 100) / 100;
       cgstAmount = Math.round((totalTax * (cgstRate / totalTaxRate)) * 100) / 100;
       sgstAmount = Math.round((totalTax - cgstAmount) * 100) / 100;
-      finalBillTotal = Math.round((taxableValue + totalTax) * 100) / 100;
+      finalBillTotal = Math.round((effTaxableAmount + effNonTaxableAmount + totalTax) * 100) / 100;
     }
   }
 
   const orderType = String(order?.order_type || 'Dine-In').toUpperCase().replace(/_/g, ' ');
-  const tableOrToken = order?.table_number ? `Table ${order.table_number}` : (order?.token_number ? `Token #${order.token_number}` : 'Counter');
-  const paymentMethod = String(order?.payment_method || 'CASH').toUpperCase();
+  let splitList: any[] = [];
+  if (Array.isArray(order?.split_payments)) {
+    splitList = order.split_payments;
+  } else if (typeof order?.split_payments === 'string') {
+    try {
+      const parsed = JSON.parse(order.split_payments);
+      if (Array.isArray(parsed)) splitList = parsed;
+    } catch {}
+  }
+  const activeSplits = splitList.filter((sp: any) => Number(sp?.amount) > 0);
+  const isPaid = (order?.payment_status || 'PAID').toLowerCase() === 'paid';
+  const statusPrefix = isPaid ? 'PAID' : 'DUE';
+
+  let paymentMethod = String(order?.payment_method || 'CASH').toUpperCase();
+  if (activeSplits.length > 0) {
+    paymentMethod = activeSplits.map((sp: any) => `${statusPrefix} ${String(sp.method || 'CASH').toUpperCase()} (${currencySymbol}${Number(sp.amount || 0).toFixed(2)})`).join(' + ');
+  }
   const paymentStatus = String(order?.payment_status || 'PAID').toUpperCase();
 
   return `<!DOCTYPE html>
@@ -408,7 +444,7 @@ export function generateOrderA4InvoiceHtml(order: any, shop: any): string {
               <tr>
                 <td class="text-center" style="color: #64748b;">${index + 1}</td>
                 <td>
-                  <div class="item-name">${it.name || it.item_name || 'Item'}</div>
+                  <div class="item-name">${it.name || it.item_name || 'Item'}${it.is_taxable === false ? ' <span style="font-size: 10px; color: #b45309; background: #fef3c7; border: 1px solid #fde68a; padding: 1px 5px; border-radius: 4px; margin-left: 6px; font-weight: 600;">Exempt / 0% Tax</span>' : ''}</div>
                   ${it.selected_variant ? `<div class="item-notes">Variant: ${it.selected_variant.name || it.selected_variant}</div>` : ''}
                   ${it.special_instructions ? `<div class="item-notes">Note: ${it.special_instructions}</div>` : ''}
                 </td>
@@ -429,7 +465,7 @@ export function generateOrderA4InvoiceHtml(order: any, shop: any): string {
         <div>${numberToWords(finalBillTotal)}</div>
         ${isGstEnabled && totalTaxRate > 0 ? `
           <div style="margin-top: 10px; font-size: 11px; color: #64748b;">
-            Taxable Value: ${currencySymbol} ${taxableValue.toFixed(2)} | CGST (${cgstRate}%): ${currencySymbol} ${cgstAmount.toFixed(2)} | SGST (${sgstRate}%): ${currencySymbol} ${sgstAmount.toFixed(2)}
+            Taxable Value: ${currencySymbol} ${taxableValue.toFixed(2)}${effNonTaxableAmount > 0 ? ` | Exempt: ${currencySymbol} ${effNonTaxableAmount.toFixed(2)}` : ''} | CGST (${cgstRate}%): ${currencySymbol} ${cgstAmount.toFixed(2)} | SGST (${sgstRate}%): ${currencySymbol} ${sgstAmount.toFixed(2)}
           </div>
         ` : ''}
       </div>
@@ -444,6 +480,12 @@ export function generateOrderA4InvoiceHtml(order: any, shop: any): string {
             <tr style="color: #16a34a;">
               <td>Discount Applied:</td>
               <td class="text-right font-bold">- ${currencySymbol} ${discountAmount.toFixed(2)}</td>
+            </tr>
+          ` : ''}
+          ${effNonTaxableAmount > 0 ? `
+            <tr>
+              <td style="color: #475569;">Exempt / Non-Taxable:</td>
+              <td class="text-right font-bold">${currencySymbol} ${effNonTaxableAmount.toFixed(2)}</td>
             </tr>
           ` : ''}
           ${isGstEnabled && totalTaxRate > 0 ? `

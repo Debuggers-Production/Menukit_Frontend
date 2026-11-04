@@ -1,13 +1,14 @@
+import { cn } from '@/utils/cn';
 import { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { toast } from 'react-hot-toast';
-import { Store, MapPin, Phone, UploadCloud, Save, ChevronRight, Check, Edit2, Clock, Star, Navigation, UtensilsCrossed, Sparkles } from 'lucide-react';
+import { Store, MapPin, Phone, UploadCloud, Save, ChevronRight, Check, Edit2, Clock, Navigation, UtensilsCrossed, Building2, CheckCircle2, Search, Loader2, X } from 'lucide-react';
 import { compressImage } from '../../utils/imageCompression';
 import { api } from '@/services/api';
 import { useShopStore } from '@/store/shopStore';
 import { usePermissions } from '@/hooks/usePermissions';
 import { AccessDenied } from '@/components/ui/AccessDenied';
-import { BUSINESS_CATEGORIES, getBusinessCategory } from '@/config/businessCategories';
+import { BUSINESS_CATEGORIES, getBusinessCategory, getCategoryIcon } from '@/config/businessCategories';
 
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -30,116 +31,298 @@ L.Icon.Default.mergeOptions({
  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 });
 
+interface SearchResult {
+  lat: string;
+  lon: string;
+  display_name: string;
+}
+
 function MapLocationSelector({ 
- latitude, 
- longitude, 
- onChange 
+  latitude, 
+  longitude, 
+  onChange 
 }: { 
- latitude: string, 
- longitude: string, 
- onChange: (lat: string, lng: string) => void 
+  latitude: string, 
+  longitude: string, 
+  onChange: (lat: string, lng: string) => void 
 }) {
- const [mapTarget, setMapTarget] = useState<[number, number]>(
- latitude && longitude ? [parseFloat(latitude), parseFloat(longitude)] : [20.5937, 78.9629] // India center
- );
- const [isLocating, setIsLocating] = useState(false);
+  const [mapTarget, setMapTarget] = useState<[number, number]>(
+    latitude && longitude ? [parseFloat(latitude), parseFloat(longitude)] : [20.5937, 78.9629] // India center
+  );
+  const [isLocating, setIsLocating] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
 
- const markerRef = useRef<L.Marker>(null);
+  const markerRef = useRef<L.Marker>(null);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
 
- const handleDetectLocation = () => {
- if (!navigator.geolocation) {
- toast.error("Geolocation is not supported by your browser");
- return;
- }
- setIsLocating(true);
- navigator.geolocation.getCurrentPosition(
- (position) => {
- const lat = position.coords.latitude.toFixed(6);
- const lng = position.coords.longitude.toFixed(6);
- onChange(lat, lng);
- setMapTarget([parseFloat(lat), parseFloat(lng)]);
- toast.success("Location auto-detected!");
- setIsLocating(false);
- },
- (error) => {
- console.error("Geolocation error", error);
- toast.error("Failed to access location. Please pick your location manually on the map.");
- setIsLocating(false);
- },
- { enableHighAccuracy: true, timeout: 10000 }
- );
- };
+  // Close search dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
- const eventHandlers = {
- dragend() {
- const marker = markerRef.current;
- if (marker != null) {
- const pos = marker.getLatLng();
- onChange(pos.lat.toFixed(6), pos.lng.toFixed(6));
- setMapTarget([pos.lat, pos.lng]);
- }
- },
- };
+  const handleSearchLocation = async (queryOverride?: string) => {
+    const q = (queryOverride !== undefined ? queryOverride : searchQuery).trim();
+    if (!q) {
+      toast.error("Please enter a location or landmark to search");
+      return;
+    }
 
- function MapClickEvent() {
- useMapEvents({
- click(e) {
- onChange(e.latlng.lat.toFixed(6), e.latlng.lng.toFixed(6));
- setMapTarget([e.latlng.lat, e.latlng.lng]);
- },
- });
- return null;
- }
+    // Direct coordinates detection like "9.84646, 78.109179"
+    const coordMatch = q.match(/^(-?\d+(\.\d+)?)\s*,\s*(-?\d+(\.\d+)?)$/);
+    if (coordMatch) {
+      const lat = parseFloat(coordMatch[1]).toFixed(6);
+      const lng = parseFloat(coordMatch[3]).toFixed(6);
+      onChange(lat, lng);
+      setMapTarget([parseFloat(lat), parseFloat(lng)]);
+      toast.success("Location set from coordinates!");
+      setShowDropdown(false);
+      return;
+    }
 
- function MapCenterUpdater({ center }: { center: [number, number] }) {
- const map = useMap();
- useEffect(() => {
- map.flyTo(center, map.getZoom() < 12 ? 15 : map.getZoom(), { duration: 0.5 });
- setTimeout(() => map.invalidateSize(), 200);
- }, [center, map]);
- return null;
- }
+    setIsSearching(true);
+    try {
+      // 1. Nominatim OpenStreetMap Geocoder
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=5&addressdetails=1`;
+      const res = await fetch(url, {
+        headers: {
+          'Accept': 'application/json',
+          'Accept-Language': 'en'
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          setSearchResults(data);
+          setShowDropdown(true);
+          return;
+        }
+      }
 
- return (
- <div className="space-y-2">
- <div className="flex justify-between items-center">
- <button
- type="button"
- onClick={handleDetectLocation}
- disabled={isLocating}
- className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 hover:bg-primary/20 border border-primary/30 rounded-lg text-xs font-bold text-primary transition-all active:scale-95"
- >
- <Navigation size={13} className={isLocating ?"animate-spin" :""} />
- <span>{isLocating ?"Locating Store..." :"Detect Current Location"}</span>
- </button>
+      // 2. Fallback: Photon Komoot Geocoder
+      const photonUrl = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=5`;
+      const photonRes = await fetch(photonUrl);
+      if (photonRes.ok) {
+        const photonData = await photonRes.json();
+        if (photonData?.features?.length > 0) {
+          const mapped: SearchResult[] = photonData.features.map((f: any) => ({
+            lat: f.geometry.coordinates[1].toString(),
+            lon: f.geometry.coordinates[0].toString(),
+            display_name: [f.properties.name, f.properties.street, f.properties.city, f.properties.state, f.properties.country].filter(Boolean).join(', ')
+          }));
+          setSearchResults(mapped);
+          setShowDropdown(true);
+          return;
+        }
+      }
 
- {latitude && longitude && (
- <span className="text-[11px] font-mono text-muted-foreground font-semibold">
- Lat: {latitude}, Lng: {longitude}
- </span>
- )}
- </div>
+      toast.error("No locations found. Try searching with a nearby landmark or city.");
+      setSearchResults([]);
+    } catch (err) {
+      console.error("Geocoding search error", err);
+      toast.error("Search failed. Please check connection or pick manually on map.");
+    } finally {
+      setIsSearching(false);
+    }
+  };
 
- <div className="relative h-64 w-full rounded-xl overflow-hidden border border-border z-10">
- <MapContainer center={mapTarget} zoom={latitude && longitude ? 15 : 5} style={{ height: '100%', width: '100%'}} scrollWheelZoom={true} attributionControl={false}>
- <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
- <MapClickEvent />
- <MapCenterUpdater center={mapTarget} />
- {(latitude && longitude) ? (
- <Marker
- draggable={true}
- eventHandlers={eventHandlers}
- position={[parseFloat(latitude), parseFloat(longitude)]}
- ref={markerRef}
- />
- ) : null}
- </MapContainer>
- <div className="absolute bottom-2 left-2 z-[1000] bg-background/90 /90 backdrop-blur px-2.5 py-1 rounded shadow text-[10px] font-bold text-slate-650 pointer-events-none">
- Click map or drag pin to adjust store location
- </div>
- </div>
- </div>
- );
+  const handleSelectLocation = (result: SearchResult) => {
+    const lat = parseFloat(result.lat).toFixed(6);
+    const lng = parseFloat(result.lon).toFixed(6);
+    onChange(lat, lng);
+    setMapTarget([parseFloat(lat), parseFloat(lng)]);
+    setSearchQuery(result.display_name.split(',')[0]);
+    setShowDropdown(false);
+    toast.success("Map location updated!");
+  };
+
+  const handleDetectLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error("Geolocation is not supported by your browser");
+      return;
+    }
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude.toFixed(6);
+        const lng = position.coords.longitude.toFixed(6);
+        onChange(lat, lng);
+        setMapTarget([parseFloat(lat), parseFloat(lng)]);
+        toast.success("Location auto-detected!");
+        setIsLocating(false);
+      },
+      (error) => {
+        console.error("Geolocation error", error);
+        toast.error("Failed to access location. Please pick your location manually on the map.");
+        setIsLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  const eventHandlers = {
+    dragend() {
+      const marker = markerRef.current;
+      if (marker != null) {
+        const pos = marker.getLatLng();
+        onChange(pos.lat.toFixed(6), pos.lng.toFixed(6));
+        setMapTarget([pos.lat, pos.lng]);
+      }
+    },
+  };
+
+  function MapClickEvent() {
+    useMapEvents({
+      click(e) {
+        onChange(e.latlng.lat.toFixed(6), e.latlng.lng.toFixed(6));
+        setMapTarget([e.latlng.lat, e.latlng.lng]);
+      },
+    });
+    return null;
+  }
+
+  function MapCenterUpdater({ center }: { center: [number, number] }) {
+    const map = useMap();
+    useEffect(() => {
+      map.flyTo(center, map.getZoom() < 12 ? 15 : map.getZoom(), { duration: 0.5 });
+      setTimeout(() => map.invalidateSize(), 200);
+    }, [center, map]);
+    return null;
+  }
+
+  return (
+    <div className="space-y-2.5">
+      {/* Top Search & Actions Bar */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+        {/* Search Input Bar with Suggestions Dropdown */}
+        <div ref={searchContainerRef} className="relative flex-1">
+          <div className="relative flex items-center">
+            <Search size={14} className="absolute left-3 text-muted-foreground pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                if (!e.target.value) {
+                  setShowDropdown(false);
+                  setSearchResults([]);
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleSearchLocation();
+                }
+              }}
+              placeholder="Search area, landmark, street, city or coords..."
+              className="w-full pl-9 pr-20 py-2 bg-card border border-border rounded-xl text-xs font-medium text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary shadow-2xs"
+            />
+            <div className="absolute right-1.5 flex items-center gap-1">
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setShowDropdown(false);
+                    setSearchResults([]);
+                  }}
+                  className="p-1 text-muted-foreground hover:text-foreground rounded-md transition-colors cursor-pointer"
+                  title="Clear search"
+                >
+                  <X size={12} />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => handleSearchLocation()}
+                disabled={isSearching}
+                className="px-2.5 py-1 bg-primary text-white rounded-lg text-[11px] font-bold hover:bg-primary/90 transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50 shadow-2xs"
+              >
+                {isSearching ? <Loader2 size={12} className="animate-spin" /> : <Search size={12} />}
+                <span>Search</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Autocomplete / Search Results Dropdown */}
+          {showDropdown && searchResults.length > 0 && (
+            <div className="absolute left-0 right-0 top-full mt-1.5 z-[1050] bg-popover/95 backdrop-blur-md border border-border rounded-xl shadow-xl overflow-hidden py-1 divide-y divide-border/50 max-h-56 overflow-y-auto">
+              {searchResults.map((item, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => handleSelectLocation(item)}
+                  className="w-full text-left px-3.5 py-2.5 text-xs hover:bg-accent/60 transition-colors flex items-start gap-2.5 cursor-pointer group"
+                >
+                  <MapPin size={14} className="text-primary shrink-0 mt-0.5 group-hover:scale-110 transition-transform" />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-foreground truncate">
+                      {item.display_name.split(',')[0]}
+                    </p>
+                    <p className="text-[10.5px] text-muted-foreground truncate">
+                      {item.display_name.split(',').slice(1).join(',').trim()}
+                    </p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Action Controls: Detect Location & Coordinates */}
+        <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={handleDetectLocation}
+            disabled={isLocating}
+            className="flex items-center gap-1.5 px-3 py-2 bg-primary/10 hover:bg-primary/20 border border-primary/30 rounded-xl text-xs font-bold text-primary transition-all active:scale-95 cursor-pointer shadow-2xs"
+          >
+            <Navigation size={13} className={isLocating ? "animate-spin" : ""} />
+            <span>{isLocating ? "Locating Store..." : "Detect Current Location"}</span>
+          </button>
+
+          {latitude && longitude && (
+            <span className="hidden sm:inline-block text-[11px] font-mono text-muted-foreground font-semibold px-2 py-1 bg-muted/60 rounded-lg border border-border/40">
+              {parseFloat(latitude).toFixed(4)}, {parseFloat(longitude).toFixed(4)}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Map Container */}
+      <div className="relative h-64 sm:h-72 w-full rounded-xl overflow-hidden border border-border z-10 shadow-2xs">
+        <MapContainer center={mapTarget} zoom={latitude && longitude ? 15 : 5} style={{ height: '100%', width: '100%' }} scrollWheelZoom={true} attributionControl={false}>
+          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+          <MapClickEvent />
+          <MapCenterUpdater center={mapTarget} />
+          {(latitude && longitude) ? (
+            <Marker
+              draggable={true}
+              eventHandlers={eventHandlers}
+              position={[parseFloat(latitude), parseFloat(longitude)]}
+              ref={markerRef}
+            />
+          ) : null}
+        </MapContainer>
+        <div className="absolute bottom-2 left-2 z-[1000] bg-background/90 backdrop-blur px-2.5 py-1 rounded-lg border border-border/60 shadow text-[10px] font-bold text-muted-foreground pointer-events-none">
+          Click map or drag pin to adjust store location
+        </div>
+        {latitude && longitude && (
+          <div className="sm:hidden absolute top-2 right-2 z-[1000] bg-background/90 backdrop-blur px-2 py-0.5 rounded-md border border-border/60 shadow text-[10px] font-mono font-semibold text-muted-foreground pointer-events-none">
+            {parseFloat(latitude).toFixed(4)}, {parseFloat(longitude).toFixed(4)}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 interface ShopFormData {
@@ -538,458 +721,491 @@ export function ShopSetupPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto animate-fade-in pb-12">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-foreground">
-          {isCreateNew ? (ownedShops.length > 0 ? 'Create New Branch' : 'Create New Shop') : 'Branch Setup'}
-        </h1>
-        <p className="text-muted-foreground mt-1">Configure your restaurant's digital presence</p>
-      </div>
+    <div className="space-y-4 w-full animate-fade-in pb-12">
+      {viewMode === 'summary' && (
+        <HeaderActions>
+          <Button 
+            onClick={() => setViewMode('edit')} 
+            size="sm"
+            className="gap-1.5 text-xs h-8 px-3 rounded-md font-semibold cursor-pointer shadow-2xs"
+          >
+            <Edit2 size={13} />
+            <span>Edit Profile</span>
+          </Button>
+        </HeaderActions>
+      )}
 
- {viewMode === 'summary'&& (
- <HeaderActions>
- <button 
- onClick={() => setViewMode('edit')} 
- className="w-10 h-10 rounded-full bg-success/20 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center text-muted-foreground transition-colors shrink-0 cursor-pointer"
- title="Edit Branch Details"
- >
- <Edit2 size={18} color='green'/>
- </button>
- </HeaderActions>
- )}
+      {viewMode === 'summary' ? (
+        <div className="bg-card border border-border/80 rounded-lg shadow-2xs overflow-hidden">
+          {/* Banner */}
+          <div className="h-36 sm:h-44 w-full bg-muted relative">
+            {shop?.banner_url ? (
+              <img src={shop.banner_url} alt="Banner" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-muted-foreground bg-muted/40">
+                <Store size={40} className="opacity-20" />
+              </div>
+            )}
+            <div className="absolute -bottom-8 left-5 sm:left-6 p-1 bg-card rounded-lg shadow-2xs">
+              <div className="w-18 h-18 sm:w-20 sm:h-20 rounded-md overflow-hidden bg-muted border border-border/80">
+                {shop?.logo_url ? (
+                  <img src={shop.logo_url} alt="Logo" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                    <Store size={28} />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          
+          <div className="pt-12 pb-5 px-5 sm:px-6 space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 flex-wrap min-w-0">
+                <h3 className="text-lg sm:text-xl font-bold text-foreground truncate">{shop?.name}</h3>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${getBusinessCategory(shop?.category).badgeColor}`}>
+                  {getBusinessCategory(shop?.category).label}
+                </span>
+              </div>
+              <Button 
+                onClick={() => setViewMode('edit')} 
+                size="sm" 
+                variant="outline" 
+                className="gap-1.5 text-xs h-8 px-3 shrink-0 rounded-md font-semibold border-border shadow-2xs cursor-pointer"
+              >
+                <Edit2 size={13} /> Edit Shop
+              </Button>
+            </div>
 
- {viewMode === 'summary'? (
- <div className="bg-background border border-border rounded-2xl shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
- <div className="h-40 sm:h-48 w-full bg-muted relative">
- {shop?.banner_url ? (
- <img src={shop.banner_url} alt="Banner" className="w-full h-full object-cover" />
- ) : (
- <div className="w-full h-full flex items-center justify-center text-muted-foreground">
- <Store size={48} className="opacity-20" />
- </div>
- )}
- <div className="absolute -bottom-12 left-6 sm:left-8 p-1 bg-background rounded-2xl">
- <div className="w-24 h-24 rounded-xl overflow-hidden bg-muted border border-border">
- {shop?.logo_url ? (
- <img src={shop.logo_url} alt="Logo" className="w-full h-full object-cover" />
- ) : (
- <div className="w-full h-full flex items-center justify-center text-muted-foreground">
- <Store size={32} />
- </div>
- )}
- </div>
- </div>
- </div>
- 
- <div className="pt-16 pb-6 px-6 sm:px-8">
- <div className="flex items-center justify-between gap-3 mb-2">
-    <div className="flex items-center gap-2.5 flex-wrap min-w-0">
-      <h3 className="text-xl sm:text-2xl font-bold text-foreground truncate">{shop?.name}</h3>
-      <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${getBusinessCategory(shop?.category).badgeColor}`}>
-        {getBusinessCategory(shop?.category).label}
-      </span>
-    </div>
-    <Button 
-      onClick={() => setViewMode('edit')} 
-      size="sm" 
-      variant="outline" 
-      className="gap-1.5 text-xs h-8 px-3 shrink-0 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 font-semibold"
-    >
-      <Edit2 size={14} /> Edit Shop
-    </Button>
-  </div>
- <p className="text-muted-foreground mb-6">{shop?.description || 'No description provided.'}</p>
- 
- <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-8 text-sm">
- <div className="flex items-start gap-3">
- <MapPin className="text-muted-foreground shrink-0 mt-0.5" size={18} />
- <span className="text-foreground">{shop?.address || 'No address set'}</span>
- </div>
- <div className="flex items-center gap-3">
- <Phone className="text-muted-foreground shrink-0" size={18} />
- <span className="text-foreground">{shop?.phone || 'No phone set'}</span>
- </div>
- <div className="flex items-center gap-3">
- <span className="text-success font-bold shrink-0 text-center w-[18px]">W</span>
- <span className="text-foreground">{shop?.whatsapp || 'No WhatsApp set'}</span>
- </div>
- <div className="flex items-center gap-3">
- <Clock className="text-muted-foreground shrink-0" size={18} />
- <span className="text-foreground">
- {shop?.opening_time ? formatTime(shop.opening_time) : '--:--'} to {shop?.closing_time ? formatTime(shop.closing_time) : '--:--'}
- </span>
- </div>
- </div>
- 
- {shop?.welcome_message && (
- <div className="mt-6 p-4 bg-muted/50 rounded-xl text-sm italic text-muted-foreground border border-border">
-"{shop.welcome_message}"
- </div>
- )}
- </div>
- </div>
- ) : (
- <>
- {/* Progress Stepper - 3 Steps */}
- <div className="flex items-center justify-between mb-8 relative">
- <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-1 bg-muted rounded-full -z-10"></div>
- <div 
- className="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-primary transition-all duration-300 rounded-full -z-10"
- style={{ width: `${((currentStep - 1) / (steps.length - 1)) * 100}%` }}
- ></div>
- 
- {steps.map((step) => (
- <div key={step.num} className="flex flex-col items-center gap-2">
- <button
- type="button"
- onClick={() => {
- if (step.num < currentStep || (step.num > currentStep && formData.name)) {
- setCurrentStep(step.num);
- }
- }}
- className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all duration-300 shadow-sm cursor-pointer
- ${currentStep === step.num ? 'bg-primary text-primary-foreground scale-110 shadow-primary/30 ring-4 ring-primary/20': 
- currentStep > step.num ? 'bg-primary text-primary-foreground': 'bg-background text-muted-foreground border border-border'}`}
- >
- {currentStep > step.num ? <Check size={18} /> : step.icon}
- </button>
- <span className={`text-xs font-medium ${currentStep === step.num ? 'text-primary': 'text-muted-foreground'}`}>
- {step.title}
- </span>
- </div>
- ))}
- </div>
+            {shop?.description && (
+              <p className="text-xs text-muted-foreground leading-relaxed">{shop.description}</p>
+            )}
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+              <div className="flex items-start gap-2.5 p-3 rounded-md bg-muted/40 border border-border/60 text-xs">
+                <MapPin className="text-primary shrink-0 mt-0.5" size={15} />
+                <div className="min-w-0">
+                  <span className="text-[10px] uppercase font-bold text-muted-foreground block">Address</span>
+                  <span className="text-foreground font-medium">{shop?.address || 'No address set'}</span>
+                </div>
+              </div>
 
- <form onSubmit={handleSubmit} className="bg-card text-card-foreground border border-border rounded-2xl shadow-sm p-6 sm:p-8">
- 
- {/* Step 1: Basic Info */}
- {currentStep === 1 && (
- <div className="space-y-5 animate-in fade-in slide-in-from-right-4 duration-300">
- <div className="flex justify-between items-center mb-6">
- <div>
- <h2 className="text-lg font-bold text-foreground">Basic Info</h2>
- <p className="text-sm text-muted-foreground mt-1">
- {isCreateNew ?"Set up your new shop's primary details." :"Update your shop's primary details."}
- </p>
- </div>
+              <div className="flex items-center gap-2.5 p-3 rounded-md bg-muted/40 border border-border/60 text-xs">
+                <Phone className="text-primary shrink-0" size={15} />
+                <div className="min-w-0">
+                  <span className="text-[10px] uppercase font-bold text-muted-foreground block">Phone</span>
+                  <span className="text-foreground font-medium">{shop?.phone || 'No phone set'}</span>
+                </div>
+              </div>
 
- {((isCreateNew || !shop?.id) && isAdditionalShop) && (
- <div className="p-3.5 rounded-2xl bg-orange-50/80 dark:bg-orange-950/30 border border-orange-200/80 dark:border-orange-800/50 flex items-center justify-between gap-3 text-sm my-3">
- <div className="flex items-center gap-2 text-orange-900 dark:text-orange-200 font-medium">
- <Sparkles size={16} className="text-orange-500 shrink-0" />
- <span>Additional Branch Setup Fee: <strong>₹50</strong></span>
- </div>
- <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-orange-500 text-white shadow-sm">
- ₹50 One-Time
- </span>
- </div>
- )}
- {((isCreateNew || !shop?.id) && !isAdditionalShop) && (
- <div className="p-3.5 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-800/50 flex items-center justify-between gap-3 text-sm my-3">
- <div className="flex items-center gap-2 text-emerald-900 dark:text-emerald-200 font-medium">
- <Sparkles size={16} className="text-emerald-500 shrink-0" />
- <span>First Shop Setup: <strong>Free Plan Included</strong></span>
- </div>
- <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-emerald-600 text-white shadow-sm">
- Free
- </span>
- </div>
- )}
-   {!isCreateNew && (
-  <div className="flex items-center gap-2">
-    <Button 
-      type="button" 
-      onClick={handleSaveShop} 
-      disabled={isLoading} 
-      size="sm" 
-      className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 font-bold rounded-xl"
-    >
-      <Save size={15} /> Save Changes
-    </Button>
-    <Button onClick={() => setViewMode('summary')} variant="outline" size="sm" className="gap-1.5 rounded-xl">
-      <ChevronRight size={16} />
-      View Summary
-    </Button>
-  </div>
-  )}
- </div>
+              <div className="flex items-center gap-2.5 p-3 rounded-md bg-muted/40 border border-border/60 text-xs">
+                <span className="text-emerald-600 dark:text-emerald-400 font-bold shrink-0 text-center w-[15px]">W</span>
+                <div className="min-w-0">
+                  <span className="text-[10px] uppercase font-bold text-muted-foreground block">WhatsApp</span>
+                  <span className="text-foreground font-medium">{shop?.whatsapp || 'No WhatsApp set'}</span>
+                </div>
+              </div>
 
- {/* Business Category Selection Dropdown */}
- <div className="space-y-1.5">
-   <label className="block text-sm font-bold text-foreground">
-     Business / Shop Category <span className="text-rose-500">*</span>
-   </label>
-   <SearchableSelect
-     options={BUSINESS_CATEGORIES.map((cat) => ({
-       id: cat.id,
-       name: `${cat.label} (${cat.shortLabel})`,
-       subtext: cat.description
-     }))}
-     value={formData.category || 'restaurants_cafes_hotels'}
-     onChange={(val) => setFormData(prev => ({ ...prev, category: val }))}
-     placeholder="Select business / shop category"
-     showSearch={true}
-   />
-   <p className="text-xs text-muted-foreground mt-1">
-     Choose your category to automatically adapt food/product terminology, dietary options, public filters, and printer tickets.
-   </p>
- </div>
- 
- {isCreateNew && ownedShops.length > 0 && (
- <div className="mb-6">
- <label className="block text-sm font-medium text-foreground mb-2">
- Clone Existing Menus & Settings
- </label>
- <SearchableSelect
- options={[
- { id: '', name: 'Start Fresh (Blank Menu)'},
- ...ownedShops.map((s) => ({ id: s.id, name: `Clone from: ${s.name}` }))
- ]}
- value={formData.clone_from_shop_id || ''}
- onChange={(value) => setFormData((prev) => ({ ...prev, clone_from_shop_id: value }))}
- placeholder="Start Fresh (Blank Menu)"
- showSearch={false}
- />
- <p className="text-xs text-muted-foreground mt-1">This will duplicate all Categories, Menu Items, and Discounts to this new branch.</p>
- </div>
- )}
-
- <Input
- label="Shop Name *"
- name="name"
- value={formData.name}
- onChange={handleChange}
- placeholder={formData.category === 'fireworks_crackers' ? "e.g. Standard Fireworks Store" : "e.g. Siva Hotel & Cafe"}
- required
- />
- 
- <div className="space-y-1.5">
- <label className="text-sm font-medium text-foreground">Description</label>
- <textarea
- name="description"
- value={formData.description}
- onChange={handleChange}
- placeholder="A short description about your restaurant..."
- className="flex w-full rounded-xl border border-input bg-muted/50 px-3 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary min-h-[100px] resize-y"
- />
- </div>
-
- <div className="space-y-1.5">
- <label className="text-sm font-medium text-foreground">Welcome Message</label>
- <textarea
- name="welcome_message"
- value={formData.welcome_message}
- onChange={handleChange}
- placeholder="Message displayed to customers when opening menu..."
- className="flex w-full rounded-xl border border-input bg-muted/50 px-3 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary min-h-[80px] resize-y"
- />
- </div>
- </div>
- )}
-
- {/* Step 2: Contact & Location */}
- {currentStep === 2 && (
- <div className="space-y-5 animate-in fade-in slide-in-from-right-4 duration-300">
- <h3 className="text-xl font-bold font-heading mb-4 text-foreground">Contact & Location</h3>
- 
- <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
- <Input
- label="Phone Number"
- name="phone"
- value={formData.phone}
- onChange={handleChange}
- placeholder="+91 98765 43210"
- />
- <Input
- label="WhatsApp Number"
- name="whatsapp"
- value={formData.whatsapp}
- onChange={handleChange}
- placeholder="+91 98765 43210"
- />
- </div>
-
- <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
- <TimePicker
- value={formData.opening_time}
- onChange={(t) => setFormData(prev => ({ ...prev, opening_time: t }))}
- label="Opening Time"
- />
- <TimePicker
- value={formData.closing_time}
- onChange={(t) => setFormData(prev => ({ ...prev, closing_time: t }))}
- label="Closing Time"
- />
- </div>
-
- <div className="space-y-1.5">
- <label className="text-sm font-medium text-foreground">Full Address</label>
- <textarea
- name="address"
- value={formData.address}
- onChange={handleChange}
- placeholder="Enter your store address..."
- className="flex w-full rounded-xl border border-input bg-muted/50 px-3 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary min-h-[80px] resize-y"
- />
- </div>
-
- {/* Map Location Selector */}
- <div className="space-y-2 pt-2">
- <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
- <Navigation size={16} className="text-primary" /> Map Pin Location
- </label>
- <MapLocationSelector
- latitude={formData.latitude}
- longitude={formData.longitude}
- onChange={(lat, lng) => setFormData(prev => ({ ...prev, latitude: lat, longitude: lng }))}
- />
- </div>
-
- {/* Google Review Link */}
- <Input
- label="Google Review Link (Optional)"
- name="google_review_link"
- value={formData.google_review_link}
- onChange={handleChange}
- placeholder="https://g.page/r/..."
- />
- </div>
- )}
-
- {/* Step 3: Branding */}
- {currentStep === 3 && (
- <div className="space-y-5 animate-in fade-in slide-in-from-right-4 duration-300">
- <h3 className="text-xl font-bold font-heading mb-4 text-foreground">Branding</h3>
- <p className="text-sm text-muted-foreground mb-4">Upload your restaurant logo and banner to personalize your digital menu.</p>
- 
- <div className="flex flex-col sm:flex-row gap-6">
- {/* Logo Upload */}
- <div className="flex flex-col items-start gap-3">
- <label className="text-sm font-medium text-foreground">Branch Logo</label>
- <div 
- className="w-32 h-32 rounded-2xl border-2 border-dashed border-border flex items-center justify-center bg-muted/50 overflow-hidden relative group cursor-pointer hover:bg-muted transition-colors"
- onClick={() => logoInputRef.current?.click()}
- >
- {formData.logo_url ? (
- <>
- <img src={formData.logo_url} alt="Logo" className="w-full h-full object-cover" />
- <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
- <UploadCloud className="text-white" />
- </div>
- </>
- ) : (
- <div className="text-center p-4">
- <UploadCloud className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
- <span className="text-xs text-muted-foreground">Upload Logo</span>
- </div>
- )}
- {isUploadingLogo && (
- <div className="absolute inset-0 bg-background/80 /80 flex items-center justify-center">
- <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
- </div>
- )}
- </div>
- <input 
- type="file" 
- ref={logoInputRef} 
- className="hidden" 
- accept="image/*"
- onChange={(e) => handleFileUpload(e, 'logo')} 
- />
- </div>
-
- {/* Banner Upload */}
- <div className="flex-1 flex flex-col items-start gap-3">
- <label className="text-sm font-medium text-foreground">Branch Banner</label>
- <div 
- className="w-full h-32 rounded-2xl border-2 border-dashed border-border flex items-center justify-center bg-muted/50 overflow-hidden relative group cursor-pointer hover:bg-muted transition-colors"
- onClick={() => bannerInputRef.current?.click()}
- >
- {formData.banner_url ? (
- <>
- <img src={formData.banner_url} alt="Banner" className="w-full h-full object-cover" />
- <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
- <UploadCloud className="text-white" />
- </div>
- </>
- ) : (
- <div className="text-center p-4">
- <UploadCloud className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
- <span className="text-xs text-muted-foreground">Upload Banner Image (1200x400 rec.)</span>
- </div>
- )}
- {isUploadingBanner && (
- <div className="absolute inset-0 bg-background/80 /80 flex items-center justify-center">
- <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
- </div>
- )}
- </div>
- <input 
- type="file" 
- ref={bannerInputRef} 
- className="hidden" 
- accept="image/*"
- onChange={(e) => handleFileUpload(e, 'banner')} 
- />
- </div>
- </div>
- </div>
- )}
-
- {/* Stepper Action Buttons */}
- <div className="mt-8 pt-6 border-t border-border flex justify-between items-center">
- {currentStep > 1 ? (
- <Button 
- type="button" 
- variant="outline" 
- onClick={handleBack}
- size="sm"
- className="rounded-xl font-bold"
- >
- Back
- </Button>
- ) : (
- <div></div>
- )}
-
-   <div className="flex items-center gap-2">
-    {!isCreateNew && (
-      <Button 
-        type="button" 
-        onClick={handleSaveShop} 
-        disabled={isLoading} 
-        size="sm" 
-        className="rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
-      >
-        <Save size={15} /> Save Changes
-      </Button>
-    )}
-    {currentStep < 3 ? (
-      <Button 
-        type="button" 
-        onClick={handleNext}
-        size="sm"
-        className="rounded-xl font-bold"
-      >
-        Next Step <ChevronRight size={16} className="ml-1" />
-      </Button>
-    ) : (
-            <Button 
-              type="submit" 
-              disabled={isLoading} 
-              size="sm" 
-              className="rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white"
-            >
-              {isLoading 
-                ? (isCreateNew || !shop?.id ? 'Processing Setup...' : 'Saving Shop...') 
-                : (isCreateNew || !shop?.id ? (isAdditionalShop ? 'Pay ₹50 & Create Branch' : 'Create Free Shop Profile') : 'Save Shop Profile')} <Save size={16} className="ml-1.5" />
-            </Button>
-          )}
+              <div className="flex items-center gap-2.5 p-3 rounded-md bg-muted/40 border border-border/60 text-xs">
+                <Clock className="text-primary shrink-0" size={15} />
+                <div className="min-w-0">
+                  <span className="text-[10px] uppercase font-bold text-muted-foreground block">Operating Hours</span>
+                  <span className="text-foreground font-medium">
+                    {shop?.opening_time ? formatTime(shop.opening_time) : '--:--'} to {shop?.closing_time ? formatTime(shop.closing_time) : '--:--'}
+                  </span>
+                </div>
+              </div>
+            </div>
+            
+            {shop?.welcome_message && (
+              <div className="p-3 bg-muted/30 rounded-md text-xs italic text-muted-foreground border border-border/60">
+                "{shop.welcome_message}"
+              </div>
+            )}
+          </div>
         </div>
-      </div>
-    </form>
- </>
- )}
- </div>
- );
+      ) : (
+        <div className="space-y-4">
+          {/* Boxy 3-Step Navigation Switcher */}
+          <div className="p-1 bg-card rounded-lg border border-border/80 shadow-2xs grid grid-cols-3 gap-1">
+            {steps.map((step) => {
+              const isActive = currentStep === step.num;
+              const isPast = currentStep > step.num;
+
+              return (
+                <button
+                  key={step.num}
+                  type="button"
+                  onClick={() => {
+                    if (step.num < currentStep || (step.num > currentStep && formData.name)) {
+                      setCurrentStep(step.num);
+                    }
+                  }}
+                  className={cn(
+                    "h-8.5 rounded-md flex items-center justify-center gap-1.5 text-xs font-bold transition-all cursor-pointer",
+                    isActive
+                      ? "bg-primary text-white shadow-2xs"
+                      : isPast
+                      ? "bg-muted/60 text-foreground hover:bg-muted"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <span className={cn(
+                    "w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-bold shrink-0",
+                    isActive
+                      ? "bg-white/20 text-white"
+                      : isPast
+                      ? "bg-primary/10 text-primary"
+                      : "bg-muted text-muted-foreground"
+                  )}>
+                    {isPast ? <Check size={11} strokeWidth={3} /> : step.num}
+                  </span>
+                  <span className="truncate">{step.title}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <form onSubmit={handleSubmit} className="bg-card border border-border/80 rounded-lg shadow-2xs p-5 sm:p-6 space-y-4">
+            {/* Step 1: Basic Info */}
+            {currentStep === 1 && (
+              <div className="space-y-4 animate-in fade-in duration-200">
+                <div className="flex justify-between items-center pb-2 border-b border-border/80">
+                  <div>
+                    <h2 className="text-sm font-bold text-foreground">Basic Information</h2>
+                    <p className="text-xs text-muted-foreground">
+                      {isCreateNew ? "Set up your new shop's primary details." : "Update your shop's primary details."}
+                    </p>
+                  </div>
+
+                  {!isCreateNew && (
+                    <div className="flex items-center gap-2">
+                      <Button 
+                        type="button" 
+                        onClick={handleSaveShop} 
+                        disabled={isLoading} 
+                        size="sm" 
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 font-bold h-8 px-3 rounded-md text-xs shadow-2xs cursor-pointer"
+                      >
+                        <Save size={13} /> Save Changes
+                      </Button>
+                      <Button onClick={() => setViewMode('summary')} variant="outline" size="sm" className="gap-1 h-8 px-3 rounded-md text-xs font-semibold cursor-pointer">
+                        <ChevronRight size={14} />
+                        View Summary
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
+                {((isCreateNew || !shop?.id) && isAdditionalShop) && (
+                  <div className="p-3 rounded-lg bg-orange-500/10 border border-orange-500/30 flex items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-2 text-foreground font-medium">
+                      <Building2 size={14} className="text-orange-500 shrink-0" />
+                      <span>Additional Branch Setup Fee: <strong>₹50</strong></span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-orange-500 text-white shadow-2xs">
+                      ₹50 One-Time
+                    </span>
+                  </div>
+                )}
+                {((isCreateNew || !shop?.id) && !isAdditionalShop) && (
+                  <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-2 text-foreground font-medium">
+                      <CheckCircle2 size={14} className="text-emerald-500 shrink-0" />
+                      <span>First Shop Setup: <strong>Free Plan Included</strong></span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-600 text-white shadow-2xs">
+                      Free
+                    </span>
+                  </div>
+                )}
+
+                {/* Business Category Selection Dropdown */}
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-foreground">
+                    Business / Shop Category <span className="text-rose-500">*</span>
+                  </label>
+                  <SearchableSelect
+                    options={BUSINESS_CATEGORIES.map((cat) => ({
+                      id: cat.id,
+                      name: cat.label,
+                      badge: cat.shortLabel,
+                      subtext: cat.description,
+                      icon: getCategoryIcon(cat.id, 14)
+                    }))}
+                    value={formData.category || 'restaurants_cafes_hotels'}
+                    onChange={(val) => setFormData(prev => ({ ...prev, category: val }))}
+                    placeholder="Select business / shop category"
+                    showSearch={true}
+                    className="h-8.5 rounded-md"
+                    minWidth={360}
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Adapts item terminology, dietary options, public filters, and thermal printer tickets.
+                  </p>
+                </div>
+                
+                {isCreateNew && ownedShops.length > 0 && (
+                  <div className="space-y-1">
+                    <label className="block text-xs font-bold text-foreground">
+                      Clone Existing Menus & Settings
+                    </label>
+                    <SearchableSelect
+                      options={[
+                        { id: '', name: 'Start Fresh (Blank Menu)'},
+                        ...ownedShops.map((s) => ({ id: s.id, name: `Clone from: ${s.name}` }))
+                      ]}
+                      value={formData.clone_from_shop_id || ''}
+                      onChange={(value) => setFormData((prev) => ({ ...prev, clone_from_shop_id: value }))}
+                      placeholder="Start Fresh (Blank Menu)"
+                      showSearch={false}
+                      className="h-8.5 rounded-md"
+                    />
+                    <p className="text-[11px] text-muted-foreground">Duplicates all categories, menu items, and discounts to this new branch.</p>
+                  </div>
+                )}
+
+                <Input
+                  label="Shop Name *"
+                  name="name"
+                  value={formData.name}
+                  onChange={handleChange}
+                  placeholder={formData.category === 'fireworks_crackers' ? "e.g. Standard Fireworks Store" : "e.g. Siva Hotel & Cafe"}
+                  required
+                />
+                
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-foreground">Description</label>
+                  <textarea
+                    name="description"
+                    value={formData.description}
+                    onChange={handleChange}
+                    placeholder="A short description about your shop..."
+                    className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary min-h-[75px] resize-y"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-foreground">Welcome Message</label>
+                  <textarea
+                    name="welcome_message"
+                    value={formData.welcome_message}
+                    onChange={handleChange}
+                    placeholder="Message displayed to customers when opening menu..."
+                    className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary min-h-[60px] resize-y"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Step 2: Contact & Location */}
+            {currentStep === 2 && (
+              <div className="space-y-4 animate-in fade-in duration-200">
+                <div className="pb-2 border-b border-border/80">
+                  <h3 className="text-sm font-bold text-foreground">Contact & Location</h3>
+                  <p className="text-xs text-muted-foreground">Configure your customer support channels and physical store address.</p>
+                </div>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Input
+                    label="Phone Number"
+                    name="phone"
+                    value={formData.phone}
+                    onChange={handleChange}
+                    placeholder="+91 98765 43210"
+                  />
+                  <Input
+                    label="WhatsApp Number"
+                    name="whatsapp"
+                    value={formData.whatsapp}
+                    onChange={handleChange}
+                    placeholder="+91 98765 43210"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <TimePicker
+                    value={formData.opening_time}
+                    onChange={(t) => setFormData(prev => ({ ...prev, opening_time: t }))}
+                    label="Opening Time"
+                  />
+                  <TimePicker
+                    value={formData.closing_time}
+                    onChange={(t) => setFormData(prev => ({ ...prev, closing_time: t }))}
+                    label="Closing Time"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-foreground">Full Address</label>
+                  <textarea
+                    name="address"
+                    value={formData.address}
+                    onChange={handleChange}
+                    placeholder="Enter your store address..."
+                    className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary min-h-[65px] resize-y"
+                  />
+                </div>
+
+                {/* Map Location Selector */}
+                <div className="space-y-1 pt-1">
+                  <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <Navigation size={13} className="text-primary" /> Map Pin Location
+                  </label>
+                  <MapLocationSelector
+                    latitude={formData.latitude}
+                    longitude={formData.longitude}
+                    onChange={(lat, lng) => setFormData(prev => ({ ...prev, latitude: lat, longitude: lng }))}
+                  />
+                </div>
+
+                {/* Google Review Link */}
+                <Input
+                  label="Google Review Link (Optional)"
+                  name="google_review_link"
+                  value={formData.google_review_link}
+                  onChange={handleChange}
+                  placeholder="https://g.page/r/..."
+                />
+              </div>
+            )}
+
+            {/* Step 3: Branding */}
+            {currentStep === 3 && (
+              <div className="space-y-4 animate-in fade-in duration-200">
+                <div className="pb-2 border-b border-border/80">
+                  <h3 className="text-sm font-bold text-foreground">Media & Branding</h3>
+                  <p className="text-xs text-muted-foreground">Upload your store logo and banner to personalize your digital menu.</p>
+                </div>
+                
+                <div className="flex flex-col sm:flex-row gap-4">
+                  {/* Logo Upload */}
+                  <div className="flex flex-col items-start gap-1.5">
+                    <label className="text-xs font-bold text-foreground">Store Logo</label>
+                    <div 
+                      className="w-28 h-28 rounded-lg border-2 border-dashed border-border/80 flex items-center justify-center bg-muted/30 overflow-hidden relative group cursor-pointer hover:border-primary/50 transition-colors shadow-2xs"
+                      onClick={() => logoInputRef.current?.click()}
+                    >
+                      {formData.logo_url ? (
+                        <>
+                          <img src={formData.logo_url} alt="Logo" className="w-full h-full object-cover" />
+                          <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <UploadCloud className="text-white" size={20} />
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-center p-3">
+                          <UploadCloud className="mx-auto h-6 w-6 text-muted-foreground mb-1" />
+                          <span className="text-[10px] font-semibold text-muted-foreground block">Upload Logo</span>
+                        </div>
+                      )}
+                      {isUploadingLogo && (
+                        <div className="absolute inset-0 bg-background/80 flex items-center justify-center">
+                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary"></div>
+                        </div>
+                      )}
+                    </div>
+                    <input 
+                      type="file" 
+                      ref={logoInputRef} 
+                      className="hidden" 
+                      accept="image/*"
+                      onChange={(e) => handleFileUpload(e, 'logo')} 
+                    />
+                  </div>
+
+                  {/* Banner Upload */}
+                  <div className="flex-1 flex flex-col items-start gap-1.5">
+                    <label className="text-xs font-bold text-foreground">Store Banner</label>
+                    <div 
+                      className="w-full h-28 rounded-lg border-2 border-dashed border-border/80 flex items-center justify-center bg-muted/30 overflow-hidden relative group cursor-pointer hover:border-primary/50 transition-colors shadow-2xs"
+                      onClick={() => bannerInputRef.current?.click()}
+                    >
+                      {formData.banner_url ? (
+                        <>
+                          <img src={formData.banner_url} alt="Banner" className="w-full h-full object-cover" />
+                          <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <UploadCloud className="text-white" size={20} />
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-center p-3">
+                          <UploadCloud className="mx-auto h-6 w-6 text-muted-foreground mb-1" />
+                          <span className="text-[10px] font-semibold text-muted-foreground block">Upload Banner Image (1200x400 rec.)</span>
+                        </div>
+                      )}
+                      {isUploadingBanner && (
+                        <div className="absolute inset-0 bg-background/80 flex items-center justify-center">
+                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary"></div>
+                        </div>
+                      )}
+                    </div>
+                    <input 
+                      type="file" 
+                      ref={bannerInputRef} 
+                      className="hidden" 
+                      accept="image/*"
+                      onChange={(e) => handleFileUpload(e, 'banner')} 
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Stepper Action Buttons */}
+            <div className="pt-4 border-t border-border/80 flex justify-between items-center">
+              {currentStep > 1 ? (
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={handleBack}
+                  size="sm"
+                  className="rounded-md font-bold h-8.5 px-3 text-xs cursor-pointer"
+                >
+                  Back
+                </Button>
+              ) : (
+                <div />
+              )}
+
+              <div className="flex items-center gap-2">
+                {!isCreateNew && (
+                  <Button 
+                    type="button" 
+                    onClick={handleSaveShop} 
+                    disabled={isLoading} 
+                    size="sm" 
+                    className="rounded-md font-bold bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 h-8.5 px-3 text-xs shadow-2xs cursor-pointer"
+                  >
+                    <Save size={13} /> Save Changes
+                  </Button>
+                )}
+                {currentStep < 3 ? (
+                  <Button 
+                    type="button" 
+                    onClick={handleNext}
+                    size="sm"
+                    className="rounded-md font-bold h-8.5 px-3 text-xs shadow-2xs cursor-pointer"
+                  >
+                    Next Step <ChevronRight size={14} className="ml-1" />
+                  </Button>
+                ) : (
+                  <Button 
+                    type="submit" 
+                    disabled={isLoading} 
+                    size="sm" 
+                    className="rounded-md font-bold bg-emerald-600 hover:bg-emerald-700 text-white h-8.5 px-4 text-xs shadow-2xs cursor-pointer"
+                  >
+                    {isLoading 
+                      ? (isCreateNew || !shop?.id ? 'Processing Setup...' : 'Saving Shop...') 
+                      : (isCreateNew || !shop?.id ? (isAdditionalShop ? 'Pay ₹50 & Create Branch' : 'Create Free Shop Profile') : 'Save Shop Profile')} <Save size={14} className="ml-1.5" />
+                  </Button>
+                )}
+              </div>
+            </div>
+          </form>
+        </div>
+      )}
+    </div>
+  );
 }

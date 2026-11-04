@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { Shop, Category, MenuItem, ThemeSettings } from '@/types';
 import { api } from '@/services/api';
+import { publicCache } from '@/utils/publicCache';
 
 interface ShopState {
   shop: Shop | null;
@@ -33,5 +34,9 @@ export const useShopStore = create<ShopState>((set) => ({
     set((state) => ({
       shop: state.shop ? { ...state.shop, theme: response.data } : null
     }));
+    publicCache.clear();
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('menukit-shop-settings-updated', { detail: response.data }));
+    }
   },
 }));

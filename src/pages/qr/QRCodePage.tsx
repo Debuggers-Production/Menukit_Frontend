@@ -33,7 +33,7 @@ export function QRCodePage() {
   const { setTitle: setHeaderTitle } = useHeaderStore();
 
   useEffect(() => {
-    setHeaderTitle('QR Code Generator', 'Download and print shop QR code.');
+    setHeaderTitle('QR Code');
   }, [setHeaderTitle]);
 
   useEffect(() => {
@@ -745,7 +745,7 @@ export function QRCodePage() {
               </div>
               <div class="branding">
                 <p class="powered-by">Powered By</p>
-                <h2 class="brand-name">MenuKit</h2>
+                <h2 class="brand-name" style="color:#ea580c">Menukit</h2>
                 <a href="https://debuggerstechnologies.com/menukit/" class="site-link" target="_blank" rel="noopener noreferrer">debuggerstechnologies.com/menukit/</a>
               </div>
             </div>
@@ -770,7 +770,7 @@ export function QRCodePage() {
 
   if (isLoading) {
     return (
-      <div className="max-w-3xl space-y-6">
+      <div className="w-full space-y-6">
         <Skeleton className="h-8 w-48 mb-2" />
         <Skeleton className="h-4 w-96 mb-8" />
         <Skeleton className="h-[400px] w-full rounded-2xl" />
@@ -779,7 +779,7 @@ export function QRCodePage() {
   }
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto animate-fade-in">
+    <div className="space-y-6 w-full animate-fade-in">
 
       {!qrCode ? (
         <Card className="border-dashed text-center">
@@ -797,72 +797,75 @@ export function QRCodePage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-6 items-start">
-          <Card className="md:col-span-2 md:sticky md:top-6 self-start flex flex-col items-center p-8 text-center bg-white border border-slate-100 shadow-lg rounded-2xl relative overflow-hidden">
-            {/* Elegant Header Accent */}
-            <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-orange-500 to-amber-500"></div>
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-start">
+          <Card className="md:col-span-2 md:sticky md:top-6 self-start flex flex-col items-center p-5 text-center bg-card border border-border/80 shadow-2xs rounded-lg relative overflow-hidden">
+            {/* Top Accent Line */}
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600"></div>
             
             {/* Restaurant Logo/Image */}
-            <div className="w-16 h-16 rounded-full border-2 border-slate-100 overflow-hidden bg-slate-50 flex items-center justify-center mb-4 shadow-sm">
+            <div className="w-14 h-14 rounded-full border-2 border-border overflow-hidden bg-muted/40 flex items-center justify-center mb-3 shadow-2xs">
               {shop?.logo_url ? (
                 <img src={shop.logo_url} alt="Restaurant Logo" className="w-full h-full object-cover" />
               ) : (
-                <UtensilsCrossed className="w-8 h-8 text-slate-400" />
+                <UtensilsCrossed className="w-6 h-6 text-muted-foreground" />
               )}
             </div>
             
-            <h3 className="font-bold text-xl mb-1 text-slate-800">{shop?.name}</h3>
-            <p className="text-xs font-semibold tracking-wider text-orange-600 uppercase mb-6">Scan to View Digital Menu</p>
+            <h3 className="font-bold text-base mb-0.5 text-foreground truncate max-w-full px-2">{shop?.name}</h3>
+            <p className="text-[10px] font-bold tracking-wider text-primary uppercase mb-4">Scan to View Digital Menu</p>
             
             {/* QR Code Container */}
-            <div className="bg-slate-50 p-4 sm:p-6 rounded-2xl shadow-inner border border-slate-100 inline-block relative max-w-full">
+            <div className="bg-white p-3 rounded-lg shadow-2xs border border-slate-200/80 inline-block relative max-w-full">
               <div
                 ref={qrRef}
-                className="w-52 h-52 sm:w-56 sm:h-56 flex items-center justify-center bg-white rounded-xl shadow-sm p-1.5 [&_canvas]:max-w-full [&_canvas]:max-h-full [&_canvas]:w-full [&_canvas]:h-full [&_canvas]:object-contain [&_svg]:max-w-full [&_svg]:max-h-full [&_svg]:w-full [&_svg]:h-full"
+                className="w-48 h-48 sm:w-52 sm:h-52 flex items-center justify-center bg-white rounded-md p-1 [&_canvas]:max-w-full [&_canvas]:max-h-full [&_canvas]:w-full [&_canvas]:h-full [&_canvas]:object-contain [&_svg]:max-w-full [&_svg]:max-h-full [&_svg]:w-full [&_svg]:h-full"
               />
             </div>
             
             {/* Branding */}
-            <div className="mt-8 flex flex-col items-center">
-              <span className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Powered By</span>
-              <span className="text-sm font-extrabold bg-gradient-to-r from-orange-600 to-amber-500 bg-clip-text text-transparent mt-0.5">MenuKit</span>
+            <div className="mt-5 flex flex-col items-center">
+              <span className="text-[9px] uppercase tracking-widest text-muted-foreground font-bold">Powered By</span>
+              <span className="text-xs font-extrabold text-orange-600 mt-0.5">Menukit</span>
               <a
                 href="https://debuggerstechnologies.com/menukit/"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-[10px] text-slate-400 hover:text-orange-500 transition-colors mt-1 flex items-center gap-1"
+                className="text-[10px] text-muted-foreground hover:text-primary transition-colors mt-0.5 flex items-center gap-1 font-medium"
               >
                 debuggerstechnologies.com/menukit/
                 <ExternalLink size={8} />
               </a>
             </div>
             
-            <p className="text-[10px] text-slate-400 mt-6 font-mono">
+            <p className="text-[10px] text-muted-foreground mt-4 font-mono">
               Generated: {new Date(qrCode.created_at).toLocaleDateString()}
             </p>
           </Card>
  
           <div className="md:col-span-3 space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Public Menu Link</CardTitle>
-                <CardDescription>Direct link to your digital menu</CardDescription>
+            {/* Public Menu Link */}
+            <Card className="rounded-lg border-border/80 shadow-2xs bg-card">
+              <CardHeader className="p-4 pb-2 border-b border-border/60">
+                <CardTitle className="text-xs font-bold text-foreground">Public Menu Link</CardTitle>
+                <CardDescription className="text-[11px] text-muted-foreground">Direct URL to your digital customer storefront</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="p-4 space-y-3">
                 <div className="flex items-center gap-2">
-                  <div className="flex-1 bg-slate-50 dark:bg-slate-800 px-4 py-3 rounded-xl text-sm text-slate-600 dark:text-slate-300 font-mono overflow-x-auto whitespace-nowrap border border-slate-200 dark:border-slate-700">
+                  <div className="flex-1 bg-muted/40 px-3 py-2 rounded-md text-xs text-foreground font-mono overflow-x-auto whitespace-nowrap border border-input select-all">
                     {publicLink}
                   </div>
-                  <Button variant="secondary" onClick={handleCopyLink} className="shrink-0" title="Copy Link">
-                    <Copy size={18} />
+                  <Button variant="secondary" size="sm" onClick={handleCopyLink} className="shrink-0 rounded-md h-9 px-3 gap-1.5" title="Copy Link">
+                    <Copy size={13} />
+                    <span className="text-xs font-semibold">Copy</span>
                   </Button>
                 </div>
-                <div className="mt-4 flex">
+                <div className="flex items-center justify-between text-xs pt-0.5">
                   <Button 
                     variant="ghost" 
-                    className="text-primary hover:text-primary-700 p-0 h-auto"
+                    size="sm"
+                    className="text-primary hover:text-primary/90 p-0 h-auto font-semibold gap-1 text-xs"
                     onClick={() => window.open(publicLink, '_blank')}
-                    leftIcon={<ExternalLink size={16} />}
+                    leftIcon={<ExternalLink size={12} />}
                   >
                     Open public menu in new tab
                   </Button>
@@ -871,18 +874,18 @@ export function QRCodePage() {
             </Card>
 
             {/* Customize Style Card */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2">
-                  <Palette className="w-5 h-5 text-orange-500" />
+            <Card className="rounded-lg border-border/80 shadow-2xs bg-card">
+              <CardHeader className="p-4 pb-2 border-b border-border/60">
+                <CardTitle className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                  <Palette className="w-4 h-4 text-primary" />
                   Customize Style
                 </CardTitle>
-                <CardDescription>Design your QR code to match your brand identity</CardDescription>
+                <CardDescription className="text-[11px] text-muted-foreground">Design your QR code to match your brand identity</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="p-4 space-y-3.5">
                 {/* Theme Colors */}
                 <div>
-                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Theme Color</label>
+                  <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-2">Theme Color</label>
                   <div className="flex flex-wrap items-center gap-2">
                     {[
                       { name: 'Classic Black', value: '#1A1515' },
@@ -894,22 +897,23 @@ export function QRCodePage() {
                     ].map((c) => (
                       <button
                         key={c.value}
+                        type="button"
                         onClick={() => setQrColor(c.value)}
-                        className={`w-8 h-8 rounded-full border-2 transition-all ${
-                          qrColor === c.value ? 'scale-110 border-slate-900 ring-2 ring-slate-200' : 'border-transparent'
+                        className={`w-7 h-7 rounded-md border transition-all cursor-pointer ${
+                          qrColor === c.value ? 'scale-105 border-primary ring-2 ring-primary ring-offset-1 ring-offset-background' : 'border-border/80 hover:scale-105'
                         }`}
                         style={{ backgroundColor: c.value }}
                         title={c.name}
                       />
                     ))}
                     {/* Custom Color Input */}
-                    <div className="flex items-center gap-2 border border-slate-200 rounded-lg px-2 py-1 ml-auto">
-                      <span className="text-xs font-medium text-slate-500">Custom:</span>
+                    <div className="flex items-center gap-1.5 border border-input rounded-md px-2 py-1 ml-auto bg-background">
+                      <span className="text-[11px] font-medium text-muted-foreground">Custom:</span>
                       <input 
                         type="color" 
                         value={qrColor} 
                         onChange={(e) => setQrColor(e.target.value)} 
-                        className="w-6 h-6 border-0 p-0 cursor-pointer rounded bg-transparent"
+                        className="w-5 h-5 border-0 p-0 cursor-pointer rounded bg-transparent"
                       />
                     </div>
                   </div>
@@ -917,8 +921,8 @@ export function QRCodePage() {
 
                 {/* Dot Type Options */}
                 <div>
-                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Dot Pattern</label>
-                  <div className="grid grid-cols-3 gap-2">
+                  <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-2">Dot Pattern</label>
+                  <div className="grid grid-cols-3 gap-1.5">
                     {[
                       { name: 'Dots', value: 'dots' },
                       { name: 'Rounded', value: 'rounded' },
@@ -929,11 +933,12 @@ export function QRCodePage() {
                     ].map((opt) => (
                       <button
                         key={opt.value}
+                        type="button"
                         onClick={() => setDotType(opt.value)}
-                        className={`px-3 py-2 text-xs font-medium border rounded-lg transition-all ${
+                        className={`px-2.5 py-1.5 text-xs font-semibold rounded-md border transition-all cursor-pointer ${
                           dotType === opt.value
-                            ? 'bg-orange-50 border-orange-500 text-orange-700 shadow-sm'
-                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                            ? 'bg-primary/10 border-primary text-primary shadow-2xs'
+                            : 'bg-background border-border text-muted-foreground hover:bg-muted hover:text-foreground'
                         }`}
                       >
                         {opt.name}
@@ -942,10 +947,10 @@ export function QRCodePage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {/* Corner Ring Style */}
                   <div>
-                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Corner Ring</label>
+                    <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1.5">Corner Ring</label>
                     <SearchableSelect
                       options={[
                         { id: 'square', name: 'Square' },
@@ -961,7 +966,7 @@ export function QRCodePage() {
 
                   {/* Corner Center Style */}
                   <div>
-                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Corner Center</label>
+                    <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1.5">Corner Center</label>
                     <SearchableSelect
                       options={[
                         { id: 'dot', name: 'Dot' },
@@ -976,10 +981,10 @@ export function QRCodePage() {
 
                 {/* Logo Option */}
                 {shop?.logo_url && (
-                  <div className="flex items-center justify-between border-t border-slate-100 pt-3 mt-2">
+                  <div className="flex items-center justify-between border-t border-border/60 pt-3 mt-1">
                     <div>
-                      <span className="text-xs font-bold text-slate-700">Center Logo</span>
-                      <p className="text-[10px] text-slate-400">Place restaurant logo inside the QR code</p>
+                      <span className="text-xs font-bold text-foreground">Center Logo</span>
+                      <p className="text-[10px] text-muted-foreground">Place restaurant badge inside the QR code center</p>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input 
@@ -988,17 +993,18 @@ export function QRCodePage() {
                         onChange={(e) => setIncludeLogo(e.target.checked)} 
                         className="sr-only peer"
                       />
-                      <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-orange-500"></div>
+                      <div className="w-8 h-4.5 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-border after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-primary"></div>
                     </label>
                   </div>
                 )}
 
                 {/* Save Style Button */}
-                <div className="border-t border-slate-100 pt-4 mt-3 flex justify-end">
+                <div className="border-t border-border/60 pt-3 mt-1 flex justify-end">
                   <Button 
                     onClick={handleSaveStyle} 
                     isLoading={isSavingStyle}
-                    className="w-full sm:w-auto px-6 bg-orange-600 hover:bg-orange-700 text-white"
+                    size="sm"
+                    className="w-full sm:w-auto px-4 h-8 text-xs font-semibold rounded-md bg-primary hover:bg-primary/90 text-white"
                   >
                     Save Style Preferences
                   </Button>
@@ -1006,39 +1012,40 @@ export function QRCodePage() {
               </CardContent>
             </Card>
  
-            <Card>
-              <CardHeader>
-                <CardTitle>Download & Print</CardTitle>
-                <CardDescription>Export your QR code in crystal-clear HD or infinite vector clarity</CardDescription>
+            {/* Download & Export Card */}
+            <Card className="rounded-lg border-border/80 shadow-2xs bg-card">
+              <CardHeader className="p-4 pb-2 border-b border-border/60">
+                <CardTitle className="text-xs font-bold text-foreground">Download & Print</CardTitle>
+                <CardDescription className="text-[11px] text-muted-foreground">Export your QR code in ultra-HD or infinite vector clarity</CardDescription>
               </CardHeader>
-              <CardContent className="flex flex-col space-y-3">
-                <Button className="w-full justify-start h-12" variant="secondary" onClick={handleDownloadPNG} title="Download Ultra HD Poster (2400×3000)">
-                  <Download size={20} className="mr-2 text-orange-600" />
-                  <div className="text-left">
-                    <span className="font-semibold block text-xs">Download Ultra HD Poster</span>
-                    <span className="text-[10px] text-slate-400 block">2400×3000 with restaurant template</span>
+              <CardContent className="p-4 flex flex-col space-y-2">
+                <Button className="w-full justify-start h-10 rounded-md border border-border/80 bg-background hover:bg-muted text-foreground" variant="outline" onClick={handleDownloadPNG} title="Download Ultra HD Poster (2400×3000)">
+                  <Download size={15} className="mr-2 text-primary shrink-0" />
+                  <div className="text-left flex-1 min-w-0">
+                    <span className="font-semibold block text-xs truncate">Download Ultra HD Poster</span>
+                    <span className="text-[10px] text-muted-foreground block truncate">2400×3000 with restaurant template</span>
                   </div>
                 </Button>
-                <Button className="w-full justify-start h-12" variant="secondary" onClick={handleDownloadQROnly} title="Download HD QR Code Only (2400×2400)">
-                  <Download size={20} className="mr-2 text-orange-600" />
-                  <div className="text-left">
-                    <span className="font-semibold block text-xs">Download HD QR Code (PNG)</span>
-                    <span className="text-[10px] text-slate-400 block">2400×2400 high resolution</span>
+                <Button className="w-full justify-start h-10 rounded-md border border-border/80 bg-background hover:bg-muted text-foreground" variant="outline" onClick={handleDownloadQROnly} title="Download HD QR Code Only (2400×2400)">
+                  <Download size={15} className="mr-2 text-primary shrink-0" />
+                  <div className="text-left flex-1 min-w-0">
+                    <span className="font-semibold block text-xs truncate">Download HD QR Code (PNG)</span>
+                    <span className="text-[10px] text-muted-foreground block truncate">2400×2400 high resolution</span>
                   </div>
                 </Button>
-                <Button className="w-full justify-start h-12" variant="secondary" onClick={handleDownloadSVG} title="Download SVG Vector (Infinite Clarity)">
-                  <Download size={20} className="mr-2 text-orange-600" />
-                  <div className="text-left">
-                    <span className="font-semibold block text-xs">Download Vector QR Code (SVG)</span>
-                    <span className="text-[10px] text-slate-400 block">Infinite clarity for large billboards & print</span>
+                <Button className="w-full justify-start h-10 rounded-md border border-border/80 bg-background hover:bg-muted text-foreground" variant="outline" onClick={handleDownloadSVG} title="Download SVG Vector (Infinite Clarity)">
+                  <Download size={15} className="mr-2 text-primary shrink-0" />
+                  <div className="text-left flex-1 min-w-0">
+                    <span className="font-semibold block text-xs truncate">Download Vector QR Code (SVG)</span>
+                    <span className="text-[10px] text-muted-foreground block truncate">Infinite zoom for large billboards & print</span>
                   </div>
                 </Button>
-                <Button className="w-full justify-start h-12" variant="secondary" onClick={handlePrint} title="Print directly from browser">
-                  <Printer size={20} className="mr-2" />
-                  <span>Print directly from browser</span>
+                <Button className="w-full justify-start h-10 rounded-md border border-border/80 bg-background hover:bg-muted text-foreground" variant="outline" onClick={handlePrint} title="Print directly from browser">
+                  <Printer size={15} className="mr-2 text-muted-foreground shrink-0" />
+                  <span className="text-xs font-semibold">Print directly from browser</span>
                 </Button>
-                <Button className="w-full justify-start h-12 bg-slate-100 sm:bg-transparent" variant="ghost" onClick={generateQRCode} isLoading={isGenerating} title="Regenerate">
-                  {!isGenerating && <RefreshCw size={20} className="mr-2" />}
+                <Button className="w-full justify-start h-9 rounded-md text-xs font-semibold text-muted-foreground hover:text-foreground" variant="ghost" onClick={generateQRCode} isLoading={isGenerating} title="Regenerate">
+                  {!isGenerating && <RefreshCw size={13} className="mr-2 shrink-0" />}
                   <span>Regenerate QR Code</span>
                 </Button>
               </CardContent>

@@ -32,39 +32,30 @@ export const FCMPushPrompt: React.FC<FCMPushPromptProps> = ({ className = '' }) 
 
   return (
     <div
-      className={`rounded-2xl border p-4 sm:p-5 transition-all shadow-xs ${
+      className={`rounded-lg border p-3.5 sm:p-4 transition-all shadow-2xs ${
         isGranted
-          ? 'bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-200/80 dark:border-emerald-800/60'
-          : 'bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-primary/10 border-amber-200 dark:border-amber-800/60'
+          ? 'bg-emerald-500/[0.06] dark:bg-emerald-950/20 border-emerald-500/30'
+          : 'bg-primary/[0.04] border-primary/25'
       } ${className}`}
     >
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-start gap-3.5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3.5">
+        <div className="flex items-start gap-3">
           <div
-            className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 shadow-xs ${
+            className={`w-9 h-9 rounded-md flex items-center justify-center flex-shrink-0 shadow-2xs ${
               isGranted
-                ? 'bg-emerald-500 text-white'
+                ? 'bg-emerald-600 text-white'
                 : 'bg-primary text-white'
             }`}
           >
-            {isGranted ? <BellRing className="w-5 h-5 animate-pulse" /> : <Bell className="w-5 h-5" />}
+            {isGranted ? <BellRing className="w-4 h-4 animate-pulse" /> : <Bell className="w-4 h-4" />}
           </div>
-          <div className="space-y-1">
+          <div className="space-y-0.5">
             <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="font-bold text-sm sm:text-base text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+              <h3 className="font-bold text-xs sm:text-sm text-foreground flex items-center gap-1.5">
                 {isGranted ? 'Push Notifications Active' : 'Enable Instant Push Notifications'}
               </h3>
-              <span
-                className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full ${
-                  isGranted
-                    ? 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300'
-                    : 'bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300'
-                }`}
-              >
-                {deviceInfo.platform === 'ios' ? 'iOS' : deviceInfo.platform === 'android' ? 'Android' : 'Desktop / Laptop'}
-              </span>
-            </div>
-            <p className="text-xs text-slate-600 dark:text-slate-400 max-w-xl leading-relaxed">
+              </div>
+            <p className="text-xs text-muted-foreground max-w-xl leading-relaxed">
               {isGranted
                 ? 'Your device is configured to receive instant push alerts for new orders, member registrations, and order updates even when this tab is closed.'
                 : 'Get notified instantly on your phone or laptop whenever a customer places an order, joins as a new member, or adds items to their table.'}
@@ -72,12 +63,12 @@ export const FCMPushPrompt: React.FC<FCMPushPromptProps> = ({ className = '' }) 
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5 sm:self-center shrink-0">
+        <div className="flex items-center gap-2 sm:self-center shrink-0">
           {isGranted ? (
             <button
               onClick={sendTestNotification}
               disabled={loading}
-              className="w-full sm:w-auto px-4 py-2 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:text-primary dark:hover:text-primary border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-2xs hover:shadow-xs active:scale-95 transition-all cursor-pointer"
+              className="w-full sm:w-auto px-3 h-8 bg-card text-foreground hover:text-primary border border-border rounded-md text-xs font-semibold flex items-center justify-center gap-1.5 shadow-2xs hover:border-primary/40 active:scale-95 transition-all cursor-pointer"
             >
               {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
               Send Test Push
@@ -86,16 +77,16 @@ export const FCMPushPrompt: React.FC<FCMPushPromptProps> = ({ className = '' }) 
             <button
               onClick={enableNotifications}
               disabled={loading}
-              className="w-full sm:w-auto px-4 py-2.5 bg-primary hover:bg-primary/90 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-sm hover:shadow-md active:scale-95 transition-all cursor-pointer"
+              className="w-full sm:w-auto px-3.5 h-8.5 bg-primary hover:bg-primary/90 text-white rounded-md text-xs font-semibold flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer"
             >
               {loading ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   <span>Enabling...</span>
                 </>
               ) : (
                 <>
-                  <BellRing className="w-4 h-4" />
+                  <BellRing className="w-3.5 h-3.5" />
                   <span>Turn On Notifications</span>
                 </>
               )}

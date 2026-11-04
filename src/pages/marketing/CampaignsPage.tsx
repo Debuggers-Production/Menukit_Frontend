@@ -8,13 +8,13 @@ import {
   Users,
   Image as ImageIcon,
   Calendar,
-  Sparkles,
   CheckCircle2,
   Clock,
   AlertCircle,
   Phone,
   RefreshCw,
   Trash2,
+  Loader2,
   Upload,
   ExternalLink,
   MessageSquare,
@@ -202,6 +202,8 @@ export const CampaignsPage: React.FC = () => {
   const [isLoadingCampaigns, setIsLoadingCampaigns] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [activeTab, setActiveTab] = useState<'studio' | 'history'>('studio');
+  const [campaignToCancel, setCampaignToCancel] = useState<BroadcastCampaign | null>(null);
+  const [isCancelling, setIsCancelling] = useState(false);
 
   // Broadcast History Search, Date Filter & Infinite Scroll States
   const [historySearch, setHistorySearch] = useState('');
@@ -218,7 +220,7 @@ export const CampaignsPage: React.FC = () => {
   const { setTitle: setHeaderTitle } = useHeaderStore();
 
   useEffect(() => {
-    setHeaderTitle('Campaigns', 'WhatsApp broadcast campaigns.');
+    setHeaderTitle('Campaigns');
   }, [setHeaderTitle]);
 
   // Load available messaging credits
@@ -623,13 +625,22 @@ export const CampaignsPage: React.FC = () => {
   };
 
 
-  const handleCancelCampaign = async (id: string) => {
+  const handleCancelCampaign = (campaign: BroadcastCampaign) => {
+    setCampaignToCancel(campaign);
+  };
+
+  const confirmCancelCampaign = async () => {
+    if (!campaignToCancel) return;
+    setIsCancelling(true);
     try {
-      await broadcastService.cancelCampaign(id);
-      toast.success('Campaign removed');
-      loadCampaigns();
+      const res = await broadcastService.cancelCampaign(campaignToCancel.id);
+      toast.success(res.message || 'Campaign cancelled successfully');
+      setCampaignToCancel(null);
+      await Promise.all([loadCampaigns(), loadCredits()]);
     } catch (err: any) {
       toast.error(err.response?.data?.detail || 'Failed to cancel campaign');
+    } finally {
+      setIsCancelling(false);
     }
   };
 
@@ -638,35 +649,39 @@ export const CampaignsPage: React.FC = () => {
 
   // Realistic WhatsApp Chat Simulation Frame
   const renderWhatsAppPreviewContent = () => (
-    <div className="bg-[#EFEAE2] dark:bg-[#0B141A] rounded-[24px] overflow-hidden shadow-inner flex flex-col h-full border border-slate-300 dark:border-slate-800 select-none">
+    <div className="bg-[#EFEAE2] dark:bg-[#0B141A] rounded-lg overflow-hidden shadow-2xs flex flex-col h-full border border-border/80 select-none">
       {/* WhatsApp Chat Top Header */}
-      <div className="bg-[#075E54] dark:bg-[#1F2C34] text-white p-2.5 sm:p-3 flex items-center justify-between shadow-md shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-xs font-black border border-white/20">
-            <Store size={15} className="text-white" />
+      <div className="bg-[#075E54] dark:bg-[#1F2C34] text-white p-2.5 sm:p-3 flex items-center justify-between shadow-xs shrink-0">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center overflow-hidden border border-white/20 shrink-0 shadow-xs">
+            <img
+              src="/debuggers-logo.png"
+              alt="Debuggers Technologies"
+              className="w-full h-full object-contain p-0.5"
+            />
           </div>
           <div>
-            <div className="flex items-center gap-1">
-              <h4 className="font-extrabold text-xs tracking-tight truncate max-w-[130px]">{shopDisplayName}</h4>
-              <CheckCircle2 size={11} className="text-emerald-300 fill-emerald-500" />
+            <div className="flex items-center gap-1.5">
+              <h4 className="font-bold text-xs tracking-tight text-white">Debuggers Technologies</h4>
+              <CheckCircle2 size={11} className="text-emerald-300 fill-emerald-500 shrink-0" />
             </div>
             <p className="text-[8px] text-emerald-100 opacity-80">Official Business Account</p>
           </div>
         </div>
         <div className="flex items-center gap-2 text-white/80">
-          <Globe size={14} />
+          <Globe size={13} />
         </div>
       </div>
 
       {/* WhatsApp Chat Area with Wallpaper texture */}
       <div className="flex-1 p-3 overflow-y-auto space-y-2.5 bg-[radial-gradient(#0000000a_1px,transparent_1px)] dark:bg-[radial-gradient(#ffffff0a_1px,transparent_1px)] [background-size:12px_12px]">
         {/* Security Encryption Notice */}
-        <div className="bg-[#FFF5C4] dark:bg-[#182229] border border-amber-200/60 dark:border-slate-800 rounded-xl px-2.5 py-1 text-center text-[8.5px] text-amber-900 dark:text-amber-300/80 max-w-[240px] mx-auto shadow-xs">
+        <div className="bg-[#FFF5C4] dark:bg-[#182229] border border-amber-200/60 dark:border-slate-800 rounded-md px-2.5 py-1 text-center text-[8.5px] text-amber-900 dark:text-amber-300/80 max-w-[240px] mx-auto shadow-2xs">
           🔒 Messages are end-to-end encrypted.
         </div>
 
         {/* WhatsApp Message Bubble */}
-        <div className="bg-white dark:bg-[#1F2C34] rounded-2xl rounded-tl-xs shadow-md border border-slate-200/70 dark:border-slate-800/80 overflow-hidden max-w-[270px]">
+        <div className="bg-white dark:bg-[#1F2C34] rounded-lg rounded-tl-xs shadow-2xs border border-slate-200/70 dark:border-slate-800/80 overflow-hidden max-w-[270px]">
           {/* Header Image Attachment */}
           <div className="relative h-32 w-full bg-slate-100 dark:bg-slate-900 overflow-hidden">
             <img
@@ -677,7 +692,7 @@ export const CampaignsPage: React.FC = () => {
                 (e.target as HTMLImageElement).src = DEFAULT_BANNER;
               }}
             />
-            <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-full text-[8.5px] font-bold text-white uppercase tracking-wider">
+            <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-md text-[8.5px] font-bold text-white uppercase tracking-wider">
               Offer
             </div>
           </div>
@@ -693,11 +708,10 @@ export const CampaignsPage: React.FC = () => {
             
             <div 
               data-lenis-prevent 
-              className="text-slate-800 dark:text-slate-200 text-xs whitespace-pre-wrap font-medium bg-amber-500/5 p-2 rounded-xl border border-amber-500/10 max-h-[140px] overflow-y-auto overscroll-contain"
+              className="text-slate-800 dark:text-slate-200 text-xs whitespace-pre-wrap font-medium bg-amber-500/5 p-2 rounded-md border border-amber-500/10 max-h-[140px] overflow-y-auto overscroll-contain"
             >
               {message || 'Your custom offer details will appear here...'}
             </div>
-
 
             <p className="text-slate-500 dark:text-slate-400 text-[9.5px] italic">
               Thank you for choosing us! 🥰
@@ -711,7 +725,7 @@ export const CampaignsPage: React.FC = () => {
 
           {/* Call to Action Button */}
           <div className="border-t border-slate-100 dark:border-slate-800 p-1.5 bg-slate-50/50 dark:bg-slate-900/50">
-            <div className="w-full py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 border border-slate-200 dark:border-slate-700 rounded-xl text-emerald-600 dark:text-emerald-400 font-bold text-xs flex items-center justify-center gap-1 shadow-xs">
+            <div className="w-full py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 border border-slate-200 dark:border-slate-700 rounded-md text-emerald-600 dark:text-emerald-400 font-bold text-xs flex items-center justify-center gap-1 shadow-2xs">
               <ExternalLink size={12} />
               <span>Visit Shop</span>
             </div>
@@ -741,40 +755,40 @@ export const CampaignsPage: React.FC = () => {
           setTopupCredits(50);
           setIsTopupModalOpen(true);
         }}
-        className="px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/25 text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+        className="px-2.5 py-1 rounded-md bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/25 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs h-8"
         title="WhatsApp Broadcast Messaging Credits (₹1/message)"
       >
         <Coins size={13} className="text-amber-500" />
         <span>{isLoadingCredits ? '...' : `${availableCredits} Credits`}</span>
-        <span className="bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-black px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
-          <Plus size={9} strokeWidth={3} /> Top Up
+        <span className="bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-black px-1.5 py-0.5 rounded flex items-center gap-0.5">
+          <Plus size={8} strokeWidth={3} /> Top Up
         </span>
       </button>
 
-      <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl border border-slate-200 dark:border-slate-700">
+      <div className="flex items-center gap-1 bg-muted/60 p-1 rounded-md border border-border/60">
         <button
           onClick={() => setActiveTab('studio')}
-          className={`px-3 py-1.5 sm:px-3.5 sm:py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+          className={`px-3 py-1 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
             activeTab === 'studio'
-              ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
-              : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+              ? 'bg-background text-foreground shadow-2xs border border-border/60'
+              : 'text-muted-foreground hover:text-foreground'
           }`}
         >
-          <Radio size={13} className="text-amber-500" />
-          <span>Campaign Studio</span>
+          <Radio size={12} className="text-amber-500" />
+          <span>Studio</span>
         </button>
         <button
           onClick={() => setActiveTab('history')}
-          className={`px-3 py-1.5 sm:px-3.5 sm:py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+          className={`px-3 py-1 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
             activeTab === 'history'
-              ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
-              : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+              ? 'bg-background text-foreground shadow-2xs border border-border/60'
+              : 'text-muted-foreground hover:text-foreground'
           }`}
         >
-          <Clock size={13} className="text-blue-500" />
-          <span>Broadcast History</span>
+          <Clock size={12} className="text-blue-500" />
+          <span>History</span>
           {!isLocked && campaigns.length > 0 && (
-            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-[10px]">
+            <span className="ml-1 px-1.5 py-0.2 rounded-md bg-muted text-[10px] font-mono">
               {campaigns.length}
             </span>
           )}
@@ -784,7 +798,7 @@ export const CampaignsPage: React.FC = () => {
   );
 
   return (
-    <div className="px-4 sm:px-6 lg:px-8 max-w-[1400px] mx-auto pb-24">
+    <div className="w-full space-y-4 pb-20 animate-fade-in w-full">
       {/* Teleport Tab Switcher to Top Navigation Bar on Desktop */}
       {portalNode && createPortal(renderTabSwitcher(), portalNode)}
 
@@ -874,16 +888,15 @@ export const CampaignsPage: React.FC = () => {
                 </button>
               </div>
             )}
-            <form onSubmit={handleSubmit} className="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl p-3.5 sm:p-7 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4 sm:space-y-5">
-
+            <form onSubmit={handleSubmit} className="bg-card rounded-lg p-3.5 sm:p-5 border border-border/80 shadow-2xs space-y-4">
 
               {/* 1. Message Text */}
               <div>
-                <div className="flex justify-between items-center mb-2">
-                  <label className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                    Campaign Message <span className="text-red-500">*</span>
+                <div className="flex justify-between items-center mb-1.5">
+                  <label className="text-xs font-bold uppercase tracking-wider text-foreground">
+                    Campaign Message <span className="text-destructive">*</span>
                   </label>
-                  <span className="text-[11px] font-bold text-slate-400">
+                  <span className="text-[11px] font-mono text-muted-foreground">
                     {message.length} chars
                   </span>
                 </div>
@@ -893,31 +906,31 @@ export const CampaignsPage: React.FC = () => {
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   placeholder="Enter custom discount details, festival greetings, or new menu item announcements..."
-                  className="w-full px-3.5 py-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl text-xs sm:text-sm font-medium text-slate-900 dark:text-white focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none transition-all resize-y overscroll-contain overflow-y-auto min-h-[100px] max-h-[300px] leading-relaxed"
+                  className="w-full p-3 bg-background border border-input rounded-md text-xs sm:text-sm font-medium text-foreground focus:ring-1 focus:ring-primary focus:border-primary outline-none transition-all resize-y overscroll-contain overflow-y-auto min-h-[90px] max-h-[260px] leading-relaxed placeholder:text-muted-foreground"
                   required
                 />
                 
                 {/* Preset Suggestions */}
-                <div className="flex flex-wrap gap-1.5 sm:gap-2 mt-2.5">
-                  <span className="text-[10px] sm:text-[11px] font-extrabold text-slate-400 py-1">Quick Suggestions:</span>
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  <span className="text-[10px] sm:text-[11px] font-bold text-muted-foreground py-0.5">Quick Suggestions:</span>
                   <button
                     type="button"
                     onClick={() => applyPreset('🎉 Exclusive Weekend Treat! Enjoy 20% OFF on all your favorite meals. Order online now!')}
-                    className="text-[10px] sm:text-[11px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 px-2.5 py-1 rounded-xl transition-all cursor-pointer"
+                    className="text-[10px] sm:text-[11px] font-semibold bg-muted hover:bg-muted/80 text-foreground px-2 py-0.5 rounded-md border border-border/60 transition-all cursor-pointer"
                   >
                     🔥 20% Weekend Offer
                   </button>
                   <button
                     type="button"
                     onClick={() => applyPreset('🍲 New Chef Specials just landed on our menu! Check out the mouth-watering delicacies waiting for you.')}
-                    className="text-[10px] sm:text-[11px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 px-2.5 py-1 rounded-xl transition-all cursor-pointer"
+                    className="text-[10px] sm:text-[11px] font-semibold bg-muted hover:bg-muted/80 text-foreground px-2 py-0.5 rounded-md border border-border/60 transition-all cursor-pointer"
                   >
                     ✨ New Menu Specials
                   </button>
                   <button
                     type="button"
                     onClick={() => applyPreset('❤️ We miss you! Here is a special discount voucher for your next order with us today.')}
-                    className="text-[10px] sm:text-[11px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 px-2.5 py-1 rounded-xl transition-all cursor-pointer"
+                    className="text-[10px] sm:text-[11px] font-semibold bg-muted hover:bg-muted/80 text-foreground px-2 py-0.5 rounded-md border border-border/60 transition-all cursor-pointer"
                   >
                     💌 Customer Re-engagement
                   </button>
@@ -926,43 +939,43 @@ export const CampaignsPage: React.FC = () => {
 
 
               {/* 2. Header Media Attachment */}
-              <div className="border-t border-slate-100 dark:border-slate-800/80 pt-4">
-                <label className="block text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2">
+              <div className="border-t border-border/60 pt-3.5">
+                <label className="block text-xs font-bold uppercase tracking-wider text-foreground mb-2">
                   Header Media Attachment
                 </label>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2.5">
                   <div
                     onClick={() => setUseShopBanner(true)}
-                    className={`p-3 rounded-2xl border-2 cursor-pointer transition-all flex items-center gap-3 ${
+                    className={`p-2.5 rounded-lg border cursor-pointer transition-all flex items-center gap-2.5 ${
                       useShopBanner
-                        ? 'border-amber-500 bg-amber-500/5'
-                        : 'border-slate-200 dark:border-slate-800 hover:border-slate-300'
+                        ? 'border-primary bg-primary/5 shadow-2xs'
+                        : 'border-border/80 hover:border-border'
                     }`}
                   >
-                    <div className={`w-4 h-4 rounded-full flex items-center justify-center ${useShopBanner ? 'bg-amber-500 text-white' : 'border-2 border-slate-300'}`}>
+                    <div className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 ${useShopBanner ? 'bg-primary text-white' : 'border border-muted-foreground'}`}>
                       {useShopBanner && <Check size={10} strokeWidth={3} />}
                     </div>
                     <div>
-                      <h5 className="font-extrabold text-xs text-slate-900 dark:text-white">Shop Banner (Default)</h5>
-                      <p className="text-[10px] text-slate-400">Uses shop's official theme banner</p>
+                      <h5 className="font-bold text-xs text-foreground">Shop Banner (Default)</h5>
+                      <p className="text-[10px] text-muted-foreground">Uses shop's official theme banner</p>
                     </div>
                   </div>
 
                   <div
                     onClick={() => setUseShopBanner(false)}
-                    className={`p-3 rounded-2xl border-2 cursor-pointer transition-all flex items-center gap-3 ${
+                    className={`p-2.5 rounded-lg border cursor-pointer transition-all flex items-center gap-2.5 ${
                       !useShopBanner
-                        ? 'border-amber-500 bg-amber-500/5'
-                        : 'border-slate-200 dark:border-slate-800 hover:border-slate-300'
+                        ? 'border-primary bg-primary/5 shadow-2xs'
+                        : 'border-border/80 hover:border-border'
                     }`}
                   >
-                    <div className={`w-4 h-4 rounded-full flex items-center justify-center ${!useShopBanner ? 'bg-amber-500 text-white' : 'border-2 border-slate-300'}`}>
+                    <div className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 ${!useShopBanner ? 'bg-primary text-white' : 'border border-muted-foreground'}`}>
                       {!useShopBanner && <Check size={10} strokeWidth={3} />}
                     </div>
                     <div>
-                      <h5 className="font-extrabold text-xs text-slate-900 dark:text-white">Custom Campaign Image</h5>
-                      <p className="text-[10px] text-slate-400">Upload or link custom banner</p>
+                      <h5 className="font-bold text-xs text-foreground">Custom Campaign Image</h5>
+                      <p className="text-[10px] text-muted-foreground">Upload or select custom banner</p>
                     </div>
                   </div>
                 </div>
@@ -971,7 +984,7 @@ export const CampaignsPage: React.FC = () => {
                   <motion.div
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
-                    className="space-y-3 p-3.5 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800"
+                    className="space-y-2.5 p-3 bg-muted/40 rounded-lg border border-border/80"
                   >
                     {/* URL Input & Upload Button */}
                     <div className="flex flex-col sm:flex-row gap-2">
@@ -980,7 +993,7 @@ export const CampaignsPage: React.FC = () => {
                         value={customImageUrl}
                         onChange={(e) => setCustomImageUrl(e.target.value)}
                         placeholder="https://example.com/banner.jpg or upload below"
-                        className="flex-1 px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-amber-500"
+                        className="flex-1 h-8.5 px-3 bg-background border border-input rounded-md text-xs text-foreground outline-none focus:ring-1 focus:ring-primary focus:border-primary"
                       />
                       <input
                         type="file"
@@ -999,10 +1012,10 @@ export const CampaignsPage: React.FC = () => {
                           fileInputRef.current?.click();
                         }}
                         disabled={isUploadingImage}
-                        className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-sm ${
+                        className={`h-8.5 px-3 rounded-md text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-2xs ${
                           mediaLibrary.length >= 4 && !mediaLibrary.includes(customImageUrl)
-                            ? 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-300'
-                            : 'bg-amber-500 hover:bg-amber-600 text-white'
+                            ? 'bg-muted text-muted-foreground hover:bg-muted/80'
+                            : 'bg-primary hover:bg-primary/90 text-white'
                         }`}
                         title={
                           mediaLibrary.length >= 4 && !mediaLibrary.includes(customImageUrl)
@@ -1010,28 +1023,28 @@ export const CampaignsPage: React.FC = () => {
                             : 'Upload new banner image'
                         }
                       >
-                        {isUploadingImage ? <RefreshCw size={13} className="animate-spin" /> : <Upload size={13} />}
+                        {isUploadingImage ? <RefreshCw size={12} className="animate-spin" /> : <Upload size={12} />}
                         <span>{isUploadingImage ? 'Uploading...' : 'Upload Image'}</span>
                       </button>
                     </div>
 
                     {/* Active Selected Image Preview Strip */}
                     {customImageUrl && (
-                      <div className="flex items-center justify-between p-2 bg-amber-500/10 border border-amber-500/20 rounded-xl">
-                        <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="flex items-center justify-between p-2 bg-primary/10 border border-primary/20 rounded-md">
+                        <div className="flex items-center gap-2 min-w-0">
                           <img
                             src={customImageUrl}
                             alt="Selected Banner"
-                            className="w-12 h-9 object-cover rounded-lg border border-amber-300 dark:border-amber-700 shrink-0"
+                            className="w-12 h-8 object-cover rounded-md border border-primary/30 shrink-0"
                             onError={(e) => {
                               (e.target as HTMLElement).style.display = 'none';
                             }}
                           />
                           <div className="min-w-0">
-                            <p className="text-[11px] font-extrabold text-amber-900 dark:text-amber-300 truncate">
+                            <p className="text-[11px] font-bold text-foreground truncate">
                               Active Header Image
                             </p>
-                            <p className="text-[10px] text-slate-500 truncate max-w-xs">{customImageUrl}</p>
+                            <p className="text-[10px] text-muted-foreground truncate max-w-xs font-mono">{customImageUrl}</p>
                           </div>
                         </div>
                         <button
@@ -1040,7 +1053,7 @@ export const CampaignsPage: React.FC = () => {
                             setCustomImageUrl('');
                             setUseShopBanner(true);
                           }}
-                          className="px-2 py-1 text-[11px] font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer shrink-0"
+                          className="px-2 py-0.5 text-[11px] font-semibold text-destructive hover:bg-destructive/10 rounded-md transition-colors cursor-pointer shrink-0"
                         >
                           Remove
                         </button>
@@ -1048,39 +1061,39 @@ export const CampaignsPage: React.FC = () => {
                     )}
 
                     {/* Previously Used Images Gallery (Max 4 Images) */}
-                    <div className="pt-1.5 border-t border-slate-200/80 dark:border-slate-800">
-                      <div className="flex items-center justify-between mb-2">
+                    <div className="pt-2 border-t border-border/60">
+                      <div className="flex items-center justify-between mb-1.5">
                         <div className="flex items-center gap-2">
-                          <span className="text-[11px] font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                            <ImageIcon size={12} className="text-amber-500" />
-                            <span>Media Storage History</span>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                            <ImageIcon size={11} className="text-primary" />
+                            <span>Media Storage</span>
                           </span>
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                          <span className={`px-1.5 py-0.2 rounded-md font-mono text-[10px] font-bold ${
                             mediaLibrary.length >= 4
-                              ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30'
-                              : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                              ? 'bg-destructive/10 text-destructive border border-destructive/20'
+                              : 'bg-muted text-muted-foreground'
                           }`}>
-                            {mediaLibrary.length}/4 {mediaLibrary.length >= 4 ? 'Full' : 'Used'}
+                            {mediaLibrary.length}/4
                           </span>
                         </div>
                         {isLoadingMedia && (
-                          <RefreshCw size={11} className="animate-spin text-slate-400" />
+                          <RefreshCw size={11} className="animate-spin text-muted-foreground" />
                         )}
                       </div>
 
                       {/* Limit Alert Notice when full */}
                       {mediaLibrary.length >= 4 && (
-                        <div className="p-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-[11px] font-bold text-amber-800 dark:text-amber-300 flex items-start gap-2 mb-2">
-                          <AlertCircle size={14} className="text-amber-500 shrink-0 mt-0.5" />
+                        <div className="p-2 bg-amber-500/10 border border-amber-500/20 rounded-md text-[11px] font-medium text-foreground flex items-start gap-1.5 mb-2">
+                          <AlertCircle size={13} className="text-amber-500 shrink-0 mt-0.5" />
                           <span>
-                            <strong>Storage limit reached (4/4):</strong> You can retain up to 4 custom banners. To upload a new image, delete an existing banner using the red trash button below.
+                            <strong>Storage limit reached (4/4):</strong> Delete an existing banner to upload a new one.
                           </span>
                         </div>
                       )}
 
                       {mediaLibrary.length === 0 ? (
-                        <div className="py-4 text-center text-[11px] text-slate-400 bg-white/50 dark:bg-slate-900/50 rounded-xl border border-dashed border-slate-200 dark:border-slate-800">
-                          No previously uploaded images found. You can store up to 4 custom banners for 1-click reuse!
+                        <div className="py-3 text-center text-[11px] text-muted-foreground bg-background rounded-md border border-dashed border-border">
+                          No saved images. Upload up to 4 banners for quick reuse.
                         </div>
                       ) : (
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -1093,10 +1106,10 @@ export const CampaignsPage: React.FC = () => {
                                   setCustomImageUrl(imgUrl);
                                   setUseShopBanner(false);
                                 }}
-                                className={`group relative aspect-video rounded-xl overflow-hidden cursor-pointer border-2 transition-all ${
+                                className={`group relative aspect-video rounded-md overflow-hidden cursor-pointer border transition-all ${
                                   isSelected
-                                    ? 'border-amber-500 ring-2 ring-amber-500/40 shadow-sm'
-                                    : 'border-slate-200 dark:border-slate-700 hover:border-amber-400'
+                                    ? 'border-primary ring-2 ring-primary/40 shadow-2xs'
+                                    : 'border-border/80 hover:border-primary/50'
                                 }`}
                               >
                                 <img
@@ -1110,26 +1123,26 @@ export const CampaignsPage: React.FC = () => {
 
                                 {/* Selected Indicator Badge */}
                                 {isSelected && (
-                                  <div className="absolute top-1 left-1 w-4 h-4 rounded-full bg-amber-500 text-white flex items-center justify-center shadow-md">
-                                    <Check size={10} strokeWidth={3} />
+                                  <div className="absolute top-1 left-1 w-4 h-4 rounded-full bg-primary text-white flex items-center justify-center shadow-xs">
+                                    <Check size={9} strokeWidth={3} />
                                   </div>
                                 )}
 
                                 {/* Slot Label */}
-                                <div className="absolute bottom-1 left-1 bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded backdrop-blur-xs">
+                                <div className="absolute bottom-1 left-1 bg-black/60 text-white text-[9px] font-bold px-1 py-0.2 rounded font-mono">
                                   Slot {idx + 1}/4
                                 </div>
 
                                 {/* Hover / Action Overlay */}
                                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-between p-1">
-                                  <span className="text-[9px] font-bold text-white bg-black/60 px-1.5 py-0.5 rounded-md">
+                                  <span className="text-[9px] font-bold text-white bg-black/60 px-1 py-0.5 rounded">
                                     Use
                                   </span>
                                   <button
                                     type="button"
                                     onClick={(e) => handleDeleteMedia(imgUrl, e)}
-                                    className="p-1 bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors shadow-md cursor-pointer"
-                                    title="Delete image permanently from MinIO storage"
+                                    className="p-1 bg-destructive hover:bg-destructive/90 text-white rounded transition-colors shadow-xs cursor-pointer"
+                                    title="Delete banner"
                                   >
                                     <Trash2 size={11} />
                                   </button>
@@ -1147,75 +1160,75 @@ export const CampaignsPage: React.FC = () => {
 
 
               {/* 3. Audience Targeting Selector */}
-              <div className="border-t border-slate-100 dark:border-slate-800/80 pt-4">
-                <div className="flex justify-between items-center mb-2.5">
-                  <label className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
+              <div className="border-t border-border/60 pt-3.5">
+                <div className="flex justify-between items-center mb-2">
+                  <label className="text-xs font-bold uppercase tracking-wider text-foreground">
                     Target Audience
                   </label>
                   {isLocked ? (
-                    <div className="flex items-center gap-1 px-2.5 py-0.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full">
-                      <Lock size={10} className="text-slate-400" />
-                      <span className="text-[10px] font-bold text-slate-400">Locked by backend</span>
+                    <div className="flex items-center gap-1 px-2 py-0.5 bg-muted rounded-md border border-border">
+                      <Lock size={10} className="text-muted-foreground" />
+                      <span className="text-[10px] font-bold text-muted-foreground">Locked</span>
                     </div>
                   ) : (
-                    <div className="flex items-center gap-1 px-2.5 py-0.5 bg-amber-500/10 border border-amber-500/20 rounded-full">
-                      <Flame size={11} className="text-amber-500" />
-                      <span className="text-[10px] font-black text-amber-600 dark:text-amber-400">
+                    <div className="flex items-center gap-1 px-2 py-0.5 bg-primary/10 border border-primary/20 rounded-md">
+                      <Flame size={11} className="text-primary" />
+                      <span className="text-[10px] font-bold text-primary font-mono">
                         {isLoadingCount ? 'Calculating...' : `${audienceCount ?? 0} Eligible`}
                       </span>
                     </div>
                   )}
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <button
                     type="button"
                     onClick={() => setTargetAudience('all')}
-                    className={`p-3 sm:p-3.5 rounded-2xl border text-left transition-all relative overflow-hidden cursor-pointer ${
+                    className={`p-3 rounded-lg border text-left transition-all relative overflow-hidden cursor-pointer shadow-2xs ${
                       targetAudience === 'all'
-                        ? 'border-amber-500 bg-amber-500/5 ring-1 ring-amber-500/20'
-                        : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 bg-white dark:bg-slate-950'
+                        ? 'border-primary bg-primary/5 ring-1 ring-primary/30'
+                        : 'border-border/80 hover:border-border bg-card'
                     }`}
                   >
-                    <Users size={16} className={targetAudience === 'all' ? 'text-amber-500' : 'text-slate-400'} />
-                    <h5 className="font-black text-xs text-slate-900 dark:text-white mt-1.5">All Customers</h5>
-                    <p className="text-[9.5px] text-slate-400 mt-0.5">Every registered & ordering customer</p>
+                    <Users size={15} className={targetAudience === 'all' ? 'text-primary' : 'text-muted-foreground'} />
+                    <h5 className="font-bold text-xs text-foreground mt-1">All Customers</h5>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Every registered & ordering customer</p>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setTargetAudience('new')}
-                    className={`p-3 sm:p-3.5 rounded-2xl border text-left transition-all relative overflow-hidden cursor-pointer ${
+                    className={`p-3 rounded-lg border text-left transition-all relative overflow-hidden cursor-pointer shadow-2xs ${
                       targetAudience === 'new'
-                        ? 'border-amber-500 bg-amber-500/5 ring-1 ring-amber-500/20'
-                        : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 bg-white dark:bg-slate-950'
+                        ? 'border-primary bg-primary/5 ring-1 ring-primary/30'
+                        : 'border-border/80 hover:border-border bg-card'
                     }`}
                   >
-                    <UserPlus size={16} className={targetAudience === 'new' ? 'text-amber-500' : 'text-slate-400'} />
-                    <h5 className="font-black text-xs text-slate-900 dark:text-white mt-1.5">New Customers</h5>
-                    <p className="text-[9.5px] text-slate-400 mt-0.5">Joined or ordered in last 7 days</p>
+                    <UserPlus size={15} className={targetAudience === 'new' ? 'text-primary' : 'text-muted-foreground'} />
+                    <h5 className="font-bold text-xs text-foreground mt-1">New Customers</h5>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Joined or ordered in last 7 days</p>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setTargetAudience('min_visits')}
-                    className={`p-3 sm:p-3.5 rounded-2xl border text-left transition-all relative overflow-hidden cursor-pointer ${
+                    className={`p-3 rounded-lg border text-left transition-all relative overflow-hidden cursor-pointer shadow-2xs ${
                       targetAudience === 'min_visits'
-                        ? 'border-amber-500 bg-amber-500/5 ring-1 ring-amber-500/20'
-                        : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 bg-white dark:bg-slate-950'
+                        ? 'border-primary bg-primary/5 ring-1 ring-primary/30'
+                        : 'border-border/80 hover:border-border bg-card'
                     }`}
                   >
-                    <Flame size={16} className={targetAudience === 'min_visits' ? 'text-amber-500' : 'text-slate-400'} />
-                    <h5 className="font-black text-xs text-slate-900 dark:text-white mt-1.5">Frequent Visitors</h5>
-                    <p className="text-[9.5px] text-slate-400 mt-0.5">Repeat customers with $\ge N$ visits</p>
+                    <Flame size={15} className={targetAudience === 'min_visits' ? 'text-primary' : 'text-muted-foreground'} />
+                    <h5 className="font-bold text-xs text-foreground mt-1">Frequent Visitors</h5>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Repeat customers with &ge; N visits</p>
                   </button>
                 </div>
 
                 {targetAudience === 'min_visits' && (
-                  <div className="mt-2.5 p-3 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
+                  <div className="mt-2 p-2.5 bg-muted/40 rounded-lg border border-border/80 flex items-center justify-between gap-2">
                     <div>
-                      <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Minimum Visit Count:</span>
-                      <p className="text-[9px] text-slate-400">Target repeat customers</p>
+                      <span className="text-xs font-bold text-foreground">Minimum Visits:</span>
+                      <p className="text-[10px] text-muted-foreground">Threshold for repeated visitors</p>
                     </div>
                     <div className="flex items-center gap-1.5">
                       {[2, 3, 5, 10].map((count) => (
@@ -1223,10 +1236,10 @@ export const CampaignsPage: React.FC = () => {
                           key={count}
                           type="button"
                           onClick={() => setMinVisits(count)}
-                          className={`w-8 h-8 rounded-xl text-[11px] font-black transition-all cursor-pointer ${
+                          className={`w-7 h-7 rounded-md text-xs font-bold font-mono transition-all cursor-pointer ${
                             minVisits === count
-                              ? 'bg-amber-500 text-white shadow-xs'
-                              : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-amber-500'
+                              ? 'bg-primary text-white shadow-2xs'
+                              : 'bg-background border border-border text-foreground hover:border-primary/50'
                           }`}
                         >
                           {count}+
@@ -1238,56 +1251,56 @@ export const CampaignsPage: React.FC = () => {
               </div>
 
               {/* 4. Delivery Mode: Send Now vs Schedule */}
-              <div className="border-t border-slate-100 dark:border-slate-800/80 pt-4">
-                <label className="block text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2">
+              <div className="border-t border-border/60 pt-3.5">
+                <label className="block text-xs font-bold uppercase tracking-wider text-foreground mb-2">
                   Delivery Schedule
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
                   <div
                     onClick={() => setDeliveryMode('now')}
-                    className={`p-3 rounded-2xl border-2 cursor-pointer transition-all flex items-center gap-3 ${
+                    className={`p-2.5 rounded-lg border cursor-pointer transition-all flex items-center gap-2.5 ${
                       deliveryMode === 'now'
-                        ? 'border-amber-500 bg-amber-500/5'
-                        : 'border-slate-200 dark:border-slate-800 hover:border-slate-300'
+                        ? 'border-primary bg-primary/5 shadow-2xs'
+                        : 'border-border/80 hover:border-border'
                     }`}
                   >
-                    <div className={`w-4 h-4 rounded-full flex items-center justify-center ${deliveryMode === 'now' ? 'bg-amber-500 text-white' : 'border-2 border-slate-300'}`}>
+                    <div className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 ${deliveryMode === 'now' ? 'bg-primary text-white' : 'border border-muted-foreground'}`}>
                       {deliveryMode === 'now' && <Check size={10} strokeWidth={3} />}
                     </div>
                     <div>
-                      <h5 className="font-extrabold text-xs text-slate-900 dark:text-white">Send Immediately</h5>
-                      <p className="text-[10px] text-slate-400">Broadcast right now to your audience</p>
+                      <h5 className="font-bold text-xs text-foreground">Send Immediately</h5>
+                      <p className="text-[10px] text-muted-foreground">Broadcast right now to active audience</p>
                     </div>
                   </div>
 
                   <div
                     onClick={() => setDeliveryMode('schedule')}
-                    className={`p-3 rounded-2xl border-2 cursor-pointer transition-all flex items-center gap-3 ${
+                    className={`p-2.5 rounded-lg border cursor-pointer transition-all flex items-center gap-2.5 ${
                       deliveryMode === 'schedule'
-                        ? 'border-amber-500 bg-amber-500/5'
-                        : 'border-slate-200 dark:border-slate-800 hover:border-slate-300'
+                        ? 'border-primary bg-primary/5 shadow-2xs'
+                        : 'border-border/80 hover:border-border'
                     }`}
                   >
-                    <div className={`w-4 h-4 rounded-full flex items-center justify-center ${deliveryMode === 'schedule' ? 'bg-amber-500 text-white' : 'border-2 border-slate-300'}`}>
+                    <div className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 ${deliveryMode === 'schedule' ? 'bg-primary text-white' : 'border border-muted-foreground'}`}>
                       {deliveryMode === 'schedule' && <Check size={10} strokeWidth={3} />}
                     </div>
                     <div>
-                      <h5 className="font-extrabold text-xs text-slate-900 dark:text-white">Schedule for Later</h5>
-                      <p className="text-[10px] text-slate-400">Automate sending at a specific time</p>
+                      <h5 className="font-bold text-xs text-foreground">Schedule for Later</h5>
+                      <p className="text-[10px] text-muted-foreground">Automate dispatch at designated time</p>
                     </div>
                   </div>
                 </div>
 
-                {/* Custom Individual Date & Time Pickers */}
+                {/* Date & Time Pickers */}
                 {deliveryMode === 'schedule' && (
                   <motion.div
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
-                    className="p-3.5 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-3"
+                    className="p-3 bg-muted/40 rounded-lg border border-border/80 grid grid-cols-1 sm:grid-cols-2 gap-2.5"
                   >
                     <div>
-                      <label className="block text-[10.5px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
-                        Select Date <span className="text-red-500">*</span>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                        Select Date <span className="text-destructive">*</span>
                       </label>
                       <DatePicker
                         value={scheduledDate}
@@ -1297,8 +1310,8 @@ export const CampaignsPage: React.FC = () => {
                       />
                     </div>
                     <div>
-                      <label className="block text-[10.5px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
-                        Select Time <span className="text-red-500">*</span>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                        Select Time <span className="text-destructive">*</span>
                       </label>
                       <TimePicker
                         value={scheduledTime}
@@ -1311,25 +1324,25 @@ export const CampaignsPage: React.FC = () => {
               </div>
 
               {/* 5. Test Send Bar with Single Unified Split Input Box */}
-              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-2.5">
+              <div className="p-3 rounded-lg bg-card border border-border/80 shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-2.5">
                 <div className="flex items-center gap-2 w-full sm:w-auto">
-                  <div className="flex items-center gap-1 text-[11px] font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 shrink-0">
-                    <Smartphone size={14} className="text-emerald-500 shrink-0" />
+                  <div className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground shrink-0">
+                    <Smartphone size={13} className="text-emerald-500 shrink-0" />
                     <span>Test:</span>
                   </div>
                   
                   {/* Single Unified Split Input */}
-                  <div className="relative flex items-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus-within:ring-2 focus-within:ring-amber-500 focus-within:border-transparent transition-all shadow-xs w-full sm:w-56">
+                  <div className="relative flex items-center bg-background border border-input rounded-md focus-within:ring-1 focus-within:ring-primary focus-within:border-primary transition-all shadow-2xs w-full sm:w-56 h-8.5">
                     {/* Country Code Dropdown Trigger */}
                     <div ref={countryDropdownRef} className="relative shrink-0">
                       <button
                         type="button"
                         onClick={() => setIsCountryDropdownOpen(!isCountryDropdownOpen)}
-                        className="flex items-center gap-1 pl-2.5 pr-2 py-1.5 text-xs font-bold text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/80 rounded-l-xl transition-colors cursor-pointer"
+                        className="flex items-center gap-1 pl-2.5 pr-2 h-8.5 text-xs font-semibold text-foreground hover:bg-muted rounded-l-md transition-colors cursor-pointer"
                       >
                         <span className="text-xs leading-none">{COUNTRY_CODES.find(c => c.code === testCountryCode)?.flag || '🌐'}</span>
-                        <span className="font-mono text-xs font-bold text-slate-700 dark:text-slate-300">{testCountryCode}</span>
-                        <ChevronDown size={11} className={`text-slate-400 transition-transform ${isCountryDropdownOpen ? 'rotate-180' : ''}`} />
+                        <span className="font-mono text-xs font-bold text-foreground">{testCountryCode}</span>
+                        <ChevronDown size={11} className={`text-muted-foreground transition-transform ${isCountryDropdownOpen ? 'rotate-180' : ''}`} />
                       </button>
 
                       <AnimatePresence>
@@ -1339,7 +1352,7 @@ export const CampaignsPage: React.FC = () => {
                             initial={{ opacity: 0, y: -6, scale: 0.95 }}
                             animate={{ opacity: 1, y: 0, scale: 1 }}
                             exit={{ opacity: 0, y: -6, scale: 0.95 }}
-                            className="absolute left-0 bottom-full mb-2 w-56 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl z-50 overflow-hidden overscroll-contain"
+                            className="absolute left-0 bottom-full mb-2 w-56 bg-card border border-border/80 rounded-lg shadow-xl z-50 overflow-hidden overscroll-contain"
                           >
                             <div 
                               data-lenis-prevent 
@@ -1353,17 +1366,17 @@ export const CampaignsPage: React.FC = () => {
                                     setTestCountryCode(c.code);
                                     setIsCountryDropdownOpen(false);
                                   }}
-                                  className={`px-3 py-2 text-xs flex items-center justify-between cursor-pointer transition-colors ${
+                                  className={`px-3 py-1.5 text-xs flex items-center justify-between cursor-pointer transition-colors ${
                                     testCountryCode === c.code
-                                      ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 font-bold'
-                                      : 'hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+                                      ? 'bg-primary/10 text-primary font-bold'
+                                      : 'hover:bg-muted text-foreground'
                                   }`}
                                 >
                                   <div className="flex items-center gap-2">
                                     <span>{c.flag}</span>
                                     <span>{c.label}</span>
                                   </div>
-                                  {testCountryCode === c.code && <Check size={12} className="text-amber-500" />}
+                                  {testCountryCode === c.code && <Check size={12} className="text-primary" />}
                                 </div>
                               ))}
                             </div>
@@ -1374,7 +1387,7 @@ export const CampaignsPage: React.FC = () => {
                     </div>
 
                     {/* Subtle vertical divider */}
-                    <div className="w-[1px] h-4 bg-slate-200 dark:border-slate-700 shrink-0" />
+                    <div className="w-[1px] h-4 bg-border shrink-0" />
 
                     {/* Phone Number Input */}
                     <input
@@ -1383,7 +1396,7 @@ export const CampaignsPage: React.FC = () => {
                       onChange={(e) => setTestPhoneNumber(e.target.value.replace(/\D/g, ''))}
                       placeholder="Mobile number"
                       maxLength={15}
-                      className="w-full px-2.5 py-1.5 bg-transparent text-xs font-semibold text-slate-900 dark:text-white outline-none rounded-r-xl"
+                      className="w-full px-2.5 py-1 bg-transparent text-xs font-medium text-foreground outline-none rounded-r-md"
                     />
                   </div>
                 </div>
@@ -1392,7 +1405,7 @@ export const CampaignsPage: React.FC = () => {
                   type="button"
                   onClick={handleSendTest}
                   disabled={isSendingTest}
-                  className="w-full sm:w-auto px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white rounded-xl text-xs font-black shadow-xs transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer shrink-0"
+                  className="w-full sm:w-auto px-3.5 h-8.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white rounded-md text-xs font-semibold shadow-2xs transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer shrink-0"
                   title="Send 1 test message to your phone (Costs 1 credit = ₹1)"
                 >
                   {isSendingTest ? <RefreshCw size={12} className="animate-spin" /> : <Send size={12} />}
@@ -1403,44 +1416,44 @@ export const CampaignsPage: React.FC = () => {
 
               {/* 6. Messaging Cost Breakdown & Balance Card */}
               {isLocked ? (
-                <div className="p-3.5 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
-                  <div className="flex items-center justify-between text-xs font-bold">
-                    <span className="text-slate-500">Target Audience Count:</span>
-                    <span className="font-bold text-slate-400 flex items-center gap-1">
+                <div className="p-3 bg-card rounded-lg border border-border/80 shadow-2xs space-y-2">
+                  <div className="flex items-center justify-between text-xs font-semibold">
+                    <span className="text-muted-foreground">Target Audience Count:</span>
+                    <span className="font-semibold text-muted-foreground flex items-center gap-1">
                       <Lock size={11} /> Locked by Backend
                     </span>
                   </div>
-                  <div className="flex items-center justify-between text-xs font-bold pt-2 border-t border-slate-200/60 dark:border-slate-800">
-                    <span className="text-slate-500 flex items-center gap-1.5">
-                      <Coins size={14} className="text-amber-500" />
+                  <div className="flex items-center justify-between text-xs font-semibold pt-2 border-t border-border/60">
+                    <span className="text-muted-foreground flex items-center gap-1.5">
+                      <Coins size={13} className="text-amber-500" />
                       <span>Available Messaging Balance:</span>
                     </span>
-                    <span className="text-emerald-600 dark:text-emerald-400 font-black">
+                    <span className="text-emerald-600 dark:text-emerald-400 font-bold">
                       {availableCredits} Credits (₹{availableCredits})
                     </span>
                   </div>
                 </div>
               ) : (
-                <div className="p-3.5 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2.5">
-                  <div className="flex items-center justify-between text-xs font-bold">
-                    <span className="text-slate-500">Recipients Cost ({audienceCount ?? 0} msgs × ₹1.00):</span>
-                    <span className="font-black text-slate-900 dark:text-white">₹{audienceCount ?? 0}.00</span>
+                <div className="p-3 bg-card rounded-lg border border-border/80 shadow-2xs space-y-2">
+                  <div className="flex items-center justify-between text-xs font-semibold">
+                    <span className="text-muted-foreground">Recipients Cost ({audienceCount ?? 0} msgs × ₹1.00):</span>
+                    <span className="font-bold text-foreground">₹{audienceCount ?? 0}.00</span>
                   </div>
-                  <div className="flex items-center justify-between text-xs font-bold pt-2 border-t border-slate-200/60 dark:border-slate-800">
-                    <span className="text-slate-500 flex items-center gap-1.5">
-                      <Coins size={14} className="text-amber-500" />
+                  <div className="flex items-center justify-between text-xs font-semibold pt-2 border-t border-border/60">
+                    <span className="text-muted-foreground flex items-center gap-1.5">
+                      <Coins size={13} className="text-amber-500" />
                       <span>Available Messaging Balance:</span>
                     </span>
-                    <span className={availableCredits >= (audienceCount ?? 0) ? 'text-emerald-600 dark:text-emerald-400 font-black' : 'text-rose-600 dark:text-rose-400 font-black'}>
+                    <span className={availableCredits >= (audienceCount ?? 0) ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-destructive font-bold'}>
                       {availableCredits} Credits (₹{availableCredits})
                     </span>
                   </div>
 
                   {/* Shortfall Alert & Direct Recharge Action */}
                   {availableCredits < (audienceCount ?? 0) && (
-                    <div className="p-2.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                      <div className="flex items-center gap-1.5 text-rose-700 dark:text-rose-300 font-bold min-w-0">
-                        <AlertCircle size={15} className="text-rose-500 shrink-0" />
+                    <div className="p-2.5 bg-destructive/10 border border-destructive/20 rounded-md flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-1.5 text-destructive font-semibold min-w-0">
+                        <AlertCircle size={14} className="shrink-0" />
                         <span>
                           Shortfall: <strong>{(audienceCount ?? 0) - availableCredits} credits (₹{(audienceCount ?? 0) - availableCredits})</strong> needed
                         </span>
@@ -1451,9 +1464,9 @@ export const CampaignsPage: React.FC = () => {
                           setTopupCredits((audienceCount ?? 0) - availableCredits);
                           setIsTopupModalOpen(true);
                         }}
-                        className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 active:scale-[0.98] text-white rounded-lg text-xs font-black transition-all cursor-pointer shadow-xs flex items-center justify-center gap-1 self-end sm:self-auto"
+                        className="px-2.5 py-1 bg-destructive hover:bg-destructive/90 text-destructive-foreground rounded-md text-xs font-bold transition-all cursor-pointer shadow-2xs flex items-center justify-center gap-1 self-end sm:self-auto"
                       >
-                        <Plus size={12} strokeWidth={3} /> Recharge ₹{(audienceCount ?? 0) - availableCredits}
+                        <Plus size={12} strokeWidth={2.5} /> Recharge ₹{(audienceCount ?? 0) - availableCredits}
                       </button>
                     </div>
                   )}
@@ -1465,14 +1478,14 @@ export const CampaignsPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => navigate('/subscription')}
-                  className="w-full py-2.5 px-5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 active:scale-[0.99] text-white rounded-xl text-xs font-bold uppercase tracking-wider shadow-md shadow-orange-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full h-9 px-4 bg-primary text-white hover:bg-primary/90 active:scale-[0.99] rounded-md text-xs font-semibold shadow-2xs transition-all flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  <Lock size={15} />
+                  <Lock size={14} />
                   <span>Upgrade Subscription to Launch Broadcast &rarr;</span>
                 </button>
               ) : !canWrite ? (
-                <div className="w-full py-3 px-4 bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center justify-center gap-2 text-slate-500 dark:text-slate-400 text-xs font-bold">
-                  <Lock size={14} className="text-amber-500" />
+                <div className="w-full h-9 px-4 bg-muted border border-border/80 rounded-md flex items-center justify-center gap-2 text-muted-foreground text-xs font-semibold">
+                  <Lock size={13} className="text-amber-500" />
                   <span>Read-only Staff Access (Broadcasting Restricted)</span>
                 </div>
               ) : availableCredits < (audienceCount ?? 0) && (audienceCount ?? 0) > 0 ? (
@@ -1482,25 +1495,25 @@ export const CampaignsPage: React.FC = () => {
                     setTopupCredits((audienceCount ?? 0) - availableCredits);
                     setIsTopupModalOpen(true);
                   }}
-                  className="w-full py-2.5 px-5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 active:scale-[0.99] text-white rounded-xl text-xs font-bold uppercase tracking-wider shadow-md shadow-orange-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full h-9 px-4 bg-primary text-white hover:bg-primary/90 active:scale-[0.99] rounded-md text-xs font-semibold shadow-2xs transition-all flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  <Coins size={15} />
+                  <Coins size={14} />
                   <span>Recharge ₹{(audienceCount ?? 0) - availableCredits} & Launch Broadcast</span>
                 </button>
               ) : (
                 <button
                   type="submit"
                   disabled={isSubmitting || (audienceCount === 0 && deliveryMode === 'now')}
-                  className="w-full py-2.5 px-5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 active:scale-[0.99] text-white rounded-xl text-xs font-bold uppercase tracking-wider shadow-md shadow-orange-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full h-9 px-4 bg-primary text-white hover:bg-primary/90 active:scale-[0.99] rounded-md text-xs font-semibold shadow-2xs transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isSubmitting ? (
                     <>
-                      <RefreshCw size={14} className="animate-spin" />
+                      <RefreshCw size={13} className="animate-spin" />
                       <span>Processing Broadcast...</span>
                     </>
                   ) : (
                     <>
-                      <Send size={14} />
+                      <Send size={13} />
                       <span>
                         {deliveryMode === 'schedule'
                           ? 'Schedule WhatsApp Campaign'
@@ -1517,11 +1530,11 @@ export const CampaignsPage: React.FC = () => {
 
           {/* ================= RIGHT COLUMN: DESKTOP LIVE WHATSAPP PHONE PREVIEW ================= */}
           <div className="hidden lg:block lg:col-span-5 sticky top-6">
-            <div className="bg-slate-900 rounded-[36px] p-3 shadow-2xl border-4 border-slate-800 max-w-[340px] mx-auto">
+            <div className="bg-card rounded-xl p-2.5 shadow-md border border-border/80 max-w-[340px] mx-auto">
               
               {/* Phone Speaker Notch */}
-              <div className="w-24 h-3.5 bg-slate-800 rounded-full mx-auto mb-2 flex items-center justify-center">
-                <div className="w-8 h-1 bg-slate-700 rounded-full" />
+              <div className="w-20 h-2 bg-muted rounded-full mx-auto mb-2 flex items-center justify-center">
+                <div className="w-6 h-0.5 bg-muted-foreground/30 rounded-full" />
               </div>
 
               {/* WhatsApp Screen Container */}
@@ -1534,51 +1547,50 @@ export const CampaignsPage: React.FC = () => {
 
         </div>
       ) : isLocked ? (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl p-8 sm:p-12 border border-slate-200 dark:border-slate-800 shadow-sm text-center space-y-4">
-          <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto shadow-inner">
-            <Lock size={32} />
+        <div className="bg-card rounded-lg p-6 sm:p-8 border border-border/80 shadow-2xs text-center space-y-3">
+          <div className="w-12 h-12 rounded-lg bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto">
+            <Lock size={24} />
           </div>
-          <div className="space-y-1.5">
-            <h3 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
+          <div className="space-y-1">
+            <h3 className="text-base font-bold text-foreground">
               Broadcast History Locked
             </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+            <p className="text-xs text-muted-foreground max-w-md mx-auto">
               Broadcast history and recipient delivery analytics are locked at the backend level because your subscription does not include the CRM & Members module.
             </p>
           </div>
           <button
             type="button"
             onClick={() => navigate('/subscription')}
-            className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl text-xs font-bold uppercase tracking-wider shadow-md cursor-pointer transition-all active:scale-95"
+            className="px-4 h-8.5 bg-primary hover:bg-primary/90 text-white rounded-md text-xs font-semibold shadow-2xs cursor-pointer transition-all active:scale-95"
           >
             Unlock in Marketplace &rarr;
           </button>
         </div>
       ) : (
         /* ================= CAMPAIGN HISTORY TAB ================= */
-        <div className="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl p-4 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+        <div className="bg-card rounded-lg p-3.5 sm:p-4 border border-border/80 shadow-2xs space-y-3">
           {/* Header Row */}
-          <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100 dark:border-slate-800">
+          <div className="flex items-center justify-between gap-2 pb-2 border-b border-border/80">
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white truncate">
+                <h3 className="text-xs sm:text-sm font-bold text-foreground truncate">
                   Broadcast Campaigns History
                 </h3>
                 {totalHistory > 0 && (
-                  <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-extrabold text-[10px] sm:text-[11px]">
+                  <span className="px-2 py-0.5 rounded-md bg-muted text-muted-foreground font-bold text-[10px]">
                     {totalHistory} Total
                   </span>
                 )}
               </div>
-              <p className="text-[11px] sm:text-xs text-slate-500 truncate">Track delivery rates, scheduled jobs, and recipient stats</p>
             </div>
             <button
               onClick={() => loadCampaigns(1, false)}
               disabled={isLoadingCampaigns}
-              className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0"
+              className="px-3 h-8 bg-muted hover:bg-muted/80 rounded-md text-xs font-medium text-foreground transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0 border border-border/60"
               title="Refresh Broadcast Records"
             >
-              <RefreshCw size={12} className={isLoadingCampaigns ? 'animate-spin text-amber-500' : ''} />
+              <RefreshCw size={12} className={isLoadingCampaigns ? 'animate-spin text-primary' : ''} />
               <span className="hidden sm:inline">Refresh</span>
             </button>
           </div>
@@ -1587,44 +1599,44 @@ export const CampaignsPage: React.FC = () => {
           <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center justify-between">
             {/* Search Input */}
             <div className="relative flex-1">
-              <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
               <input
                 type="text"
                 value={historySearch}
                 onChange={(e) => setHistorySearch(e.target.value)}
                 placeholder="Search campaign message, audience..."
-                className="w-full pl-9 pr-8 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none transition-all"
+                className="w-full pl-8 pr-7 h-8.5 bg-background border border-input rounded-md text-xs font-medium text-foreground placeholder-muted-foreground focus:ring-1 focus:ring-primary focus:border-primary outline-none transition-all shadow-2xs"
               />
               {historySearch && (
                 <button
                   type="button"
                   onClick={() => setHistorySearch('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                   title="Clear Search"
                 >
-                  <X size={13} />
+                  <X size={12} />
                 </button>
               )}
             </div>
 
             {/* Date Filter & Quick Actions */}
             <div className="flex items-center gap-1.5">
-              <div className="flex-1 sm:w-48 relative">
+              <div className="flex-1 sm:w-44 relative">
                 <DatePicker
                   value={historyDate}
                   onChange={(date) => setHistoryDate(date)}
                   placeholder="Filter by Date"
-                  className="text-xs"
+                  className="text-xs h-8.5"
                 />
               </div>
               {historyDate && (
                 <button
                   type="button"
                   onClick={() => setHistoryDate('')}
-                  className="px-2.5 py-2 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 rounded-xl text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer shrink-0"
+                  className="px-2.5 h-8.5 bg-destructive/10 hover:bg-destructive/20 text-destructive border border-destructive/20 rounded-md text-xs font-semibold transition-colors flex items-center gap-1 cursor-pointer shrink-0"
                   title="Clear Date Filter"
                 >
-                  <X size={13} />
+                  <X size={12} />
                   <span className="hidden sm:inline">Clear</span>
                 </button>
               )}
@@ -1633,16 +1645,16 @@ export const CampaignsPage: React.FC = () => {
 
           {/* Quick Date Shortcut Pills */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-            <span className="text-[10.5px] font-bold text-slate-400 mr-1 flex items-center gap-1 shrink-0">
+            <span className="text-[10px] font-bold text-muted-foreground mr-1 flex items-center gap-1 shrink-0">
               <Filter size={11} /> Quick Date:
             </span>
             <button
               type="button"
               onClick={() => setHistoryDate('')}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer shrink-0 ${
+              className={`px-2 py-0.5 rounded-md text-[11px] font-medium transition-all cursor-pointer shrink-0 ${
                 !historyDate
-                  ? 'bg-amber-500 text-white shadow-xs'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                  ? 'bg-primary text-white shadow-2xs'
+                  : 'bg-muted text-muted-foreground hover:text-foreground'
               }`}
             >
               All Time
@@ -1653,10 +1665,10 @@ export const CampaignsPage: React.FC = () => {
                 const today = new Date().toISOString().slice(0, 10);
                 setHistoryDate(today);
               }}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer shrink-0 ${
+              className={`px-2 py-0.5 rounded-md text-[11px] font-medium transition-all cursor-pointer shrink-0 ${
                 historyDate === new Date().toISOString().slice(0, 10)
-                  ? 'bg-amber-500 text-white shadow-xs'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                  ? 'bg-primary text-white shadow-2xs'
+                  : 'bg-muted text-muted-foreground hover:text-foreground'
               }`}
             >
               Today
@@ -1668,10 +1680,10 @@ export const CampaignsPage: React.FC = () => {
                 d.setDate(d.getDate() - 1);
                 setHistoryDate(d.toISOString().slice(0, 10));
               }}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer shrink-0 ${
+              className={`px-2 py-0.5 rounded-md text-[11px] font-medium transition-all cursor-pointer shrink-0 ${
                 historyDate === new Date(Date.now() - 86400000).toISOString().slice(0, 10)
-                  ? 'bg-amber-500 text-white shadow-xs'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                  ? 'bg-primary text-white shadow-2xs'
+                  : 'bg-muted text-muted-foreground hover:text-foreground'
               }`}
             >
               Yesterday
@@ -1681,19 +1693,19 @@ export const CampaignsPage: React.FC = () => {
 
           {/* Results: Desktop Table View + Mobile Structured Cards View */}
           {isLoadingCampaigns && campaigns.length === 0 ? (
-            <div className="py-16 text-center text-slate-400 text-xs">
-              <RefreshCw size={24} className="animate-spin mx-auto mb-2 text-amber-500" />
+            <div className="py-12 text-center text-muted-foreground text-xs">
+              <RefreshCw size={20} className="animate-spin mx-auto mb-2 text-primary" />
               <span>Loading broadcast campaigns...</span>
             </div>
           ) : campaigns.length === 0 ? (
-            <div className="py-16 text-center space-y-2">
-              <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto mb-3">
-                <Send size={24} />
+            <div className="py-12 text-center space-y-2">
+              <div className="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center mx-auto mb-2">
+                <Send size={20} />
               </div>
-              <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">
+              <h4 className="font-bold text-xs sm:text-sm text-foreground">
                 {historySearch || historyDate ? 'No matching broadcasts found' : 'No campaigns sent yet'}
               </h4>
-              <p className="text-xs text-slate-500 max-w-sm mx-auto">
+              <p className="text-xs text-muted-foreground max-w-sm mx-auto">
                 {historySearch || historyDate
                   ? 'Try searching with different keywords or clearing the date filter.'
                   : 'Create your first marketing broadcast in the Studio tab to engage with your customers!'}
@@ -1704,14 +1716,14 @@ export const CampaignsPage: React.FC = () => {
                     setHistorySearch('');
                     setHistoryDate('');
                   }}
-                  className="mt-3 px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                  className="mt-2 px-3 h-8 bg-muted hover:bg-muted/80 text-foreground rounded-md text-xs font-semibold transition-all cursor-pointer border border-border"
                 >
                   Clear Filters
                 </button>
               ) : (
                 <button
                   onClick={() => setActiveTab('studio')}
-                  className="mt-3 px-4 py-2 bg-amber-500 text-white rounded-xl text-xs font-black shadow-md hover:bg-amber-600 transition-all cursor-pointer"
+                  className="mt-2 px-3 h-8 bg-primary text-white rounded-md text-xs font-semibold shadow-2xs hover:bg-primary/90 transition-all cursor-pointer"
                 >
                   Open Studio Builder
                 </button>
@@ -1720,62 +1732,62 @@ export const CampaignsPage: React.FC = () => {
           ) : (
             <div>
               {/* 1. DESKTOP / TABLET VIEW: FULL DATA TABLE (HIDDEN ON MOBILE) */}
-              <div className="hidden md:block overflow-x-auto">
+              <div className="hidden md:block overflow-x-auto rounded-lg border border-border/80">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
-                    <tr className="border-b border-slate-100 dark:border-slate-800 text-[10px] font-black uppercase tracking-wider text-slate-400">
-                      <th className="py-3 px-4">Campaign Message</th>
-                      <th className="py-3 px-4">Audience Segment</th>
-                      <th className="py-3 px-4">Recipients</th>
-                      <th className="py-3 px-4">Credits Deducted</th>
-                      <th className="py-3 px-4">Delivery Status</th>
-                      <th className="py-3 px-4">Date / Scheduled</th>
-                      <th className="py-3 px-4 text-right">Actions</th>
+                    <tr className="border-b border-border/80 bg-muted/40 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                      <th className="py-2.5 px-3.5">Campaign Message</th>
+                      <th className="py-2.5 px-3.5">Audience Segment</th>
+                      <th className="py-2.5 px-3.5">Recipients</th>
+                      <th className="py-2.5 px-3.5">Credits Deducted</th>
+                      <th className="py-2.5 px-3.5">Delivery Status</th>
+                      <th className="py-2.5 px-3.5">Date / Scheduled</th>
+                      <th className="py-2.5 px-3.5 text-right">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-semibold">
+                  <tbody className="divide-y divide-border/60 font-medium">
                     {campaigns.map((c) => (
                       <tr
                         key={c.id}
                         onClick={() => setSelectedHistoryCampaign(c)}
-                        className="hover:bg-amber-50/40 dark:hover:bg-slate-800/50 transition-colors cursor-pointer group"
+                        className="hover:bg-muted/50 transition-colors cursor-pointer group"
                         title="Click to view full message & broadcast details"
                       >
-                        <td className="py-3.5 px-4">
-                          <div className="font-extrabold text-slate-900 dark:text-white truncate max-w-xs group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors flex items-center gap-1.5">
+                        <td className="py-2.5 px-3.5">
+                          <div className="font-bold text-foreground truncate max-w-xs group-hover:text-primary transition-colors flex items-center gap-1.5">
                             <span>{c.title || c.message}</span>
-                            <Eye size={12} className="opacity-0 group-hover:opacity-100 text-amber-500 transition-opacity shrink-0" />
+                            <Eye size={12} className="opacity-0 group-hover:opacity-100 text-primary transition-opacity shrink-0" />
                           </div>
-                          <div className="text-[11px] text-slate-400 truncate max-w-xs">{c.message}</div>
+                          <div className="text-[11px] text-muted-foreground truncate max-w-xs">{c.message}</div>
                         </td>
-                        <td className="py-3.5 px-4">
-                          <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold uppercase text-[10px]">
+                        <td className="py-2.5 px-3.5">
+                          <span className="px-2 py-0.5 rounded-md bg-muted text-muted-foreground font-bold uppercase text-[10px] border border-border/60">
                             {c.target_audience === 'min_visits' ? `Frequent (≥${c.min_visits} visits)` : c.target_audience}
                           </span>
                         </td>
-                        <td className="py-3.5 px-4">
-                          <div className="font-extrabold text-slate-900 dark:text-white">{c.total_recipients} Customers</div>
+                        <td className="py-2.5 px-3.5">
+                          <div className="font-bold text-foreground">{c.total_recipients} Customers</div>
                           {c.sent_count > 0 && (
                             <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">
                               {c.sent_count} Delivered
                             </div>
                           )}
                           {c.failed_count > 0 && (
-                            <div className="text-[10px] text-rose-500 font-bold">
+                            <div className="text-[10px] text-destructive font-bold">
                               {c.failed_count} Failed (Refunded)
                             </div>
                           )}
                         </td>
-                        <td className="py-3.5 px-4">
+                        <td className="py-2.5 px-3.5">
                           {c.status === 'SENT' ? (
-                            <div className="flex items-center gap-1.5 font-black text-amber-600 dark:text-amber-400">
-                              <Coins size={13} className="text-amber-500 shrink-0" />
+                            <div className="flex items-center gap-1.5 font-bold text-foreground">
+                              <Coins size={12} className="text-amber-500 shrink-0" />
                               <span>{c.sent_count > 0 ? c.sent_count : c.total_recipients} Credits (₹{c.sent_count > 0 ? c.sent_count : c.total_recipients})</span>
                             </div>
                           ) : c.status === 'PARTIAL' ? (
                             <div className="space-y-0.5">
-                              <div className="flex items-center gap-1.5 font-black text-amber-600 dark:text-amber-400">
-                                <Coins size={13} className="text-amber-500 shrink-0" />
+                              <div className="flex items-center gap-1.5 font-bold text-amber-600 dark:text-amber-400">
+                                <Coins size={12} className="text-amber-500 shrink-0" />
                                 <span>{c.sent_count} Credits (₹{c.sent_count}.00)</span>
                               </div>
                               <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">
@@ -1783,28 +1795,28 @@ export const CampaignsPage: React.FC = () => {
                               </div>
                             </div>
                           ) : c.status === 'SCHEDULED' || c.status === 'PROCESSING' ? (
-                            <div className="flex items-center gap-1.5 font-bold text-slate-700 dark:text-slate-300">
-                              <Coins size={13} className="text-amber-500 shrink-0" />
+                            <div className="flex items-center gap-1.5 font-bold text-foreground">
+                              <Coins size={12} className="text-amber-500 shrink-0" />
                               <span>{c.total_recipients} Credits (Reserved)</span>
                             </div>
                           ) : (
-                            <div className="flex items-center gap-1 text-slate-400 font-bold text-[11px]">
+                            <div className="flex items-center gap-1 text-muted-foreground font-semibold text-[11px]">
                               <span>0 Credits ({c.total_recipients} Refunded)</span>
                             </div>
                           )}
                         </td>
-                        <td className="py-3.5 px-4">
-                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${
+                        <td className="py-2.5 px-3.5">
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${
                             c.status === 'SENT' ? 'bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-800' :
                             c.status === 'PARTIAL' ? 'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-950/40 dark:border-amber-800' :
                             c.status === 'SCHEDULED' ? 'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-950/40 dark:border-blue-800' :
                             c.status === 'PROCESSING' ? 'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-950/40 dark:border-amber-800 animate-pulse' :
-                            'bg-red-50 text-red-600 border-red-200 dark:bg-red-950/40 dark:border-red-800'
+                            'bg-destructive/10 text-destructive border-destructive/20'
                           }`}>
                             {c.status === 'PARTIAL' ? 'PARTIAL' : c.status}
                           </span>
                         </td>
-                        <td className="py-3.5 px-4 text-slate-500">
+                        <td className="py-2.5 px-3.5 text-muted-foreground text-[11px] font-mono">
                           {c.scheduled_at
                             ? `Scheduled: ${new Date(c.scheduled_at).toLocaleString()}`
                             : c.sent_at
@@ -1813,14 +1825,14 @@ export const CampaignsPage: React.FC = () => {
                             ? new Date(c.created_at).toLocaleString()
                             : '-'}
                         </td>
-                        <td className="py-3.5 px-4 text-right" onClick={(e) => e.stopPropagation()}>
+                        <td className="py-2.5 px-3.5 text-right" onClick={(e) => e.stopPropagation()}>
                           {c.status === 'SCHEDULED' && (
                             <button
-                              onClick={() => handleCancelCampaign(c.id)}
-                              className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-colors cursor-pointer"
+                              onClick={() => handleCancelCampaign(c)}
+                              className="p-1.5 text-destructive hover:bg-destructive/10 rounded-md transition-colors cursor-pointer"
                               title="Cancel Scheduled Broadcast"
                             >
-                              <Trash2 size={14} />
+                              <Trash2 size={13} />
                             </button>
                           )}
                         </td>
@@ -1831,7 +1843,7 @@ export const CampaignsPage: React.FC = () => {
               </div>
 
               {/* 2. MOBILE VIEW: STRUCTURED CAMPAIGN CARDS (SHOWN ON MOBILE ONLY) */}
-              <div className="block md:hidden space-y-3">
+              <div className="block md:hidden space-y-2.5">
                 {campaigns.map((c) => {
                   const creditsCount = c.sent_count > 0 ? c.sent_count : (c.status === 'FAILED' ? 0 : c.total_recipients);
                   const formattedDate = c.scheduled_at
@@ -1846,34 +1858,34 @@ export const CampaignsPage: React.FC = () => {
                     <div
                       key={c.id}
                       onClick={() => setSelectedHistoryCampaign(c)}
-                      className="p-3.5 bg-slate-50 dark:bg-slate-950/70 border border-slate-200/90 dark:border-slate-800 rounded-2xl space-y-2.5 shadow-2xs cursor-pointer hover:border-amber-500/50 active:scale-[0.99] transition-all"
+                      className="p-3 bg-card border border-border/80 rounded-lg space-y-2 shadow-2xs cursor-pointer hover:border-primary/50 active:scale-[0.99] transition-all"
                     >
                       {/* Top Row: Title + Status + Action */}
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
-                          <h4 className="font-extrabold text-xs text-slate-900 dark:text-white truncate flex items-center gap-1">
+                          <h4 className="font-bold text-xs text-foreground truncate flex items-center gap-1">
                             <span>{c.title || 'WhatsApp Broadcast'}</span>
-                            <Eye size={11} className="text-amber-500 shrink-0" />
+                            <Eye size={11} className="text-primary shrink-0" />
                           </h4>
-                          <span className="text-[10px] text-slate-400 font-medium">
+                          <span className="text-[10px] text-muted-foreground font-medium font-mono">
                             {formattedDate}
                           </span>
                         </div>
 
                         <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-                          <span className={`px-2 py-0.5 rounded-full text-[9.5px] font-black uppercase tracking-wider border ${
+                          <span className={`px-2 py-0.5 rounded-md text-[9.5px] font-bold uppercase tracking-wider border ${
                             c.status === 'SENT' ? 'bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-800' :
                             c.status === 'PARTIAL' ? 'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-950/40 dark:border-amber-800' :
                             c.status === 'SCHEDULED' ? 'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-950/40 dark:border-blue-800' :
                             c.status === 'PROCESSING' ? 'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-950/40 dark:border-amber-800 animate-pulse' :
-                            'bg-red-50 text-red-600 border-red-200 dark:bg-red-950/40 dark:border-red-800'
+                            'bg-destructive/10 text-destructive border-destructive/20'
                           }`}>
                             {c.status === 'PARTIAL' ? 'PARTIAL' : c.status}
                           </span>
                           {c.status === 'SCHEDULED' && (
                             <button
-                              onClick={() => handleCancelCampaign(c.id)}
-                              className="p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-colors cursor-pointer"
+                              onClick={() => handleCancelCampaign(c)}
+                              className="p-1 text-destructive hover:bg-destructive/10 rounded-md transition-colors cursor-pointer"
                               title="Cancel Scheduled Broadcast"
                             >
                               <Trash2 size={13} />
@@ -1883,22 +1895,22 @@ export const CampaignsPage: React.FC = () => {
                       </div>
 
                       {/* Message Preview Text */}
-                      <div className="p-2.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800/80 text-[11.5px] text-slate-600 dark:text-slate-300 font-medium line-clamp-2 leading-relaxed">
+                      <div className="p-2 bg-muted/40 rounded-md border border-border/60 text-[11px] text-muted-foreground font-medium line-clamp-2 leading-relaxed">
                         {c.message}
                       </div>
 
                       {/* Bottom Info Grid Chips */}
                       <div className="grid grid-cols-2 gap-1.5 pt-0.5 text-[11px]">
                         {/* Audience */}
-                        <div className="flex items-center gap-1.5 p-1.5 rounded-lg bg-slate-100/80 dark:bg-slate-900/80 text-slate-700 dark:text-slate-300 font-bold truncate">
-                          <Users size={12} className="text-slate-400 shrink-0" />
+                        <div className="flex items-center gap-1.5 p-1.5 rounded-md bg-muted text-muted-foreground font-bold truncate text-[10px]">
+                          <Users size={12} className="shrink-0" />
                           <span className="truncate">
                             {c.target_audience === 'min_visits' ? `Frequent (≥${c.min_visits})` : c.target_audience.toUpperCase()}
                           </span>
                         </div>
 
                         {/* Recipients */}
-                        <div className="flex items-center gap-1.5 p-1.5 rounded-lg bg-slate-100/80 dark:bg-slate-900/80 text-slate-700 dark:text-slate-300 font-bold truncate">
+                        <div className="flex items-center gap-1.5 p-1.5 rounded-md bg-muted text-muted-foreground font-bold truncate text-[10px]">
                           <Send size={12} className="text-emerald-500 shrink-0" />
                           <span className="truncate">
                             {c.sent_count > 0 ? `${c.sent_count}/${c.total_recipients} Sent` : `${c.total_recipients} Recipients`}
@@ -1906,17 +1918,17 @@ export const CampaignsPage: React.FC = () => {
                         </div>
 
                         {/* Credits Deducted & Refund Status */}
-                        <div className="flex items-center justify-between p-1.5 rounded-lg bg-amber-500/10 dark:bg-amber-500/15 text-amber-800 dark:text-amber-300 font-black col-span-2">
+                        <div className="flex items-center justify-between p-1.5 rounded-md bg-amber-500/10 dark:bg-amber-500/15 text-foreground font-bold col-span-2 text-[10px]">
                           <div className="flex items-center gap-1.5">
-                            <Coins size={13} className="text-amber-500 shrink-0" />
+                            <Coins size={12} className="text-amber-500 shrink-0" />
                             <span>
                               {c.status === 'FAILED'
                                 ? `0 Credits (${c.total_recipients} Refunded)`
-                                : `${creditsCount} Credits Deducted (₹${creditsCount}.00)`}
+                                : `${creditsCount} Credits (₹${creditsCount}.00)`}
                             </span>
                           </div>
                           {c.failed_count > 0 && c.status !== 'FAILED' && (
-                            <span className="text-[10px] text-rose-600 dark:text-rose-400 font-bold">
+                            <span className="text-[10px] text-destructive font-bold">
                               {c.failed_count} Refunded
                             </span>
                           )}
@@ -2088,6 +2100,68 @@ export const CampaignsPage: React.FC = () => {
           </AnimatePresence>
         </>
       )}
+
+      {/* ================= CANCEL SCHEDULED CAMPAIGN MODAL ================= */}
+      <Modal
+        isOpen={!!campaignToCancel}
+        onClose={() => !isCancelling && setCampaignToCancel(null)}
+        title="Cancel Scheduled Campaign"
+      >
+        <div className="space-y-4">
+          <div className="p-3.5 bg-destructive/10 border border-destructive/20 rounded-xl flex items-start gap-3">
+            <div className="w-9 h-9 rounded-lg bg-destructive/20 flex items-center justify-center text-destructive shrink-0 mt-0.5">
+              <Trash2 size={18} />
+            </div>
+            <div className="space-y-1">
+              <h4 className="text-xs font-bold text-foreground">Are you sure you want to cancel this scheduled campaign?</h4>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                This broadcast will be cancelled and will not be dispatched to your customers.
+              </p>
+            </div>
+          </div>
+
+          {campaignToCancel && campaignToCancel.total_recipients > 0 && (
+            <div className="p-3 bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/20 rounded-xl flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2">
+                <Coins size={14} className="text-amber-500 shrink-0" />
+                <span className="font-semibold text-foreground">Credits Refund</span>
+              </div>
+              <span className="font-black text-amber-600 dark:text-amber-400">
+                +{campaignToCancel.total_recipients} Credits will be refunded
+              </span>
+            </div>
+          )}
+
+          <div className="flex items-center justify-end gap-2.5 pt-2">
+            <button
+              type="button"
+              disabled={isCancelling}
+              onClick={() => setCampaignToCancel(null)}
+              className="px-4 py-2 text-xs font-semibold rounded-lg border border-border hover:bg-muted transition-colors cursor-pointer"
+            >
+              Keep Scheduled
+            </button>
+            <button
+              type="button"
+              disabled={isCancelling}
+              onClick={confirmCancelCampaign}
+              className="px-4 py-2 text-xs font-semibold rounded-lg bg-destructive hover:bg-destructive/90 text-white transition-colors cursor-pointer flex items-center gap-1.5"
+            >
+              {isCancelling ? (
+                <>
+                  <Loader2 size={13} className="animate-spin" />
+                  <span>Cancelling...</span>
+                </>
+              ) : (
+                <>
+                  <Trash2 size={13} />
+                  <span>Confirm Cancel</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {/* ================= RECHARGE BROADCAST CREDITS MODAL ================= */}
       <Modal
@@ -2364,7 +2438,7 @@ export const CampaignsPage: React.FC = () => {
                 }}
                 className="w-full sm:w-auto px-3.5 py-2 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-amber-900 dark:text-amber-300 border border-amber-200 dark:border-amber-800 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
               >
-                <Sparkles size={13} className="text-amber-500" />
+                <Copy size={13} className="text-amber-500" />
                 <span>Use as Template in Studio</span>
               </button>
 

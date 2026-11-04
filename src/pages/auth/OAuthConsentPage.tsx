@@ -119,7 +119,7 @@ export function OAuthConsentPage() {
           </div>
           <h1 className="text-2xl font-heading font-bold text-slate-900 dark:text-white">Authorize Application</h1>
           <p className="text-slate-500 dark:text-slate-400 mt-2">
-            An external application (like ChatGPT) is requesting access to your Menukit account.
+            An external application (like ChatGPT) is requesting access to your <span className="font-semibold text-orange-600 dark:text-orange-500">Menukit</span> account.
           </p>
         </div>
         {/* User Account & Shop Info Card */}

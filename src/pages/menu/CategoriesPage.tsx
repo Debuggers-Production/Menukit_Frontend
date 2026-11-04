@@ -4,6 +4,8 @@ import { toast } from 'react-hot-toast';
 import { Plus, Edit2, Trash2, GripVertical, MenuSquare, Search, Loader2, LayoutGrid, CheckCircle2, XCircle, ArrowDownAZ, ArrowUpZA, Clock, History } from 'lucide-react';
 import { api } from '@/services/api';
 import { useShopStore } from '@/store/shopStore';
+import { useAuthStore } from '@/store/authStore';
+import { DeleteOtpConfirmationModal } from '@/components/common/DeleteOtpConfirmationModal';
 import { Category } from '@/types';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -17,6 +19,8 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { PageContainer } from '@/components/ui/PageContainer';
 import { useHeaderStore } from '@/store/useHeaderStore';
 import { HeaderActions } from '@/components/HeaderActions';
+import { SquareFAB } from '@/components/ui/SquareFAB';
+import { SearchInput } from '@/components/ui/SearchInput';
 import { usePermissions } from '@/hooks/usePermissions';
 import { InfiniteScrollTrigger } from '@/components/ui/InfiniteScrollTrigger';
 import {
@@ -69,45 +73,50 @@ const SortableCategoryItem = ({
   };
 
   return (
-    <div ref={setNodeRef} style={style} className="pb-3">
-      <Card className={`transition-all ${!cat.is_active ? 'opacity-60' : ''} ${isDragging ? 'shadow-lg border-primary' : ''}`}>
-        <CardContent className="p-4 flex items-center gap-4">
+    <div ref={setNodeRef} style={style} className="pb-2">
+      <Card className={`transition-all ${!cat.is_active ? 'opacity-60' : ''} ${isDragging ? 'shadow-md border-primary' : ''}`}>
+        <CardContent className="p-3 sm:p-3.5 flex items-center gap-3">
           {canWrite && (
-            <div {...attributes} {...listeners} className="touch-none cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600 p-2 -ml-2">
-              <GripVertical size={20} />
+            <div {...attributes} {...listeners} className="touch-none cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600 p-1.5 -ml-1">
+              <GripVertical size={16} />
             </div>
           )}
 
           <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-slate-900 dark:text-white truncate">{cat.name}</h3>
-            <p className="text-xs text-slate-500">{cat.item_count} items</p>
+            <h3 className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white truncate">{cat.name}</h3>
+            <p className="text-[11px] text-slate-500">{cat.item_count} items</p>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <button
+            <div 
+              className={`flex items-center gap-1.5 cursor-pointer select-none ${!canWrite ? 'opacity-70 cursor-default' : ''}`}
               onClick={(e) => { e.stopPropagation(); if (canWrite) onToggleActive(cat); }}
-              className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${cat.is_active
-                  ? 'bg-success/10 text-success hover:bg-success/20'
-                  : 'bg-muted text-muted-foreground hover:bg-muted/80'
-                } ${!canWrite && 'opacity-70 cursor-default'}`}
-              disabled={!canWrite}
+              title={cat.is_active ? 'Active: Click to hide category' : 'Hidden: Click to activate category'}
             >
-              {cat.is_active ? 'Active' : 'Hidden'}
-            </button>
+              <Switch
+                checked={cat.is_active}
+                onChange={() => { if (canWrite) onToggleActive(cat); }}
+                disabled={!canWrite}
+                className="scale-[0.8] origin-left"
+              />
+              <span className={`text-[11px] font-bold ${cat.is_active ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500'}`}>
+                {cat.is_active ? 'Active' : 'Hidden'}
+              </span>
+            </div>
             {canWrite && (
               <>
                 <button
                   onClick={(e) => { e.stopPropagation(); onEdit(cat); }}
-                  className="p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground rounded-lg transition-colors"
+                  className="p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground rounded-md transition-colors cursor-pointer"
                 >
-                  <Edit2 size={16} />
+                  <Edit2 size={14} />
                 </button>
                 <button
                   onClick={(e) => { e.stopPropagation(); onDelete(cat.id); }}
-                  className="p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive rounded-lg transition-colors"
+                  className="p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive rounded-md transition-colors cursor-pointer"
                   disabled={isDeletingThis}
                 >
-                  {isDeletingThis ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                  {isDeletingThis ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
                 </button>
               </>
             )}
@@ -120,6 +129,7 @@ const SortableCategoryItem = ({
 
 export function CategoriesPage() {
   const { categories: rawCategories, setCategories } = useShopStore();
+  const { user } = useAuthStore();
   const categories = Array.isArray(rawCategories) ? rawCategories : [];
   const [isLoading, setIsLoading] = useState(() => categories.length === 0);
   
@@ -181,7 +191,7 @@ export function CategoriesPage() {
   const { setTitle } = useHeaderStore();
 
   useEffect(() => {
-    setTitle(`Menu Categories ${categories.length > 0 ? `(${categories.length})` : ''}`, 'Organize your catalog categories.');
+    setTitle(`Menu Categories ${categories.length > 0 ? `(${categories.length})` : ''}`);
   }, [categories.length, setTitle]);
 
   const fetchCategories = useCallback(async (currentSkip: number | boolean = 0, reset: boolean = false) => {
@@ -336,6 +346,26 @@ export function CategoriesPage() {
     }
   };
 
+  const handleResendSingleOtp = async () => {
+    if (!categoryToDelete) return;
+    const catObj = categories.find(c => c.id === categoryToDelete);
+    try {
+      await api.post(`/categories/request-deletion-otp?target=category_${encodeURIComponent(catObj?.name || 'item')}`);
+      toast.success('New OTP sent to your registered email');
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || 'Failed to resend OTP email');
+    }
+  };
+
+  const handleResendAllOtp = async () => {
+    try {
+      await api.post('/categories/request-deletion-otp?target=categories');
+      toast.success('New OTP sent to your registered email');
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || 'Failed to resend OTP email');
+    }
+  };
+
   const handleToggleActive = async (cat: Category) => {
     try {
       const newStatus = !cat.is_active;
@@ -350,19 +380,17 @@ export function CategoriesPage() {
   const [otpCode, setOtpCode] = useState('');
   const [isSendingOtp, setIsSendingOtp] = useState(false);
 
-  const handleOpenDeleteAllModal = async () => {
-    setIsSendingOtp(true);
-    try {
-      await api.post('/categories/request-deletion-otp?target=categories');
-      toast.success('Deletion OTP sent to your registered email');
-      setOtpStep(true);
-      setOtpCode('');
-      setShowDeleteAllConfirm(true);
-    } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Failed to send OTP email');
-    } finally {
-      setIsSendingOtp(false);
-    }
+  const handleOpenDeleteAllModal = () => {
+    setOtpStep(true);
+    setOtpCode('');
+    setShowDeleteAllConfirm(true);
+    api.post('/categories/request-deletion-otp?target=categories')
+      .then(() => {
+        toast.success('Deletion OTP sent to your registered email');
+      })
+      .catch((error: any) => {
+        toast.error(error.response?.data?.detail || 'Failed to send OTP email');
+      });
   };
 
   const handleDeleteAll = async () => {
@@ -409,7 +437,7 @@ export function CategoriesPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto animate-fade-in">
+    <div className="space-y-4 w-full animate-fade-in w-full">
       
       <HeaderActions>
         {canWrite && (
@@ -419,48 +447,47 @@ export function CategoriesPage() {
         )}
       </HeaderActions>
 
-      <PageContainer className="pb-24">
-        <div className="sticky top-[-16px] sm:top-[-24px] lg:top-[-32px] z-20 bg-background/95 backdrop-blur-md pb-4 pt-4 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 border-b border-border mb-6 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+      <PageContainer className="pb-20">
+        <div className="sticky top-[-12px] sm:top-[-16px] lg:top-[-20px] z-20 bg-background/95 backdrop-blur-md py-2 -mx-3 px-3 sm:-mx-4 sm:px-4 lg:-mx-5 lg:px-5 border-b border-border/80 mb-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
           <div className="w-full sm:max-w-md flex-1">
-            <Input
-              leftIcon={<Search size={18} />}
+            <SearchInput
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={setSearchQuery}
               placeholder="Search categories..."
-              className="w-full bg-background"
+              className="w-full"
             />
           </div>
 
-          <div className="flex items-center justify-between sm:justify-end gap-2.5 w-full sm:w-auto shrink-0 flex-wrap">
-            <div className="w-36 sm:w-44">
+          <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto shrink-0 flex-wrap">
+            <div className="w-32 sm:w-40">
               <SearchableSelect
                 options={[
-                  { id: 'default', name: 'Default Order', icon: <LayoutGrid size={15} className="text-muted-foreground" /> },
-                  { id: 'a-z', name: 'A to Z (A-Z)', icon: <ArrowDownAZ size={15} className="text-primary" /> },
-                  { id: 'z-a', name: 'Z to A (Z-A)', icon: <ArrowUpZA size={15} className="text-primary" /> },
-                  { id: 'new_to_old', name: 'Newest First (New to Old)', icon: <Clock size={15} className="text-primary" /> },
-                  { id: 'old_to_new', name: 'Oldest First (Old to New)', icon: <History size={15} className="text-primary" /> },
+                  { id: 'default', name: 'Default Order', icon: <LayoutGrid size={13} className="text-muted-foreground" /> },
+                  { id: 'a-z', name: 'A to Z (A-Z)', icon: <ArrowDownAZ size={13} className="text-primary" /> },
+                  { id: 'z-a', name: 'Z to A (Z-A)', icon: <ArrowUpZA size={13} className="text-primary" /> },
+                  { id: 'new_to_old', name: 'Newest First', icon: <Clock size={13} className="text-primary" /> },
+                  { id: 'old_to_new', name: 'Oldest First', icon: <History size={13} className="text-primary" /> },
                 ]}
                 value={sortBy}
                 onChange={(val) => setSortBy(val as any)}
                 showSearch={false}
                 placeholder="Sort by"
-                className="h-10 border-input bg-background text-foreground text-sm font-medium rounded-xl shadow-xs"
+                className="h-9 border-input bg-background text-foreground text-xs font-medium rounded-md shadow-2xs"
               />
             </div>
 
-            <div className="w-36 sm:w-44">
+            <div className="w-32 sm:w-40">
               <SearchableSelect
                 options={[
-                  { id: 'all', name: 'All Status', icon: <LayoutGrid size={15} className="text-muted-foreground" /> },
-                  { id: 'active', name: 'Active Only', icon: <CheckCircle2 size={15} className="text-emerald-500" /> },
-                  { id: 'inactive', name: 'Inactive Only', icon: <XCircle size={15} className="text-rose-500" /> },
+                  { id: 'all', name: 'All Status', icon: <LayoutGrid size={13} className="text-muted-foreground" /> },
+                  { id: 'active', name: 'Active Only', icon: <CheckCircle2 size={13} className="text-emerald-500" /> },
+                  { id: 'inactive', name: 'Inactive Only', icon: <XCircle size={13} className="text-rose-500" /> },
                 ]}
                 value={statusFilter}
                 onChange={(val) => setStatusFilter(val as any)}
                 showSearch={false}
                 placeholder="Filter Status"
-                className="h-10 border-input bg-background text-foreground text-sm font-medium rounded-xl shadow-xs"
+                className="h-9 border-input bg-background text-foreground text-xs font-medium rounded-md shadow-2xs"
               />
             </div>
 
@@ -468,10 +495,10 @@ export function CategoriesPage() {
               <button
                 onClick={handleOpenDeleteAllModal}
                 disabled={isSendingOtp}
-                className="flex items-center justify-center gap-2 px-4 h-10 rounded-xl bg-destructive/10 hover:bg-destructive/20 text-destructive font-medium text-sm transition-colors border border-destructive/20 shrink-0 cursor-pointer disabled:opacity-60"
+                className="flex items-center justify-center gap-1.5 px-3 h-9 rounded-md bg-destructive/10 hover:bg-destructive/20 text-destructive font-medium text-xs transition-colors border border-destructive/20 shrink-0 cursor-pointer disabled:opacity-60"
                 title="Delete All Categories"
               >
-                {isSendingOtp ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                {isSendingOtp ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
                 <span className="hidden sm:inline">{isSendingOtp ? 'Sending OTP...' : 'Delete All'}</span>
               </button>
             )}
@@ -479,8 +506,8 @@ export function CategoriesPage() {
         </div>
 
         {isLoading ? (
-          <div className="space-y-3">
-            {[1, 2, 3].map(i => <Skeleton key={i} className="h-20 w-full rounded-2xl" />)}
+          <div className="space-y-2.5">
+            {[1, 2, 3].map(i => <Skeleton key={i} className="h-16 w-full rounded-md" />)}
           </div>
         ) : displayedCategories.length === 0 ? (
           <EmptyState
@@ -562,7 +589,8 @@ export function CategoriesPage() {
         </div>
       </Modal>
 
-      <Modal
+      {/* Redesigned Single Category Delete Modal with 6-Digit Segmented OTP */}
+      <DeleteOtpConfirmationModal
         isOpen={!!categoryToDelete}
         onClose={() => {
           if (!isDeleting) {
@@ -571,58 +599,20 @@ export function CategoriesPage() {
           }
         }}
         title="Delete Category"
-        className="max-w-md"
-      >
-        <div className="space-y-4 pt-2">
-          <div className="p-3.5 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-xs sm:text-sm font-semibold leading-relaxed">
-            ⚠️ WARNING: DELETING THIS CATEGORY WILL PERMANENTLY DELETE ALL MENU ITEMS INSIDE IT. THIS ACTION CANNOT BE UNDONE.
-          </div>
+        targetName={categories.find(c => c.id === categoryToDelete)?.name}
+        itemCount={Number(categories.find(c => c.id === categoryToDelete)?.item_count || 0)}
+        itemLabel="menu items"
+        userEmail={user?.email}
+        otpCode={singleOtpCode}
+        onOtpChange={setSingleOtpCode}
+        onConfirm={confirmDelete}
+        onResendOtp={handleResendSingleOtp}
+        isLoading={isDeleting}
+        confirmButtonText="Confirm Delete"
+      />
 
-          <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
-            A 6-digit deletion verification OTP code has been sent to your email address. Enter the code below to confirm deletion:
-          </p>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-              Enter 6-Digit Email OTP
-            </label>
-            <Input
-              value={singleOtpCode}
-              onChange={(e) => setSingleOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              placeholder="000000"
-              maxLength={6}
-              className="text-center font-mono text-lg tracking-[6px] font-bold"
-              disabled={isDeleting}
-              autoFocus
-            />
-          </div>
-
-          <div className="flex gap-2 pt-2">
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setCategoryToDelete(null);
-                setSingleOtpCode('');
-              }}
-              disabled={isDeleting}
-              className="flex-1"
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="danger"
-              onClick={confirmDelete}
-              isLoading={isDeleting}
-              disabled={singleOtpCode.length < 6}
-              className="flex-1 font-bold"
-            >
-              Confirm Delete
-            </Button>
-          </div>
-        </div>
-      </Modal>
-
-      <Modal
+      {/* Redesigned Delete All Categories Modal with 6-Digit Segmented OTP */}
+      <DeleteOtpConfirmationModal
         isOpen={showDeleteAllConfirm}
         onClose={() => {
           if (!isDeletingAll) {
@@ -632,68 +622,26 @@ export function CategoriesPage() {
           }
         }}
         title="Delete All Categories"
-        className="max-w-md"
-      >
-        <div className="space-y-4 pt-2">
-          <div className="p-3.5 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-xs sm:text-sm font-semibold leading-relaxed">
-            ⚠️ WARNING: DELETING ALL CATEGORIES WILL PERMANENTLY ERASE EVERY CATEGORY AND ALL MENU ITEMS INSIDE THEM. THIS ACTION CANNOT BE UNDONE.
-          </div>
+        targetName="All Menu Categories"
+        itemCount={categories.reduce((acc, c) => acc + Number(c.item_count || 0), 0)}
+        itemLabel="menu items across your entire shop"
+        description="Permanently erases every single category and all menu items in your shop. This action cannot be undone."
+        userEmail={user?.email}
+        otpCode={otpCode}
+        onOtpChange={setOtpCode}
+        onConfirm={handleDeleteAll}
+        onResendOtp={handleResendAllOtp}
+        isLoading={isDeletingAll}
+        confirmButtonText="Confirm Delete All"
+      />
 
-          <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
-            A 6-digit deletion verification OTP code has been sent to your email address. Enter the code below to confirm deletion:
-          </p>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-              Enter 6-Digit Email OTP
-            </label>
-            <Input
-              value={otpCode}
-              onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              placeholder="000000"
-              maxLength={6}
-              className="text-center font-mono text-lg tracking-[6px] font-bold"
-              disabled={isDeletingAll}
-              autoFocus
-            />
-          </div>
-
-          <div className="flex gap-2 pt-2">
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setShowDeleteAllConfirm(false);
-                setOtpStep(false);
-                setOtpCode('');
-              }}
-              disabled={isDeletingAll}
-              className="flex-1"
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="danger"
-              onClick={handleDeleteAll}
-              isLoading={isDeletingAll}
-              disabled={otpCode.length < 6}
-              className="flex-1 font-bold"
-            >
-              Confirm Delete All
-            </Button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* FAB for Add Category (Mobile) */}
-      {!isModalOpen && createPortal(
-        <button
-          onClick={() => openModal()}
-          className="lg:hidden fixed bottom-20 lg:bottom-8 right-4 lg:right-8 z-50 w-14 h-14 rounded-full bg-primary hover:bg-primary-600 hover:scale-105 shadow-xl flex items-center justify-center text-white transition-all duration-200 cursor-pointer"
-        >
-          <Plus size={24} />
-        </button>,
-        document.body
-      )}
+      {/* Reusable Square FAB for Add Category */}
+      <SquareFAB
+        icon={Plus}
+        onClick={() => openModal()}
+        title="Add Category"
+        visible={Boolean(canWrite && !isModalOpen)}
+      />
     </div>
   );
 }

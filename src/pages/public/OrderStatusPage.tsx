@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router';
+import { useParams, useNavigate, Link } from 'react-router';
 import { ChevronLeft, CookingPot, CheckCircle2, Clock, XCircle, AlertCircle, CreditCard, Printer, Receipt, FileText, CheckCircle, ChefHat, Download, History, Lock, PackageCheck, Info, Plus, RotateCcw } from 'lucide-react';
 import { api } from '@/services/api';
 import { Shop } from '@/types';
@@ -1444,11 +1444,24 @@ export function OrderStatusPage() {
               </span>
             </div>
 
-            <div className="pt-1.5">
-              <p className="text-[10px] text-amber-700/80 dark:text-amber-400/80 font-medium italic">
-                *Terms & conditions applicable
-              </p>
+            <div className="pt-2 border-t border-amber-200/50 dark:border-amber-800/40 flex items-center justify-between text-[11px] text-amber-800/90 dark:text-amber-300/90">
+              <span className="italic">*Store policies applicable</span>
+              <div className="flex items-center gap-2 font-medium">
+                <Link to="/terms" target="_blank" className="hover:underline">Terms</Link>
+                <span>•</span>
+                <Link to="/privacy" target="_blank" className="hover:underline">Privacy</Link>
+              </div>
             </div>
+          </div>
+        </div>
+
+        {/* Legal footer */}
+        <div className="mt-8 text-center text-xs text-slate-400 dark:text-slate-500 space-y-1 print:hidden">
+          <p>Powered by <span className="font-bold text-orange-600 dark:text-orange-500">Menukit</span></p>
+          <div className="flex items-center justify-center gap-3 text-[11px]">
+            <Link to="/terms" target="_blank" className="hover:underline text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">Terms of Service</Link>
+            <span>•</span>
+            <Link to="/privacy" target="_blank" className="hover:underline text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">Privacy Policy</Link>
           </div>
         </div>
 
