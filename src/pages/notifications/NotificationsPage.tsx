@@ -8,6 +8,8 @@ import { useNotificationStore, Notification } from '@/store/notificationStore';
 import { useHeaderStore } from '@/store/useHeaderStore';
 import { HeaderActions } from '@/components/HeaderActions';
 import { FCMPushPrompt } from '@/components/FCMPushPrompt';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
+import { toast } from 'react-hot-toast';
 import { cn } from '@/utils/cn';
 
 function formatRelativeTime(isoString: string): string {
@@ -100,13 +102,33 @@ export function NotificationsPage() {
 
   const [activeCategory, setActiveCategory] = useState<'all' | 'unread' | 'orders' | 'members' | 'payments'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
 
   useEffect(() => {
     setTitle('Notifications');
   }, [setTitle]);
 
-  const handleMarkAllRead = () => {
-    markAsRead();
+  const handleMarkAllRead = async () => {
+    try {
+      await markAsRead();
+      toast.success('All notifications marked as read');
+    } catch {
+      toast.error('Failed to mark notifications as read');
+    }
+  };
+
+  const handleConfirmClearAll = async () => {
+    setIsClearing(true);
+    try {
+      await clearAll();
+      setIsClearConfirmOpen(false);
+      toast.success('All notifications cleared');
+    } catch {
+      toast.error('Failed to clear notifications');
+    } finally {
+      setIsClearing(false);
+    }
   };
 
   const handleNotificationClick = (notif: Notification, targetUrl: string) => {
@@ -158,7 +180,7 @@ export function NotificationsPage() {
             )}
             <button 
               type="button"
-              onClick={clearAll}
+              onClick={() => setIsClearConfirmOpen(true)}
               className="h-8 px-2.5 rounded-md text-xs font-semibold text-destructive bg-destructive/10 hover:bg-destructive/20 border border-destructive/20 transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer active:scale-95"
             >
               <Trash2 size={13} />
@@ -260,6 +282,42 @@ export function NotificationsPage() {
             )}
           </div>
         </div>
+
+        {/* Toolbar Action Buttons (Accessible on both Mobile & Desktop inside the page) */}
+        {notifications.length > 0 && (
+          <div className="flex items-center justify-between gap-2 px-1 pt-0.5">
+            <span className="text-xs font-medium text-muted-foreground">
+              {unreadCount > 0 ? (
+                <span>
+                  <strong className="text-foreground">{unreadCount}</strong> unread of {notifications.length} notifications
+                </span>
+              ) : (
+                <span>All caught up • {notifications.length} total</span>
+              )}
+            </span>
+
+            <div className="flex items-center gap-2">
+              {unreadCount > 0 && (
+                <button 
+                  type="button"
+                  onClick={handleMarkAllRead}
+                  className="h-8 px-2.5 sm:px-3 rounded-lg text-xs font-bold text-primary bg-primary/10 hover:bg-primary/20 border border-primary/25 transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer active:scale-95"
+                >
+                  <Check size={13} strokeWidth={2.5} />
+                  <span>Mark all read</span>
+                </button>
+              )}
+              <button 
+                type="button"
+                onClick={() => setIsClearConfirmOpen(true)}
+                className="h-8 px-2.5 sm:px-3 rounded-lg text-xs font-bold text-destructive bg-destructive/10 hover:bg-destructive/20 border border-destructive/20 transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer active:scale-95"
+              >
+                <Trash2 size={13} />
+                <span>Clear All</span>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Notifications Card List */}
@@ -365,6 +423,18 @@ export function NotificationsPage() {
           })}
         </div>
       )}
+
+      {/* Clear All Confirmation Modal */}
+      <ConfirmModal
+        isOpen={isClearConfirmOpen}
+        onClose={() => setIsClearConfirmOpen(false)}
+        onConfirm={handleConfirmClearAll}
+        title="Clear All Notifications"
+        message="Are you sure you want to permanently clear all notifications? This action cannot be undone."
+        confirmText="Clear All"
+        isDestructive={true}
+        isLoading={isClearing}
+      />
     </div>
   );
 }

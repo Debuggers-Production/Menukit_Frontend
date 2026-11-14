@@ -29,7 +29,7 @@ export function WhatsNewModal({ isOpen: controlledIsOpen, onClose: controlledOnC
   const navigate = useNavigate();
   const { shop } = useShopStore();
 
-  const isSchemeShop = isSchemeEnabledShop(shop?.category);
+  const isSchemeShop = isSchemeEnabledShop(shop?.category, shop?.settings);
 
   useEffect(() => {
     setMounted(true);

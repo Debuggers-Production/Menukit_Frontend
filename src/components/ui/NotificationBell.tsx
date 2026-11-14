@@ -86,7 +86,11 @@ function getNotificationCardInfo(title: string, message: string, type: string) {
   };
 }
 
-export function NotificationBell() {
+export interface NotificationBellProps {
+  directNavigate?: boolean;
+}
+
+export function NotificationBell({ directNavigate }: NotificationBellProps = {}) {
   const { notifications, unreadCount, markAsRead, clearAll } = useNotificationStore();
   const { shop } = useShopStore();
   const { isSupported, permission, loading: fcmLoading, enableNotifications, sendTestNotification } = useFCM(shop?.id);
@@ -97,7 +101,7 @@ export function NotificationBell() {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
-  // Close when clicking outside or pressing Escape
+  // Close when clicking outside, pressing Escape, or resizing to mobile
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -111,13 +115,21 @@ export function NotificationBell() {
       }
     };
 
+    const handleResize = () => {
+      if (window.innerWidth < 768 && isOpen) {
+        setIsOpen(false);
+      }
+    };
+
     if (isOpen) {
       document.addEventListener('mousedown', handleClickOutside);
       document.addEventListener('keydown', handleKeyDown);
+      window.addEventListener('resize', handleResize);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('resize', handleResize);
     };
   }, [isOpen]);
 
@@ -137,12 +149,23 @@ export function NotificationBell() {
     markAsRead();
   };
 
+  const handleToggle = () => {
+    // If on mobile view, immediately navigate directly to the full notification page
+    const isMobile = directNavigate || (typeof window !== 'undefined' && window.innerWidth < 768);
+    if (isMobile) {
+      setIsOpen(false);
+      navigate('/notifications');
+      return;
+    }
+    setIsOpen((prev) => !prev);
+  };
+
   return (
     <div ref={dropdownRef} className="relative inline-block">
       {/* Trigger Bell Button */}
       <button 
         type="button"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={handleToggle}
         className={cn(
           "w-7 h-7 rounded-md flex items-center justify-center transition-colors relative cursor-pointer",
           isOpen

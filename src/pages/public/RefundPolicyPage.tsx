@@ -281,6 +281,17 @@ export function RefundPolicyPage() {
                 <p className="leading-relaxed pt-1 font-medium">
                   Customers are encouraged to review the specific shop's posted cancellation notes visible on their digital storefront, catalog description, or order confirmation prior to placing an order.
                 </p>
+
+                {/* Savings Schemes & Festive Hamper Plans Notice */}
+                <div className="mt-3 p-3.5 rounded-xl bg-orange-50/70 dark:bg-orange-950/20 border border-orange-200/70 dark:border-orange-900/40 space-y-1.5 text-xs text-orange-950 dark:text-orange-200">
+                  <div className="font-bold flex items-center gap-1.5 text-orange-800 dark:text-orange-300">
+                    <ShieldCheck size={14} className="text-orange-600 shrink-0" />
+                    <span>Customer Savings Schemes & Festive Hamper Plans (Pandu Schemes)</span>
+                  </div>
+                  <p className="leading-relaxed text-[11px]">
+                    Installments contributed toward customer savings schemes (e.g. Deepavali cracker funds, monthly savings clubs, jewelry hampers) are paid or transmitted directly to the respective shop owner. <strong>MenuKit acts solely as a SaaS software provider and does not hold custody of scheme funds. MenuKit cannot process scheme cancellations, midway withdrawals, or installment refunds.</strong> Any claim for mid-term exit, cash surrender, or dispute must be resolved directly with the physical store management under their bilateral scheme agreement. Customers are advised to verify the credibility of the shop twice before joining.
+                  </p>
+                </div>
               </div>
             </section>
 

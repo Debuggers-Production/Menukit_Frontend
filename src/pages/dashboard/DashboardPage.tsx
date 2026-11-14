@@ -235,7 +235,7 @@ export function DashboardPage() {
       <HeaderActions>
         <div className="hidden lg:flex items-center gap-2">
           <Button
-            onClick={() => window.open(`/shop/${shop.id}`, '_blank')}
+            onClick={() => window.open(`/shop/${shop?.slug || shop.id}`, '_blank')}
             variant="outline"
             size="sm"
             className="flex items-center gap-2 h-9 border-slate-200"
@@ -458,7 +458,7 @@ export function DashboardPage() {
             <button
               onClick={() => {
                 setIsFabOpen(false);
-                window.open(`/shop/${shop?.id}`, '_blank');
+                window.open(`/shop/${shop?.slug || shop?.id}`, '_blank');
               }}
               className="w-11 h-11 rounded-xl bg-white dark:bg-slate-800 text-slate-800 dark:text-white border border-slate-200 dark:border-slate-700 shadow-md flex items-center justify-center hover:scale-105 active:scale-95 transition-transform cursor-pointer"
             >

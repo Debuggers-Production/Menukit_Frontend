@@ -1,7 +1,7 @@
 import { LinkifiedText } from '../../components/LinkifiedText';
 import { useState, useEffect, useMemo, useRef, useCallback, Fragment, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useParams, useSearchParams, useNavigate, Link } from 'react-router';
+import { useParams, useSearchParams, useNavigate, useLocation, Link } from 'react-router';
 import { Search, Flame, MapPin, Phone, Info, UtensilsCrossed, X, Star, LayoutGrid, List as ListIcon, Clock, ExternalLink, SlidersHorizontal, Check, Languages, Tag, Crown, Calendar, ShoppingBag, ArrowUpRight, ChevronDown, QrCode, Download, History, Trophy, ChefHat, User, Truck, CheckCircle2, XCircle, Lock, Unlock, Copy, RefreshCw, AlertCircle, ShieldCheck, Store, TrendingDown, Percent, Banknote, Gift, Layers } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { api } from '@/services/api';
@@ -124,7 +124,31 @@ export function PublicMenuPage() {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const [shop, setShop] = useState<Shop | null>(() => (id ? publicCache.get<Shop>(`shop_${id}`) : null));
+  const location = useLocation();
+  const previewShop = (location.state as any)?.shopPreview;
+
+  const [shop, setShop] = useState<Shop | null>(() => {
+    if (id) {
+      const cached = publicCache.get<Shop>(`shop_${id}`);
+      if (cached) return cached;
+    }
+    return previewShop || null;
+  });
+
+  const [realShopId, setRealShopId] = useState<string>(() => {
+    if (id) {
+      const mapped = publicCache.get<string>(`slug_to_id_${id}`);
+      if (mapped) return mapped;
+      const cached = publicCache.get<Shop>(`shop_${id}`);
+      if (cached?.id) return cached.id;
+    }
+    return previewShop?.id || id || '';
+  });
+  const effectiveShopId = (shop?.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(shop.id))
+    ? shop.id
+    : (realShopId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(realShopId))
+      ? realShopId
+      : (id || '');
   const isAdsStopped = Boolean(
     import.meta.env.VITE_STOP_ADS === 'true' ||
     import.meta.env.VITE_DISABLE_ADS === 'true' ||
@@ -680,10 +704,12 @@ export function PublicMenuPage() {
   }, [id]);
 
   useEffect(() => {
-    if (id && isSchemeEnabledShop(shop?.category)) {
+    if (id && isSchemeEnabledShop(shop?.category, shop?.settings)) {
       schemeService.getPublicSchemes(id).then(setPublicSchemes).catch(() => {});
+    } else {
+      setPublicSchemes([]);
     }
-  }, [id, shop?.category]);
+  }, [id, shop?.category, shop?.settings?.savings_schemes_enabled]);
 
   const handleCheckMembershipStatus = async () => {
     const token = localStorage.getItem('customer_token');
@@ -836,15 +862,27 @@ export function PublicMenuPage() {
   const fetchCategories = async (retryCount = 0, catSort = categorySortOrder) => {
     try {
       const sortParam = catSort !== 'default' ? `&sort_by=${catSort}` : '';
+      
+      // Parallel concurrent execution: fetch shop and categories simultaneously
       const [shopRes, catRes] = await Promise.all([
-        api.get(`/public/shop/${id}?_t=${Date.now()}`),
-        api.get(`/public/shop/${id}/categories?limit=100${sortParam}&_t=${Date.now()}`)
+        api.get(`/public/shop/${id}`),
+        api.get(`/public/shop/${effectiveShopId || id}/categories?limit=100${sortParam}`)
       ]);
+
+      const isUUID = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
+      const targetShopId = isUUID(shopRes.data?.id) ? shopRes.data.id : (id || '');
+      setRealShopId(targetShopId);
+
       setShop(shopRes.data);
       setCategories(catRes.data);
       if (id) {
         publicCache.set(`shop_${id}`, shopRes.data);
         publicCache.set(`categories_${id}`, catRes.data);
+        publicCache.set(`slug_to_id_${id}`, targetShopId);
+        if (targetShopId !== id) {
+          publicCache.set(`shop_${targetShopId}`, shopRes.data);
+          publicCache.set(`categories_${targetShopId}`, catRes.data);
+        }
       }
       
       const shopData = shopRes.data as Shop;
@@ -875,7 +913,7 @@ export function PublicMenuPage() {
         }
       }
       
-      api.post(`/public/shop/${id}/view`).catch(console.error);
+      api.post(`/public/shop/${targetShopId}/view`).catch(console.error);
       setIsLoading(false);
     } catch (error) {
       console.error(`Failed to load shop/categories (Attempt ${retryCount + 1})`, error);
@@ -928,9 +966,8 @@ export function PublicMenuPage() {
       } else if (extraFilters.includes('in_stock') || extraFilters.includes('available')) {
         queryParams.append('status', 'available');
       }
-      queryParams.append('_t', Date.now().toString());
 
-      const res = await api.get(`/public/shop/${id}/items?${queryParams.toString()}`);
+      const res = await api.get(`/public/shop/${effectiveShopId || id}/items?${queryParams.toString()}`);
       const data = res.data || [];
       
       if (data.length < ITEMS_LIMIT) {
@@ -985,7 +1022,7 @@ export function PublicMenuPage() {
           }
 
           queryParams.append('_t', Date.now().toString());
-          return api.get(`/public/shop/${id}/items?${queryParams.toString()}`).then(r => r.data || []);
+          return api.get(`/public/shop/${effectiveShopId || id}/items?${queryParams.toString()}`).then(r => r.data || []);
         })
       );
       const merged = results.flat();
@@ -1057,7 +1094,7 @@ export function PublicMenuPage() {
     try {
       const custPhone = localStorage.getItem('customer_mobile') || localStorage.getItem('customer_phone') || '';
       const custId = custPhone.trim() || getCustomerIdentifier();
-      const discountRes = await api.get(`/public/shop/${id}/discounts?limit=${DISCOUNTS_LIMIT}&offset=${currentOffset}&customer_id=${encodeURIComponent(custId)}`);
+      const discountRes = await api.get(`/public/shop/${effectiveShopId || id}/discounts?limit=${DISCOUNTS_LIMIT}&offset=${currentOffset}&customer_id=${encodeURIComponent(custId)}`);
       const data = discountRes.data || [];
       
       if (data.length < DISCOUNTS_LIMIT) {
@@ -2695,7 +2732,7 @@ export function PublicMenuPage() {
         )}
 
         {/* Slot 2: 🪙 Savings Fund Side Tab (Clings to right wall with attention-grabbing popout animation & continuous glass shine) */}
-        {isSchemeEnabledShop(shop?.category) && publicSchemes.length > 0 && (
+        {isSchemeEnabledShop(shop?.category, shop?.settings) && publicSchemes.length > 0 && (
           <motion.div 
             initial={{ x: 80, opacity: 0 }}
             animate={{ 

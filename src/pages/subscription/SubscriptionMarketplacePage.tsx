@@ -5,7 +5,7 @@ import { useHeaderStore } from '@/store/useHeaderStore';
 import { HeaderActions } from '@/components/HeaderActions';
 import { 
   Check, ShoppingCart, Zap, PackageOpen, Award, Layers, ShieldCheck, 
-  ArrowRight, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, AlertTriangle, 
+  ArrowRight, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, AlertTriangle, AlertOctagon,
   Gift, FileText, Printer, Receipt, Lock, RefreshCw, Globe, Users, Search, Palette, BarChart3,
   CreditCard, Compass, HelpCircle, ExternalLink, Package, Store, Crown, Megaphone
 } from 'lucide-react';
@@ -17,6 +17,7 @@ import menukitLogo from '@/assets/menukit-logo.svg';
 import { CountryFlag } from '@/components/CountryFlag';
 import { Button } from '@/components/ui/Button';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
+import { useSubscriptionStore } from '@/store/subscriptionStore';
 
 const CATEGORY_TAG_STYLES: Record<string, string> = {
   'Online Ordering': 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800',
@@ -308,6 +309,7 @@ export function SubscriptionMarketplacePage() {
     try {
       const res = await api.get('/subscription/current');
       setActiveSubscription(res.data);
+      useSubscriptionStore.getState().setSubscriptionStatus(res.data);
     } catch (err) {
       console.error('Failed to load current subscription:', err);
     }
@@ -352,8 +354,20 @@ export function SubscriptionMarketplacePage() {
     fetchPricingCatalog();
   }, [fetchPricingCatalog]);
 
+  const totalModules = useMemo(() => {
+    return dynamicModules.filter(m => m.id !== 'analytics-advanced-filters' && m.id !== 'analytics-customer-insights').length;
+  }, [dynamicModules]);
+
   const subscribedAddons = useMemo(() => {
     if (!activeSubscription) return [];
+    const expKeys = Object.keys(activeSubscription.module_expirations || {});
+    if (expKeys.length > 0) {
+      return dynamicModules.filter(m => 
+        m.id !== 'analytics-advanced-filters' && 
+        m.id !== 'analytics-customer-insights' &&
+        (expKeys.includes(m.id) || (Array.isArray(activeSubscription.active_modules) && activeSubscription.active_modules.includes(m.id)))
+      );
+    }
     if (activeSubscription.is_all_access) {
       return dynamicModules.filter(m => m.id !== 'analytics-advanced-filters' && m.id !== 'analytics-customer-insights');
     }
@@ -366,11 +380,12 @@ export function SubscriptionMarketplacePage() {
   }, [activeSubscription, dynamicModules]);
 
   const hasActiveMemberDetails = Boolean(
-    activeSubscription?.is_all_access ||
+    activeSubscription?.module_expirations?.['member-details']?.days_left !== 0 &&
+    (activeSubscription?.is_all_access ||
     (Array.isArray(activeSubscription?.active_modules) && (
       activeSubscription.active_modules.includes('member-details') ||
       activeSubscription.active_modules.includes('new-member')
-    ))
+    )))
   );
 
   const toggleFeature = (id: string) => {
@@ -650,6 +665,40 @@ export function SubscriptionMarketplacePage() {
         </div>
       </HeaderActions>
 
+      {/* ── RED ALERT BANNER ABOVE TABS (WHEN ANY MODULE IS EXPIRED) ────── */}
+      {activeSubscription && (activeSubscription.is_expired || activeSubscription.has_expired_modules || (activeSubscription.days_left === 0 && !activeSubscription.is_active)) && (
+        <div
+          onClick={() => handleTabChange('marketplace')}
+          className="bg-gradient-to-r from-red-600 via-rose-600 to-red-700 text-white p-3.5 sm:p-4 rounded-lg flex items-center justify-between gap-3 shadow-md hover:brightness-105 transition-all cursor-pointer animate-fade-in shrink-0"
+          title="Click to view subscription plans and renew"
+        >
+          <div className="flex items-center gap-3">
+            <AlertOctagon size={22} className="animate-pulse shrink-0 text-white" />
+            <div>
+              <h4 className="font-bold text-xs sm:text-sm flex items-center gap-2">
+                <span>
+                  {activeSubscription.is_expired 
+                    ? "Subscription Has Ended" 
+                    : `${activeSubscription.expired_modules_count || 'Add-on'} Feature(s) Expired (0 Days Left)`}
+                </span>
+                <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded font-black uppercase tracking-wider">
+                  Action Required
+                </span>
+              </h4>
+              <p className="text-[11px] text-white/90 mt-0.5">
+                {activeSubscription.is_expired
+                  ? "Your subscription has ended and features are locked. Please renew your plan to restore full operations."
+                  : "Some of your add-on features have expired (0 days left) and are locked. Please renew to restore full operations & customer leads."}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1 bg-white text-destructive font-black text-xs px-3 py-1.5 rounded-md hover:bg-white/90 transition-colors uppercase tracking-wider shrink-0 shadow-xs">
+            <span>Renew Features</span>
+            <ArrowRight size={12} />
+          </div>
+        </div>
+      )}
+
       {/* ── STICKY SEGMENTED NAVIGATION TABS ─────────────────────────── */}
       <div className="sticky top-[-12px] sm:top-[-16px] lg:top-[-20px] z-10 bg-background/95 backdrop-blur-md py-2 -mx-3 px-3 sm:-mx-4 sm:px-4 lg:-mx-5 lg:px-5 border-b border-border/80 transition-all">
         <div className="flex items-center gap-1.5 p-1 bg-card rounded-lg border border-border/80 shadow-2xs max-w-full overflow-x-auto no-scrollbar">
@@ -668,7 +717,7 @@ export function SubscriptionMarketplacePage() {
             {activeSubscription && (
               <span className={cn(
                 "text-[9.5px] font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wider",
-                activeSubscription.is_expired
+                activeSubscription.is_expired || activeSubscription.has_expired_modules
                   ? "bg-destructive text-destructive-foreground"
                   : activeSubscription.is_grace_period
                   ? "bg-amber-500 text-white"
@@ -676,7 +725,7 @@ export function SubscriptionMarketplacePage() {
                   ? "bg-indigo-600 text-white"
                   : "bg-emerald-600 text-white"
               )}>
-                {activeSubscription.is_expired ? 'Expired' : activeSubscription.is_trial ? 'Free Trial' : 'Active'}
+                {activeSubscription.is_expired ? 'Expired' : activeSubscription.has_expired_modules ? 'Features Expired' : activeSubscription.is_trial ? 'Free Trial' : 'Active'}
               </span>
             )}
           </button>
@@ -728,7 +777,7 @@ export function SubscriptionMarketplacePage() {
           {/* ── ACTIVE PLAN HERO CARD ──────────────────── */}
           <div className={cn(
             "rounded-lg p-4 sm:p-5 border relative overflow-hidden transition-all shadow-2xs",
-            activeSubscription?.is_expired
+            activeSubscription?.is_expired || activeSubscription?.has_expired_modules
               ? "bg-destructive/[0.04] border-destructive/30"
               : activeSubscription?.is_grace_period
               ? "bg-amber-500/[0.04] border-amber-500/30"
@@ -743,7 +792,7 @@ export function SubscriptionMarketplacePage() {
                 <div className="flex items-center gap-3">
                   <div className={cn(
                     "w-10 h-10 rounded-md flex items-center justify-center shrink-0 shadow-2xs border",
-                    activeSubscription?.is_expired
+                    activeSubscription?.is_expired || activeSubscription?.has_expired_modules
                       ? "bg-destructive/10 border-destructive/20 text-destructive"
                       : activeSubscription?.is_grace_period
                       ? "bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400"
@@ -751,7 +800,7 @@ export function SubscriptionMarketplacePage() {
                       ? "bg-indigo-500/10 border-indigo-500/20 text-indigo-600 dark:text-indigo-400"
                       : "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400"
                   )}>
-                    {activeSubscription?.is_expired ? (
+                    {activeSubscription?.is_expired || activeSubscription?.has_expired_modules ? (
                       <AlertCircle className="w-5 h-5" />
                     ) : activeSubscription?.is_grace_period ? (
                       <AlertTriangle className="w-5 h-5" />
@@ -769,7 +818,7 @@ export function SubscriptionMarketplacePage() {
                       </span>
                       <span className={cn(
                         "text-[9.5px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider flex items-center gap-1.5 border shadow-2xs",
-                        activeSubscription?.is_expired
+                        activeSubscription?.is_expired || activeSubscription?.has_expired_modules
                           ? "bg-destructive/10 text-destructive border-destructive/20"
                           : activeSubscription?.is_grace_period
                           ? "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20"
@@ -779,15 +828,31 @@ export function SubscriptionMarketplacePage() {
                       )}>
                         <span className={cn(
                           "w-1.5 h-1.5 rounded-full",
-                          activeSubscription?.is_expired ? "bg-destructive" : activeSubscription?.is_grace_period ? "bg-amber-500" : activeSubscription?.is_trial ? "bg-indigo-500" : "bg-emerald-500 animate-pulse"
+                          activeSubscription?.is_expired || activeSubscription?.has_expired_modules
+                            ? "bg-destructive"
+                            : activeSubscription?.is_grace_period
+                            ? "bg-amber-500"
+                            : activeSubscription?.is_trial
+                            ? "bg-indigo-500"
+                            : "bg-emerald-500 animate-pulse"
                         )} />
-                        {activeSubscription?.is_expired ? 'Expired' : activeSubscription?.is_grace_period ? 'Grace Period' : activeSubscription?.is_trial ? 'Free Trial' : 'Active'}
+                        {activeSubscription?.is_expired
+                          ? 'Expired'
+                          : activeSubscription?.has_expired_modules
+                          ? 'Features Expired'
+                          : activeSubscription?.is_grace_period
+                          ? 'Grace Period'
+                          : activeSubscription?.is_trial
+                          ? 'Free Trial'
+                          : 'Active'}
                       </span>
                     </div>
 
                     <h2 className="text-base sm:text-lg font-bold text-foreground tracking-tight flex items-center gap-2">
                       {activeSubscription?.is_expired
                         ? (activeSubscription.is_trial ? 'Free Trial Ended' : 'Subscription Ended')
+                        : activeSubscription?.has_expired_modules
+                        ? 'Features Expired / Modular'
                         : activeSubscription?.is_grace_period
                         ? (activeSubscription.is_trial ? 'Free Trial Ended (Grace Period)' : 'Subscription Ended (Grace Period)')
                         : activeSubscription?.is_trial
@@ -807,7 +872,7 @@ export function SubscriptionMarketplacePage() {
                     className="bg-primary hover:bg-primary/90 text-white font-semibold text-xs h-8.5 px-3.5 rounded-md shadow-2xs flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
                   >
                     <Zap size={13} className="fill-current" />
-                    <span>{activeSubscription?.is_expired ? 'Renew Subscription' : 'Upgrade / Add Modules'}</span>
+                    <span>{activeSubscription?.is_expired || activeSubscription?.has_expired_modules ? 'Renew Subscription' : 'Upgrade / Add Modules'}</span>
                     <ArrowRight size={12} />
                   </button>
                 </div>
@@ -822,7 +887,7 @@ export function SubscriptionMarketplacePage() {
                     <Clock size={12} />
                   </div>
                   <div className="text-base sm:text-lg font-bold text-foreground">
-                    {activeSubscription?.is_expired
+                    {activeSubscription?.is_expired || activeSubscription?.has_expired_modules
                       ? '0 Days'
                       : activeSubscription?.is_grace_period
                       ? `${activeSubscription.grace_days_left} Days Grace`
@@ -832,7 +897,7 @@ export function SubscriptionMarketplacePage() {
                     <div
                       className={cn(
                         "h-full rounded-full transition-all duration-500",
-                        activeSubscription?.is_expired
+                        activeSubscription?.is_expired || activeSubscription?.has_expired_modules
                           ? "w-0 bg-destructive"
                           : activeSubscription?.is_grace_period
                           ? "w-1/6 bg-amber-500"
@@ -849,12 +914,27 @@ export function SubscriptionMarketplacePage() {
                     <PackageOpen size={12} />
                   </div>
                   <div className="text-base sm:text-lg font-bold text-foreground">
-                    {activeSubscription?.is_all_access
+                    {activeSubscription?.is_expired
+                      ? '0 Active'
+                      : activeSubscription?.has_expired_modules
+                      ? `${activeSubscription.active_modules?.length || 1} of ${totalModules} Modules`
+                      : activeSubscription?.is_all_access
                       ? 'All Modules'
                       : `${subscribedAddons.length} Installed`}
                   </div>
-                  <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
-                    <CheckCircle2 size={10} /> Live & operational
+                  <div className={cn(
+                    "text-[10px] font-bold flex items-center gap-1",
+                    activeSubscription?.is_expired || activeSubscription?.has_expired_modules
+                      ? "text-destructive"
+                      : "text-emerald-600 dark:text-emerald-400"
+                  )}>
+                    {activeSubscription?.is_expired ? (
+                      <><AlertCircle size={10} /> Subscription Expired</>
+                    ) : activeSubscription?.has_expired_modules ? (
+                      <><AlertCircle size={10} /> {activeSubscription.expired_modules_count || 'Some'} Expired (Action Needed)</>
+                    ) : (
+                      <><CheckCircle2 size={10} /> Live & operational</>
+                    )}
                   </div>
                 </div>
 
@@ -1012,8 +1092,19 @@ export function SubscriptionMarketplacePage() {
                 </p>
               </div>
 
-              <span className="text-xs font-semibold text-muted-foreground bg-muted px-2.5 py-0.5 rounded-md border border-border/60">
-                {activeSubscription?.is_all_access ? 'All Features Unlocked' : `${subscribedAddons.length + 3} Features Active`}
+              <span className={cn(
+                "text-xs font-semibold px-2.5 py-0.5 rounded-md border",
+                activeSubscription?.has_expired_modules || activeSubscription?.is_expired
+                  ? "bg-destructive/10 text-destructive border-destructive/20 font-bold"
+                  : "text-muted-foreground bg-muted border-border/60"
+              )}>
+                {activeSubscription?.is_expired
+                  ? 'All Features Expired'
+                  : activeSubscription?.has_expired_modules
+                  ? `${activeSubscription.expired_modules_count || 1} Expired • Action Needed`
+                  : activeSubscription?.is_all_access
+                  ? 'All Features Unlocked'
+                  : `${subscribedAddons.length + 3} Features Active`}
               </span>
             </div>
 
@@ -1065,18 +1156,34 @@ export function SubscriptionMarketplacePage() {
                   ? modExp.days_left 
                   : (activeSubscription?.is_all_access ? activeSubscription?.days_left : (activeSubscription?.core_days_left ?? activeSubscription?.days_left));
 
+                const isExpiredMod = modDaysLeft === 0;
                 const HeaderIcon = CATEGORY_HEADER_ICONS[addon.category] || Package;
 
                 return (
-                  <div key={addon.id} className="p-3 rounded-lg bg-card border border-border/80 shadow-2xs flex items-start gap-2.5">
-                    <div className="w-8 h-8 rounded-md bg-primary/10 text-primary flex items-center justify-center shrink-0 border border-primary/20">
+                  <div key={addon.id} className={cn(
+                    "p-3 rounded-lg border shadow-2xs flex items-start gap-2.5 transition-all",
+                    isExpiredMod 
+                      ? "bg-destructive/[0.04] border-destructive/30" 
+                      : "bg-card border-border/80"
+                  )}>
+                    <div className={cn(
+                      "w-8 h-8 rounded-md flex items-center justify-center shrink-0 border",
+                      isExpiredMod 
+                        ? "bg-destructive/10 text-destructive border-destructive/20"
+                        : "bg-primary/10 text-primary border-primary/20"
+                    )}>
                       <HeaderIcon size={15} />
                     </div>
                     <div className="space-y-0.5 flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-1">
                         <h4 className="font-bold text-xs text-foreground truncate">{addon.name}</h4>
-                        <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 px-1.5 py-0.5 rounded-md">
-                          {modDaysLeft !== undefined ? `${modDaysLeft}d Left` : 'Active'}
+                        <span className={cn(
+                          "text-[9px] font-bold px-1.5 py-0.5 rounded-md border",
+                          isExpiredMod
+                            ? "text-destructive bg-destructive/10 border-destructive/20"
+                            : "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800"
+                        )}>
+                          {modDaysLeft !== undefined ? (isExpiredMod ? '0d Left (EXPIRED)' : `${modDaysLeft}d Left`) : 'Active'}
                         </span>
                       </div>
                       <p className="text-[11px] text-muted-foreground leading-tight">{addon.description}</p>
@@ -1256,16 +1363,21 @@ export function SubscriptionMarketplacePage() {
                       <div className="flex flex-col gap-2.5">
                         {features.map((feature) => {
                           const isSelected = selectedFeatures.has(feature.id);
-                          const isDirectSubscribed = activeSubscription?.is_all_access || (
-                            Array.isArray(activeSubscription?.active_modules) && (
-                              activeSubscription.active_modules.includes(feature.id) ||
-                              (feature.id === 'analytics-advanced' && (
-                                activeSubscription.active_modules.includes('analytics-advanced-filters') ||
-                                activeSubscription.active_modules.includes('analytics-customer-insights')
-                              ))
+                          const modExp = activeSubscription?.module_expirations?.[feature.id];
+                          const isFeatureExpired = modExp?.days_left === 0;
+
+                          const isDirectSubscribed = !isFeatureExpired && (
+                            activeSubscription?.is_all_access || (
+                              Array.isArray(activeSubscription?.active_modules) && (
+                                activeSubscription.active_modules.includes(feature.id) ||
+                                (feature.id === 'analytics-advanced' && (
+                                  activeSubscription.active_modules.includes('analytics-advanced-filters') ||
+                                  activeSubscription.active_modules.includes('analytics-customer-insights')
+                                ))
+                              )
                             )
                           );
-                          const isMemberCountIncludedInActiveDetails = feature.id === 'member-count' && hasActiveMemberDetails;
+                          const isMemberCountIncludedInActiveDetails = !isFeatureExpired && feature.id === 'member-count' && hasActiveMemberDetails;
                           const isMemberCountIncludedInSelectedDetails = feature.id === 'member-count' && (selectedFeatures.has('member-details') || isAllAccess);
                           const isAlreadySubscribed = isDirectSubscribed || isMemberCountIncludedInActiveDetails;
 
@@ -1287,6 +1399,8 @@ export function SubscriptionMarketplacePage() {
                                 "group rounded-lg p-3.5 transition-all duration-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3.5 cursor-pointer select-none relative overflow-hidden border shadow-2xs",
                                 isSelected
                                   ? "bg-primary/[0.04] dark:bg-primary/[0.08] border-primary ring-1 ring-primary/30"
+                                  : isFeatureExpired
+                                  ? "bg-destructive/[0.03] border-destructive/30 hover:border-destructive/60"
                                   : isAlreadySubscribed
                                   ? "bg-card border-emerald-500/40 hover:border-emerald-500/70"
                                   : isMemberCountIncludedInSelectedDetails
@@ -1317,6 +1431,10 @@ export function SubscriptionMarketplacePage() {
                                     {isSelected ? (
                                       <span className="bg-primary text-white text-[9.5px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 shadow-2xs">
                                         <Check size={11} strokeWidth={3} /> Selected
+                                      </span>
+                                    ) : isFeatureExpired ? (
+                                      <span className="bg-destructive/10 text-destructive text-[9.5px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 border border-destructive/20">
+                                        <AlertCircle size={11} className="text-destructive" /> Expired (0d Left)
                                       </span>
                                     ) : isMemberCountIncludedInActiveDetails ? (
                                       <span className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300 text-[9.5px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 border border-emerald-200 dark:border-emerald-800/60">

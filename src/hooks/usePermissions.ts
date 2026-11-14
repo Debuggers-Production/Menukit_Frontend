@@ -1,9 +1,11 @@
 import { useShopStore } from '@/store/shopStore';
 import { useAuthStore } from '@/store/authStore';
+import { useSubscriptionStore, isModuleActive } from '@/store/subscriptionStore';
 
 export function usePermissions(module: string) {
   const { shop } = useShopStore();
   const { user } = useAuthStore();
+  const { subscriptionStatus } = useSubscriptionStore();
 
   const isOwner = Boolean(
     shop && user && (
@@ -11,6 +13,8 @@ export function usePermissions(module: string) {
       !shop.employee_permissions
     )
   );
+
+  const isSubActive = isModuleActive(subscriptionStatus, module);
 
   const getModulePermissions = (): string[] => {
     if (!module) return [];
@@ -32,10 +36,13 @@ export function usePermissions(module: string) {
   };
 
   const perms = getModulePermissions();
+  const hasEmployeeRead = isOwner || perms.includes('read') || perms.includes('write');
+  const hasEmployeeWrite = isOwner || perms.includes('write');
 
   return {
-    canRead: isOwner || perms.includes('read') || perms.includes('write'),
-    canWrite: isOwner || perms.includes('write'),
+    canRead: isSubActive && hasEmployeeRead,
+    canWrite: isSubActive && hasEmployeeWrite,
+    isSubscriptionActive: isSubActive,
     isOwner,
   };
 }

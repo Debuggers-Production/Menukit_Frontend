@@ -105,12 +105,17 @@ export function QRCodePage() {
   }, [shop?.logo_url, includeLogo]);
 
   const getQrUrlWithType = (url?: string) => {
+    const identifier = shop?.slug || shop?.id;
     let targetUrl = url;
-    if (!targetUrl && shop?.id) {
-      targetUrl = `${window.location.origin}/shop/${shop.id}?type=qr`;
+    if (!targetUrl && identifier) {
+      targetUrl = `${window.location.origin}/shop/${identifier}?type=qr`;
     }
-    if (targetUrl && shop?.id && targetUrl.includes('/brand/')) {
-      targetUrl = targetUrl.replace(/\/brand\/[^?]+/, `/shop/${shop.id}`);
+    if (targetUrl && identifier && targetUrl.includes('/brand/')) {
+      targetUrl = targetUrl.replace(/\/brand\/[^?]+/, `/shop/${identifier}`);
+    }
+    // If targetUrl contains /shop/{shop.id} (UUID) but we have a slug, switch UUID to slug!
+    if (targetUrl && shop?.slug && shop?.id && targetUrl.includes(`/shop/${shop.id}`)) {
+      targetUrl = targetUrl.replace(`/shop/${shop.id}`, `/shop/${shop.slug}`);
     }
     if (!targetUrl) return '';
     if (targetUrl.includes('type=qr')) return targetUrl;

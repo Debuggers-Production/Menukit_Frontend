@@ -310,7 +310,7 @@ export function CustomerProfilePage() {
                     </div>
 
                     <button
-                      onClick={() => navigate(`/shop/${vs.id}`)}
+                      onClick={() => navigate(`/shop/${vs.slug || vs.id}`)}
                       className="px-3.5 py-2 rounded-xl text-white font-extrabold text-xs shadow-sm flex items-center gap-1 shrink-0 hover:brightness-110 active:scale-95 transition-all cursor-pointer"
                       style={{ backgroundColor: primaryColor }}
                     >

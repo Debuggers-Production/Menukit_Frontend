@@ -20,7 +20,7 @@ interface NotificationState {
   setNotifications: (notifications: Notification[]) => void;
   markAsRead: (ids?: string[]) => Promise<void>;
   fetchHistory: () => Promise<void>;
-  clearAll: () => void;
+  clearAll: () => Promise<void>;
 }
 
 export const useNotificationStore = create<NotificationState>()(
@@ -97,7 +97,12 @@ export const useNotificationStore = create<NotificationState>()(
         }
       },
       
-      clearAll: () => {
+      clearAll: async () => {
+        try {
+          await api.delete('/notifications');
+        } catch (error) {
+          console.error("Failed to clear notifications on server", error);
+        }
         set({ notifications: [], unreadCount: 0 });
       }
     }),

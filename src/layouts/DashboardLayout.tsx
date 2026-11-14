@@ -66,6 +66,7 @@ import { usePWAInstall } from '@/hooks/usePWAInstall';
 import { DesktopInstallModal } from '@/components/DesktopInstallModal';
 import { WhatsNewModal } from '@/components/WhatsNewModal';
 import { NotificationTopBanner } from '@/components/NotificationPermissionAlert';
+import { useSubscriptionStore, isModuleActive } from '@/store/subscriptionStore';
 
 export function DashboardLayout() {
   const navigate = useNavigate();
@@ -81,7 +82,7 @@ export function DashboardLayout() {
     }
   });
   const { isInstalled, promptInstall, isModalOpen, setIsModalOpen } = usePWAInstall();
-  const [subStatus, setSubStatus] = useState<any>(null);
+  const { subscriptionStatus: subStatus, fetchSubscription } = useSubscriptionStore();
   const headerTitle = useHeaderStore((state) => state.title);
   const headerSubtitle = useHeaderStore((state) => state.subtitle);
   const { user, logout } = useAuthStore();
@@ -234,16 +235,8 @@ export function DashboardLayout() {
   }, []);
 
   useEffect(() => {
-    const fetchSub = async () => {
-      try {
-        const res = await api.get('/subscription/current');
-        setSubStatus(res.data);
-      } catch (e) {
-        console.error('Failed to fetch subscription in layout', e);
-      }
-    };
-    fetchSub();
-  }, []);
+    fetchSubscription();
+  }, [fetchSubscription]);
 
   interface NavItem {
     name: string;
@@ -465,7 +458,7 @@ export function DashboardLayout() {
         { name: 'Orders', path: '/orders', icon: ShoppingBag, iconColor: 'text-emerald-500', permissionModule: 'orders' },
         { name: 'Categories', path: '/categories', icon: MenuSquare, iconColor: 'text-cyan-500', permissionModule: 'menu_categories' },
         { name: 'Menus', path: '/menu-items', icon: Coffee, iconColor: 'text-amber-500', permissionModule: 'menu_items' },
-        ...(isSchemeEnabledShop(shop?.category) ? [
+        ...(isSchemeEnabledShop(shop?.category, shop?.settings) ? [
           { name: 'Schemes', path: '/schemes', icon: Coins, iconColor: 'text-amber-500', permissionModule: 'schemes' }
         ] : []),
       ]
@@ -487,7 +480,7 @@ export function DashboardLayout() {
       items: [
         { name: 'Shop', path: '/shop-setup', icon: Store, iconColor: 'text-orange-500', permissionModule: 'settings' },
         { name: 'Staff', path: '/settings/team', icon: Shield, iconColor: 'text-blue-600', permissionModule: 'team' },
-        { name: 'Customize Theme', path: '/customize', icon: Palette, iconColor: 'text-pink-500', permissionModule: 'settings' },
+        { name: 'Customize Theme', path: '/customize', icon: Palette, iconColor: 'text-pink-500', permissionModule: 'theme' },
         { name: 'Subscription', path: '/subscription', icon: Zap, iconColor: 'text-orange-500', permissionModule: 'subscription' },
         { name: 'Settlements', path: '/settlements', icon: Wallet, iconColor: 'text-green-600', permissionModule: 'settlements' },
         { name: 'Settings', path: '/settings', icon: SettingsIcon, iconColor: 'text-slate-500', permissionModule: 'settings' },
@@ -511,6 +504,9 @@ export function DashboardLayout() {
     let perms = shop.employee_permissions ? shop.employee_permissions[module] : undefined;
     if (!perms && (module === 'campaigns' || module === 'marketing')) {
       perms = shop.employee_permissions ? (shop.employee_permissions['campaigns'] || shop.employee_permissions['marketing']) : undefined;
+    }
+    if (!perms && (module === 'theme' || module === 'customize')) {
+      perms = shop.employee_permissions ? (shop.employee_permissions['theme'] || shop.employee_permissions['settings']) : undefined;
     }
     if (!perms && module === 'chalkboard') {
       perms = shop.employee_permissions ? (shop.employee_permissions['chalkboard'] || shop.employee_permissions['settings']) : undefined;
@@ -640,6 +636,7 @@ export function DashboardLayout() {
                       : location.pathname.startsWith(item.path);
                     const Icon = item.icon;
                     const theme = getItemTheme(item.path);
+                    const isLocked = subStatus && item.permissionModule ? !isModuleActive(subStatus, item.permissionModule) : false;
 
                     return (
                       <NavLink
@@ -649,15 +646,22 @@ export function DashboardLayout() {
                         onMouseEnter={() => preloadRoute(item.path)}
                         onFocus={() => preloadRoute(item.path)}
                         onTouchStart={() => preloadRoute(item.path)}
-                        title={`${item.name} (${group.section})`}
+                        title={`${item.name} (${group.section})${isLocked ? ' - Locked (Expired)' : ''}`}
                         className={cn(
                           "w-9 h-9 mx-auto flex items-center justify-center rounded-md transition-all relative group",
                           isActive
                             ? "bg-primary text-white shadow-2xs"
-                            : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-white"
+                            : isLocked
+                              ? "text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                              : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-white"
                         )}
                       >
                         <Icon size={16} className={isActive ? "text-white" : (item.iconColor ?? theme.icon)} />
+                        {isLocked && (
+                          <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-amber-500 text-white rounded-full flex items-center justify-center text-[7.5px] shadow-xs">
+                            <Lock size={7} />
+                          </span>
+                        )}
                       </NavLink>
                     );
                   })}
@@ -708,6 +712,7 @@ export function DashboardLayout() {
                         : location.pathname.startsWith(item.path);
                       const Icon = item.icon;
                       const theme = getItemTheme(item.path);
+                      const isLocked = subStatus && item.permissionModule ? !isModuleActive(subStatus, item.permissionModule) : false;
 
                       return (
                         <div key={item.path} className="relative flex items-center">
@@ -725,14 +730,27 @@ export function DashboardLayout() {
                             onFocus={() => preloadRoute(item.path)}
                             onTouchStart={() => preloadRoute(item.path)}
                             className={cn(
-                              "w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] font-semibold transition-all ml-0.5",
+                              "w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] font-semibold transition-all ml-0.5 group/navitem",
                               isActive
                                 ? "bg-primary text-white font-bold shadow-2xs"
-                                : "text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-950 dark:hover:text-white"
+                                : isLocked
+                                  ? "text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-800 dark:hover:text-slate-200"
+                                  : "text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-950 dark:hover:text-white"
                             )}
                           >
                             <Icon size={15} className={isActive ? "text-white" : (item.iconColor ?? theme.icon)} />
-                            <span className="truncate">{item.name}</span>
+                            <span className="truncate flex-1 text-left">{item.name}</span>
+                            {isLocked && (
+                              <span className={cn(
+                                "text-[9.5px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1 shrink-0 ml-auto transition-colors",
+                                isActive
+                                  ? "bg-white/20 text-white"
+                                  : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
+                              )}>
+                                <Lock size={8.5} />
+                                <span>Locked</span>
+                              </span>
+                            )}
                           </NavLink>
                         </div>
                       );
@@ -813,7 +831,7 @@ export function DashboardLayout() {
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
         {/* DESKTOP Top Bar Header */}
         <div className="hidden lg:flex h-13 border-b border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 px-5 items-center justify-between shrink-0 z-40 relative">
-          <div className="flex items-center gap-2.5 min-w-0">
+          <div className="flex items-center gap-2.5 min-w-0 max-w-[35%] xl:max-w-[45%]">
             {/* Page Module Icon Badge matching Title */}
             {(() => {
               const page = getPageDetails();
@@ -829,11 +847,11 @@ export function DashboardLayout() {
             })()}
 
             <div className="flex items-center min-w-0">
-              <h1 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white leading-tight font-heading truncate">{headerTitle}</h1>
+              <h1 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white leading-tight font-heading truncate" title={headerTitle}>{headerTitle}</h1>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <div id="header-actions-portal" className="flex items-center gap-2"></div>
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0 ml-auto">
+            <div id="header-actions-portal" className="flex items-center gap-2 shrink-0"></div>
             <div className="h-5 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
             <div className="flex items-center gap-1.5">
               {!isInstalled && (
@@ -882,7 +900,7 @@ export function DashboardLayout() {
               </button>
             )}
             <WsConnectionTracker />
-            <NotificationBell />
+            <NotificationBell directNavigate />
             <button
               onClick={() => setIsSignOutModalOpen(true)}
               className="w-7 h-7 rounded-md bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-100 dark:border-rose-900/50 flex items-center justify-center hover:bg-rose-100 dark:hover:bg-rose-900/80 transition-colors"
@@ -897,7 +915,7 @@ export function DashboardLayout() {
         <NotificationTopBanner />
 
         {/* TOP APP BAR SUBSCRIPTION ALERT BANNER */}
-        {subStatus && subStatus.is_expired && (
+        {subStatus && (subStatus.is_expired || subStatus.has_expired_modules || subStatus.days_left === 0) && (
           <div
             onClick={() => navigate('/subscription')}
             className="bg-gradient-to-r from-red-600 via-rose-600 to-red-700 text-white px-4 py-2 text-xs font-black flex items-center justify-between cursor-pointer shadow-md hover:brightness-110 transition-all z-30 shrink-0"
@@ -905,16 +923,20 @@ export function DashboardLayout() {
           >
             <div className="flex items-center gap-2">
               <AlertOctagon size={18} className="animate-pulse shrink-0 text-white" />
-              <span>{subStatus.is_trial ? 'Your free trial has ended.' : 'Your subscription has ended.'} Please renew to restore full feature access.</span>
+              <span>
+                {subStatus.is_expired 
+                  ? "Your subscription has ended. Features locked. Please renew to continue."
+                  : `${subStatus.expired_modules_count || 'Some'} add-on feature(s) have expired (0 days left). Features are locked. Please renew to restore full operations.`}
+              </span>
             </div>
             <div className="flex items-center gap-1 bg-white/20 px-2.5 py-1 rounded-lg hover:bg-white/30 transition-colors uppercase tracking-wider text-[10px] font-black shrink-0">
-              <span>Renew Subscription</span>
+              <span>Renew Now</span>
               <ArrowRight size={12} />
             </div>
           </div>
         )}
 
-        {subStatus && !subStatus.is_expired && subStatus.is_grace_period && (
+        {subStatus && !subStatus.is_expired && !subStatus.has_expired_modules && subStatus.days_left > 0 && subStatus.is_grace_period && (
           <div
             onClick={() => navigate('/subscription')}
             className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white px-4 py-2 text-xs font-black flex items-center justify-between cursor-pointer shadow-md hover:brightness-110 transition-all z-30 shrink-0"
@@ -933,7 +955,7 @@ export function DashboardLayout() {
           </div>
         )}
 
-        {subStatus && !subStatus.is_expired && !subStatus.is_grace_period && (subStatus.days_left > 0 && subStatus.days_left <= 5) && (
+        {subStatus && !subStatus.is_expired && !subStatus.has_expired_modules && !subStatus.is_grace_period && (subStatus.days_left > 0 && subStatus.days_left <= 5) && (
           <div
             onClick={() => navigate('/subscription')}
             className="bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white px-4 py-2 text-xs font-bold flex items-center justify-between cursor-pointer shadow-md hover:brightness-110 transition-all z-30 shrink-0"
@@ -972,6 +994,7 @@ export function DashboardLayout() {
           const isActive = location.pathname.startsWith(item.path);
           const Icon = item.icon;
           const theme = getItemTheme(item.path, item.iconColor);
+          const isLocked = subStatus && item.permissionModule ? !isModuleActive(subStatus, item.permissionModule) : false;
 
           return (
             <NavLink
@@ -982,11 +1005,18 @@ export function DashboardLayout() {
               onTouchStart={() => preloadRoute(item.path)}
               onClick={() => triggerHaptic(HAPTIC_PATTERNS.tap)}
               className={cn(
-                "flex flex-col items-center justify-center w-full h-full space-y-1 transition-all",
+                "flex flex-col items-center justify-center w-full h-full space-y-1 transition-all relative",
                 isActive ? "font-bold scale-105" : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
               )}
             >
-              <Icon size={20} className={isActive ? theme.icon : "text-slate-500 dark:text-slate-400"} />
+              <div className="relative">
+                <Icon size={20} className={isActive ? theme.icon : "text-slate-500 dark:text-slate-400"} />
+                {isLocked && (
+                  <span className="absolute -top-1 -right-1 w-3 h-3 bg-amber-500 text-white rounded-full flex items-center justify-center text-[7px] shadow-xs">
+                    <Lock size={6} />
+                  </span>
+                )}
+              </div>
               <span className={cn("text-[10px] font-bold", isActive ? theme.text : "text-slate-500 dark:text-slate-400")}>{item.name}</span>
             </NavLink>
           );
@@ -1023,6 +1053,7 @@ export function DashboardLayout() {
                   const Icon = item.icon;
                   const isActive = location.pathname.startsWith(item.path);
                   const theme = getItemTheme(item.path);
+                  const isLocked = subStatus && item.permissionModule ? !isModuleActive(subStatus, item.permissionModule) : false;
 
                   return (
                     <NavLink
@@ -1035,12 +1066,18 @@ export function DashboardLayout() {
                         setIsMoreMenuOpen(false);
                       }}
                       className={cn(
-                        "flex flex-col items-center justify-center p-2.5 rounded-md border transition-all text-center gap-1 shadow-2xs",
+                        "flex flex-col items-center justify-center p-2.5 rounded-md border transition-all text-center gap-1 shadow-2xs relative",
                         theme.bg,
                         theme.border,
-                        isActive && "ring-2 ring-primary ring-offset-1 font-bold"
+                        isActive && "ring-2 ring-primary ring-offset-1 font-bold",
+                        isLocked && "opacity-80"
                       )}
                     >
+                      {isLocked && (
+                        <span className="absolute top-1.5 right-1.5 w-3.5 h-3.5 bg-amber-500 text-white rounded-full flex items-center justify-center text-[7px] shadow-xs">
+                          <Lock size={7} />
+                        </span>
+                      )}
                       <Icon size={18} className={theme.icon} />
                       <span className={cn("text-xs font-semibold truncate w-full", theme.text)}>
                         {item.name}

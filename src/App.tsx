@@ -163,7 +163,7 @@ function App() {
           <Route path="/schemes" element={<PermissionGuard module="schemes"><SchemesPage /></PermissionGuard>} />
           <Route path="/bulk-upload" element={<PermissionGuard module="menu_items"><BulkUploadPage /></PermissionGuard>} />
           <Route path="/json-bulk-upload" element={<PermissionGuard module="menu_items"><JsonBulkUploadPage /></PermissionGuard>} />
-          <Route path="/customize" element={<PermissionGuard module="settings"><CustomizeThemePage /></PermissionGuard>} />
+          <Route path="/customize" element={<PermissionGuard module="theme"><CustomizeThemePage /></PermissionGuard>} />
           <Route path="/chalkboard" element={<PermissionGuard module="chalkboard"><ChalkboardPage /></PermissionGuard>} />
           <Route path="/qr-code" element={<QRCodePage />} />
           <Route path="/analytics" element={<PermissionGuard module="analytics"><AnalyticsPage /></PermissionGuard>} />

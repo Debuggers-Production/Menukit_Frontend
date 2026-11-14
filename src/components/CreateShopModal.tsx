@@ -4,7 +4,7 @@ import { X, Store, Check, Building2, CreditCard, Loader2, ArrowRight } from 'luc
 import { toast } from 'react-hot-toast';
 import { api } from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
-import { BUSINESS_CATEGORIES, getCategoryIcon } from '@/config/businessCategories';
+import { BUSINESS_CATEGORIES, getCategoryIcon, isSchemeDefaultCategory } from '@/config/businessCategories';
 import { SearchableSelect } from '@/components/ui/SearchableSelect';
 
 interface CreateShopModalProps {
@@ -32,6 +32,7 @@ export function CreateShopModal({ isOpen, onClose, ownedShops = [], onSuccess }:
   const { user } = useAuthStore();
   const [name, setName] = useState('');
   const [category, setCategory] = useState('restaurants_cafes_hotels');
+  const [selectedSourceShopId, setSelectedSourceShopId] = useState<string>(ownedShops[0]?.id || '');
   const [cloneFromShopId, setCloneFromShopId] = useState<string>(ownedShops[0]?.id || '');
   
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -53,12 +54,16 @@ export function CreateShopModal({ isOpen, onClose, ownedShops = [], onSuccess }:
   const [loadingPricing, setLoadingPricing] = useState(false);
 
   const isAdditionalShop = ownedShops.length > 0;
+  const selectedShop = ownedShops.find((s) => s.id === (cloneFromShopId || selectedSourceShopId)) || ownedShops[0];
+  const selectedShopName = selectedShop?.name || 'Primary Store';
 
   useEffect(() => {
     if (isOpen) {
       setName('');
       setCategory('restaurants_cafes_hotels');
-      setCloneFromShopId(ownedShops[0]?.id || '');
+      const initialShopId = ownedShops[0]?.id || '';
+      setSelectedSourceShopId(initialShopId);
+      setCloneFromShopId(initialShopId);
 
       const checkPricing = async () => {
         if (!isAdditionalShop) {
@@ -126,6 +131,7 @@ export function CreateShopModal({ isOpen, onClose, ownedShops = [], onSuccess }:
         name: name.trim(),
         category,
         clone_from_shop_id: cloneFromShopId || undefined,
+        savings_schemes_enabled: isSchemeDefaultCategory(category),
       };
 
       // 1. If shop creation payment is required, initiate order & payment
@@ -307,46 +313,88 @@ export function CreateShopModal({ isOpen, onClose, ownedShops = [], onSuccess }:
 
           {/* Menu Sharing / Clone Option (if user has existing shops) */}
           {isAdditionalShop && ownedShops.length > 0 && (
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
                 Menu Setup Option
               </label>
-              <div className="space-y-1.5">
-                <label className="flex items-center gap-2.5 p-2.5 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50/30 dark:bg-slate-800/30 hover:bg-slate-100/50 dark:hover:bg-slate-800/60 cursor-pointer transition-colors">
-                  <input
-                    type="radio"
-                    name="menu_option"
-                    checked={Boolean(cloneFromShopId)}
-                    onChange={() => setCloneFromShopId(ownedShops[0]?.id || '')}
-                    className="w-3.5 h-3.5 text-orange-500 focus:ring-orange-500 border-slate-300"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <span className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200 block">
-                      Share Menu from existing shop
-                    </span>
-                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                      Syncs categories and menu items with {ownedShops[0]?.name || 'Primary Store'}
-                    </span>
-                  </div>
-                </label>
+              <div className="space-y-2">
+                {/* Option 1: Share Menu from existing shop */}
+                <div
+                  className={`p-3 rounded-lg border transition-all ${
+                    Boolean(cloneFromShopId)
+                      ? 'border-orange-500/60 bg-orange-50/25 dark:bg-orange-950/20 ring-1 ring-orange-500/20'
+                      : 'border-slate-200 dark:border-slate-700 bg-slate-50/30 dark:bg-slate-800/30 hover:bg-slate-100/40 dark:hover:bg-slate-800/50'
+                  }`}
+                >
+                  <label className="flex items-start gap-2.5 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="menu_option"
+                      checked={Boolean(cloneFromShopId)}
+                      onChange={() => setCloneFromShopId(selectedSourceShopId || ownedShops[0]?.id || '')}
+                      className="w-4 h-4 mt-0.5 text-orange-500 focus:ring-orange-500 border-slate-300 cursor-pointer"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <span className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200 block">
+                        Share Menu from existing shop
+                      </span>
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5">
+                        Syncs categories and menu items with {selectedShopName}
+                      </span>
+                    </div>
+                  </label>
 
-                <label className="flex items-center gap-2.5 p-2.5 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50/30 dark:bg-slate-800/30 hover:bg-slate-100/50 dark:hover:bg-slate-800/60 cursor-pointer transition-colors">
-                  <input
-                    type="radio"
-                    name="menu_option"
-                    checked={!cloneFromShopId}
-                    onChange={() => setCloneFromShopId('')}
-                    className="w-3.5 h-3.5 text-orange-500 focus:ring-orange-500 border-slate-300"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <span className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200 block">
-                      Start with clean / empty menu
-                    </span>
-                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                      Create brand new categories and dishes from scratch
-                    </span>
-                  </div>
-                </label>
+                  {/* Dropdown to select WHICH shop to share/sync menu from */}
+                  {Boolean(cloneFromShopId) && (
+                    <div className="mt-3 pt-2.5 border-t border-slate-200/80 dark:border-slate-700/80 pl-6.5 space-y-1.5">
+                      <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+                        Select Shop to Sync Menu From
+                      </label>
+                      <SearchableSelect
+                        options={ownedShops.map((s) => ({
+                          id: s.id,
+                          name: s.name,
+                          icon: <Building2 className="w-3.5 h-3.5 text-orange-500 shrink-0" />
+                        }))}
+                        value={cloneFromShopId || selectedSourceShopId}
+                        onChange={(val) => {
+                          setSelectedSourceShopId(val);
+                          setCloneFromShopId(val);
+                        }}
+                        placeholder="Select a shop to sync menu from"
+                        showSearch={ownedShops.length > 5}
+                        className="h-9 rounded-md bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-xs sm:text-sm font-medium"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Option 2: Start with clean / empty menu */}
+                <div
+                  className={`p-3 rounded-lg border transition-all ${
+                    !cloneFromShopId
+                      ? 'border-orange-500/60 bg-orange-50/25 dark:bg-orange-950/20 ring-1 ring-orange-500/20'
+                      : 'border-slate-200 dark:border-slate-700 bg-slate-50/30 dark:bg-slate-800/30 hover:bg-slate-100/40 dark:hover:bg-slate-800/50'
+                  }`}
+                >
+                  <label className="flex items-start gap-2.5 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="menu_option"
+                      checked={!cloneFromShopId}
+                      onChange={() => setCloneFromShopId('')}
+                      className="w-4 h-4 mt-0.5 text-orange-500 focus:ring-orange-500 border-slate-300 cursor-pointer"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <span className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200 block">
+                        Start with clean / empty menu
+                      </span>
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5">
+                        Create brand new categories and dishes from scratch
+                      </span>
+                    </div>
+                  </label>
+                </div>
               </div>
             </div>
           )}

@@ -1120,10 +1120,27 @@ export function isGeneralRetailBusiness(categoryValue?: string | null): boolean 
 }
 
 /**
- * Returns true if the shop is eligible for Savings Schemes (formerly called Pandu).
+ * Returns true if the category defaults to having Savings Schemes enabled (Fireworks, Crackers, Bakeries, Sweets).
  */
-export function isSchemeEnabledShop(categoryValue?: string | null): boolean {
+export function isSchemeDefaultCategory(categoryValue?: string | null): boolean {
   return isFireworksBusiness(categoryValue) || isBakeryBusiness(categoryValue);
+}
+
+/**
+ * Returns true if the shop has Savings Schemes enabled.
+ * If explicitly configured in settings, that is the single source of truth for ANY category.
+ * If not yet explicitly saved in settings, defaults to true for Fireworks and Bakery shops.
+ */
+export function isSchemeEnabledShop(
+  categoryValue?: string | null,
+  settings?: { savings_schemes_enabled?: boolean } | null
+): boolean {
+  // If explicitly configured in settings, that is the single source of truth for ANY category
+  if (settings && typeof settings.savings_schemes_enabled === 'boolean') {
+    return settings.savings_schemes_enabled;
+  }
+  // Default enablement is for Fireworks and Bakery businesses
+  return isSchemeDefaultCategory(categoryValue);
 }
 import React from 'react';
 import { 

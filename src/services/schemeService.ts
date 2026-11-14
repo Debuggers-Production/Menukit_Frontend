@@ -17,6 +17,11 @@ export interface SchemeStats {
   completion_rate_percent: number;
 }
 
+export interface SchemeCategoryInfo {
+  id: string;
+  name: string;
+}
+
 export interface Scheme {
   id: string;
   shop_id: string;
@@ -28,6 +33,9 @@ export interface Scheme {
   term_unit: string;
   max_members?: number | null;
   items: SchemeItemInfo[];
+  reward_type?: 'all_items' | 'category' | 'specific_items';
+  reward_categories?: SchemeCategoryInfo[];
+  highlight_text?: string | null;
   show_on_public_menu: boolean;
   status: 'active' | 'closed' | 'completed';
   start_date?: string | null;
@@ -89,6 +97,9 @@ export interface SchemeCreatePayload {
   term_unit?: string;
   max_members?: number | null;
   items: SchemeItemInfo[];
+  reward_type?: 'all_items' | 'category' | 'specific_items';
+  reward_categories?: SchemeCategoryInfo[];
+  highlight_text?: string | null;
   show_on_public_menu: boolean;
   status?: string;
 }
@@ -130,6 +141,9 @@ export interface CustomerSchemePass {
   paid_installments: number;
   remaining_installments: number;
   items: SchemeItemInfo[];
+  reward_type?: 'all_items' | 'category' | 'specific_items';
+  reward_categories?: SchemeCategoryInfo[];
+  highlight_text?: string | null;
   payments: SchemePayment[];
   installment_schedule: InstallmentScheduleItem[];
 }

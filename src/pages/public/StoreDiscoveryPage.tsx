@@ -15,6 +15,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { api } from '@/services/api';
 import { PublicShopListing } from '@/types';
+import { publicCache } from '@/utils/publicCache';
 import { InfiniteScrollTrigger } from '@/components/ui/InfiniteScrollTrigger';
 
 const BrandFooter = ({ mode }: { mode: 'landing' | 'scanner' | 'map' }) => {
@@ -243,7 +244,13 @@ function ShopMarker({
           <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
             {shop.show_menus_in_discovery !== false && (
               <button
-                onClick={() => navigate(`/shop/${shop.id}`)}
+                onClick={() => {
+                  const targetSlug = shop.slug || shop.id;
+                  publicCache.set(`shop_${targetSlug}`, shop);
+                  publicCache.set(`shop_${shop.id}`, shop);
+                  publicCache.set(`slug_to_id_${targetSlug}`, shop.id);
+                  navigate(`/shop/${targetSlug}`, { state: { shopPreview: shop } });
+                }}
                 style={{
                   flex: 1, padding: '8px', borderRadius: 8, border: 'none',
                   background: 'linear-gradient(135deg,#f97316,#ea580c)',
@@ -340,6 +347,16 @@ export function StoreDiscoveryPage() {
     window.addEventListener('open-shop-info', handleOpenShopInfo);
     return () => window.removeEventListener('open-shop-info', handleOpenShopInfo);
   }, []);
+
+  const openShopMenu = useCallback((s: any) => {
+    if (!s) return;
+    const targetSlug = s.slug || s.id;
+    // Prime frontend caches for instantaneous 0ms page render
+    publicCache.set(`shop_${targetSlug}`, s);
+    publicCache.set(`shop_${s.id}`, s);
+    publicCache.set(`slug_to_id_${targetSlug}`, s.id);
+    navigate(`/shop/${targetSlug}`, { state: { shopPreview: s } });
+  }, [navigate]);
 
   useEffect(() => {
     if (infoShopId) {
@@ -1144,10 +1161,20 @@ export function StoreDiscoveryPage() {
                     {/* Info */}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 2 }}>
-                        <span style={{
-                          fontWeight: 700, fontSize: '.875rem', color: '#1e293b',
-                          flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                        }}>{shop.name}</span>
+                        <span
+                          onClick={(e) => {
+                            if (shop.show_menus_in_discovery !== false) {
+                              e.stopPropagation();
+                              openShopMenu(shop);
+                            }
+                          }}
+                          style={{
+                            fontWeight: 700, fontSize: '.875rem', color: '#1e293b',
+                            flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            cursor: shop.show_menus_in_discovery !== false ? 'pointer' : 'default',
+                          }}
+                          className="hover:text-primary-600 transition-colors"
+                        >{shop.name}</span>
                         {shop.active_discounts_count > 0 && (
                           <span
                             onClick={(e) => { e.stopPropagation(); setOffersShopId(shop.id); }}
@@ -1236,7 +1263,7 @@ export function StoreDiscoveryPage() {
                       {/* Go button */}
                       {shop.show_menus_in_discovery !== false && (
                         <button
-                          onClick={e => { e.stopPropagation(); navigate(`/shop/${shop.id}`); }}
+                          onClick={e => { e.stopPropagation(); openShopMenu(shop); }}
                           style={{
                             width: 36, height: 36, borderRadius: '50%', border: 'none',
                             background: 'linear-gradient(135deg,#f97316,#ea580c)',
@@ -1323,7 +1350,7 @@ export function StoreDiscoveryPage() {
 
                 <div style={{ display: 'flex', gap: 12, marginTop: 4 }}>
                   {infoShopData.settings?.show_menus_in_discovery !== false && (
-                    <button onClick={() => navigate(`/shop/${infoShopData.id}`)} style={{ flex: 1, padding: '12px', background: '#f97316', color: 'white', border: 'none', borderRadius: 12, fontWeight: 700, cursor: 'pointer' }}>View Menu</button>
+                    <button onClick={() => openShopMenu(infoShopData)} style={{ flex: 1, padding: '12px', background: '#f97316', color: 'white', border: 'none', borderRadius: 12, fontWeight: 700, cursor: 'pointer' }}>View Menu</button>
                   )}
                   {infoShopData.latitude && infoShopData.longitude && (
                     <a href={`https://www.google.com/maps/dir/?api=1&destination=${infoShopData.latitude},${infoShopData.longitude}`} target="_blank" rel="noreferrer" style={{ flex: 1, padding: '12px', background: '#f1f5f9', color: '#3b82f6', textDecoration: 'none', borderRadius: 12, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
@@ -1365,8 +1392,9 @@ export function StoreDiscoveryPage() {
                     style={{ border: `1px solid #f9731630` }}
                     onClick={() => { 
                       setOffersShopId(null); 
+                      const targetShop = shops.find(s => s.id === offersShopId);
                       if (showMenuInDiscovery) {
-                        navigate(`/shop/${offersShopId}`); 
+                        openShopMenu(targetShop || { id: offersShopId }); 
                       } else {
                         setInfoShopId(offersShopId);
                       }
@@ -1463,7 +1491,11 @@ export function StoreDiscoveryPage() {
               )}
             </div>
             {showMenuInDiscovery ? (
-              <button onClick={() => { setOffersShopId(null); navigate(`/shop/${offersShopId}`); }} style={{ width: '100%', padding: '14px', background: '#f97316', color: 'white', border: 'none', borderRadius: 12, fontWeight: 700, cursor: 'pointer', marginTop: 16 }}>
+              <button onClick={() => { 
+                setOffersShopId(null); 
+                const targetShop = shops.find(s => s.id === offersShopId);
+                openShopMenu(targetShop || { id: offersShopId });
+              }} style={{ width: '100%', padding: '14px', background: '#f97316', color: 'white', border: 'none', borderRadius: 12, fontWeight: 700, cursor: 'pointer', marginTop: 16 }}>
                 Order Now
               </button>
             ) : (

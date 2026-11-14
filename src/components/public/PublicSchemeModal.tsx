@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, Coins, Gift, CheckCircle2, Clock, Calendar, 
   ArrowRight, Phone, User, MapPin, ShieldCheck, 
   ChevronRight, Award, Trophy, Info, Building2,
-  QrCode, CreditCard, ExternalLink, Lock, ChevronLeft
+  QrCode, CreditCard, ExternalLink, Lock, ChevronLeft,
+  Tag, Store, Flame, Wallet, FileText, AlertTriangle
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { toast } from 'react-hot-toast';
@@ -113,6 +115,364 @@ export const DISTRICTS_BY_STATE: Record<string, string[]> = {
   ]
 };
 
+export interface HighlightBenefitsProps {
+  highlightText?: string | null;
+  compact?: boolean;
+  maxInitialLines?: number;
+}
+
+export const HighlightBenefitsBox: React.FC<HighlightBenefitsProps> = ({
+  highlightText,
+  compact = true,
+  maxInitialLines = 2,
+}) => {
+  const [isExpanded, setIsExpanded] = React.useState(false);
+
+  if (!highlightText) return null;
+  const lines = highlightText.split('\n').map(l => l.trim()).filter(Boolean);
+  if (lines.length === 0) return null;
+
+  const hasMore = compact && lines.length > maxInitialLines;
+  const displayedLines = hasMore && !isExpanded 
+    ? lines.slice(0, maxInitialLines) 
+    : lines;
+
+  return (
+    <div className="rounded-xl p-2.5 sm:p-3 bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-amber-500/10 border border-amber-500/25 space-y-1.5 shadow-2xs transition-all">
+      <div className="flex items-center justify-between gap-1.5 border-b border-amber-500/20 pb-1 mb-1">
+        <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-amber-700 dark:text-amber-300">
+          <Flame size={12} className="text-amber-500 shrink-0 animate-pulse" />
+          <span>Scheme Highlights & Benefits</span>
+        </span>
+        <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300">
+          {lines.length} {lines.length === 1 ? 'Benefit' : 'Benefits'}
+        </span>
+      </div>
+
+      <div className={`space-y-1 transition-all ${isExpanded ? 'max-h-40 overflow-y-auto pr-1' : ''}`}>
+        {displayedLines.map((line, lIdx) => {
+          const colonIdx = line.indexOf(':');
+          if (colonIdx > -1) {
+            const key = line.slice(0, colonIdx).trim();
+            const val = line.slice(colonIdx + 1).trim();
+            const isHighlightRow = 
+              key.toUpperCase().includes('TOTAL') || 
+              key.toUpperCase().includes('BONUS') || 
+              key.toUpperCase().includes('BENEFIT') ||
+              key.toUpperCase().includes('SAVING');
+            return (
+              <div 
+                key={lIdx} 
+                className={`flex items-center justify-between text-xs py-0.5 px-1.5 rounded-md transition-colors ${
+                  isHighlightRow 
+                    ? 'font-bold bg-amber-500/15 text-amber-900 dark:text-amber-200' 
+                    : 'text-muted-foreground'
+                }`}
+              >
+                <span className="text-[10px] sm:text-[11px] uppercase tracking-wide truncate max-w-[65%] font-bold">
+                  {key}
+                </span>
+                <span className="font-mono font-black text-foreground text-[11px] sm:text-xs">
+                  {val}
+                </span>
+              </div>
+            );
+          }
+          return (
+            <div key={lIdx} className="flex items-start gap-1.5 text-xs text-foreground font-semibold px-1">
+              <span className="text-amber-500 font-bold">•</span>
+              <span className="leading-tight text-[11px] sm:text-xs">{line}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      {hasMore && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setIsExpanded(!isExpanded);
+          }}
+          className="w-full pt-1.5 mt-1 border-t border-amber-500/20 flex items-center justify-center gap-1 text-[10px] font-bold text-amber-700 dark:text-amber-300 hover:text-amber-900 dark:hover:text-amber-100 cursor-pointer transition-colors"
+        >
+          <span>
+            {isExpanded ? 'Show Less ▴' : `+${lines.length - maxInitialLines} More Benefits ▾`}
+          </span>
+        </button>
+      )}
+    </div>
+  );
+};
+
+export const renderHighlightBenefits = (highlightText?: string | null, compact = true, maxInitialLines = 2) => {
+  return <HighlightBenefitsBox highlightText={highlightText} compact={compact} maxInitialLines={maxInitialLines} />;
+};
+
+interface SchemeCardProps {
+  scheme: Scheme;
+  idx: number;
+  currency: string;
+  primaryColor: string;
+  isTargetScheme?: boolean;
+  onEnroll: (scheme: Scheme) => void;
+  onViewRewards: (scheme: Scheme) => void;
+}
+
+const SchemeCard: React.FC<SchemeCardProps> = ({
+  scheme,
+  idx,
+  currency,
+  primaryColor,
+  isTargetScheme = false,
+  onEnroll,
+  onViewRewards,
+}) => {
+  const primaryImage = scheme.items?.find(it => it.image_url)?.image_url;
+  const maturityVal = (scheme.price || 0) * (scheme.term_duration || 0);
+  const highlightLines = (scheme.highlight_text || '')
+    .split('\n')
+    .map(l => l.trim())
+    .filter(Boolean);
+
+  return (
+    <motion.div
+      id={`scheme-card-${scheme.id}`}
+      initial={{ opacity: 0, y: 18 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, delay: idx * 0.05, ease: 'easeOut' }}
+      whileHover={{ y: -6, transition: { duration: 0.22, ease: 'easeOut' } }}
+      className={`group relative bg-card border ${
+        isTargetScheme
+          ? 'border-amber-500 ring-2 ring-amber-500/80 shadow-xl shadow-amber-500/15'
+          : 'border-border/80 hover:border-amber-500/60'
+      } rounded-2xl sm:rounded-3xl overflow-hidden shadow-xs hover:shadow-xl hover:shadow-amber-500/10 transition-all duration-300 flex flex-col justify-between`}
+    >
+      {/* Top Media / Banner Section (Authentic Menu Card Cover Style) */}
+      <div className="relative w-full h-44 sm:h-52 overflow-hidden bg-gradient-to-br from-amber-500/15 via-orange-500/10 to-amber-600/20 dark:from-amber-950/40 dark:via-orange-950/30 dark:to-slate-900 border-b border-border/60">
+        {primaryImage ? (
+          <img
+            src={primaryImage}
+            alt={scheme.title}
+            loading="lazy"
+            decoding="async"
+            className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-108"
+          />
+        ) : (
+          <div className="w-full h-full relative flex items-center justify-center overflow-hidden">
+            {/* Ambient decorative lighting */}
+            <div className="absolute -top-10 -right-10 w-36 h-36 rounded-full bg-amber-400/25 blur-2xl" />
+            <div className="absolute -bottom-10 -left-10 w-36 h-36 rounded-full bg-orange-500/20 blur-2xl" />
+            <Coins
+              size={96}
+              className="absolute -right-6 -bottom-6 text-amber-500/10 dark:text-amber-400/5 rotate-12 transition-transform duration-700 group-hover:scale-110 group-hover:rotate-6"
+            />
+            <Gift
+              size={80}
+              className="absolute -left-6 -top-6 text-orange-500/10 dark:text-orange-400/5 -rotate-12 transition-transform duration-700 group-hover:scale-110 group-hover:-rotate-6"
+            />
+            <div className="relative z-10 w-16 h-16 rounded-2xl bg-white/85 dark:bg-slate-900/85 backdrop-blur-md shadow-md border border-amber-300/40 dark:border-amber-700/40 flex items-center justify-center text-amber-500 dark:text-amber-400 group-hover:scale-110 transition-transform duration-300">
+              <Coins size={32} />
+            </div>
+          </div>
+        )}
+
+        {/* Gradient shadow for contrast */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/25 pointer-events-none" />
+
+        {/* Top Badges */}
+        <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between gap-2 z-20 pointer-events-none">
+          <div className="backdrop-blur-md bg-white/95 dark:bg-slate-900/95 text-amber-900 dark:text-amber-200 border border-amber-300/70 dark:border-amber-700/70 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-sm">
+            <Calendar size={11} className="text-amber-600 dark:text-amber-400" />
+            <span>{scheme.frequency === 'weekly' ? 'Weekly Scheme' : 'Monthly Scheme'}</span>
+          </div>
+
+          {scheme.reward_type === 'all_items' ? (
+            <div className="backdrop-blur-md bg-amber-500/95 text-white border border-amber-300/50 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-sm">
+              <Store size={11} />
+              <span>All Items</span>
+            </div>
+          ) : scheme.reward_type === 'category' ? (
+            <div className="backdrop-blur-md bg-orange-500/95 text-white border border-orange-300/50 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-sm">
+              <Tag size={11} />
+              <span>Category</span>
+            </div>
+          ) : (
+            <div className="backdrop-blur-md bg-amber-600/95 text-white border border-amber-400/50 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-sm">
+              <Gift size={11} />
+              <span>{scheme.items?.length || 0} Gifts</span>
+            </div>
+          )}
+        </div>
+
+        {/* Compact Single-line Ribbon on Banner (never blocks artwork or collides with badges) */}
+        {highlightLines.length > 0 && (
+          <div className="absolute bottom-2.5 left-2.5 right-2.5 z-20 pointer-events-none">
+            <div className="inline-flex backdrop-blur-md bg-gradient-to-r from-amber-600/95 via-orange-600/95 to-amber-600/95 text-white px-2.5 py-1 rounded-xl border border-white/20 shadow-md shadow-orange-950/25 items-center gap-1.5 max-w-full">
+              <Flame size={12} className="text-yellow-300 animate-pulse shrink-0" />
+              <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wide truncate drop-shadow-xs">
+                {highlightLines[0]} {highlightLines.length > 1 ? `(+${highlightLines.length - 1} More)` : ''}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Card Content */}
+      <div className="p-4 sm:p-5 flex-1 flex flex-col justify-between space-y-3.5 bg-card">
+        <div className="space-y-3">
+          <div>
+            <h3 className="text-base sm:text-lg font-black text-foreground group-hover:text-amber-500 transition-colors line-clamp-1 leading-snug">
+              {scheme.title}
+            </h3>
+            {scheme.description && (
+              <p className="text-xs text-muted-foreground mt-1 line-clamp-2 leading-relaxed">
+                {scheme.description}
+              </p>
+            )}
+          </div>
+
+          {/* Structured Highlights & Benefits (Clean key-value breakdown) */}
+          {renderHighlightBenefits(scheme.highlight_text)}
+
+          {/* Pricing & Maturity Specs Grid */}
+          <div className="grid grid-cols-2 gap-2 p-3 rounded-xl sm:rounded-2xl bg-muted/40 dark:bg-slate-800/40 border border-border/60">
+            <div>
+              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
+                Installment
+              </span>
+              <div className="flex items-baseline gap-1 mt-0.5">
+                <span className="font-mono font-black text-base sm:text-lg" style={{ color: primaryColor }}>
+                  {currency}{scheme.price.toLocaleString()}
+                </span>
+                <span className="text-[10px] font-semibold text-muted-foreground">
+                  / {scheme.frequency === 'weekly' ? 'wk' : 'mo'}
+                </span>
+              </div>
+            </div>
+            <div className="text-right border-l border-border/60 pl-2">
+              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
+                Total Maturity
+              </span>
+              <div className="flex items-baseline justify-end gap-1 mt-0.5">
+                <span className="font-mono font-black text-base sm:text-lg text-amber-600 dark:text-amber-400">
+                  {currency}{maturityVal.toLocaleString()}
+                </span>
+              </div>
+            </div>
+            <div className="col-span-2 pt-2 border-t border-border/50 flex items-center justify-between text-[11px]">
+              <span className="text-muted-foreground flex items-center gap-1">
+                <Clock size={12} className="text-muted-foreground" />
+                <span>Term Duration:</span>
+              </span>
+              <span className="font-bold text-foreground">
+                {scheme.term_duration} {scheme.term_unit}
+              </span>
+            </div>
+          </div>
+
+          {/* Reward Mode Terms */}
+          {scheme.reward_type === 'all_items' ? (
+            <div className="flex items-center justify-between p-2.5 rounded-xl bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-amber-500/10 border border-amber-500/25">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/30">
+                  <Store size={14} />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[11px] font-black text-amber-950 dark:text-amber-200 block truncate">
+                    Full Store Freedom
+                  </span>
+                  <span className="text-[10px] text-muted-foreground block truncate">
+                    Choose any items from entire catalog
+                  </span>
+                </div>
+              </div>
+              <span className="px-2 py-0.5 rounded-md bg-amber-500 text-white font-black text-[10px] shrink-0 shadow-2xs">
+                All Items
+              </span>
+            </div>
+          ) : scheme.reward_type === 'category' ? (
+            <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/30">
+                    <Tag size={14} />
+                  </div>
+                  <span className="text-[11px] font-black text-amber-950 dark:text-amber-200 truncate">
+                    Category Choice ({scheme.reward_categories?.length || 0} Categories)
+                  </span>
+                </div>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700 shrink-0">
+                  Eligible
+                </span>
+              </div>
+              {scheme.reward_categories && scheme.reward_categories.length > 0 && (
+                <div className="flex flex-wrap gap-1 pt-0.5">
+                  {scheme.reward_categories.map((cat, cIdx) => (
+                    <span
+                      key={cIdx}
+                      className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200"
+                    >
+                      {cat.name}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            scheme.items && scheme.items.length > 0 && (
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/30">
+                    <Gift size={14} />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-[11px] font-black text-amber-950 dark:text-amber-200 block truncate">
+                      {scheme.items.length} Reward {scheme.items.length === 1 ? 'Product' : 'Products'}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground block truncate">
+                      Guaranteed at completion
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onViewRewards(scheme);
+                  }}
+                  className="px-2.5 py-1 bg-white dark:bg-slate-900 hover:bg-amber-100/60 text-amber-700 dark:text-amber-300 font-extrabold text-[10px] rounded-lg border border-amber-300 dark:border-amber-700 shadow-2xs transition-all hover:scale-105 active:scale-95 cursor-pointer shrink-0"
+                >
+                  View Rewards
+                </button>
+              </div>
+            )
+          )}
+        </div>
+
+        {/* CTA Enroll Button (Actual Menu Button Style with Shimmer & Slide Arrow) */}
+        <motion.button
+          type="button"
+          whileHover={{ scale: 1.01 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={() => onEnroll(scheme)}
+          className="group/btn relative overflow-hidden w-full mt-2 py-3 px-4 text-white font-extrabold text-xs sm:text-sm rounded-xl sm:rounded-2xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer hover:brightness-110 active:scale-98"
+          style={{ backgroundColor: primaryColor }}
+        >
+          {/* Shimmer sweep effect on hover */}
+          <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/25 to-transparent -translate-x-full group-hover/btn:translate-x-full transition-transform duration-1000 ease-out pointer-events-none" />
+          <span className="relative z-10">Enroll in Scheme</span>
+          <ArrowRight
+            size={15}
+            className="relative z-10 transition-transform duration-200 group-hover/btn:translate-x-1"
+          />
+        </motion.button>
+      </div>
+    </motion.div>
+  );
+};
+
 interface PublicSchemeModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -130,6 +490,10 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
   shop,
   isFullPage = false,
 }) => {
+  const [searchParams] = useSearchParams();
+  const targetSchemeId = searchParams.get('scheme') || searchParams.get('id');
+  const effectiveShopId = shop?.id || shopId;
+
   const currency = shop?.settings?.currency || '₹';
   const [activeTab, setActiveTab] = useState<'schemes' | 'my_pass'>('schemes');
   const [schemes, setSchemes] = useState<Scheme[]>([]);
@@ -207,20 +571,32 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
   } | null>(null);
   const [isPayingInstallment, setIsPayingInstallment] = useState(false);
 
+  // Trust & Terms Confirmation Modal State
+  const [trustConfirmation, setTrustConfirmation] = useState<{
+    type: 'join' | 'installment';
+    schemeTitle: string;
+    amount: number;
+    customerName: string;
+    customerPhone: string;
+    dueNumber?: number;
+    onConfirm: () => void;
+  } | null>(null);
+  const [hasAcceptedTrustTerms, setHasAcceptedTrustTerms] = useState(true);
+
   useEffect(() => {
-    if (isOpen && shopId) {
+    if (isOpen && effectiveShopId) {
       fetchPublicSchemes();
       if (customerPhone && customerPhone.length >= 7) {
         const fullPhone = passCountryCode === '+91' ? customerPhone : `${passCountryCode}${customerPhone}`;
         // Auto-fetch ONLY if the current customer_token matches this mobile number
-        customerService.verifyMobile(fullPhone, shopId).then(res => {
+        customerService.verifyMobile(fullPhone, effectiveShopId).then(res => {
           if (res.otp_required === false) {
             fetchCustomerPasses(fullPhone);
           }
         }).catch(() => {});
       }
     }
-  }, [isOpen, shopId]);
+  }, [isOpen, effectiveShopId]);
 
   useEffect(() => {
     if (activeTab === 'my_pass' && customerPhone && customerPhone.length >= 7 && !hasQueriedPasses) {
@@ -240,7 +616,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
   const fetchPublicSchemes = async () => {
     setIsLoading(true);
     try {
-      const data = await schemeService.getPublicSchemes(shopId);
+      const data = await schemeService.getPublicSchemes(effectiveShopId);
       setSchemes(data);
     } catch (err) {
       console.error('Failed to load public schemes', err);
@@ -249,11 +625,25 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
     }
   };
 
+  useEffect(() => {
+    if (targetSchemeId && schemes.length > 0) {
+      const match = schemes.find(s => s.id === targetSchemeId);
+      if (match) {
+        setTimeout(() => {
+          const el = document.getElementById(`scheme-card-${match.id}`);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 250);
+      }
+    }
+  }, [targetSchemeId, schemes]);
+
   const fetchCustomerPasses = async (phone: string) => {
     if (!phone || phone.trim().length < 7) return;
     setIsLoadingPasses(true);
     try {
-      const passes = await schemeService.getMySchemeStatus(shopId, phone.trim());
+      const passes = await schemeService.getMySchemeStatus(effectiveShopId, phone.trim());
       setCustomerPasses(passes);
       if (passes.length > 0 && passes[0].customer_name && !customerName) {
         setCustomerName(passes[0].customer_name);
@@ -280,7 +670,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
     setIsLoadingPasses(true);
     try {
       // 1. Verify if the entered number matches the currently stored customer token
-      const res = await customerService.verifyMobile(fullPhone, shopId);
+      const res = await customerService.verifyMobile(fullPhone, effectiveShopId);
 
       if (res.otp_required === false) {
         // Token is valid & matches! Directly fetch passes
@@ -288,7 +678,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
       } else {
         // Token does NOT match or is missing -> prompt OTP verification modal
         localStorage.setItem('pending_otp_verification', JSON.stringify({
-          shopId,
+          shopId: effectiveShopId,
           mobileNumber: clean.slice(-10),
           countryCode: passCountryCode,
           timestamp: Date.now()
@@ -299,7 +689,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
       console.error('Failed to verify mobile token', err);
       // Fallback: prompt OTP modal
       localStorage.setItem('pending_otp_verification', JSON.stringify({
-        shopId,
+        shopId: effectiveShopId,
         mobileNumber: clean.slice(-10),
         countryCode: passCountryCode,
         timestamp: Date.now()
@@ -325,7 +715,12 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
   const instTotalPgFee = Math.round((instPgFee + instPgGst) * 100) / 100;
   const instGrandTotal = Math.round((installmentBasePrice + instPlatformFee + instTotalPgFee) * 100) / 100;
 
-  const handlePayInstallmentSubmit = async () => {
+  const handlePayInstallmentSubmit = () => {
+    if (!payingPass) return;
+    executePayInstallment();
+  };
+
+  const executePayInstallment = async () => {
     if (!payingPass) return;
     const { pass } = payingPass;
     const nextDueNum = pass.paid_installments + 1;
@@ -340,7 +735,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
       }
 
       const payData = await schemeService.initiateMemberInstallmentPayment(
-        shopId,
+        effectiveShopId,
         pass.scheme_id,
         pass.member_id
       );
@@ -363,7 +758,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
 
       if (payData.mock_mode) {
         const updated = await schemeService.verifyMemberInstallmentPayment(
-          shopId,
+          effectiveShopId,
           pass.scheme_id,
           pass.member_id,
           {
@@ -389,7 +784,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
           try {
             setIsPayingInstallment(true);
             const updated = await schemeService.verifyMemberInstallmentPayment(
-              shopId,
+              effectiveShopId,
               pass.scheme_id,
               pass.member_id,
               {
@@ -431,22 +826,29 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
     }
   };
 
-  const handleJoinSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleJoinSubmit = async (e?: React.FormEvent | React.MouseEvent) => {
+    if (e) {
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+      if (typeof e.stopPropagation === 'function') e.stopPropagation();
+    }
     if (!selectedSchemeForJoin) return;
 
-    const token = localStorage.getItem('customer_token');
     const cleanPhone = joinPhone.replace(/\D/g, '');
-    if (!token || cleanPhone.length < 7) {
+    if (!cleanPhone || cleanPhone.length < 7) {
       setPendingEnrollScheme(selectedSchemeForJoin);
       setOtpModalStep('mobile');
       setShowOtpModal(true);
-      toast.error('Please verify your mobile number with OTP first.');
+      toast.error('Please enter a valid mobile number');
       return;
     }
 
     if (!joinName.trim()) {
       toast.error('Please enter your full name');
+      const el = document.getElementById('enroll-name-full') || document.getElementById('enroll-name-modal');
+      if (el) {
+        (el as HTMLElement).focus();
+        (el as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
       return;
     }
 
@@ -454,6 +856,31 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
     const effectiveDistrict = joinDistrict === 'Other / Custom District' ? customDistrict.trim() : joinDistrict.trim();
     if (!effectiveDistrict) {
       toast.error('Please specify your district or city');
+      const el = document.getElementById('enroll-custom-district-full') || document.getElementById('enroll-custom-district-modal');
+      if (el) {
+        (el as HTMLElement).focus();
+        (el as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      return;
+    }
+
+    if (!joinStreet.trim()) {
+      toast.error('Please enter your delivery street address / door number');
+      const el = document.getElementById('enroll-street-full') || document.getElementById('enroll-street-modal');
+      if (el) {
+        (el as HTMLElement).focus();
+        (el as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      return;
+    }
+
+    if (!joinPincode.trim() || joinPincode.trim().length < 6) {
+      toast.error('Please enter a valid 6-digit delivery pincode');
+      const el = document.getElementById('enroll-pincode-full') || document.getElementById('enroll-pincode-modal');
+      if (el) {
+        (el as HTMLElement).focus();
+        (el as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
       return;
     }
 
@@ -463,6 +890,15 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
       joinState.trim() ? (joinPincode.trim() ? `${joinState.trim()} - ${joinPincode.trim()}` : joinState.trim()) : joinPincode.trim()
     ].filter(Boolean);
     const fullAddress = addressParts.join(', ');
+
+    // Proceed directly to Razorpay checkout (as in previous version)
+    // Terms of service and trust acknowledgement are clearly confirmed by continuing
+    executeJoinPayment(finalPhone, fullAddress, effectiveDistrict);
+  };
+
+  const executeJoinPayment = async (finalPhone: string, fullAddress: string, effectiveDistrict: string) => {
+    if (!selectedSchemeForJoin) return;
+    const cleanPhone = joinPhone.replace(/\D/g, '');
 
     const onEnrollmentSuccess = (phone: string) => {
       // Save customer info in localStorage
@@ -496,23 +932,29 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
 
     setIsJoining(true);
     try {
+      console.log('[Payment] Loading Razorpay SDK...');
       const sdkLoaded = await loadRazorpaySDK();
       if (!sdkLoaded) {
+        console.error('[Payment] Failed to load Razorpay SDK');
         toast.error('Could not load payment gateway. Please check your internet connection.');
         setIsJoining(false);
         return;
       }
 
+      console.log('[Payment] Initiating join payment with shopId:', effectiveShopId, 'schemeId:', selectedSchemeForJoin.id);
       // 1. Create Razorpay order via backend with 2% platform fee & 3% PG fee (+18% GST)
-      const payData = await schemeService.initiateJoinPayment(shopId, selectedSchemeForJoin.id, {
+      const payData = await schemeService.initiateJoinPayment(effectiveShopId, selectedSchemeForJoin.id, {
         customer_name: joinName.trim(),
         customer_phone: finalPhone,
         customer_address: fullAddress || undefined,
       });
 
+      console.log('[Payment] Razorpay order created:', payData);
+
       // 2. Mock mode handling
       if (payData.mock_mode) {
-        await schemeService.verifyJoinPayment(shopId, selectedSchemeForJoin.id, {
+        console.log('[Payment] Mock mode active, auto-verifying...');
+        await schemeService.verifyJoinPayment(effectiveShopId, selectedSchemeForJoin.id, {
           customer_name: joinName.trim(),
           customer_phone: finalPhone,
           customer_address: fullAddress || undefined,
@@ -535,7 +977,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
         handler: async (response: any) => {
           try {
             setIsJoining(true);
-            await schemeService.verifyJoinPayment(shopId, selectedSchemeForJoin.id, {
+            await schemeService.verifyJoinPayment(effectiveShopId, selectedSchemeForJoin.id, {
               customer_name: joinName.trim(),
               customer_phone: finalPhone,
               customer_address: fullAddress || undefined,
@@ -545,7 +987,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
             });
             onEnrollmentSuccess(finalPhone);
           } catch (verifyErr: any) {
-            console.error('Payment verification failed', verifyErr);
+            console.error('[Payment] Payment verification failed', verifyErr);
             toast.error(verifyErr.response?.data?.detail || 'Payment verification failed. Please contact store.');
           } finally {
             setIsJoining(false);
@@ -564,13 +1006,178 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
         }
       };
 
+      console.log('[Payment] Calling Razorpay open()...');
       const rzp = new (window as any).Razorpay(rzpOptions);
       rzp.open();
     } catch (err: any) {
-      console.error('Payment initiation failed', err);
+      console.error('[Payment] Payment initiation failed', err);
       toast.error(err.response?.data?.detail || 'Failed to initiate payment. Please try again.');
       setIsJoining(false);
     }
+  };
+
+  const renderTrustConfirmationModal = () => {
+    if (!trustConfirmation) return null;
+    return (
+      <div 
+        className="fixed inset-0 z-[150] bg-black/70 backdrop-blur-md flex items-center justify-center p-3.5 sm:p-4 animate-in fade-in duration-200"
+        onClick={() => setTrustConfirmation(null)}
+      >
+        <div 
+          className="bg-card border border-border rounded-3xl max-w-md w-full shadow-2xl overflow-hidden flex flex-col max-h-[92vh] transition-all animate-in zoom-in-95 duration-200"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="p-4 sm:p-5 border-b border-border/80 bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-transparent relative">
+            <button
+              type="button"
+              onClick={() => setTrustConfirmation(null)}
+              className="absolute right-3.5 top-3.5 w-8 h-8 rounded-full bg-muted/80 hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center cursor-pointer transition-colors"
+            >
+              <X size={16} />
+            </button>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/20">
+                <ShieldCheck size={22} />
+              </div>
+              <div className="pr-6">
+                <h3 className="font-black text-sm sm:text-base text-foreground leading-tight">
+                  Merchant Trust & Terms Confirmation
+                </h3>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Please review details before proceeding to payment
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Body */}
+          <div className="p-4 sm:p-5 space-y-3.5 overflow-y-auto">
+            {/* Merchant Trust Advisory */}
+            <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/25 space-y-1.5">
+              <div className="flex items-center gap-2 text-xs font-bold text-amber-800 dark:text-amber-300">
+                <Store size={15} className="shrink-0 text-amber-600 dark:text-amber-400" />
+                <span>Make sure you trust {shop?.name || 'this shop'}</span>
+              </div>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                You are subscribing to a savings scheme operated and fulfilled directly by <strong className="text-foreground font-semibold">{shop?.name || 'this merchant'}</strong>. All scheme savings, product rewards, cracker hampers, and maturity claims are the sole responsibility of this merchant. Menukit acts as a software technology platform and does not hold custody of savings funds.
+              </p>
+            </div>
+
+            {/* Payment Summary */}
+            <div className="p-3.5 rounded-2xl bg-muted/40 border border-border/70 space-y-1.5">
+              <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                Payment Details
+              </div>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-muted-foreground">Scheme:</span>
+                <span className="font-bold text-foreground truncate max-w-[62%]">{trustConfirmation.schemeTitle}</span>
+              </div>
+              {trustConfirmation.type === 'installment' && (
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-muted-foreground">Installment:</span>
+                  <span className="font-bold text-amber-600 dark:text-amber-400">Due #{trustConfirmation.dueNumber}</span>
+                </div>
+              )}
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-muted-foreground">Subscriber:</span>
+                <span className="font-semibold text-foreground">{trustConfirmation.customerName}</span>
+              </div>
+              <div className="border-t border-border/60 pt-2 flex justify-between items-center text-xs font-bold">
+                <span className="text-foreground">Total Payable:</span>
+                <span className="font-mono font-black text-sm text-foreground" style={{ color: primaryColor }}>
+                  {currency}{trustConfirmation.amount.toFixed(2)}
+                </span>
+              </div>
+            </div>
+
+            {/* Legal Policies */}
+            <div className="p-3.5 rounded-2xl bg-muted/20 border border-border/50 space-y-2 text-xs">
+              <div className="text-[11px] font-bold text-foreground flex items-center gap-1.5">
+                <FileText size={13} className="text-muted-foreground" />
+                <span>Terms & Legal Policies</span>
+              </div>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                Before paying, please review our policies:
+              </p>
+              <div className="flex flex-wrap gap-2 pt-0.5">
+                <a
+                  href="/terms"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-card border border-border text-[11px] font-bold text-foreground hover:bg-muted transition-colors shadow-2xs"
+                >
+                  <span>Terms of Service</span>
+                  <ExternalLink size={10} className="text-muted-foreground" />
+                </a>
+                <a
+                  href="/privacy"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-card border border-border text-[11px] font-bold text-foreground hover:bg-muted transition-colors shadow-2xs"
+                >
+                  <span>Privacy Policy</span>
+                  <ExternalLink size={10} className="text-muted-foreground" />
+                </a>
+                <a
+                  href="/refund-policy"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-card border border-border text-[11px] font-bold text-foreground hover:bg-muted transition-colors shadow-2xs"
+                >
+                  <span>Refund Policy</span>
+                  <ExternalLink size={10} className="text-muted-foreground" />
+                </a>
+              </div>
+            </div>
+
+            {/* Checkbox Acceptance */}
+            <label className="flex items-start gap-2.5 cursor-pointer pt-1 select-none">
+              <input
+                type="checkbox"
+                checked={hasAcceptedTrustTerms}
+                onChange={(e) => setHasAcceptedTrustTerms(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded border-border text-amber-500 focus:ring-amber-500 cursor-pointer"
+              />
+              <span className="text-[11px] text-foreground leading-snug">
+                I confirm that I trust <strong className="font-semibold">{shop?.name || 'this shop'}</strong>, and by continuing I accept the{' '}
+                <a href="/terms" target="_blank" rel="noopener noreferrer" className="underline font-semibold hover:text-amber-600">Terms and Conditions</a>
+                {', '}
+                <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline font-semibold hover:text-amber-600">Privacy Policy</a>
+                {' and '}
+                <a href="/refund-policy" target="_blank" rel="noopener noreferrer" className="underline font-semibold hover:text-amber-600">Refund Policy</a>.
+              </span>
+            </label>
+          </div>
+
+          {/* Footer Actions */}
+          <div className="p-4 sm:p-5 border-t border-border/80 bg-muted/20 flex items-center justify-end gap-2.5">
+            <button
+              type="button"
+              onClick={() => setTrustConfirmation(null)}
+              className="px-4 py-2.5 rounded-xl border border-border text-xs font-semibold hover:bg-muted cursor-pointer transition-colors"
+            >
+              Back
+            </button>
+            <button
+              type="button"
+              disabled={!hasAcceptedTrustTerms || isJoining || isPayingInstallment}
+              onClick={() => {
+                const action = trustConfirmation.onConfirm;
+                setTrustConfirmation(null);
+                action();
+              }}
+              className="px-5 py-2.5 rounded-xl text-white font-bold text-xs shadow-md shadow-amber-500/20 flex items-center gap-2 cursor-pointer active:scale-98 transition-all disabled:opacity-50 hover:brightness-110"
+              style={{ backgroundColor: primaryColor }}
+            >
+              <Lock size={13} />
+              <span>Proceed to Pay {currency}{trustConfirmation.amount.toFixed(2)}</span>
+              <ArrowRight size={14} />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   if (!isOpen) return null;
@@ -664,7 +1271,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
             <div>
               {selectedSchemeForJoin ? (
                 /* JOIN SCHEME FORM */
-                <form onSubmit={handleJoinSubmit} className="space-y-4">
+                <form noValidate onSubmit={(e) => { e.preventDefault(); handleJoinSubmit(e); }} className="space-y-4">
                   <button
                     type="button"
                     onClick={() => setSelectedSchemeForJoin(null)}
@@ -677,7 +1284,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                     <span className="text-[10px] font-black uppercase tracking-wider text-amber-600 block">
                       Joining Scheme
                     </span>
-                    <h3 className="font-black text-base text-foreground">{selectedSchemeForJoin.title}</h3>
+                    <h3 className="font-black text-base text-foreground break-words break-all line-clamp-2">{selectedSchemeForJoin.title}</h3>
                     <div className="flex flex-wrap gap-2 text-xs font-bold text-slate-700 dark:text-slate-300">
                       <span className="bg-card px-2.5 py-1 rounded-lg border border-border shadow-2xs font-mono">
                         {currency}{selectedSchemeForJoin.price.toLocaleString()} / {selectedSchemeForJoin.frequency === 'weekly' ? 'week' : 'month'}
@@ -696,12 +1303,13 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                       <div className="relative">
                         <User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                         <input
+                          id="enroll-name-modal"
                           type="text"
                           required
-                          readOnly
-                          placeholder="Your Name"
+                          placeholder="Enter your full name"
                           value={joinName}
-                          className="w-full pl-9 pr-3 py-2.5 bg-muted/40 border border-border rounded-xl text-foreground font-semibold focus:outline-hidden text-xs cursor-not-allowed select-none"
+                          onChange={(e) => setJoinName(e.target.value)}
+                          className="w-full pl-9 pr-3 py-2.5 bg-background border border-border rounded-xl text-foreground font-semibold focus:outline-hidden text-xs"
                         />
                       </div>
                     </div>
@@ -813,6 +1421,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                           <div className="relative">
                             <Building2 size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                             <input
+                              id="enroll-custom-district-modal"
                               type="text"
                               required
                               placeholder="Enter your district name"
@@ -830,6 +1439,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                           Full Address (Door No, Building, Street, Area) *
                         </label>
                         <textarea
+                          id="enroll-street-modal"
                           rows={2}
                           required
                           placeholder="e.g. 12/4, Gandhi Road, Near Bus Stand"
@@ -842,14 +1452,15 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                       {/* Pincode */}
                       <div>
                         <label className="font-bold text-slate-700 dark:text-slate-200 block mb-1 text-[11px]">
-                          Pincode / Postal Code (Optional)
+                          Pincode / Postal Code *
                         </label>
                         <input
+                          id="enroll-pincode-modal"
                           type="text"
                           maxLength={6}
                           placeholder="e.g. 626123"
                           value={joinPincode}
-                          onChange={(e) => setJoinPincode(e.target.value.replace(/\D/g, ''))}
+                          onChange={(e) => setJoinPincode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                           className="w-full px-3 py-2 bg-background border border-border rounded-xl text-foreground font-mono focus:outline-hidden text-xs"
                         />
                       </div>
@@ -916,17 +1527,23 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
 
                   <div className="pt-2">
                     <button
-                      type="submit"
+                      type="button"
                       disabled={isJoining}
-                      className="w-full py-3.5 text-white font-bold rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98 disabled:opacity-50 text-sm"
+                      onClick={handleJoinSubmit}
+                      className="w-full py-3.5 text-white font-bold rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98 disabled:opacity-50 text-sm hover:brightness-110"
                       style={{ backgroundColor: primaryColor }}
                     >
                       <Lock size={15} />
                       <span>{isJoining ? 'Processing...' : `Confirm & Pay ${currency}${grandTotal.toFixed(2)}`}</span>
                       <ArrowRight size={16} />
                     </button>
-                    <p className="text-[10px] text-center text-muted-foreground mt-2">
-                      Clicking confirm opens secure checkout. Your scheme pass will be unlocked immediately after payment.
+                    <p className="text-[10px] text-center text-muted-foreground mt-2 leading-relaxed">
+                      By continuing, you confirm trust in <strong className="text-foreground">{shop?.name || 'this shop'}</strong> and agree to our{' '}
+                      <a href="/terms" target="_blank" rel="noopener noreferrer" className="underline font-semibold hover:text-foreground">Terms & Conditions</a>
+                      {', '}
+                      <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline font-semibold hover:text-foreground">Privacy Policy</a>
+                      {' & '}
+                      <a href="/refund-policy" target="_blank" rel="noopener noreferrer" className="underline font-semibold hover:text-foreground">Refund Policy</a>.
                     </p>
                   </div>
                 </form>
@@ -945,72 +1562,18 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                       <p className="text-xs text-muted-foreground">No active schemes available at the moment.</p>
                     </div>
                   ) : (
-                    schemes.map(scheme => {
-                      return (
-                        <div
-                          key={scheme.id}
-                          className="bg-card border border-border rounded-2xl p-4 sm:p-5 shadow-xs hover:border-amber-500/40 transition-all space-y-3.5"
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <h3 className="font-black text-base text-foreground">{scheme.title}</h3>
-                              </div>
-                              {scheme.description && (
-                                <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{scheme.description}</p>
-                              )}
-                            </div>
-
-                            <div className="text-right shrink-0">
-                              <span className="font-mono font-black text-lg block" style={{ color: primaryColor }}>
-                                {currency}{scheme.price.toLocaleString()}
-                              </span>
-                              <span className="text-[10px] font-bold text-muted-foreground uppercase">
-                                per {scheme.frequency === 'weekly' ? 'week' : 'month'}
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="bg-muted/50 p-2.5 rounded-xl flex items-center justify-between text-xs">
-                            <span className="text-muted-foreground">Duration:</span>
-                            <span className="font-bold text-foreground">{scheme.term_duration} {scheme.term_unit}</span>
-                          </div>
-
-                          {/* Included products count & preview */}
-                          {scheme.items && scheme.items.length > 0 && (
-                            <div className="flex items-center justify-between p-2.5 bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-800/40 rounded-xl">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <div className="w-7 h-7 rounded-lg bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/20">
-                                  <Gift size={13} />
-                                </div>
-                                <span className="text-[11px] font-bold text-amber-950 dark:text-amber-200 truncate">
-                                  {scheme.items.length} Reward {scheme.items.length === 1 ? 'Product' : 'Products'}
-                                </span>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setPreviewRewardsScheme({ title: scheme.title, items: scheme.items });
-                                }}
-                                className="px-2.5 py-1 bg-white dark:bg-slate-900 hover:bg-amber-100/50 text-amber-700 dark:text-amber-300 font-extrabold text-[10px] rounded-lg border border-amber-300 dark:border-amber-700/60 shadow-2xs transition-all hover:scale-105 active:scale-95 cursor-pointer shrink-0"
-                              >
-                                View Rewards
-                              </button>
-                            </div>
-                          )}
-
-                          <button
-                            onClick={() => handleEnrollClick(scheme)}
-                            className="w-full py-2.5 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98 text-xs hover:brightness-110"
-                            style={{ backgroundColor: primaryColor }}
-                          >
-                            <span>Enroll in Scheme</span>
-                            <ArrowRight size={14} />
-                          </button>
-                        </div>
-                      );
-                    })
+                    schemes.map((scheme, idx) => (
+                      <SchemeCard
+                        key={scheme.id}
+                        scheme={scheme}
+                        idx={idx}
+                        currency={currency}
+                        primaryColor={primaryColor}
+                        isTargetScheme={scheme.id === targetSchemeId}
+                        onEnroll={handleEnrollClick}
+                        onViewRewards={(s) => setPreviewRewardsScheme({ title: s.title, items: s.items })}
+                      />
+                    ))
                   )}
                 </div>
               )}
@@ -1208,21 +1771,51 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                         </div>
                       )}
 
-                      {/* Reward Products reminder */}
-                      {pass.items && pass.items.length > 0 && (
-                        <div 
-                          onClick={() => setSelectedPassForRewards(pass)}
-                          className="bg-amber-500/10 hover:bg-amber-500/15 border border-amber-500/20 p-2.5 rounded-xl text-xs flex items-center justify-between cursor-pointer transition-all group active:scale-99"
-                        >
+                      {/* Reward Mode Terms reminder */}
+                      {pass.reward_type === 'all_items' ? (
+                        <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/20 p-2.5 rounded-xl text-xs flex items-center justify-between">
                           <span className="font-bold text-foreground flex items-center gap-1.5 text-[11px]">
-                            <Gift size={13} className="text-amber-500 group-hover:scale-110 transition-transform" />
-                            <span>Gift Box: {pass.items.length} items rewarded</span>
+                            <Store size={13} className="text-amber-500" />
+                            <span>Full Store Freedom: Pick any items upon completion</span>
                           </span>
-                          <span className="text-[10px] text-amber-700 dark:text-amber-300 font-semibold underline group-hover:text-amber-800 flex items-center gap-1">
-                            <span>View Rewards</span>
-                            <ChevronRight size={12} />
+                          <span className="px-2 py-0.5 rounded-md bg-amber-500 text-white font-bold text-[10px] shrink-0">
+                            All Items
                           </span>
                         </div>
+                      ) : pass.reward_type === 'category' ? (
+                        <div className="bg-amber-500/10 border border-amber-500/20 p-2.5 rounded-xl text-xs space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-foreground flex items-center gap-1.5 text-[11px]">
+                              <Tag size={13} className="text-amber-500" />
+                              <span>Eligible Categories ({pass.reward_categories?.length || 0})</span>
+                            </span>
+                          </div>
+                          {pass.reward_categories && pass.reward_categories.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {pass.reward_categories.map((cat, idx) => (
+                                <span key={idx} className="text-[10px] font-semibold px-2 py-0.5 rounded bg-background/80 border border-border text-foreground">
+                                  {cat.name}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        pass.items && pass.items.length > 0 && (
+                          <div 
+                            onClick={() => setSelectedPassForRewards(pass)}
+                            className="bg-amber-500/10 hover:bg-amber-500/15 border border-amber-500/20 p-2.5 rounded-xl text-xs flex items-center justify-between cursor-pointer transition-all group active:scale-99"
+                          >
+                            <span className="font-bold text-foreground flex items-center gap-1.5 text-[11px]">
+                              <Gift size={13} className="text-amber-500 group-hover:scale-110 transition-transform" />
+                              <span>Gift Box: {pass.items.length} items rewarded</span>
+                            </span>
+                            <span className="text-[10px] text-amber-700 dark:text-amber-300 font-semibold underline group-hover:text-amber-800 flex items-center gap-1">
+                              <span>View Rewards</span>
+                              <ChevronRight size={12} />
+                            </span>
+                          </div>
+                        )
                       )}
                     </div>
                   );
@@ -1332,10 +1925,20 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                     <ArrowRight size={14} />
                   </button>
                 </div>
+                <p className="text-[10px] text-center text-muted-foreground pt-1 leading-snug">
+                  By continuing, you accept our{' '}
+                  <a href="/terms" target="_blank" rel="noopener noreferrer" className="underline font-semibold hover:text-foreground">Terms</a>
+                  {', '}
+                  <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline font-semibold hover:text-foreground">Privacy</a>
+                  {' & '}
+                  <a href="/refund-policy" target="_blank" rel="noopener noreferrer" className="underline font-semibold hover:text-foreground">Refunds</a>.
+                </p>
               </motion.div>
             </div>
           )}
         </AnimatePresence>
+
+        {renderTrustConfirmationModal()}
     </div>
   );
 
@@ -1510,70 +2113,215 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                   </button>
 
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-                    {/* Left Column: Scheme Summary Card */}
-                    <div className="lg:col-span-5 bg-card border border-border rounded-3xl p-5 sm:p-6 shadow-sm space-y-5 relative lg:sticky lg:top-24">
-                      <div>
-                        <span className="text-[10px] font-black uppercase tracking-wider text-amber-600 block mb-1">
-                          Selected Scheme
-                        </span>
-                        <h3 className="text-xl font-black text-foreground">{selectedSchemeForJoin.title}</h3>
-                        {selectedSchemeForJoin.description && (
-                          <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">{selectedSchemeForJoin.description}</p>
+                    {/* Left Column: Scheme Summary Card (Menu-Style Structured Card) */}
+                    <div className="lg:col-span-5 bg-card border border-border rounded-3xl overflow-hidden shadow-sm relative lg:sticky lg:top-24">
+                      {/* Top Media / Hero Banner */}
+                      <div className="relative w-full h-44 sm:h-52 overflow-hidden bg-gradient-to-br from-amber-500/15 via-orange-500/10 to-amber-600/20 dark:from-amber-950/40 dark:via-orange-950/30 dark:to-slate-900 border-b border-border/60">
+                        {selectedSchemeForJoin.items?.find(it => it.image_url)?.image_url ? (
+                          <img
+                            src={selectedSchemeForJoin.items.find(it => it.image_url)!.image_url!}
+                            alt={selectedSchemeForJoin.title}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full relative flex items-center justify-center overflow-hidden">
+                            <div className="absolute -top-10 -right-10 w-36 h-36 rounded-full bg-amber-400/25 blur-2xl" />
+                            <div className="absolute -bottom-10 -left-10 w-36 h-36 rounded-full bg-orange-500/20 blur-2xl" />
+                            <Coins size={96} className="absolute -right-6 -bottom-6 text-amber-500/10 dark:text-amber-400/5 rotate-12" />
+                            <Gift size={80} className="absolute -left-6 -top-6 text-orange-500/10 dark:text-orange-400/5 -rotate-12" />
+                            <div className="relative z-10 w-16 h-16 rounded-2xl bg-white/85 dark:bg-slate-900/85 backdrop-blur-md shadow-md border border-amber-300/40 dark:border-amber-700/40 flex items-center justify-center text-amber-500 dark:text-amber-400">
+                              <Coins size={32} />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Gradient overlay for contrast */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/25 pointer-events-none" />
+
+                        {/* Top Badges */}
+                        <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between gap-2 z-20 pointer-events-none">
+                          <div className="backdrop-blur-md bg-white/95 dark:bg-slate-900/95 text-amber-900 dark:text-amber-200 border border-amber-300/70 dark:border-amber-700/70 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-sm">
+                            <Calendar size={11} className="text-amber-600 dark:text-amber-400" />
+                            <span>{selectedSchemeForJoin.frequency === 'weekly' ? 'Weekly Scheme' : 'Monthly Scheme'}</span>
+                          </div>
+
+                          {selectedSchemeForJoin.reward_type === 'all_items' ? (
+                            <div className="backdrop-blur-md bg-amber-500/95 text-white border border-amber-300/50 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-sm">
+                              <Store size={11} />
+                              <span>All Items</span>
+                            </div>
+                          ) : selectedSchemeForJoin.reward_type === 'category' ? (
+                            <div className="backdrop-blur-md bg-orange-500/95 text-white border border-orange-300/50 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-sm">
+                              <Tag size={11} />
+                              <span>Category</span>
+                            </div>
+                          ) : (
+                            <div className="backdrop-blur-md bg-amber-600/95 text-white border border-amber-400/50 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-sm">
+                              <Gift size={11} />
+                              <span>{selectedSchemeForJoin.items?.length || 0} Gifts</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Compact Single-line Ribbon on Banner (never blocks artwork or collides with badges) */}
+                        {selectedSchemeForJoin.highlight_text && (
+                          <div className="absolute bottom-2.5 left-2.5 right-2.5 z-20 pointer-events-none">
+                            {(() => {
+                              const lines = (selectedSchemeForJoin.highlight_text || '').split('\n').map(l => l.trim()).filter(Boolean);
+                              if (lines.length === 0) return null;
+                              return (
+                                <div className="inline-flex backdrop-blur-md bg-gradient-to-r from-amber-600/95 via-orange-600/95 to-amber-600/95 text-white px-2.5 py-1 rounded-xl border border-white/20 shadow-md shadow-orange-950/25 items-center gap-1.5 max-w-full">
+                                  <Flame size={12} className="text-yellow-300 animate-pulse shrink-0" />
+                                  <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wide truncate drop-shadow-xs">
+                                    {lines[0]} {lines.length > 1 ? `(+${lines.length - 1} More)` : ''}
+                                  </span>
+                                </div>
+                              );
+                            })()}
+                          </div>
                         )}
                       </div>
 
-                      <div className="bg-muted/40 p-4 rounded-2xl space-y-2 border border-border/60">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-muted-foreground">Installment:</span>
-                          <span className="font-mono font-bold text-foreground">
-                            {currency}{selectedSchemeForJoin.price.toLocaleString()} / {selectedSchemeForJoin.frequency === 'weekly' ? 'week' : 'month'}
+                      {/* Card Content */}
+                      <div className="p-5 sm:p-6 space-y-4">
+                        <div>
+                          <span className="text-[10px] font-black uppercase tracking-wider text-amber-600 block mb-1">
+                            Selected Scheme Plan
                           </span>
+                          <h3 className="text-xl font-black text-foreground break-words break-all line-clamp-2 leading-tight">
+                            {selectedSchemeForJoin.title}
+                          </h3>
+                          {selectedSchemeForJoin.description && (
+                            <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed break-words line-clamp-3">
+                              {selectedSchemeForJoin.description}
+                            </p>
+                          )}
                         </div>
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-muted-foreground">Term Duration:</span>
-                          <span className="font-bold text-foreground">{selectedSchemeForJoin.term_duration} {selectedSchemeForJoin.term_unit}</span>
-                        </div>
-                        <div className="pt-2 border-t border-border/80 flex items-center justify-between text-xs">
-                          <span className="font-bold text-foreground">Total Maturity Value:</span>
-                          <span className="font-mono font-black text-amber-600 dark:text-amber-400 text-sm">
-                            {currency}{(selectedSchemeForJoin.price * selectedSchemeForJoin.term_duration).toLocaleString()}
-                          </span>
-                        </div>
-                      </div>
 
-                      {/* Included Reward Products Count & View Action */}
-                      {selectedSchemeForJoin.items && selectedSchemeForJoin.items.length > 0 && (
-                        <div className="flex items-center justify-between p-3.5 bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-800/40 rounded-2xl">
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <div className="w-8 h-8 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/20">
-                              <Gift size={15} />
-                            </div>
-                            <div className="min-w-0">
-                              <span className="text-xs font-black text-amber-950 dark:text-amber-200 block truncate">
-                                {selectedSchemeForJoin.items.length} Included Reward {selectedSchemeForJoin.items.length === 1 ? 'Product' : 'Products'}
+                        {/* Structured Highlights & Benefits */}
+                        {renderHighlightBenefits(selectedSchemeForJoin.highlight_text, true, 2)}
+
+                        {/* Specs Grid */}
+                        <div className="grid grid-cols-2 gap-2 p-3.5 rounded-2xl bg-muted/40 dark:bg-slate-800/40 border border-border/60">
+                          <div>
+                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
+                              Installment
+                            </span>
+                            <div className="flex items-baseline gap-1 mt-0.5">
+                              <span className="font-mono font-black text-lg" style={{ color: primaryColor }}>
+                                {currency}{selectedSchemeForJoin.price.toLocaleString()}
                               </span>
-                              <span className="text-[10px] text-amber-800/80 dark:text-amber-400/80 block">
-                                Guaranteed upon completion
+                              <span className="text-[10px] font-semibold text-muted-foreground">
+                                / {selectedSchemeForJoin.frequency === 'weekly' ? 'week' : 'month'}
                               </span>
                             </div>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => setPreviewRewardsScheme({ 
-                              title: selectedSchemeForJoin.title, 
-                              items: selectedSchemeForJoin.items 
-                            })}
-                            className="px-3 py-1.5 bg-white dark:bg-slate-900 hover:bg-amber-100/50 text-amber-700 dark:text-amber-300 font-extrabold text-xs rounded-xl border border-amber-300 dark:border-amber-700/60 shadow-2xs transition-all hover:scale-105 active:scale-95 cursor-pointer shrink-0"
-                          >
-                            View Rewards
-                          </button>
+                          <div className="text-right border-l border-border/60 pl-2">
+                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
+                              Total Maturity
+                            </span>
+                            <div className="flex items-baseline justify-end gap-1 mt-0.5">
+                              <span className="font-mono font-black text-lg text-amber-600 dark:text-amber-400">
+                                {currency}{(selectedSchemeForJoin.price * selectedSchemeForJoin.term_duration).toLocaleString()}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="col-span-2 pt-2 border-t border-border/50 flex items-center justify-between text-xs">
+                            <span className="text-muted-foreground flex items-center gap-1">
+                              <Clock size={12} className="text-muted-foreground" />
+                              <span>Term Duration:</span>
+                            </span>
+                            <span className="font-bold text-foreground">
+                              {selectedSchemeForJoin.term_duration} {selectedSchemeForJoin.term_unit}
+                            </span>
+                          </div>
                         </div>
-                      )}
+
+                        {/* Reward Mode Terms */}
+                        {selectedSchemeForJoin.reward_type === 'all_items' ? (
+                          <div className="flex items-center justify-between p-3 rounded-2xl bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-amber-500/10 border border-amber-500/25">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/30">
+                                <Store size={15} />
+                              </div>
+                              <div className="min-w-0">
+                                <span className="text-xs font-black text-amber-950 dark:text-amber-200 block truncate">
+                                  Full Store Freedom Choice
+                                </span>
+                                <span className="text-[10px] text-muted-foreground block truncate">
+                                  Choose any items from entire store upon completion
+                                </span>
+                              </div>
+                            </div>
+                            <span className="px-2.5 py-1 rounded-lg bg-amber-500 text-white font-bold text-xs shrink-0 shadow-2xs">
+                              All Items
+                            </span>
+                          </div>
+                        ) : selectedSchemeForJoin.reward_type === 'category' ? (
+                          <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/25 space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/30">
+                                  <Tag size={15} />
+                                </div>
+                                <div>
+                                  <span className="text-xs font-black text-amber-950 dark:text-amber-200 block truncate">
+                                    Category Special ({selectedSchemeForJoin.reward_categories?.length || 0} Categories)
+                                  </span>
+                                  <span className="text-[10px] text-muted-foreground block truncate">
+                                    Redeemable on items in selected categories
+                                  </span>
+                                </div>
+                              </div>
+                              <span className="text-xs font-bold px-2 py-0.5 rounded-lg bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700 shrink-0">
+                                Eligible
+                              </span>
+                            </div>
+                            {selectedSchemeForJoin.reward_categories && selectedSchemeForJoin.reward_categories.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5 pt-1">
+                                {selectedSchemeForJoin.reward_categories.map((cat, cIdx) => (
+                                  <span key={cIdx} className="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200">
+                                    {cat.name}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          selectedSchemeForJoin.items && selectedSchemeForJoin.items.length > 0 && (
+                            <div className="flex items-center justify-between p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/25">
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/30">
+                                  <Gift size={15} />
+                                </div>
+                                <div className="min-w-0">
+                                  <span className="text-xs font-black text-amber-950 dark:text-amber-200 block truncate">
+                                    {selectedSchemeForJoin.items.length} Included Reward {selectedSchemeForJoin.items.length === 1 ? 'Product' : 'Products'}
+                                  </span>
+                                  <span className="text-[10px] text-muted-foreground block">
+                                    Guaranteed upon completion
+                                  </span>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setPreviewRewardsScheme({ 
+                                  title: selectedSchemeForJoin.title, 
+                                  items: selectedSchemeForJoin.items 
+                                })}
+                                className="px-3 py-1.5 bg-white dark:bg-slate-900 hover:bg-amber-100/50 text-amber-700 dark:text-amber-300 font-extrabold text-xs rounded-xl border border-amber-300 dark:border-amber-700/60 shadow-2xs transition-all hover:scale-105 active:scale-95 cursor-pointer shrink-0"
+                              >
+                                View Rewards
+                              </button>
+                            </div>
+                          )
+                        )}
+                      </div>
                     </div>
 
                     {/* Right Column: Enrollment Form */}
                     <div className="lg:col-span-7 bg-card border border-border rounded-3xl p-6 shadow-sm">
-                      <form onSubmit={handleJoinSubmit} className="space-y-5">
+                      <form noValidate onSubmit={(e) => { e.preventDefault(); handleJoinSubmit(e); }} className="space-y-5">
                         <div>
                           <h4 className="text-lg font-black text-foreground">Enrollment & Delivery Details</h4>
                           <p className="text-xs text-muted-foreground mt-0.5">Enter customer details to activate your digital pass</p>
@@ -1585,12 +2333,13 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                             <div className="relative">
                               <User size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                               <input
+                                id="enroll-name-full"
                                 type="text"
                                 required
-                                readOnly
-                                placeholder="Your Name"
+                                placeholder="Enter your full name"
                                 value={joinName}
-                                className="w-full pl-9 pr-3.5 py-2.5 bg-muted/40 border border-border rounded-xl text-foreground font-semibold text-xs focus:outline-hidden cursor-not-allowed select-none"
+                                onChange={(e) => setJoinName(e.target.value)}
+                                className="w-full pl-9 pr-3.5 py-2.5 bg-background border border-border rounded-xl text-foreground font-semibold text-xs focus:outline-hidden"
                               />
                             </div>
                           </div>
@@ -1691,6 +2440,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                               <div>
                                 <label className="font-bold text-foreground block mb-1 text-[11px]">Enter City / District Name *</label>
                                 <input
+                                  id="enroll-custom-district-full"
                                   type="text"
                                   required
                                   placeholder="Type your district or city name"
@@ -1705,6 +2455,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                               <div className="sm:col-span-2">
                                 <label className="font-bold text-foreground block mb-1 text-[11px]">Door / Street / Area Address *</label>
                                 <input
+                                  id="enroll-street-full"
                                   type="text"
                                   required
                                   placeholder="Door No, Street Name, Landmark"
@@ -1716,6 +2467,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                               <div>
                                 <label className="font-bold text-foreground block mb-1 text-[11px]">Pincode *</label>
                                 <input
+                                  id="enroll-pincode-full"
                                   type="text"
                                   required
                                   maxLength={6}
@@ -1772,8 +2524,9 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                           </div>
 
                           <button
-                            type="submit"
+                            type="button"
                             disabled={isJoining}
+                            onClick={handleJoinSubmit}
                             className="w-full py-3.5 text-white font-bold rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98 disabled:opacity-50 text-sm hover:brightness-110"
                             style={{ backgroundColor: primaryColor }}
                           >
@@ -1781,6 +2534,17 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                             <span>{isJoining ? 'Processing...' : `Confirm & Pay ${currency}${grandTotal.toFixed(2)}`}</span>
                             <ArrowRight size={16} />
                           </button>
+
+                          <div className="pt-1 text-center space-y-1">
+                            <p className="text-[11px] text-muted-foreground leading-snug">
+                              By continuing, you confirm that you trust <strong className="text-foreground">{shop?.name || 'this shop'}</strong> and agree to our{' '}
+                              <a href="/terms" target="_blank" rel="noopener noreferrer" className="underline font-semibold hover:text-foreground">Terms of Service</a>
+                              {', '}
+                              <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline font-semibold hover:text-foreground">Privacy Policy</a>
+                              {' & '}
+                              <a href="/refund-policy" target="_blank" rel="noopener noreferrer" className="underline font-semibold hover:text-foreground">Refund Policy</a>.
+                            </p>
+                          </div>
                         </div>
                       </form>
                     </div>
@@ -1815,98 +2579,18 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-                      {schemes.map(scheme => {
-                        const maturityVal = (scheme.price || 0) * (scheme.term_duration || 0);
-                        return (
-                          <div
-                            key={scheme.id}
-                            className="bg-card border border-border hover:border-amber-500/50 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-xs hover:shadow-lg transition-all flex flex-col justify-between group"
-                          >
-                            <div className="space-y-4">
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0 border border-amber-500/20">
-                                  <Coins size={22} />
-                                </div>
-                                <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 uppercase tracking-wide border border-amber-300 dark:border-amber-700">
-                                  {scheme.frequency === 'weekly' ? 'Weekly Scheme' : 'Monthly Scheme'}
-                                </span>
-                              </div>
-
-                              <div>
-                                <h4 className="text-base sm:text-lg font-black text-foreground group-hover:text-amber-500 transition-colors line-clamp-1">
-                                  {scheme.title}
-                                </h4>
-                                {scheme.description && (
-                                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2 leading-relaxed">
-                                    {scheme.description}
-                                  </p>
-                                )}
-                              </div>
-
-                              <div className="bg-muted/40 p-3.5 sm:p-4 rounded-xl sm:rounded-2xl space-y-2 border border-border/60">
-                                <div className="flex items-baseline justify-between">
-                                  <span className="text-xs text-muted-foreground">Installment:</span>
-                                  <div>
-                                    <span className="font-mono font-black text-lg sm:text-xl" style={{ color: primaryColor }}>
-                                      {currency}{scheme.price.toLocaleString()}
-                                    </span>
-                                    <span className="text-xs text-muted-foreground font-semibold"> / {scheme.frequency === 'weekly' ? 'week' : 'month'}</span>
-                                  </div>
-                                </div>
-                                <div className="flex items-center justify-between text-xs">
-                                  <span className="text-muted-foreground">Term Duration:</span>
-                                  <span className="font-bold text-foreground">{scheme.term_duration} {scheme.term_unit}</span>
-                                </div>
-                                <div className="pt-2 border-t border-border/80 flex items-center justify-between text-xs">
-                                  <span className="text-muted-foreground font-medium">Total Maturity:</span>
-                                  <span className="font-mono font-black text-amber-600 dark:text-amber-400">
-                                    {currency}{maturityVal.toLocaleString()}
-                                  </span>
-                                </div>
-                              </div>
-
-                              {/* Included Products Count & View Action */}
-                              {scheme.items && scheme.items.length > 0 && (
-                                <div className="flex items-center justify-between p-3 bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-800/40 rounded-2xl">
-                                  <div className="flex items-center gap-2.5 min-w-0">
-                                    <div className="w-8 h-8 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/20">
-                                      <Gift size={15} />
-                                    </div>
-                                    <div className="min-w-0">
-                                      <span className="text-[11px] font-black text-amber-950 dark:text-amber-200 block truncate">
-                                        {scheme.items.length} Reward {scheme.items.length === 1 ? 'Product' : 'Products'}
-                                      </span>
-                                      <span className="text-[10px] text-amber-800/80 dark:text-amber-400/80 block">
-                                        Guaranteed upon completion
-                                      </span>
-                                    </div>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setPreviewRewardsScheme({ title: scheme.title, items: scheme.items });
-                                    }}
-                                    className="px-3 py-1.5 bg-white dark:bg-slate-900 hover:bg-amber-100/50 text-amber-700 dark:text-amber-300 font-extrabold text-xs rounded-xl border border-amber-300 dark:border-amber-700/60 shadow-2xs transition-all hover:scale-105 active:scale-95 cursor-pointer shrink-0"
-                                  >
-                                    View Rewards
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-
-                            <button
-                              type="button"
-                              onClick={() => handleEnrollClick(scheme)}
-                              className="w-full mt-5 sm:mt-6 py-3 text-white font-bold rounded-xl sm:rounded-2xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98 text-xs hover:brightness-110"
-                              style={{ backgroundColor: primaryColor }}
-                            >
-                              <span>Enroll in Scheme</span>
-                              <ArrowRight size={15} />
-                            </button>
-                          </div>
-                        );
-                      })}
+                      {schemes.map((scheme, idx) => (
+                        <SchemeCard
+                          key={scheme.id}
+                          scheme={scheme}
+                          idx={idx}
+                          currency={currency}
+                          primaryColor={primaryColor}
+                          isTargetScheme={scheme.id === targetSchemeId}
+                          onEnroll={handleEnrollClick}
+                          onViewRewards={(s) => setPreviewRewardsScheme({ title: s.title, items: s.items })}
+                        />
+                      ))}
                     </div>
                   )}
                 </div>
@@ -2253,6 +2937,14 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                     <ArrowRight size={14} />
                   </button>
                 </div>
+                <p className="text-[10px] text-center text-muted-foreground pt-1 leading-snug">
+                  By continuing, you accept our{' '}
+                  <a href="/terms" target="_blank" rel="noopener noreferrer" className="underline font-semibold hover:text-foreground">Terms</a>
+                  {', '}
+                  <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline font-semibold hover:text-foreground">Privacy</a>
+                  {' & '}
+                  <a href="/refund-policy" target="_blank" rel="noopener noreferrer" className="underline font-semibold hover:text-foreground">Refunds</a>.
+                </p>
               </motion.div>
             </div>
           )}
@@ -2261,7 +2953,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
         {/* Reused Mobile Number OTP Verification Modal */}
         {showOtpModal && (
           <DiscountUnlockPopup
-            shopId={shopId}
+            shopId={effectiveShopId}
             initialStep={otpModalStep}
             onClose={() => {
               setShowOtpModal(false);
@@ -2463,7 +3155,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
       {/* Reused Mobile Number OTP Verification Modal */}
       {showOtpModal && (
         <DiscountUnlockPopup
-          shopId={shopId}
+          shopId={effectiveShopId}
           initialStep={otpModalStep}
           onClose={() => {
             setShowOtpModal(false);
@@ -2641,6 +3333,8 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
           </div>
         )}
       </BottomSheet>
+
+      {renderTrustConfirmationModal()}
     </div>
   );
 };

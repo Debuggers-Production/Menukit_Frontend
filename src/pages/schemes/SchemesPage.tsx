@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { Link } from 'react-router';
 import { 
   Coins, Plus, Search, Users, CheckCircle2, Clock, Calendar, 
   Trash2, Edit3, ArrowLeft, Eye, EyeOff, ShieldCheck, 
   Gift, ChevronRight, AlertCircle, Phone, 
   User, Check, Wallet, ArrowUpRight, Filter,
   Minus, Receipt, Info, Layers, Tag, Building2, MapPin,
-  CreditCard, ArrowRight, Lock, ChevronLeft
+  CreditCard, ArrowRight, Lock, ChevronLeft, Store, Flame, ShoppingBag, QrCode,
+  Share2, Copy, ExternalLink
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { 
@@ -20,9 +22,10 @@ import { HeaderActions } from '@/components/HeaderActions';
 import { Modal } from '@/components/ui/Modal';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { SearchableSelect, Option } from '@/components/ui/SearchableSelect';
-import { isBakeryBusiness, isFireworksBusiness } from '@/config/businessCategories';
+import { isBakeryBusiness, isFireworksBusiness, isFoodBusiness, isSchemeEnabledShop } from '@/config/businessCategories';
 import { 
-  COUNTRY_CODES, DISTRICTS_BY_STATE, INDIAN_STATES, formatPaidDateTime 
+  COUNTRY_CODES, DISTRICTS_BY_STATE, INDIAN_STATES, formatPaidDateTime,
+  renderHighlightBenefits
 } from '@/components/public/PublicSchemeModal';
 
 export default function SchemesPage() {
@@ -30,6 +33,7 @@ export default function SchemesPage() {
   const currency = shop?.settings?.currency || '₹';
   const isBakery = isBakeryBusiness(shop?.category);
   const isCrackers = isFireworksBusiness(shop?.category);
+  const isFood = isFoodBusiness(shop?.category);
 
   const categorySchemeConfig = useMemo(() => {
     if (isBakery) {
@@ -58,6 +62,19 @@ export default function SchemesPage() {
         helpText: 'Allows customers to save in advance across 10-12 months and collect their complete Diwali cracker box hassle-free.'
       };
     }
+    if (isFood) {
+      return {
+        titleLabel: 'Scheme Title *',
+        titlePlaceholder: 'e.g. Festival Feast Pass 2026, Annual Dining Savings Scheme',
+        descriptionPlaceholder: 'e.g. Save monthly to collect festival family feast hampers, dining vouchers, and holiday dinner packages...',
+        itemsSectionTitle: 'Included Feast Packs & Special Dishes',
+        itemsSectionSubtitle: 'Select menu items, feast platters, or dinner vouchers provided upon scheme completion',
+        itemPickerPlaceholder: 'Search & choose dish or combo pack...',
+        tagBadge: 'Dining Scheme',
+        pricePlaceholder: '500',
+        helpText: 'Great for regulars saving up for grand festival family feasts, celebration dinners, or holiday dining packages.'
+      };
+    }
     return {
       titleLabel: 'Scheme Title *',
       titlePlaceholder: 'e.g. Annual Savings Scheme 2026, Festive Gift Hamper Scheme',
@@ -69,7 +86,7 @@ export default function SchemesPage() {
       pricePlaceholder: '500',
       helpText: 'Customers contribute weekly or monthly and receive bonus products and perks upon completion.'
     };
-  }, [isBakery, isCrackers]);
+  }, [isBakery, isCrackers, isFood]);
 
   const { setTitle } = useHeaderStore();
 
@@ -83,8 +100,11 @@ export default function SchemesPage() {
 
   useEffect(() => {
     if (selectedScheme) {
+      const displayTitle = selectedScheme.title.length > 35 
+        ? selectedScheme.title.slice(0, 35).trim() + '...' 
+        : selectedScheme.title;
       setTitle(
-        selectedScheme.title,
+        displayTitle,
         `${currency}${selectedScheme.price.toLocaleString()} / ${selectedScheme.frequency === 'weekly' ? 'week' : 'month'} • Duration: ${selectedScheme.term_duration} ${selectedScheme.term_unit} • ${selectedScheme.status.toUpperCase()} • ${members.length} Members`
       );
     } else {
@@ -96,7 +116,7 @@ export default function SchemesPage() {
     return () => {
       setTitle('', '');
     };
-  }, [selectedScheme, members.length, setTitle]);
+  }, [selectedScheme, members.length, setTitle, currency]);
 
   // Modals
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -129,6 +149,7 @@ export default function SchemesPage() {
   const initialForm: SchemeCreatePayload = {
     title: '',
     description: '',
+    highlight_text: '',
     price: 500,
     frequency: 'monthly',
     term_duration: 12,
@@ -230,6 +251,7 @@ export default function SchemesPage() {
       setFormData({
         title: scheme.title,
         description: scheme.description || '',
+        highlight_text: scheme.highlight_text || '',
         price: scheme.price,
         frequency: scheme.frequency,
         term_duration: scheme.term_duration,
@@ -242,6 +264,7 @@ export default function SchemesPage() {
       setEditingScheme(null);
       setFormData({
         ...initialForm,
+        highlight_text: '',
         price: isCrackers ? 1000 : 500,
         term_duration: 12,
         term_unit: 'months',
@@ -352,14 +375,25 @@ export default function SchemesPage() {
           ? {
               title: formData.title.trim(),
               description: formData.description?.trim() || null,
+              highlight_text: formData.highlight_text?.trim() || null,
               show_on_public_menu: formData.show_on_public_menu,
             }
-          : formData;
+          : {
+              ...formData,
+              title: formData.title.trim(),
+              description: formData.description?.trim() || null,
+              highlight_text: formData.highlight_text?.trim() || null,
+            };
 
         await schemeService.updateScheme(editingScheme.id, updatePayload as any);
         toast.success('Scheme updated successfully');
       } else {
-        await schemeService.createScheme(formData);
+        await schemeService.createScheme({
+          ...formData,
+          title: formData.title.trim(),
+          description: formData.description?.trim() || undefined,
+          highlight_text: formData.highlight_text?.trim() || null,
+        });
         toast.success('Scheme created successfully');
       }
       setIsCreateModalOpen(false);
@@ -498,6 +532,41 @@ export default function SchemesPage() {
     });
   }, [members, memberFilter]);
 
+  const getPublicSchemesUrl = () => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const identifier = shop?.slug || shop?.id || '';
+    return `${origin}/shop/${identifier}/schemes`;
+  };
+
+  const getIndividualSchemeUrl = (scheme: Scheme) => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const identifier = shop?.slug || shop?.id || '';
+    return `${origin}/shop/${identifier}/schemes?scheme=${scheme.id}`;
+  };
+
+  const handleCopyAllSchemesLink = () => {
+    const url = getPublicSchemesUrl();
+    navigator.clipboard.writeText(url);
+    toast.success('Public schemes link copied to clipboard!');
+  };
+
+  const handleOpenPublicSchemesInNewTab = () => {
+    const url = getPublicSchemesUrl();
+    window.open(url, '_blank');
+  };
+
+  const handleCopySchemeLink = (scheme: Scheme) => {
+    const url = getIndividualSchemeUrl(scheme);
+    navigator.clipboard.writeText(url);
+    const shortTitle = scheme.title.length > 25 ? scheme.title.slice(0, 25).trim() + '...' : scheme.title;
+    toast.success(`Copied link for "${shortTitle}"!`);
+  };
+
+  const handleOpenSchemeInNewTab = (scheme: Scheme) => {
+    const url = getIndividualSchemeUrl(scheme);
+    window.open(url, '_blank');
+  };
+
   // Selected item object for variant dropdown
   const currentSelectedItem = menuItems.find(i => i.id === selectedItemId);
 
@@ -556,20 +625,41 @@ export default function SchemesPage() {
       {/* Top Bar Header Actions Portal */}
       <HeaderActions>
         {selectedScheme ? (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <button
               onClick={() => setSelectedScheme(null)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold transition-all cursor-pointer shadow-2xs"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold transition-all cursor-pointer shadow-2xs whitespace-nowrap shrink-0"
             >
-              <ArrowLeft size={14} />
+              <ArrowLeft size={14} className="shrink-0" />
               <span className="hidden sm:inline">All Schemes</span>
             </button>
 
             <button
-              onClick={() => handleOpenCreateModal(selectedScheme)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold transition-all cursor-pointer shadow-2xs"
+              type="button"
+              onClick={() => handleCopySchemeLink(selectedScheme)}
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/25 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs whitespace-nowrap shrink-0"
+              title="Copy shareable customer link for this scheme"
             >
-              <Edit3 size={14} />
+              <Share2 size={13} className="text-amber-500 shrink-0" />
+              <span className="hidden md:inline">Share Scheme</span>
+              <span className="md:hidden">Share</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleOpenSchemeInNewTab(selectedScheme)}
+              className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold transition-all cursor-pointer shadow-2xs whitespace-nowrap shrink-0"
+              title="Preview customer view in new tab"
+            >
+              <ExternalLink size={13} className="text-muted-foreground shrink-0" />
+              <span className="hidden md:inline">Preview</span>
+            </button>
+
+            <button
+              onClick={() => handleOpenCreateModal(selectedScheme)}
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold transition-all cursor-pointer shadow-2xs whitespace-nowrap shrink-0"
+            >
+              <Edit3 size={14} className="shrink-0" />
               <span>Edit</span>
             </button>
 
@@ -583,34 +673,76 @@ export default function SchemesPage() {
                 setSchemeToDelete(selectedScheme);
               }}
               title={((selectedScheme.stats?.total_members || 0) > 0 || members.length > 0) ? "Cannot delete scheme with active customers" : "Delete Scheme"}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shadow-2xs ${
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shadow-2xs whitespace-nowrap shrink-0 ${
                 ((selectedScheme.stats?.total_members || 0) > 0 || members.length > 0)
                   ? "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500 cursor-not-allowed"
                   : "bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 dark:text-rose-400 cursor-pointer"
               }`}
             >
-              <Trash2 size={14} />
+              <Trash2 size={14} className="shrink-0" />
               <span>Delete</span>
             </button>
 
             <button
               onClick={handleOpenAddMemberModal}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold shadow-md shadow-amber-500/20 transition-all cursor-pointer active:scale-95"
+              className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold shadow-md shadow-amber-500/20 transition-all cursor-pointer active:scale-95 whitespace-nowrap shrink-0"
             >
-              <Plus size={14} />
+              <Plus size={14} className="shrink-0" />
               <span>Enroll Member</span>
             </button>
           </div>
         ) : (
-          <button
-            onClick={() => handleOpenCreateModal()}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold shadow-md shadow-amber-500/20 transition-all cursor-pointer active:scale-95"
-          >
-            <Plus size={15} />
-            <span>Create Scheme</span>
-          </button>
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleCopyAllSchemesLink}
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold transition-all cursor-pointer shadow-2xs whitespace-nowrap shrink-0"
+              title="Copy shareable link for all public savings schemes"
+            >
+              <Share2 size={13} className="text-amber-500 shrink-0" />
+              <span className="hidden md:inline">Share Schemes</span>
+              <span className="md:hidden">Share</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleOpenPublicSchemesInNewTab}
+              className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold transition-all cursor-pointer shadow-2xs whitespace-nowrap shrink-0"
+              title="Open public customer schemes view in new tab"
+            >
+              <ExternalLink size={13} className="text-muted-foreground shrink-0" />
+              <span className="hidden lg:inline">Preview Store</span>
+            </button>
+
+            <button
+              onClick={() => handleOpenCreateModal()}
+              className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold shadow-md shadow-amber-500/20 transition-all cursor-pointer active:scale-95 whitespace-nowrap shrink-0"
+            >
+              <Plus size={15} className="shrink-0" />
+              <span>Create Scheme</span>
+            </button>
+          </div>
         )}
       </HeaderActions>
+
+      {/* Notice if savings schemes disabled in settings */}
+      {!isSchemeEnabledShop(shop?.category, shop?.settings) && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-2xl text-amber-800 dark:text-amber-300 text-xs">
+          <div className="flex items-center gap-2.5">
+            <AlertCircle size={18} className="text-amber-600 shrink-0" />
+            <div>
+              <p className="font-bold">Savings Schemes are currently disabled for your store storefront.</p>
+              <p className="text-[11px] text-amber-700/80 dark:text-amber-400/80">Customers cannot see or join schemes on your digital menu. You can re-enable this anytime in Store Settings.</p>
+            </div>
+          </div>
+          <Link
+            to="/settings"
+            className="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-bold text-xs shrink-0 inline-flex items-center gap-1.5 shadow-xs transition-all w-fit"
+          >
+            Go to Settings
+          </Link>
+        </div>
+      )}
 
       {/* Main Content: Schemes List or Selected Scheme Details */}
       {!selectedScheme ? (
@@ -648,131 +780,216 @@ export default function SchemesPage() {
                 const isCapped = scheme.max_members !== null && scheme.max_members !== undefined;
                 const percentFilled = isCapped ? Math.min(100, Math.round((membersCount / scheme.max_members!) * 100)) : null;
                 const hasCustomers = membersCount > 0;
+                const primaryImage = scheme.items?.find(it => it.image_url)?.image_url;
+                const highlightLines = (scheme.highlight_text || '').split('\n').map(l => l.trim()).filter(Boolean);
 
                 return (
                   <div
                     key={scheme.id}
                     onClick={() => handleSelectScheme(scheme)}
-                    className="bg-card border border-border hover:border-amber-500/50 rounded-2xl p-5 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between group"
+                    className="group relative bg-card border border-border/80 hover:border-amber-500/60 rounded-3xl overflow-hidden shadow-xs hover:shadow-xl hover:shadow-amber-500/10 transition-all duration-300 cursor-pointer flex flex-col justify-between"
                   >
-                    <div className="space-y-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0 border border-amber-500/20">
-                          <Coins size={20} />
-                        </div>
-                        <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                          {scheme.show_on_public_menu ? (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300">
-                              Public
-                            </span>
-                          ) : (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
-                              Private
-                            </span>
-                          )}
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full capitalize ${
-                            scheme.status === 'active'
-                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
-                              : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
-                          }`}>
-                            {scheme.status}
-                          </span>
-
-                          {/* Quick Edit & Delete Actions */}
-                          <div className="flex items-center gap-0.5 ml-1 pl-1.5 border-l border-border/80">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleOpenCreateModal(scheme);
-                              }}
-                              title="Edit Scheme"
-                              className="p-1.5 rounded-lg text-muted-foreground hover:text-amber-600 hover:bg-amber-500/10 transition-colors cursor-pointer"
-                            >
-                              <Edit3 size={13} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (hasCustomers) {
-                                  toast.error('Cannot delete scheme with active customers enrolled. You can mark it as closed instead.');
-                                  return;
-                                }
-                                setSchemeToDelete(scheme);
-                              }}
-                              title={hasCustomers ? "Cannot delete scheme with active customers" : "Delete Scheme"}
-                              className={`p-1.5 rounded-lg transition-colors ${
-                                hasCustomers
-                                  ? "text-muted-foreground/35 hover:text-muted-foreground/50 cursor-not-allowed"
-                                  : "text-muted-foreground hover:text-rose-600 hover:bg-rose-500/10 cursor-pointer"
-                              }`}
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div>
-                        <h3 className="font-bold text-base text-foreground group-hover:text-amber-500 transition-colors line-clamp-1">
-                          {scheme.title}
-                        </h3>
-                        {scheme.description && (
-                          <p className="text-xs text-muted-foreground line-clamp-2 mt-1">{scheme.description}</p>
-                        )}
-                      </div>
-
-                      <div className="bg-muted/50 p-3 rounded-xl space-y-1">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-muted-foreground">Installment:</span>
-                          <span className="font-bold text-foreground">
-                            {currency}{scheme.price.toLocaleString()} / {scheme.frequency === 'weekly' ? 'week' : 'month'}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-muted-foreground">Term:</span>
-                          <span className="font-bold text-foreground">{scheme.term_duration} {scheme.term_unit}</span>
-                        </div>
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-muted-foreground">Enrolled Members:</span>
-                          <span className="font-bold text-foreground">
-                            {membersCount} {isCapped ? `/ ${scheme.max_members}` : ''}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Progress bar if capped */}
-                      {percentFilled !== null && (
-                        <div className="space-y-1">
-                          <div className="flex justify-between text-[10px] font-semibold text-muted-foreground">
-                            <span>Capacity</span>
-                            <span>{percentFilled}% Filled</span>
-                          </div>
-                          <div className="w-full bg-muted h-1.5 rounded-full overflow-hidden">
-                            <div className="bg-amber-500 h-full rounded-full transition-all" style={{ width: `${percentFilled}%` }} />
+                    {/* Top Media / Banner Section (Authentic Menu Card Cover Style) */}
+                    <div className="relative w-full h-40 sm:h-44 overflow-hidden bg-gradient-to-br from-amber-500/15 via-orange-500/10 to-amber-600/20 dark:from-amber-950/40 dark:via-orange-950/30 dark:to-slate-900 border-b border-border/60">
+                      {primaryImage ? (
+                        <img
+                          src={primaryImage}
+                          alt={scheme.title}
+                          loading="lazy"
+                          decoding="async"
+                          className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-108"
+                        />
+                      ) : (
+                        <div className="w-full h-full relative flex items-center justify-center overflow-hidden">
+                          <div className="absolute -top-10 -right-10 w-32 h-32 rounded-full bg-amber-400/25 blur-2xl" />
+                          <div className="absolute -bottom-10 -left-10 w-32 h-32 rounded-full bg-orange-500/20 blur-2xl" />
+                          <Coins size={80} className="absolute -right-4 -bottom-4 text-amber-500/10 dark:text-amber-400/5 rotate-12" />
+                          <Gift size={64} className="absolute -left-4 -top-4 text-orange-500/10 dark:text-orange-400/5 -rotate-12" />
+                          <div className="relative z-10 w-14 h-14 rounded-2xl bg-white/85 dark:bg-slate-900/85 backdrop-blur-md shadow-md border border-amber-300/40 dark:border-amber-700/40 flex items-center justify-center text-amber-500 dark:text-amber-400 group-hover:scale-110 transition-transform duration-300">
+                            <Coins size={28} />
                           </div>
                         </div>
                       )}
 
-                      {/* Included Items preview */}
-                      {scheme.items?.length > 0 && (
-                        <div className="pt-2 border-t border-border/60">
-                          <span className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
-                            <Gift size={12} className="text-amber-500" />
-                            <span>{scheme.items.length} Reward Products Included</span>
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/25 pointer-events-none" />
+
+                      {/* Top Badges & Actions */}
+                      <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between gap-2 z-20">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="backdrop-blur-md bg-white/95 dark:bg-slate-900/95 text-amber-900 dark:text-amber-200 border border-amber-300/70 dark:border-amber-700/70 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-xs">
+                            <Calendar size={10} className="text-amber-600 dark:text-amber-400" />
+                            {scheme.frequency === 'weekly' ? 'Weekly' : 'Monthly'}
                           </span>
+                          <span className={`backdrop-blur-md px-2 py-0.5 rounded-full text-[10px] font-bold shadow-xs ${
+                            scheme.show_on_public_menu ? 'bg-blue-500/90 text-white' : 'bg-slate-700/90 text-white'
+                          }`}>
+                            {scheme.show_on_public_menu ? 'Public' : 'Private'}
+                          </span>
+                          <span className={`backdrop-blur-md px-2 py-0.5 rounded-full text-[10px] font-bold capitalize shadow-xs ${
+                            scheme.status === 'active' ? 'bg-emerald-500/90 text-white' : 'bg-slate-600/90 text-white'
+                          }`}>
+                            {scheme.status}
+                          </span>
+                        </div>
+
+                        {/* Quick Edit, Delete & Share Actions */}
+                        <div className="backdrop-blur-md bg-white/95 dark:bg-slate-900/95 p-0.5 rounded-xl border border-border/60 flex items-center gap-0.5 shadow-xs shrink-0">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCopySchemeLink(scheme);
+                            }}
+                            title="Copy shareable customer link for this scheme"
+                            className="p-1.5 rounded-lg text-muted-foreground hover:text-amber-600 hover:bg-amber-500/10 transition-colors cursor-pointer"
+                          >
+                            <Share2 size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenSchemeInNewTab(scheme);
+                            }}
+                            title="Open customer view in new tab"
+                            className="p-1.5 rounded-lg text-muted-foreground hover:text-amber-600 hover:bg-amber-500/10 transition-colors cursor-pointer"
+                          >
+                            <ExternalLink size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenCreateModal(scheme);
+                            }}
+                            title="Edit Scheme"
+                            className="p-1.5 rounded-lg text-muted-foreground hover:text-amber-600 hover:bg-amber-500/10 transition-colors cursor-pointer"
+                          >
+                            <Edit3 size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (hasCustomers) {
+                                toast.error('Cannot delete scheme with active customers enrolled. You can mark it as closed instead.');
+                                return;
+                              }
+                              setSchemeToDelete(scheme);
+                            }}
+                            title={hasCustomers ? "Cannot delete scheme with active customers" : "Delete Scheme"}
+                            className={`p-1.5 rounded-lg transition-colors ${
+                              hasCustomers
+                                ? "text-muted-foreground/35 hover:text-muted-foreground/50 cursor-not-allowed"
+                                : "text-muted-foreground hover:text-rose-600 hover:bg-rose-500/10 cursor-pointer"
+                            }`}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Single-line Ribbon on Banner */}
+                      {highlightLines.length > 0 && (
+                        <div className="absolute bottom-2.5 left-2.5 right-2.5 z-20 pointer-events-none">
+                          <div className="inline-flex backdrop-blur-md bg-gradient-to-r from-amber-600/95 via-orange-600/95 to-amber-600/95 text-white px-2.5 py-1 rounded-xl border border-white/20 shadow-md shadow-orange-950/25 items-center gap-1.5 max-w-full">
+                            <Flame size={12} className="text-yellow-300 animate-pulse shrink-0" />
+                            <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wide truncate drop-shadow-xs">
+                              {highlightLines[0]} {highlightLines.length > 1 ? `(+${highlightLines.length - 1} More)` : ''}
+                            </span>
+                          </div>
                         </div>
                       )}
                     </div>
 
-                    <div className="pt-4 mt-3 border-t border-border flex items-center justify-between text-xs">
-                      <div className="text-emerald-600 dark:text-emerald-400 font-bold">
-                        {currency}{(stats?.total_collected || 0).toLocaleString()} Collected
+                    {/* Card Content */}
+                    <div className="p-4 sm:p-5 flex-1 flex flex-col justify-between space-y-3 bg-card">
+                      <div className="space-y-3">
+                        <div>
+                          <h3 className="font-black text-base sm:text-lg text-foreground group-hover:text-amber-500 transition-colors line-clamp-1 leading-snug break-words break-all">
+                            {scheme.title}
+                          </h3>
+                          {scheme.description && (
+                            <p className="text-xs text-muted-foreground line-clamp-2 mt-1 leading-relaxed break-words">
+                              {scheme.description}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Highlights breakdown (compact with max 2 lines + expand toggle) */}
+                        {renderHighlightBenefits(scheme.highlight_text, true, 2)}
+
+                        {/* Specs Grid */}
+                        <div className="grid grid-cols-2 gap-2 p-3 rounded-2xl bg-muted/40 dark:bg-slate-800/40 border border-border/60">
+                          <div>
+                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
+                              Installment
+                            </span>
+                            <div className="flex items-baseline gap-1 mt-0.5">
+                              <span className="font-mono font-black text-base text-amber-600 dark:text-amber-400">
+                                {currency}{scheme.price.toLocaleString()}
+                              </span>
+                              <span className="text-[10px] font-semibold text-muted-foreground">
+                                / {scheme.frequency === 'weekly' ? 'wk' : 'mo'}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="text-right border-l border-border/60 pl-2">
+                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
+                              Term Duration
+                            </span>
+                            <div className="flex items-baseline justify-end gap-1 mt-0.5">
+                              <span className="font-black text-base text-foreground">
+                                {scheme.term_duration} {scheme.term_unit}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="col-span-2 pt-2 border-t border-border/50 flex items-center justify-between text-[11px]">
+                            <span className="text-muted-foreground flex items-center gap-1">
+                              <Store size={12} className="text-amber-500" />
+                              <span>Reward Mode:</span>
+                            </span>
+                            <span className="font-bold text-foreground">
+                              {scheme.reward_type === 'all_items' ? 'All Store Items' : scheme.reward_type === 'category' ? 'Category Scheme' : scheme.reward_type === 'monetary_fund' ? 'Direct Fund' : `${scheme.items?.length || 0} Products Hamper`}
+                            </span>
+                          </div>
+
+                          <div className="col-span-2 flex items-center justify-between text-[11px] pt-1 border-t border-border/30">
+                            <span className="text-muted-foreground flex items-center gap-1">
+                              <Users size={12} className="text-muted-foreground" />
+                              <span>Enrolled Members:</span>
+                            </span>
+                            <span className="font-mono font-bold text-foreground">
+                              {membersCount} {isCapped ? `/ ${scheme.max_members}` : ''}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Progress bar if capped */}
+                        {percentFilled !== null && (
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-[10px] font-semibold text-muted-foreground">
+                              <span>Capacity</span>
+                              <span>{percentFilled}% Filled</span>
+                            </div>
+                            <div className="w-full bg-muted h-1.5 rounded-full overflow-hidden">
+                              <div className="bg-amber-500 h-full rounded-full transition-all" style={{ width: `${percentFilled}%` }} />
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <div className="flex items-center gap-1 text-amber-500 font-bold group-hover:translate-x-1 transition-transform">
-                        <span>Manage</span>
-                        <ChevronRight size={14} />
+
+                      {/* Footer Actions */}
+                      <div className="pt-3 mt-1 border-t border-border flex items-center justify-between text-xs">
+                        <div className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
+                          <CheckCircle2 size={13} />
+                          <span>{currency}{(stats?.total_collected || 0).toLocaleString()} Collected</span>
+                        </div>
+                        <div className="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-bold group-hover:translate-x-1 transition-transform">
+                          <span>Manage</span>
+                          <ChevronRight size={14} />
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -784,129 +1001,251 @@ export default function SchemesPage() {
       ) : (
         /* Selected Scheme Dashboard & Member Roster */
         <div className="space-y-6">
-          {/* Stats Summary Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div className="bg-card border border-border p-4 rounded-xl shadow-xs">
-              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Total Members</span>
-              <div className="flex items-baseline gap-2 mt-1">
-                <span className="text-2xl font-black text-foreground">{selectedScheme.stats?.total_members || 0}</span>
-                {selectedScheme.max_members && (
-                  <span className="text-xs text-muted-foreground">/ {selectedScheme.max_members} limit</span>
-                )}
-              </div>
-            </div>
-
-            <div className="bg-card border border-border p-4 rounded-xl shadow-xs">
-              <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Paid This Cycle</span>
-              <div className="flex items-baseline gap-2 mt-1">
-                <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
-                  {selectedScheme.stats?.paid_this_cycle_count || 0}
+          {/* 1. STATS & ANALYTICS KPI CARDS */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
+            <div className="bg-card border border-border p-4 rounded-2xl shadow-xs hover:border-amber-500/40 transition-all flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+                  Total Members
                 </span>
-                <span className="text-xs text-muted-foreground">members</span>
+                <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                  <Users size={16} />
+                </div>
               </div>
-            </div>
-
-            <div className="bg-card border border-border p-4 rounded-xl shadow-xs">
-              <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wider">Pending This Cycle</span>
-              <div className="flex items-baseline gap-2 mt-1">
-                <span className="text-2xl font-black text-amber-600 dark:text-amber-400">
-                  {selectedScheme.stats?.pending_this_cycle_count || 0}
+              <div className="mt-2">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-2xl font-black text-foreground font-mono">
+                    {selectedScheme.stats?.total_members || members.length || 0}
+                  </span>
+                  {selectedScheme.max_members ? (
+                    <span className="text-xs text-muted-foreground">/ {selectedScheme.max_members} limit</span>
+                  ) : (
+                    <span className="text-[11px] text-muted-foreground">enrolled</span>
+                  )}
+                </div>
+                <span className="text-[11px] text-muted-foreground block mt-0.5">
+                  Active customer passbooks
                 </span>
-                <span className="text-xs text-muted-foreground">members</span>
               </div>
             </div>
 
-            <div className="bg-card border border-border p-4 rounded-xl shadow-xs">
-              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Total Collected</span>
-              <div className="flex items-baseline gap-2 mt-1">
-                <span className="text-2xl font-black text-foreground">
-                  {currency}{(selectedScheme.stats?.total_collected || 0).toLocaleString()}
+            <div className="bg-card border border-border p-4 rounded-2xl shadow-xs hover:border-emerald-500/40 transition-all flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
+                  Total Collected
+                </span>
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                  <Wallet size={16} />
+                </div>
+              </div>
+              <div className="mt-2">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono">
+                    {currency}{(selectedScheme.stats?.total_collected || 0).toLocaleString()}
+                  </span>
+                </div>
+                <span className="text-[11px] text-muted-foreground block mt-0.5">
+                  Total installment revenue
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-card border border-border p-4 rounded-2xl shadow-xs hover:border-teal-500/40 transition-all flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-teal-600 dark:text-teal-400 uppercase tracking-wider">
+                  Paid This Cycle
+                </span>
+                <div className="w-8 h-8 rounded-xl bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center">
+                  <CheckCircle2 size={16} />
+                </div>
+              </div>
+              <div className="mt-2">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-2xl font-black text-teal-600 dark:text-teal-400 font-mono">
+                    {selectedScheme.stats?.paid_this_cycle_count || 0}
+                  </span>
+                  <span className="text-xs text-muted-foreground">members</span>
+                </div>
+                <span className="text-[11px] text-muted-foreground block mt-0.5">
+                  Up-to-date installments
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-card border border-border p-4 rounded-2xl shadow-xs hover:border-orange-500/40 transition-all flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-orange-600 dark:text-orange-400 uppercase tracking-wider">
+                  Pending This Cycle
+                </span>
+                <div className="w-8 h-8 rounded-xl bg-orange-500/10 text-orange-600 dark:text-orange-400 flex items-center justify-center">
+                  <Clock size={16} />
+                </div>
+              </div>
+              <div className="mt-2">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-2xl font-black text-orange-600 dark:text-orange-400 font-mono">
+                    {selectedScheme.stats?.pending_this_cycle_count || 0}
+                  </span>
+                  <span className="text-xs text-muted-foreground">members</span>
+                </div>
+                <span className="text-[11px] text-muted-foreground block mt-0.5">
+                  Due for payment collection
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Included Products Showcase */}
-          {selectedScheme.items && selectedScheme.items.length > 0 && (
-            <div className="bg-card border border-border p-5 rounded-2xl shadow-xs space-y-3">
-              <h3 className="font-bold text-sm text-foreground flex items-center gap-2">
-                <Gift size={16} className="text-amber-500" />
-                <span>Included Reward Products ({selectedScheme.items.length})</span>
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                {selectedScheme.items.map((item, idx) => (
-                  <div key={idx} className="flex items-center gap-3 p-3 bg-muted/50 rounded-xl border border-border/50">
-                    {item.image_url ? (
-                      <img src={item.image_url} alt={item.name} className="w-12 h-12 object-cover rounded-lg shrink-0" />
-                    ) : (
-                      <div className="w-12 h-12 rounded-lg bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0">
-                        <Gift size={20} />
-                      </div>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <h4 className="text-xs font-bold text-foreground truncate">{item.name}</h4>
-                      {item.variant_name && (
-                        <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold block truncate">
-                          {item.variant_name}
-                        </span>
-                      )}
-                      <span className="text-[11px] text-muted-foreground font-mono">Qty: {item.quantity}</span>
-                    </div>
+          {/* 3. STRUCTURED REWARD & REDEMPTION SPECIFICATIONS */}
+          {selectedScheme.reward_type === 'all_items' ? (
+            <div className="bg-card border border-border p-5 sm:p-6 rounded-3xl shadow-xs space-y-3.5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/60 pb-3">
+                <h3 className="font-bold text-sm sm:text-base text-foreground flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                    <Store size={15} />
                   </div>
-                ))}
+                  <span>Redemption Terms: Full Store Catalog Freedom</span>
+                </h3>
+                <span className="text-[11px] font-extrabold px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 flex items-center gap-1.5 self-start sm:self-auto">
+                  <Check size={12} className="text-emerald-600 dark:text-emerald-400" />
+                  <span>All Store Items Eligible</span>
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Customers who complete all <strong className="text-foreground">{selectedScheme.term_duration} {selectedScheme.frequency === 'weekly' ? 'weekly' : 'monthly'} installments</strong> receive unrestricted catalog freedom to pick any items, festival packs, or sweets from the store up to the maturity value of <strong className="text-foreground font-mono">{currency}{(selectedScheme.price * selectedScheme.term_duration).toLocaleString()}</strong>.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                <div className="bg-muted/40 border border-border/60 rounded-xl p-2.5 text-xs text-foreground font-semibold flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-amber-500/15 text-amber-600 flex items-center justify-center text-[10px] font-black">✓</span>
+                  <span>Any item across entire catalog</span>
+                </div>
+                <div className="bg-muted/40 border border-border/60 rounded-xl p-2.5 text-xs text-foreground font-semibold flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-emerald-500/15 text-emerald-600 flex items-center justify-center text-[10px] font-black">✓</span>
+                  <span>Instant counter redemption</span>
+                </div>
+                <div className="bg-muted/40 border border-border/60 rounded-xl p-2.5 text-xs text-foreground font-semibold flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-blue-500/15 text-blue-600 flex items-center justify-center text-[10px] font-black">✓</span>
+                  <span>Passbook verified at checkout</span>
+                </div>
               </div>
             </div>
+          ) : selectedScheme.reward_type === 'category' ? (
+            <div className="bg-card border border-border p-5 sm:p-6 rounded-3xl shadow-xs space-y-3.5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/60 pb-3">
+                <h3 className="font-bold text-sm sm:text-base text-foreground flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                    <Tag size={15} />
+                  </div>
+                  <span>Eligible Reward Categories ({selectedScheme.reward_categories?.length || 0})</span>
+                </h3>
+                <span className="text-[11px] font-bold px-3 py-1 rounded-full bg-amber-500/10 text-amber-800 dark:text-amber-300 border border-amber-500/20 self-start sm:self-auto">
+                  Category Restricted
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Customers may redeem their scheme maturity value exclusively within these approved categories upon finishing all installments.
+              </p>
+              {selectedScheme.reward_categories && selectedScheme.reward_categories.length > 0 ? (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {selectedScheme.reward_categories.map((cat, idx) => (
+                    <span key={idx} className="px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-900 dark:text-amber-200 text-xs font-bold flex items-center gap-1.5">
+                      <Tag size={12} className="text-amber-600 dark:text-amber-400" />
+                      <span>{cat.name}</span>
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">No specific categories specified.</p>
+              )}
+            </div>
+          ) : (
+            selectedScheme.items && selectedScheme.items.length > 0 && (
+              <div className="bg-card border border-border p-5 sm:p-6 rounded-3xl shadow-xs space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/60 pb-3">
+                  <h3 className="font-bold text-sm sm:text-base text-foreground flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                      <Gift size={15} />
+                    </div>
+                    <span>Included Reward Products ({selectedScheme.items.length})</span>
+                  </h3>
+                  <span className="text-[11px] font-bold px-3 py-1 rounded-full bg-amber-500/10 text-amber-800 dark:text-amber-300 border border-amber-500/20 self-start sm:self-auto">
+                    Fixed Hamper Bundle
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {selectedScheme.items.map((item, idx) => (
+                    <div key={idx} className="flex items-center gap-3 p-3 bg-muted/40 hover:bg-muted/70 rounded-2xl border border-border/60 transition-all">
+                      {item.image_url ? (
+                        <img src={item.image_url} alt={item.name} className="w-12 h-12 object-cover rounded-xl shrink-0 border border-border/40" />
+                      ) : (
+                        <div className="w-12 h-12 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0 border border-amber-500/20">
+                          <Gift size={20} />
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <h4 className="text-xs font-bold text-foreground truncate">{item.name}</h4>
+                        {item.variant_name && (
+                          <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold block truncate">
+                            {item.variant_name}
+                          </span>
+                        )}
+                        <span className="text-[11px] text-muted-foreground font-mono">Qty: {item.quantity}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
           )}
 
-          {/* Members Table Section */}
-          <div className="bg-card border border-border rounded-2xl shadow-xs">
-            {/* Sticky Table controls */}
-            <div className="sticky top-0 z-30 bg-card/95 backdrop-blur-md p-4 border-b border-border flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shadow-sm rounded-t-2xl transition-all">
-              <div className="relative flex-1 max-w-sm">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          {/* 4. MEMBERS MANAGEMENT & PASSBOOK ROSTER */}
+          <div className="space-y-4">
+            {/* Filter & Action Toolbar */}
+            <div className="bg-card p-3 sm:p-3.5 rounded-2xl border border-border flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shadow-2xs">
+              <div className="relative flex-1 max-w-md">
+                <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <input
                   type="text"
-                  placeholder="Search by customer name, phone, or member #..."
+                  placeholder="Search customer by name, phone, or passbook #..."
                   value={memberSearch}
                   onChange={(e) => {
                     setMemberSearch(e.target.value);
                     if (selectedScheme) fetchMembers(selectedScheme.id, e.target.value);
                   }}
-                  className="w-full pl-9 pr-3 py-2 text-xs bg-background border border-border rounded-xl focus:outline-hidden focus:border-amber-500 text-foreground"
+                  className="w-full pl-9 pr-3 py-2 text-xs bg-card border border-border rounded-xl focus:outline-hidden focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-foreground transition-all placeholder:text-muted-foreground/60 shadow-2xs"
                 />
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
-                <div className="flex bg-muted p-1 rounded-xl text-xs font-semibold">
+              <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                <div className="flex bg-muted/80 p-1 rounded-xl text-xs font-semibold border border-border/60">
                   <button
                     onClick={() => setMemberFilter('all')}
-                    className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
-                      memberFilter === 'all' ? 'bg-card text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'
+                    className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer font-bold ${
+                      memberFilter === 'all' ? 'bg-card text-foreground shadow-2xs' : 'text-muted-foreground hover:text-foreground'
                     }`}
                   >
                     All ({members.length})
                   </button>
                   <button
                     onClick={() => setMemberFilter('paid')}
-                    className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
-                      memberFilter === 'paid' ? 'bg-card text-emerald-600 dark:text-emerald-400 shadow-xs' : 'text-muted-foreground hover:text-foreground'
+                    className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer font-bold ${
+                      memberFilter === 'paid' ? 'bg-card text-emerald-600 dark:text-emerald-400 shadow-2xs' : 'text-muted-foreground hover:text-foreground'
                     }`}
                   >
-                    Paid
+                    Paid ({members.filter(m => m.paid_installments > 0).length})
                   </button>
                   <button
                     onClick={() => setMemberFilter('pending')}
-                    className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
-                      memberFilter === 'pending' ? 'bg-card text-amber-600 dark:text-amber-400 shadow-xs' : 'text-muted-foreground hover:text-foreground'
+                    className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer font-bold ${
+                      memberFilter === 'pending' ? 'bg-card text-amber-600 dark:text-amber-400 shadow-2xs' : 'text-muted-foreground hover:text-foreground'
                     }`}
                   >
-                    Due
+                    Due ({members.filter(m => m.paid_installments < m.total_installments).length})
                   </button>
                 </div>
 
                 <button
                   onClick={handleOpenAddMemberModal}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer active:scale-95"
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-amber-500/20 cursor-pointer active:scale-95"
                 >
                   <Plus size={14} />
                   <span>Enroll Member</span>
@@ -914,13 +1253,85 @@ export default function SchemesPage() {
               </div>
             </div>
 
-            {/* Members List */}
+            {/* Members Roster Card / Passbook Table */}
+            <div className="bg-card border border-border rounded-3xl shadow-xs overflow-hidden">
+
+            {/* Members Roster / Empty State */}
             {isLoadingMembers ? (
-              <div className="p-8 text-center text-xs text-muted-foreground">Loading members...</div>
+              <div className="p-16 text-center text-xs text-muted-foreground flex flex-col items-center justify-center gap-2">
+                <div className="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+                <span>Loading member records...</span>
+              </div>
             ) : filteredMembers.length === 0 ? (
-              <div className="p-12 text-center text-muted-foreground space-y-2">
-                <Users size={28} className="mx-auto text-muted-foreground/50" />
-                <p className="text-xs">No members found matching your search.</p>
+              <div className="p-8 sm:p-12 text-center space-y-6 max-w-xl mx-auto">
+                <div className="relative mx-auto w-16 h-16 rounded-3xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-center text-amber-500 shadow-inner">
+                  <Users size={30} />
+                  <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-amber-500 text-white flex items-center justify-center text-xs font-black shadow-xs">
+                    +
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <h4 className="text-base sm:text-lg font-black text-foreground">
+                    {memberSearch ? 'No Members Match Your Search' : 'No Members Enrolled Yet'}
+                  </h4>
+                  <p className="text-xs text-muted-foreground leading-relaxed max-w-md mx-auto">
+                    {memberSearch
+                      ? `No customers match "${memberSearch}". Clear the search to view all members.`
+                      : 'Enroll your first customer to activate their monthly installment passbook, issue payment receipts, and track maturity delivery.'}
+                  </p>
+                </div>
+
+                {!memberSearch && (
+                  <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
+                    <button
+                      type="button"
+                      onClick={handleOpenAddMemberModal}
+                      className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-xl text-xs font-bold shadow-md shadow-amber-500/25 transition-all cursor-pointer active:scale-95"
+                    >
+                      <Plus size={15} />
+                      <span>Enroll First Member</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => selectedScheme && handleCopySchemeLink(selectedScheme)}
+                      className="flex items-center gap-2 px-4 py-2.5 bg-background hover:bg-muted border border-border rounded-xl text-xs font-semibold text-foreground transition-all cursor-pointer shadow-2xs"
+                    >
+                      <Share2 size={14} className="text-amber-500" />
+                      <span>Copy Customer Share Link</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* 3-Step Scheme Guidance Box */}
+                {!memberSearch && (
+                  <div className="pt-4 border-t border-border/60 text-left grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="p-3 bg-muted/40 rounded-2xl border border-border/50 space-y-1">
+                      <span className="text-[10px] font-black uppercase text-amber-600 dark:text-amber-400 block">
+                        Step 1: Enroll
+                      </span>
+                      <p className="text-[11px] text-muted-foreground leading-snug">
+                        Register customer name, mobile number, and address at counter or via public link.
+                      </p>
+                    </div>
+                    <div className="p-3 bg-muted/40 rounded-2xl border border-border/50 space-y-1">
+                      <span className="text-[10px] font-black uppercase text-emerald-600 dark:text-emerald-400 block">
+                        Step 2: Collect
+                      </span>
+                      <p className="text-[11px] text-muted-foreground leading-snug">
+                        Record periodic installments via Cash, UPI/QR, Card, or Net Banking.
+                      </p>
+                    </div>
+                    <div className="p-3 bg-muted/40 rounded-2xl border border-border/50 space-y-1">
+                      <span className="text-[10px] font-black uppercase text-blue-600 dark:text-blue-400 block">
+                        Step 3: Deliver
+                      </span>
+                      <p className="text-[11px] text-muted-foreground leading-snug">
+                        At full term, customer claims their guaranteed cracker box or store freedom hamper!
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="p-4 sm:p-6 space-y-4 bg-muted/15 dark:bg-slate-950/20 rounded-b-2xl">
@@ -1114,7 +1525,8 @@ export default function SchemesPage() {
             )}
           </div>
         </div>
-      )}
+      </div>
+    )}
 
       {/* CREATE / EDIT SCHEME MODAL */}
       <Modal
@@ -1282,6 +1694,31 @@ export default function SchemesPage() {
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                     className="w-full px-3.5 py-2.5 bg-background border border-border rounded-xl text-foreground text-xs focus:outline-hidden focus:border-amber-500 shadow-2xs transition-all resize-none"
                   />
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-bold text-foreground">
+                      Key Highlights & Benefits (Optional)
+                    </label>
+                    <span className="text-[11px] text-muted-foreground">One perk per line</span>
+                  </div>
+                  <textarea
+                    rows={3}
+                    value={formData.highlight_text || ''}
+                    onChange={(e) => setFormData({ ...formData, highlight_text: e.target.value })}
+                    placeholder={
+                      isCrackers 
+                        ? "e.g.\n10% Extra Cracker Bonus on Diwali\nFree Home Delivery across Tamil Nadu\nGuaranteed Gift Box Worth ₹1,200\nPriority Festival Dispatch"
+                        : isBakery
+                        ? "e.g.\nFree Celebration Cake on Birthday\n15% Festive Sweets Hamper Discount\nPriority Festival Box Collection"
+                        : "e.g.\n10% Bonus Savings Perk on Completion\nFree Delivery on Final Box\nExclusive Festival Hamper Included"
+                    }
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-input bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all resize-none leading-relaxed"
+                  />
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    Enter each perk or gift highlight on a new line. These display prominently with checkmark icons on your store scheme card and public enrollment page.
+                  </p>
                 </div>
               </div>
 
@@ -1736,62 +2173,133 @@ export default function SchemesPage() {
       <Modal
         isOpen={isAddMemberModalOpen}
         onClose={() => setIsAddMemberModalOpen(false)}
-        title={`Enroll Member: ${selectedScheme?.title || ''}`}
+        title="Enroll Scheme Member"
+        description="Register customer passbook & activate installment schedule"
       >
         <form onSubmit={handleAddMemberSubmit} className="space-y-4 text-xs">
-          <div>
-            <label className="font-bold text-slate-700 dark:text-slate-200 block mb-1">Customer Full Name *</label>
-            <input
-              type="text"
-              required
-              placeholder="e.g. Sivarajan K"
-              value={newMemberForm.customer_name}
-              onChange={(e) => setNewMemberForm({ ...newMemberForm, customer_name: e.target.value })}
-              className="w-full px-3 py-2 bg-background border border-border rounded-xl text-foreground focus:outline-hidden focus:border-amber-500"
-            />
-          </div>
-
-          <div>
-            <label className="font-bold text-slate-700 dark:text-slate-200 block mb-1">Mobile Number *</label>
-            <div className="flex gap-2">
-              <div className="w-[105px] shrink-0">
-                <SearchableSelect
-                  options={COUNTRY_CODES.map(c => ({
-                    id: c.code,
-                    name: `${c.flag} ${c.code}`,
-                    subtext: c.country
-                  }))}
-                  value={memberCountryCode}
-                  onChange={(val) => setMemberCountryCode(val)}
-                  placeholder="+91"
-                  showSearch={false}
-                  className="w-full text-xs"
-                />
+          {/* Scheme Summary Context Card */}
+          {selectedScheme && (
+            <div className="relative overflow-hidden rounded-2xl border border-amber-500/20 bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent p-3.5 text-xs">
+              <div className="flex items-center justify-between gap-2 mb-2.5">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0 text-amber-600 dark:text-amber-400 shadow-xs">
+                    <Coins size={16} />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-[10px] uppercase font-black tracking-wider text-amber-700 dark:text-amber-400 block">
+                      Target Scheme
+                    </span>
+                    <h4 className="font-bold text-foreground text-sm truncate">
+                      {selectedScheme.title}
+                    </h4>
+                  </div>
+                </div>
+                <span className="shrink-0 text-[10px] font-bold px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/25">
+                  {selectedScheme.frequency === 'weekly' ? 'Weekly Plan' : 'Monthly Plan'}
+                </span>
               </div>
-              <div className="relative flex-1">
-                <input
-                  type="tel"
-                  required
-                  maxLength={memberCountryCode === '+91' ? 10 : 15}
-                  placeholder={memberCountryCode === '+91' ? 'e.g. 9876543210' : 'Mobile number'}
-                  value={newMemberForm.customer_phone}
-                  onChange={(e) => setNewMemberForm({ ...newMemberForm, customer_phone: e.target.value.replace(/\D/g, '') })}
-                  className="w-full px-3 py-2 bg-background border border-border rounded-xl text-foreground font-mono focus:outline-hidden focus:border-amber-500 text-xs"
-                />
+
+              <div className="grid grid-cols-3 gap-2 pt-2.5 border-t border-amber-500/15 text-center">
+                <div className="bg-background/80 dark:bg-background/50 backdrop-blur-xs rounded-xl py-1.5 px-2 border border-border/60">
+                  <span className="text-[10px] text-muted-foreground block font-medium">Installment</span>
+                  <span className="font-mono font-bold text-amber-600 dark:text-amber-400 text-xs">
+                    {currency}{selectedScheme.price.toLocaleString()}
+                  </span>
+                </div>
+                <div className="bg-background/80 dark:bg-background/50 backdrop-blur-xs rounded-xl py-1.5 px-2 border border-border/60">
+                  <span className="text-[10px] text-muted-foreground block font-medium">Term Duration</span>
+                  <span className="font-bold text-foreground text-xs">
+                    {selectedScheme.term_duration} {selectedScheme.term_unit}
+                  </span>
+                </div>
+                <div className="bg-background/80 dark:bg-background/50 backdrop-blur-xs rounded-xl py-1.5 px-2 border border-border/60">
+                  <span className="text-[10px] text-muted-foreground block font-medium">Total Maturity</span>
+                  <span className="font-mono font-bold text-foreground text-xs">
+                    {currency}{(selectedScheme.price * selectedScheme.term_duration).toLocaleString()}
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
-          {/* Full Customer Address */}
-          <div className="p-3 rounded-xl bg-muted/20 border border-border/70 space-y-2.5">
-            <div className="flex items-center gap-1.5 text-xs font-bold text-foreground">
-              <MapPin size={13} className="text-amber-500" />
-              <span>Customer Address Details</span>
+          {/* Section 1: Customer Profile */}
+          <div className="p-3.5 rounded-2xl bg-card border border-border/80 shadow-xs space-y-3">
+            <div className="flex items-center gap-2 font-bold text-xs text-foreground">
+              <div className="w-5 h-5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                <User size={12} />
+              </div>
+              <span>Customer Information</span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="space-y-3">
               <div>
-                <label className="font-bold text-slate-700 dark:text-slate-200 block mb-1 text-[11px]">
+                <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                  Customer Full Name <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Sivarajan K"
+                    value={newMemberForm.customer_name}
+                    onChange={(e) => setNewMemberForm({ ...newMemberForm, customer_name: e.target.value })}
+                    className="w-full pl-9 pr-3 py-2 bg-background border border-border rounded-xl text-foreground text-xs placeholder:text-muted-foreground/60 focus:outline-hidden focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                  Mobile Number <span className="text-rose-500">*</span>
+                </label>
+                <div className="flex gap-2">
+                  <div className="w-[105px] shrink-0">
+                    <SearchableSelect
+                      options={COUNTRY_CODES.map(c => ({
+                        id: c.code,
+                        name: `${c.flag} ${c.code}`,
+                        subtext: c.country
+                      }))}
+                      value={memberCountryCode}
+                      onChange={(val) => setMemberCountryCode(val)}
+                      placeholder="+91"
+                      showSearch={false}
+                      className="w-full text-xs"
+                    />
+                  </div>
+                  <div className="relative flex-1">
+                    <Phone size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                    <input
+                      type="tel"
+                      required
+                      maxLength={memberCountryCode === '+91' ? 10 : 15}
+                      placeholder={memberCountryCode === '+91' ? '9876543210' : 'Mobile number'}
+                      value={newMemberForm.customer_phone}
+                      onChange={(e) => setNewMemberForm({ ...newMemberForm, customer_phone: e.target.value.replace(/\D/g, '') })}
+                      className="w-full pl-9 pr-3 py-2 bg-background border border-border rounded-xl text-foreground font-mono text-xs placeholder:text-muted-foreground/60 focus:outline-hidden focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 2: Address Details */}
+          <div className="p-3.5 rounded-2xl bg-card border border-border/80 shadow-xs space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 font-bold text-xs text-foreground">
+                <div className="w-5 h-5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                  <MapPin size={12} />
+                </div>
+                <span>Delivery & Verification Address</span>
+              </div>
+              <span className="text-[10px] text-muted-foreground font-medium">For Passbook & Maturity</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div>
+                <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
                   State
                 </label>
                 <SearchableSelect
@@ -1809,7 +2317,7 @@ export default function SchemesPage() {
               </div>
 
               <div>
-                <label className="font-bold text-slate-700 dark:text-slate-200 block mb-1 text-[11px]">
+                <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
                   District / City
                 </label>
                 <SearchableSelect
@@ -1825,25 +2333,25 @@ export default function SchemesPage() {
 
             {memberDistrict === 'Other / Custom District' && (
               <div>
-                <label className="font-bold text-slate-700 dark:text-slate-200 block mb-1 text-[11px]">
-                  Specify District / City Name *
+                <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                  Specify District / City Name <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
-                  <Building2 size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <Building2 size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                   <input
                     type="text"
                     required
                     placeholder="Enter district name"
                     value={customMemberDistrict}
                     onChange={(e) => setCustomMemberDistrict(e.target.value)}
-                    className="w-full pl-7 pr-3 py-1.5 bg-background border border-border rounded-lg text-foreground focus:outline-hidden text-xs"
+                    className="w-full pl-7 pr-3 py-1.5 bg-background border border-border rounded-lg text-foreground focus:outline-hidden focus:border-amber-500 text-xs"
                   />
                 </div>
               </div>
             )}
 
             <div>
-              <label className="font-bold text-slate-700 dark:text-slate-200 block mb-1 text-[11px]">
+              <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
                 Full Address (Door No, Street, Area)
               </label>
               <textarea
@@ -1851,12 +2359,12 @@ export default function SchemesPage() {
                 placeholder="Door #, Street, Landmark"
                 value={memberStreet}
                 onChange={(e) => setMemberStreet(e.target.value)}
-                className="w-full px-3 py-1.5 bg-background border border-border rounded-lg text-foreground focus:outline-hidden text-xs resize-none"
+                className="w-full px-3 py-1.5 bg-background border border-border rounded-lg text-foreground focus:outline-hidden focus:border-amber-500 text-xs resize-none placeholder:text-muted-foreground/60"
               />
             </div>
 
             <div>
-              <label className="font-bold text-slate-700 dark:text-slate-200 block mb-1 text-[11px]">
+              <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
                 Pincode (Optional)
               </label>
               <input
@@ -1865,59 +2373,111 @@ export default function SchemesPage() {
                 placeholder="e.g. 626123"
                 value={memberPincode}
                 onChange={(e) => setMemberPincode(e.target.value.replace(/\D/g, ''))}
-                className="w-full px-3 py-1.5 bg-background border border-border rounded-lg text-foreground font-mono focus:outline-hidden text-xs"
+                className="w-full px-3 py-1.5 bg-background border border-border rounded-lg text-foreground font-mono focus:outline-hidden focus:border-amber-500 text-xs placeholder:text-muted-foreground/60"
               />
             </div>
           </div>
 
-          <div className="bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/50 p-3 rounded-xl space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
-                <CheckCircle2 size={15} className="text-amber-600" />
-                <span>Record Initial Installment Payment</span>
-              </label>
+          {/* Section 3: Initial Installment Collection */}
+          <div className="rounded-2xl border border-amber-500/25 bg-amber-50/50 dark:bg-amber-950/20 p-3.5 space-y-3">
+            <div 
+              className="flex items-center justify-between cursor-pointer select-none"
+              onClick={() => setNewMemberForm({ ...newMemberForm, initial_payment: !newMemberForm.initial_payment })}
+            >
+              <div className="flex items-center gap-2.5">
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors shadow-xs ${
+                  newMemberForm.initial_payment ? 'bg-amber-500 text-white' : 'bg-muted text-muted-foreground'
+                }`}>
+                  <Wallet size={16} />
+                </div>
+                <div>
+                  <div className="font-bold text-foreground text-xs flex items-center gap-1.5">
+                    <span>Record Initial Installment Payment</span>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground block">
+                    Collect & receipt first payment during registration
+                  </span>
+                </div>
+              </div>
               <input
                 type="checkbox"
                 checked={newMemberForm.initial_payment}
                 onChange={(e) => setNewMemberForm({ ...newMemberForm, initial_payment: e.target.checked })}
-                className="w-4 h-4 text-amber-500 rounded-sm"
+                onClick={(e) => e.stopPropagation()}
+                className="w-4 h-4 text-amber-500 rounded-sm cursor-pointer accent-amber-500"
               />
             </div>
+
             {newMemberForm.initial_payment && (
-              <div className="pt-2 space-y-2">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">Initial Installment Amount:</span>
-                  <span className="font-mono font-bold text-amber-700 dark:text-amber-300">{currency}{selectedScheme?.price.toLocaleString()}</span>
+              <div className="pt-3 border-t border-amber-500/20 space-y-3">
+                <div className="flex items-center justify-between bg-background/80 dark:bg-background/40 px-3.5 py-2.5 rounded-xl border border-amber-500/20">
+                  <span className="text-xs text-muted-foreground font-medium">Initial Installment Due:</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm font-black font-mono text-amber-600 dark:text-amber-400">
+                      {currency}{selectedScheme?.price.toLocaleString()}
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 font-bold border border-amber-500/20">
+                      Installment #1
+                    </span>
+                  </div>
                 </div>
+
                 <div>
-                  <label className="text-[11px] font-bold text-muted-foreground block mb-1">Initial Payment Method *</label>
-                  <SearchableSelect
-                    options={paymentMethodOptions}
-                    value={newMemberForm.payment_method}
-                    onChange={(val) => setNewMemberForm({ ...newMemberForm, payment_method: val })}
-                    placeholder="Select Payment Method"
-                    showSearch={false}
-                    className="w-full"
-                  />
+                  <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1.5">
+                    Initial Payment Method <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {[
+                      { id: 'cash', label: 'Cash', icon: Coins },
+                      { id: 'upi', label: 'UPI / QR', icon: QrCode },
+                      { id: 'card', label: 'Card', icon: CreditCard },
+                      { id: 'online', label: 'Online / Bank', icon: Building2 },
+                    ].map(method => {
+                      const Icon = method.icon;
+                      const isSelected = newMemberForm.payment_method === method.id;
+                      return (
+                        <button
+                          key={method.id}
+                          type="button"
+                          onClick={() => setNewMemberForm({ ...newMemberForm, payment_method: method.id })}
+                          className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                            isSelected
+                              ? 'bg-amber-500 text-white border-amber-600 shadow-sm shadow-amber-500/25'
+                              : 'bg-background hover:bg-muted text-foreground border-border/80'
+                          }`}
+                        >
+                          <Icon size={14} className={isSelected ? 'text-white' : 'text-amber-600 dark:text-amber-400'} />
+                          <span>{method.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             )}
           </div>
 
-          <div className="flex items-center justify-end gap-2 pt-3 border-t border-border">
+          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-border">
             <button
               type="button"
               onClick={() => setIsAddMemberModalOpen(false)}
-              className="px-4 py-2 border border-border rounded-xl text-foreground font-semibold hover:bg-muted cursor-pointer"
+              className="px-4 py-2.5 border border-border rounded-xl text-foreground font-semibold hover:bg-muted text-xs cursor-pointer transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isSubmittingMember}
-              className="px-5 py-2 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white rounded-xl font-bold shadow-md shadow-amber-500/20 cursor-pointer"
+              className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 disabled:opacity-50 text-white rounded-xl font-bold shadow-md shadow-amber-500/20 text-xs flex items-center gap-2 cursor-pointer transition-all"
             >
-              {isSubmittingMember ? 'Enrolling...' : 'Enroll Member'}
+              {isSubmittingMember ? (
+                <span>Enrolling Member...</span>
+              ) : (
+                <>
+                  <span>Enroll Member</span>
+                  <ArrowRight size={14} />
+                </>
+              )}
             </button>
           </div>
         </form>
@@ -1927,76 +2487,120 @@ export default function SchemesPage() {
       <Modal
         isOpen={Boolean(paymentModalData)}
         onClose={() => setPaymentModalData(null)}
-        title={`Record Payment: ${paymentModalData?.member.customer_name || ''}`}
+        title="Record Installment Payment"
+        description="Verify passbook installment & generate payment receipt"
       >
         {paymentModalData && selectedScheme && (
           <form onSubmit={handleRecordPaymentSubmit} className="space-y-4 text-xs">
-            <div className="bg-muted/40 p-3 rounded-xl space-y-1">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Customer:</span>
-                <span className="font-bold text-foreground">{paymentModalData.member.customer_name}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Mobile:</span>
-                <span className="font-mono text-foreground">{paymentModalData.member.customer_phone}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Amount:</span>
-                <span className="font-bold text-emerald-600 dark:text-emerald-400 font-mono">
-                  {currency}{selectedScheme.price.toLocaleString()}
-                </span>
+            {/* Customer & Scheme Summary Card */}
+            <div className="rounded-2xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-transparent p-3.5 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shrink-0 text-emerald-600 dark:text-emerald-400 shadow-xs">
+                    <User size={15} />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-foreground text-sm leading-tight">
+                      {paymentModalData.member.customer_name}
+                    </h4>
+                    <span className="text-[11px] font-mono text-muted-foreground flex items-center gap-1">
+                      <Phone size={10} />
+                      {paymentModalData.member.customer_phone}
+                    </span>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] text-muted-foreground block font-medium">Installment Due</span>
+                  <span className="font-mono font-black text-emerald-600 dark:text-emerald-400 text-sm">
+                    {currency}{selectedScheme.price.toLocaleString()}
+                  </span>
+                </div>
               </div>
             </div>
 
             <div>
-              <label className="font-bold text-slate-700 dark:text-slate-200 block mb-1">Installment Number *</label>
+              <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                Installment Schedule *
+              </label>
               <SearchableSelect
                 options={installmentOptions}
                 value={String(paymentForm.installment_number)}
                 onChange={(val) => setPaymentForm({ ...paymentForm, installment_number: Number(val) })}
                 placeholder="Select Installment Number"
                 showSearch={false}
-                className="w-full"
+                className="w-full text-xs"
               />
             </div>
 
             <div>
-              <label className="font-bold text-slate-700 dark:text-slate-200 block mb-1">Payment Method *</label>
-              <SearchableSelect
-                options={paymentMethodOptions}
-                value={paymentForm.payment_method}
-                onChange={(val) => setPaymentForm({ ...paymentForm, payment_method: val })}
-                placeholder="Select Payment Method"
-                showSearch={false}
-                className="w-full"
-              />
+              <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1.5">
+                Payment Method *
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {[
+                  { id: 'cash', label: 'Cash', icon: Coins },
+                  { id: 'upi', label: 'UPI / QR', icon: QrCode },
+                  { id: 'card', label: 'Card', icon: CreditCard },
+                  { id: 'online', label: 'Online / Bank', icon: Building2 },
+                ].map(method => {
+                  const Icon = method.icon;
+                  const isSelected = paymentForm.payment_method === method.id;
+                  return (
+                    <button
+                      key={method.id}
+                      type="button"
+                      onClick={() => setPaymentForm({ ...paymentForm, payment_method: method.id })}
+                      className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-emerald-600 text-white border-emerald-700 shadow-sm shadow-emerald-600/25'
+                          : 'bg-background hover:bg-muted text-foreground border-border/80'
+                      }`}
+                    >
+                      <Icon size={14} className={isSelected ? 'text-white' : 'text-emerald-600 dark:text-emerald-400'} />
+                      <span>{method.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             <div>
-              <label className="font-bold text-slate-700 dark:text-slate-200 block mb-1">Transaction Ref / Notes (Optional)</label>
-              <input
-                type="text"
-                placeholder="UPI Ref ID, receipt number, notes..."
-                value={paymentForm.transaction_id || ''}
-                onChange={(e) => setPaymentForm({ ...paymentForm, transaction_id: e.target.value })}
-                className="w-full px-3 py-2 bg-background border border-border rounded-xl text-foreground focus:outline-hidden"
-              />
+              <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                Transaction Ref / Notes (Optional)
+              </label>
+              <div className="relative">
+                <Receipt size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="UPI Ref ID, cash receipt number, remarks..."
+                  value={paymentForm.transaction_id || ''}
+                  onChange={(e) => setPaymentForm({ ...paymentForm, transaction_id: e.target.value })}
+                  className="w-full pl-8 pr-3 py-2 bg-background border border-border rounded-xl text-foreground text-xs placeholder:text-muted-foreground/60 focus:outline-hidden focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all"
+                />
+              </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-border">
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-border">
               <button
                 type="button"
                 onClick={() => setPaymentModalData(null)}
-                className="px-4 py-2 border border-border rounded-xl text-foreground font-semibold hover:bg-muted cursor-pointer"
+                className="px-4 py-2.5 border border-border rounded-xl text-foreground font-semibold hover:bg-muted text-xs cursor-pointer transition-colors"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={isSubmittingPayment}
-                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-bold shadow-md shadow-emerald-600/20 cursor-pointer"
+                className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 disabled:opacity-50 text-white rounded-xl font-bold shadow-md shadow-emerald-600/20 text-xs flex items-center gap-2 cursor-pointer transition-all"
               >
-                {isSubmittingPayment ? 'Saving...' : 'Confirm Payment'}
+                {isSubmittingPayment ? (
+                  <span>Recording...</span>
+                ) : (
+                  <>
+                    <span>Confirm Payment</span>
+                    <ArrowRight size={14} />
+                  </>
+                )}
               </button>
             </div>
           </form>

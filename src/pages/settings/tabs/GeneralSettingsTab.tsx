@@ -1,8 +1,10 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Laptop, Download, CheckCircle2, Sliders, Globe, Tag, 
-  Lightbulb, Package, Clock, Timer, Hash 
+  Lightbulb, Package, Clock, Timer, Hash, Coins, AlertCircle 
 } from 'lucide-react';
+import { toast } from 'react-hot-toast';
+import { schemeService } from '@/services/schemeService';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -66,6 +68,26 @@ export const GeneralSettingsTab: React.FC<GeneralSettingsTabProps> = ({
   onSave,
   isSaving,
 }) => {
+  const [existingSchemesCount, setExistingSchemesCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    schemeService.getSchemes().then(schemes => {
+      setExistingSchemesCount(schemes.length);
+    }).catch(() => {
+      setExistingSchemesCount(0);
+    });
+  }, []);
+
+  const handleToggleSavingsSchemes = (checked: boolean) => {
+    if (!checked && existingSchemesCount !== null && existingSchemesCount > 0) {
+      toast.error(
+        `Cannot disable Savings Schemes while you have ${existingSchemesCount} existing scheme(s). Please delete all schemes before turning this feature off.`
+      );
+      return;
+    }
+    setSettingsData((prev: any) => ({ ...prev, savings_schemes_enabled: checked }));
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       {/* Desktop Web App Installation Card */}
@@ -386,6 +408,51 @@ export const GeneralSettingsTab: React.FC<GeneralSettingsTabProps> = ({
               onCheckedChange={(c) => setSettingsData((prev: any) => ({ ...prev, wholesale_pricing_enabled: c }))}
             />
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Savings Schemes & Festival Gift Fund */}
+      <Card className="border-slate-200/80 dark:border-slate-800 shadow-xs">
+        <CardHeader className="border-b border-slate-100 dark:border-slate-800 pb-4 bg-slate-50/50 dark:bg-slate-900/50">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-orange-500/10 text-orange-600 flex items-center justify-center shrink-0">
+              <Coins size={20} />
+            </div>
+            <div>
+              <CardTitle className="text-base font-bold flex items-center gap-2">
+                Savings Schemes & Festival Fund
+                <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-950/60 dark:text-orange-400">
+                  Fund
+                </span>
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Allow customers to enroll in monthly or weekly festival gift savings schemes directly from your digital storefront.
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-4 sm:p-6 space-y-4">
+          <div className="flex items-center justify-between p-3.5 bg-slate-50/80 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800">
+            <div>
+              <p className="text-xs font-bold text-slate-800 dark:text-slate-200">Enable Savings Schemes (Fund)</p>
+              <p className="text-[11px] text-slate-500">
+                When enabled, customers can view and subscribe to your savings schemes and pay installments via UPI & Razorpay on your store menu.
+              </p>
+            </div>
+            <Switch
+              checked={settingsData.savings_schemes_enabled !== false}
+              onCheckedChange={handleToggleSavingsSchemes}
+            />
+          </div>
+
+          {existingSchemesCount !== null && existingSchemesCount > 0 && settingsData.savings_schemes_enabled !== false && (
+            <div className="flex items-center gap-2.5 p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-800/80 rounded-xl text-amber-800 dark:text-amber-300 text-xs">
+              <AlertCircle size={16} className="shrink-0 text-amber-600 dark:text-amber-400" />
+              <span>
+                You currently have <strong>{existingSchemesCount} existing scheme(s)</strong>. To disable this feature, all existing schemes must be deleted first.
+              </span>
+            </div>
+          )}
         </CardContent>
       </Card>
 

@@ -22,7 +22,9 @@ import {
   Gift,
   Store,
   Layers,
-  Cake
+  Cake,
+  Coins,
+  Wallet
 } from 'lucide-react';
 import logo from '@/assets/menukit-logo.svg';
 
@@ -36,11 +38,12 @@ const TOC_SECTIONS = [
   { id: 'pricing-payments', label: '7. Pricing, Taxes & Payments' },
   { id: 'cancellation-refunds', label: '8. Cancellation, Refunds & Replacements' },
   { id: 'discounts-contests', label: '9. Discounts, Price Drops & Lucky Draws' },
-  { id: 'acceptable-use', label: '10. Prohibited Conduct & Fair Use' },
-  { id: 'intellectual-property', label: '11. Intellectual Property' },
-  { id: 'disclaimers-liability', label: '12. Warranties & Limitation of Liability' },
-  { id: 'governing-law', label: '13. Governing Law & Jurisdiction' },
-  { id: 'grievance', label: '14. Grievance Redressal & Contact' },
+  { id: 'savings-schemes', label: '10. Customer Savings Schemes & Festive Funds (Pandu Plans)' },
+  { id: 'acceptable-use', label: '11. Prohibited Conduct & Fair Use' },
+  { id: 'intellectual-property', label: '12. Intellectual Property' },
+  { id: 'disclaimers-liability', label: '13. Warranties & Limitation of Liability' },
+  { id: 'governing-law', label: '14. Governing Law & Jurisdiction' },
+  { id: 'grievance', label: '15. Grievance Redressal & Contact' },
 ];
 
 export function TermsPage() {
@@ -438,10 +441,66 @@ export function TermsPage() {
                 </ul>
               </section>
 
-              {/* 10. Prohibited Conduct */}
-              <section id="acceptable-use" className="scroll-mt-24 space-y-3 pt-6">
+              {/* 10. Customer Savings Schemes & Festive Funds */}
+              <section id="savings-schemes" className="scroll-mt-24 space-y-4 pt-6">
                 <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
                   <span className="w-7 h-7 rounded-lg bg-orange-100 dark:bg-orange-950/60 text-orange-600 dark:text-orange-400 flex items-center justify-center text-xs font-extrabold">10</span>
+                  Customer Savings Schemes, Festival Funds & Hamper Plans (Pandu Schemes)
+                </h2>
+                <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
+                  Merchants may configure recurring weekly or monthly customer savings clubs, Deepavali cracker funds, festive gift hampers, jewelry/gold schemes, bakery boxes, or store loyalty plans through MenuKit's software tools. <strong>Your participation in any merchant savings scheme is governed strictly by the following non-negotiable terms:</strong>
+                </p>
+
+                {/* Critical Due Diligence & Platform Intermediary Alert */}
+                <div className="p-4 sm:p-5 rounded-2xl bg-amber-500/10 border-2 border-amber-500/30 text-amber-950 dark:text-amber-200 space-y-3 shadow-xs">
+                  <div className="font-extrabold text-xs sm:text-sm flex items-center gap-2 text-amber-900 dark:text-amber-300">
+                    <AlertTriangle size={18} className="text-amber-600 shrink-0" />
+                    <span>CRITICAL ADVISORY: CHECK TWICE BEFORE JOINING & PAYING</span>
+                  </div>
+                  <p className="text-xs leading-relaxed text-amber-900/90 dark:text-amber-200/90">
+                    <strong>Please verify the credibility, reputation, physical address, and legitimacy of the shop twice before subscribing or making any scheme payment.</strong> MenuKit does not endorse, guarantee, insure, or verify the financial solvency or honesty of any business. You should only enroll in schemes operated by merchants you personally know, trust, and have verified in person.
+                  </p>
+                  <div className="bg-white/85 dark:bg-slate-900/85 p-3.5 rounded-xl border border-amber-500/20 text-xs space-y-1.5">
+                    <p className="font-bold text-slate-900 dark:text-slate-100">
+                      Menukit Is Strictly a Technology Software Intermediary — Zero Money Responsibility:
+                    </p>
+                    <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
+                      MenuKit (Debuggers Technologies) is <strong>strictly a technology and software platform provider</strong>. We supply the digital ledger, passbook interface, and payment gateway routing tools. <strong>MenuKit DOES NOT hold, touch, custody, invest, manage, or pool any customer savings funds.</strong> All installment payments made online or recorded offline are credited directly to the respective Merchant Partner's merchant account or collected directly by the shop.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60 space-y-3 text-xs">
+                  <h4 className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm">
+                    Detailed Scheme Policies & Terms of Participation
+                  </h4>
+                  <ul className="list-disc pl-5 space-y-2 text-slate-600 dark:text-slate-300 leading-relaxed">
+                    <li>
+                      <strong>Direct Private Contract With Merchant:</strong> When you join a scheme, you enter into a direct, private bilateral agreement exclusively with the individual shop owner. The Merchant alone is responsible for honoring scheme maturity, delivering promised cracker boxes, festival gift hampers, or granting store redemption credits.
+                    </li>
+                    <li>
+                      <strong>Zero Platform Liability for Merchant Default or Non-Fulfillment:</strong> Under no circumstances shall MenuKit, Debuggers Technologies, its founders, directors, or employees be held liable for any merchant insolvency, shop closure, fraudulent conduct, failure to deliver festival goods, refusal to redeem maturity values, product stockouts, or quality defects. Any grievance, dispute, recovery of funds, or legal claim is strictly a private matter between you and the Merchant.
+                    </li>
+                    <li>
+                      <strong>Installment Schedule & Non-Refundability:</strong> Installment deadlines, payment frequencies (weekly or monthly), cycle cut-offs, penalty rules for missed dues, and redemption timelines are defined solely by each Merchant. Schemes are generally non-refundable once joined unless explicitly agreed otherwise in writing by the shop owner. MenuKit cannot issue refunds, reverse installment transfers, or cancel active member passbooks on your behalf.
+                    </li>
+                    <li>
+                      <strong>Product Hamper vs Full Store Freedom:</strong> Merchants may restrict redemptions to pre-specified gift hampers (e.g., Diwali Cracker Box, Sweets Box) or allow free catalog selection up to maturity value. Reward item photos, brands, piece counts, and weights displayed on digital scheme cards are provided entirely by the merchant; MenuKit does not inspect or guarantee the contents.
+                    </li>
+                    <li>
+                      <strong>Non-Banking & Regulatory Clarification:</strong> MenuKit does not provide banking services, chit funds, collective investment schemes (CIS), prize chits, or non-banking financial institution (NBFC) products. Platform tools are provided solely for merchant sales promotions, festival advance bookings, and customer reward passbooks under Indian contract and commerce laws. Merchants are solely responsible for compliance with applicable local trade regulations and advance receipt laws.
+                    </li>
+                    <li>
+                      <strong>Digital Passbook as Electronic Evidence:</strong> The digital scheme passbook within MenuKit serves as an electronic record of recorded installments. In the event of in-person redemption, you may be required by the shop to present your digital passbook and verified phone OTP at the physical store counter.
+                    </li>
+                  </ul>
+                </div>
+              </section>
+
+              {/* 11. Prohibited Conduct */}
+              <section id="acceptable-use" className="scroll-mt-24 space-y-3 pt-6">
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <span className="w-7 h-7 rounded-lg bg-orange-100 dark:bg-orange-950/60 text-orange-600 dark:text-orange-400 flex items-center justify-center text-xs font-extrabold">11</span>
                   Prohibited Conduct & Fair Use
                 </h2>
                 <p>
@@ -456,10 +515,10 @@ export function TermsPage() {
                 </ul>
               </section>
 
-              {/* 11. Intellectual Property */}
+              {/* 12. Intellectual Property */}
               <section id="intellectual-property" className="scroll-mt-24 space-y-3 pt-6">
                 <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <span className="w-7 h-7 rounded-lg bg-orange-100 dark:bg-orange-950/60 text-orange-600 dark:text-orange-400 flex items-center justify-center text-xs font-extrabold">11</span>
+                  <span className="w-7 h-7 rounded-lg bg-orange-100 dark:bg-orange-950/60 text-orange-600 dark:text-orange-400 flex items-center justify-center text-xs font-extrabold">12</span>
                   Intellectual Property
                 </h2>
                 <p>
@@ -470,10 +529,10 @@ export function TermsPage() {
                 </p>
               </section>
 
-              {/* 12. Disclaimers & Liability */}
+              {/* 13. Disclaimers & Liability */}
               <section id="disclaimers-liability" className="scroll-mt-24 space-y-3 pt-6">
                 <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <span className="w-7 h-7 rounded-lg bg-orange-100 dark:bg-orange-950/60 text-orange-600 dark:text-orange-400 flex items-center justify-center text-xs font-extrabold">12</span>
+                  <span className="w-7 h-7 rounded-lg bg-orange-100 dark:bg-orange-950/60 text-orange-600 dark:text-orange-400 flex items-center justify-center text-xs font-extrabold">13</span>
                   Disclaimer of Warranties & Limitation of Liability
                 </h2>
                 <p>
@@ -484,10 +543,10 @@ export function TermsPage() {
                 </p>
               </section>
 
-              {/* 13. Governing Law */}
+              {/* 14. Governing Law */}
               <section id="governing-law" className="scroll-mt-24 space-y-3 pt-6">
                 <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <span className="w-7 h-7 rounded-lg bg-orange-100 dark:bg-orange-950/60 text-orange-600 dark:text-orange-400 flex items-center justify-center text-xs font-extrabold">13</span>
+                  <span className="w-7 h-7 rounded-lg bg-orange-100 dark:bg-orange-950/60 text-orange-600 dark:text-orange-400 flex items-center justify-center text-xs font-extrabold">14</span>
                   Governing Law & Dispute Resolution
                 </h2>
                 <p>
@@ -495,10 +554,10 @@ export function TermsPage() {
                 </p>
               </section>
 
-              {/* 14. Grievance Officer */}
+              {/* 15. Grievance Officer */}
               <section id="grievance" className="scroll-mt-24 space-y-4 pt-6">
                 <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <span className="w-7 h-7 rounded-lg bg-orange-100 dark:bg-orange-950/60 text-orange-600 dark:text-orange-400 flex items-center justify-center text-xs font-extrabold">14</span>
+                  <span className="w-7 h-7 rounded-lg bg-orange-100 dark:bg-orange-950/60 text-orange-600 dark:text-orange-400 flex items-center justify-center text-xs font-extrabold">15</span>
                   Grievance Redressal & Contact Information
                 </h2>
                 <p className="text-xs">

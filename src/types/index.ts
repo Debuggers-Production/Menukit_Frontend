@@ -53,6 +53,7 @@ export interface ShopSettings {
   serial_number_digits?: number;
   auto_serial_number_enabled?: boolean;
   wholesale_pricing_enabled?: boolean;
+  savings_schemes_enabled?: boolean;
   return_allowed?: boolean;
   return_window_days?: number;
   return_policy_notes?: string;
