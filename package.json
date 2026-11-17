@@ -25,6 +25,7 @@
     "canvas-confetti": "^1.9.4",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "dynaura": "^0.2.1",
     "firebase": "^13.0.0",
     "framer-motion": "^12.42.2",
     "html2pdf.js": "^0.14.0",

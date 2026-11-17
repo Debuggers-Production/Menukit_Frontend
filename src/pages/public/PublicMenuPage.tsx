@@ -863,10 +863,10 @@ export function PublicMenuPage() {
     try {
       const sortParam = catSort !== 'default' ? `&sort_by=${catSort}` : '';
       
-      // Parallel concurrent execution: fetch shop and categories simultaneously
+      // Parallel concurrent execution: fetch shop and categories simultaneously with cache-busting
       const [shopRes, catRes] = await Promise.all([
-        api.get(`/public/shop/${id}`),
-        api.get(`/public/shop/${effectiveShopId || id}/categories?limit=100${sortParam}`)
+        api.get(`/public/shop/${id}?_t=${Date.now()}`),
+        api.get(`/public/shop/${effectiveShopId || id}/categories?limit=100${sortParam}&_t=${Date.now()}`)
       ]);
 
       const isUUID = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
@@ -1036,24 +1036,21 @@ export function PublicMenuPage() {
   };
 
   useEffect(() => {
-    if (id) {
-      fetchCategories();
-    }
-
-    const handleSettingsUpdated = () => {
+    const handleSettingsUpdated = (event?: any) => {
       if (id) {
         publicCache.clear();
-        fetchCategories();
+        fetchCategories(0, categorySortOrder);
+        if (event && event.settings) {
+          setShop(prev => prev ? ({ ...prev, settings: event.settings }) : null);
+        }
       }
     };
 
-    window.addEventListener('menukit-shop-settings-updated', handleSettingsUpdated);
-    window.addEventListener('focus', handleSettingsUpdated);
+    const unsubscribe = publicCache.subscribe(handleSettingsUpdated);
     return () => {
-      window.removeEventListener('menukit-shop-settings-updated', handleSettingsUpdated);
-      window.removeEventListener('focus', handleSettingsUpdated);
+      unsubscribe();
     };
-  }, [id]);
+  }, [id, categorySortOrder]);
 
   useEffect(() => {
     if (id) {
@@ -2870,60 +2867,60 @@ export function PublicMenuPage() {
         <div className="space-y-6">
           {/* Sort By */}
           <div>
-            <h3 className="text-xs font-bold mb-3 opacity-70 uppercase tracking-wider">Sort By</h3>
+            <h3 className="text-xs font-bold mb-3 uppercase tracking-wider text-slate-700">Sort By</h3>
             <div className="space-y-2">
-              <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/50 cursor-pointer hover:bg-slate-50 transition-colors">
+              <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer transition-colors">
                 <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${sortOrder === 'default' ? 'border-primary' : 'border-slate-300'}`} style={{ borderColor: sortOrder === 'default' ? primaryColor : undefined }}>
                   {sortOrder === 'default' && <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: primaryColor }} />}
                 </div>
                 <input type="radio" className="hidden" checked={sortOrder === 'default'} onChange={() => setSortOrder('default')} />
-                <span className="text-sm font-medium">Default ({businessCategory.featuredBadgeLabel} first)</span>
+                <span className="text-sm font-medium text-slate-800">Default ({businessCategory.featuredBadgeLabel} first)</span>
               </label>
               {settings?.show_prices !== false && (
                 <>
-                  <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/50 cursor-pointer hover:bg-slate-50 transition-colors">
+                  <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer transition-colors">
                     <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${sortOrder === 'price_asc' ? 'border-primary' : 'border-slate-300'}`} style={{ borderColor: sortOrder === 'price_asc' ? primaryColor : undefined }}>
                       {sortOrder === 'price_asc' && <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: primaryColor }} />}
                     </div>
                     <input type="radio" className="hidden" checked={sortOrder === 'price_asc'} onChange={() => setSortOrder('price_asc')} />
-                    <span className="text-sm font-medium">Price: Low to High</span>
+                    <span className="text-sm font-medium text-slate-800">Price: Low to High</span>
                   </label>
-                  <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/50 cursor-pointer hover:bg-slate-50 transition-colors">
+                  <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer transition-colors">
                     <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${sortOrder === 'price_desc' ? 'border-primary' : 'border-slate-300'}`} style={{ borderColor: sortOrder === 'price_desc' ? primaryColor : undefined }}>
                       {sortOrder === 'price_desc' && <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: primaryColor }} />}
                     </div>
                     <input type="radio" className="hidden" checked={sortOrder === 'price_desc'} onChange={() => setSortOrder('price_desc')} />
-                    <span className="text-sm font-medium">Price: High to Low</span>
+                    <span className="text-sm font-medium text-slate-800">Price: High to Low</span>
                   </label>
                 </>
               )}
-              <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/50 cursor-pointer hover:bg-slate-50 transition-colors">
+              <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer transition-colors">
                 <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${sortOrder === 'a-z' ? 'border-primary' : 'border-slate-300'}`} style={{ borderColor: sortOrder === 'a-z' ? primaryColor : undefined }}>
                   {sortOrder === 'a-z' && <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: primaryColor }} />}
                 </div>
                 <input type="radio" className="hidden" checked={sortOrder === 'a-z'} onChange={() => setSortOrder('a-z')} />
-                <span className="text-sm font-medium">Name: A to Z (A-Z)</span>
+                <span className="text-sm font-medium text-slate-800">Name: A to Z (A-Z)</span>
               </label>
-              <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/50 cursor-pointer hover:bg-slate-50 transition-colors">
+              <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer transition-colors">
                 <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${sortOrder === 'z-a' ? 'border-primary' : 'border-slate-300'}`} style={{ borderColor: sortOrder === 'z-a' ? primaryColor : undefined }}>
                   {sortOrder === 'z-a' && <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: primaryColor }} />}
                 </div>
                 <input type="radio" className="hidden" checked={sortOrder === 'z-a'} onChange={() => setSortOrder('z-a')} />
-                <span className="text-sm font-medium">Name: Z to A (Z-A)</span>
+                <span className="text-sm font-medium text-slate-800">Name: Z to A (Z-A)</span>
               </label>
-              <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/50 cursor-pointer hover:bg-slate-50 transition-colors">
+              <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer transition-colors">
                 <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${sortOrder === 'new_to_old' ? 'border-primary' : 'border-slate-300'}`} style={{ borderColor: sortOrder === 'new_to_old' ? primaryColor : undefined }}>
                   {sortOrder === 'new_to_old' && <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: primaryColor }} />}
                 </div>
                 <input type="radio" className="hidden" checked={sortOrder === 'new_to_old'} onChange={() => setSortOrder('new_to_old')} />
-                <span className="text-sm font-medium">Newest First (New to Old)</span>
+                <span className="text-sm font-medium text-slate-800">Newest First (New to Old)</span>
               </label>
-              <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/50 cursor-pointer hover:bg-slate-50 transition-colors">
+              <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer transition-colors">
                 <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${sortOrder === 'old_to_new' ? 'border-primary' : 'border-slate-300'}`} style={{ borderColor: sortOrder === 'old_to_new' ? primaryColor : undefined }}>
                   {sortOrder === 'old_to_new' && <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: primaryColor }} />}
                 </div>
                 <input type="radio" className="hidden" checked={sortOrder === 'old_to_new'} onChange={() => setSortOrder('old_to_new')} />
-                <span className="text-sm font-medium">Oldest First (Old to New)</span>
+                <span className="text-sm font-medium text-slate-800">Oldest First (Old to New)</span>
               </label>
             </div>
           </div>
@@ -2931,7 +2928,7 @@ export function PublicMenuPage() {
           {/* Dietary Preference (Only shown for food businesses) */}
           {businessCategory.dietaryEnabled && (
             <div>
-              <h3 className="text-xs font-bold mb-3 opacity-70 uppercase tracking-wider">Dietary Type</h3>
+              <h3 className="text-xs font-bold mb-3 uppercase tracking-wider text-slate-700">Dietary Type</h3>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {[
                   { 
@@ -2976,10 +2973,10 @@ export function PublicMenuPage() {
                           ? 'shadow-xs border-slate-900 bg-slate-50'
                           : 'border-slate-200 bg-white hover:bg-slate-50'
                       }`}
-                      style={isSelected ? { borderColor: primaryColor, backgroundColor: `${primaryColor}12` } : undefined}
+                      style={isSelected ? { borderColor: primaryColor, backgroundColor: `${primaryColor}18` } : undefined}
                     >
                       <div className="shrink-0">{item.icon}</div>
-                      <span className={`text-xs truncate ${isSelected ? 'text-slate-900 font-bold' : 'text-slate-600 font-medium'}`}>
+                      <span className={`text-xs truncate ${isSelected ? 'text-slate-900 font-bold' : 'text-slate-700 font-medium'}`}>
                         {item.label}
                       </span>
                       {isSelected && (
@@ -2996,7 +2993,7 @@ export function PublicMenuPage() {
 
           {/* Quick Filters */}
           <div>
-            <h3 className="text-xs font-bold mb-3 opacity-70 uppercase tracking-wider">Quick Filters</h3>
+            <h3 className="text-xs font-bold mb-3 uppercase tracking-wider text-slate-700">Quick Filters</h3>
             <div className="grid grid-cols-2 gap-2">
               {[
                 { id: 'chef_special', label: businessCategory.featuredBadgeLabel, icon: <Flame size={18} className="text-orange-500" /> },
@@ -3004,10 +3001,10 @@ export function PublicMenuPage() {
                 { id: 'available', label: "Available", icon: <CheckCircle2 size={18} className="text-emerald-500" /> },
                 { id: 'not_available', label: "Not Available", icon: <XCircle size={18} className="text-rose-500" /> }
               ].map(filter => (
-                <label key={filter.id} className={`relative flex flex-col items-center justify-center gap-2 py-4 px-2 rounded-xl border cursor-pointer transition-all text-center ${extraFilters.includes(filter.id) ? 'shadow-sm' : 'border-slate-200 bg-white hover:bg-slate-50'}`} style={{ borderColor: extraFilters.includes(filter.id) ? primaryColor : undefined, backgroundColor: extraFilters.includes(filter.id) ? `${primaryColor}10` : undefined }}>
+                <label key={filter.id} className={`relative flex flex-col items-center justify-center gap-2 py-4 px-2 rounded-xl border cursor-pointer transition-all text-center ${extraFilters.includes(filter.id) ? 'shadow-sm' : 'border-slate-200 bg-white hover:bg-slate-50'}`} style={{ borderColor: extraFilters.includes(filter.id) ? primaryColor : undefined, backgroundColor: extraFilters.includes(filter.id) ? `${primaryColor}18` : undefined }}>
                   <input type="checkbox" className="hidden" checked={extraFilters.includes(filter.id)} onChange={() => toggleExtraFilter(filter.id)} />
                   {filter.icon && <div>{filter.icon}</div>}
-                  <span className={`text-xs font-medium ${extraFilters.includes(filter.id) ? 'text-slate-900' : 'text-slate-600'}`}>{filter.label}</span>
+                  <span className={`text-xs font-medium ${extraFilters.includes(filter.id) ? 'text-slate-900 font-bold' : 'text-slate-700'}`}>{filter.label}</span>
                   {extraFilters.includes(filter.id) && <div className="absolute top-2 right-2"><Check size={14} style={{ color: primaryColor }} /></div>}
                 </label>
               ))}
@@ -3016,7 +3013,7 @@ export function PublicMenuPage() {
 
           {/* Availability */}
           <div>
-            <h3 className="text-xs font-bold mb-3 opacity-70 uppercase tracking-wider">Availability</h3>
+            <h3 className="text-xs font-bold mb-3 uppercase tracking-wider text-slate-700">Availability</h3>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {[
                 { id: 'timing_Early Morning', label: 'Early Morning' },
@@ -3026,9 +3023,9 @@ export function PublicMenuPage() {
                 { id: 'timing_Night', label: 'Night' },
                 { id: 'timing_Mid-night', label: 'Mid-night' }
               ].map(filter => (
-                <label key={filter.id} className={`relative flex items-center justify-center py-2.5 px-2 rounded-xl border cursor-pointer transition-all text-center ${extraFilters.includes(filter.id) ? 'shadow-sm' : 'border-slate-200 bg-white hover:bg-slate-50'}`} style={{ borderColor: extraFilters.includes(filter.id) ? primaryColor : undefined, backgroundColor: extraFilters.includes(filter.id) ? `${primaryColor}10` : undefined }}>
+                <label key={filter.id} className={`relative flex items-center justify-center py-2.5 px-2 rounded-xl border cursor-pointer transition-all text-center ${extraFilters.includes(filter.id) ? 'shadow-sm' : 'border-slate-200 bg-white hover:bg-slate-50'}`} style={{ borderColor: extraFilters.includes(filter.id) ? primaryColor : undefined, backgroundColor: extraFilters.includes(filter.id) ? `${primaryColor}18` : undefined }}>
                   <input type="checkbox" className="hidden" checked={extraFilters.includes(filter.id)} onChange={() => toggleExtraFilter(filter.id)} />
-                  <span className={`text-xs font-medium ${extraFilters.includes(filter.id) ? 'text-slate-900' : 'text-slate-600'}`}>{filter.label}</span>
+                  <span className={`text-xs font-medium ${extraFilters.includes(filter.id) ? 'text-slate-900 font-bold' : 'text-slate-700'}`}>{filter.label}</span>
                   {extraFilters.includes(filter.id) && <div className="absolute top-1.5 right-1.5"><Check size={12} style={{ color: primaryColor }} /></div>}
                 </label>
               ))}
@@ -3174,7 +3171,7 @@ export function PublicMenuPage() {
       </div>
 
       {/* Offer Details Modal */}
-      <Modal isOpen={!!selectedDiscountForModal} onClose={() => setSelectedDiscountForModal(null)} title="Offer Details" className="bg-white text-slate-900">
+      <Modal isOpen={!!selectedDiscountForModal} onClose={() => setSelectedDiscountForModal(null)} title="Offer Details" className="bg-white text-slate-900 border border-slate-200">
         {selectedDiscountForModal && (
           <div className="space-y-5 mt-2">
             <div className="flex flex-col items-center text-center pb-5 border-b border-slate-100">

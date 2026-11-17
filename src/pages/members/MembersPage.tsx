@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
 import { Users, ShieldCheck, Smartphone, Plus, Search, Lock, RefreshCw, AlertCircle, Trophy, Clock, CheckCircle2, Trash2 } from 'lucide-react';
@@ -18,6 +18,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { api } from '@/services/api';
 import { HeaderActions } from '@/components/HeaderActions';
 import { HorizontalScrollContainer } from '@/components/ui/HorizontalScrollContainer';
+import { formatPhoneWithCountryCode } from '@/utils/phone';
 
 const PAGE_SIZE = 20;
 
@@ -83,13 +84,19 @@ export function MembersPage() {
     }
   };
 
+  const requestIdRef = useRef(0);
+
   // Paginated Members List Fetch
-  const loadMembersData = useCallback(async (currentSkip: number, reset: boolean = false) => {
+  const loadMembersData = useCallback(async (currentSkip: number, reset: boolean = false, targetTab?: 'existing' | 'new' | 'repeated') => {
     const id = shopId || shop?.id;
     if (!id) return;
 
+    const currentRequestId = ++requestIdRef.current;
+    const tabToQuery = targetTab || activeTab;
+
     if (reset) {
       setIsLoading(true);
+      setMembersList([]);
     } else {
       setIsFetchingMore(true);
     }
@@ -97,12 +104,14 @@ export function MembersPage() {
     try {
       const res = await membershipService.getPaginatedMembers(
         id,
-        activeTab,
+        tabToQuery,
         currentSkip,
         PAGE_SIZE,
         debouncedSearch.trim() || undefined,
         minVisits
       );
+
+      if (currentRequestId !== requestIdRef.current) return;
 
       setHasMore(res.has_more);
       setSkip(currentSkip);
@@ -115,6 +124,7 @@ export function MembersPage() {
         setMembersList((prev) => [...prev, ...(res.items || [])]);
       }
     } catch (err: any) {
+      if (currentRequestId !== requestIdRef.current) return;
       if (err.response?.status === 403) {
         setIsDetailsLocked(true);
       } else {
@@ -122,10 +132,20 @@ export function MembersPage() {
         toast.error('Failed to load members list');
       }
     } finally {
-      setIsLoading(false);
-      setIsFetchingMore(false);
+      if (currentRequestId === requestIdRef.current) {
+        setIsLoading(false);
+        setIsFetchingMore(false);
+      }
     }
   }, [shopId, shop?.id, activeTab, debouncedSearch, minVisits]);
+
+  const handleTabChange = (newTab: 'existing' | 'new' | 'repeated') => {
+    if (newTab === activeTab && !isLoading) return;
+    setActiveTab(newTab);
+    setSelectedCustomerIds([]);
+    setMembersList([]);
+    setIsLoading(true);
+  };
 
   useEffect(() => {
     const init = async () => {
@@ -218,15 +238,24 @@ export function MembersPage() {
   const isDuplicateNumber = useMemo(() => {
     const cleanDigits = formData.mobile_number.replace(/\D/g, '');
     if (!cleanDigits || cleanDigits.length < 6) return false;
-    const fullMobile = `${countryCode}${cleanDigits}`;
-    const last10 = cleanDigits.slice(-10);
+    let clean = cleanDigits;
+    if (countryCode === '+91') {
+      if (clean.length === 12 && clean.startsWith('91')) {
+        clean = clean.slice(2);
+      } else if (clean.length === 11 && clean.startsWith('0')) {
+        clean = clean.slice(1);
+      }
+    }
+    const fullMobile = `${countryCode}${clean}`;
+    const last10 = clean.slice(-10);
     return membersList.some((m) => {
-      const existingDigits = (m.customer?.mobile_number || '').replace(/\D/g, '');
+      const phone = m.mobile_number || (m as any).customer?.mobile_number || '';
+      const existingDigits = phone.replace(/\D/g, '');
       const existingLast10 = existingDigits.slice(-10);
       return (
-        existingDigits === cleanDigits ||
+        existingDigits === clean ||
         (last10.length >= 10 && existingLast10 === last10) ||
-        m.customer?.mobile_number === fullMobile
+        phone === fullMobile
       );
     });
   }, [formData.mobile_number, countryCode, membersList]);
@@ -246,7 +275,15 @@ export function MembersPage() {
       return;
     }
 
-    const fullMobile = `${countryCode}${cleanDigits}`;
+    let clean = cleanDigits;
+    if (countryCode === '+91') {
+      if (clean.length === 12 && clean.startsWith('91')) {
+        clean = clean.slice(2);
+      } else if (clean.length === 11 && clean.startsWith('0')) {
+        clean = clean.slice(1);
+      }
+    }
+    const fullMobile = `${countryCode}${clean}`;
 
     setIsSubmitting(true);
     try {
@@ -350,7 +387,7 @@ export function MembersPage() {
             <div className="flex items-center gap-1 p-1 bg-muted/60 rounded-md border border-border/60 max-w-fit">
               <button
                 type="button"
-                onClick={() => { setActiveTab('existing'); setSelectedCustomerIds([]); }}
+                onClick={() => handleTabChange('existing')}
                 className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   activeTab === 'existing'
                     ? 'bg-background text-foreground shadow-2xs border border-border/60'
@@ -358,14 +395,18 @@ export function MembersPage() {
                 }`}
               >
                 <span>Existing</span>
-                <span className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.2 rounded font-mono text-[10px] font-bold">
-                  {analytics?.manually_added ?? 0}
-                </span>
+                {isLoading && activeTab === 'existing' ? (
+                  <RefreshCw size={10} className="animate-spin text-emerald-600 dark:text-emerald-400" />
+                ) : (
+                  <span className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.2 rounded font-mono text-[10px] font-bold">
+                    {analytics?.manually_added ?? 0}
+                  </span>
+                )}
               </button>
 
               <button
                 type="button"
-                onClick={() => { setActiveTab('new'); setSelectedCustomerIds([]); }}
+                onClick={() => handleTabChange('new')}
                 className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   activeTab === 'new'
                     ? 'bg-background text-foreground shadow-2xs border border-border/60'
@@ -373,14 +414,18 @@ export function MembersPage() {
                 }`}
               >
                 <span>New</span>
-                <span className="bg-amber-500/10 text-amber-700 dark:text-amber-300 px-1.5 py-0.2 rounded font-mono text-[10px] font-bold">
-                  {analytics?.auto_registered ?? 0}
-                </span>
+                {isLoading && activeTab === 'new' ? (
+                  <RefreshCw size={10} className="animate-spin text-amber-600 dark:text-amber-400" />
+                ) : (
+                  <span className="bg-amber-500/10 text-amber-700 dark:text-amber-300 px-1.5 py-0.2 rounded font-mono text-[10px] font-bold">
+                    {analytics?.auto_registered ?? 0}
+                  </span>
+                )}
               </button>
 
               <button
                 type="button"
-                onClick={() => { setActiveTab('repeated'); setSelectedCustomerIds([]); }}
+                onClick={() => handleTabChange('repeated')}
                 className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   activeTab === 'repeated'
                     ? 'bg-background text-foreground shadow-2xs border border-border/60'
@@ -388,9 +433,13 @@ export function MembersPage() {
                 }`}
               >
                 <span>Repeated</span>
-                <span className="bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.2 rounded font-mono text-[10px] font-bold">
-                  {analytics?.repeated_count ?? 0}
-                </span>
+                {isLoading && activeTab === 'repeated' ? (
+                  <RefreshCw size={10} className="animate-spin text-indigo-600 dark:text-indigo-400" />
+                ) : (
+                  <span className="bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.2 rounded font-mono text-[10px] font-bold">
+                    {analytics?.repeated_count ?? 0}
+                  </span>
+                )}
               </button>
             </div>
 
@@ -502,11 +551,50 @@ export function MembersPage() {
               <p className="text-xs text-muted-foreground max-w-sm mx-auto">Subscribe to the Member Details module to view individual member customer phone numbers and profiles.</p>
               <Button onClick={() => navigate('/subscription')} size="sm" className="bg-primary text-white text-xs font-bold rounded-md">Upgrade Now</Button>
             </div>
-          ) : isLoading && membersList.length === 0 ? (
-            <div className="p-5 space-y-2.5">
-              {[1, 2, 3, 4].map(i => (
-                <Skeleton key={i} className="h-9 w-full rounded-md" />
-              ))}
+          ) : isLoading ? (
+            <div className="p-4 sm:p-5 space-y-3">
+              <div className="flex items-center justify-center gap-2 py-3 text-xs font-semibold text-muted-foreground animate-pulse">
+                <RefreshCw size={14} className="animate-spin text-primary" />
+                <span>Loading {activeTab === 'existing' ? 'existing' : activeTab === 'new' ? 'new' : 'repeated'} members...</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-muted/40 text-[10px] font-bold uppercase tracking-wider text-muted-foreground border-b border-border">
+                      {activeTab === 'new' && (
+                        <th className="py-2.5 px-3.5 w-10 text-center">
+                          <Skeleton className="h-3.5 w-3.5 rounded mx-auto" />
+                        </th>
+                      )}
+                      <th className="py-2.5 px-3.5"><Skeleton className="h-3 w-16" /></th>
+                      <th className="py-2.5 px-3.5"><Skeleton className="h-3 w-24" /></th>
+                      <th className="py-2.5 px-3.5"><Skeleton className="h-3 w-20" /></th>
+                      <th className="py-2.5 px-3.5"><Skeleton className="h-3 w-14" /></th>
+                      <th className="py-2.5 px-3.5 text-center"><Skeleton className="h-3 w-10 mx-auto" /></th>
+                      {activeTab === 'new' && <th className="py-2.5 px-3.5 text-right"><Skeleton className="h-3 w-14 ml-auto" /></th>}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/60">
+                    {[1, 2, 3, 4, 5, 6].map((i) => (
+                      <tr key={i} className="hover:bg-muted/30">
+                        {activeTab === 'new' && (
+                          <td className="py-3 px-3.5 text-center">
+                            <Skeleton className="h-3.5 w-3.5 rounded mx-auto" />
+                          </td>
+                        )}
+                        <td className="py-3 px-3.5"><Skeleton className="h-3.5 w-24 rounded" /></td>
+                        <td className="py-3 px-3.5"><Skeleton className="h-3.5 w-28 rounded" /></td>
+                        <td className="py-3 px-3.5"><Skeleton className="h-3.5 w-20 rounded" /></td>
+                        <td className="py-3 px-3.5"><Skeleton className="h-3.5 w-16 rounded" /></td>
+                        <td className="py-3 px-3.5 text-center"><Skeleton className="h-4 w-6 rounded-full mx-auto" /></td>
+                        {activeTab === 'new' && (
+                          <td className="py-3 px-3.5 text-right"><Skeleton className="h-6 w-20 rounded-md ml-auto" /></td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           ) : membersList.length === 0 ? (
             <div className="p-12 text-center space-y-2">
@@ -564,7 +652,7 @@ export function MembersPage() {
                         {m.name || 'Unnamed Customer'}
                       </td>
                       <td className="py-2.5 px-3.5 font-mono text-muted-foreground">
-                        {m.mobile_number}
+                        {formatPhoneWithCountryCode(m.mobile_number)}
                       </td>
                       <td className="py-2.5 px-3.5 font-mono text-[11px] whitespace-nowrap font-semibold text-foreground">
                         {new Date(m.joined_at).toLocaleDateString(undefined, {

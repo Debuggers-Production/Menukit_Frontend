@@ -761,7 +761,7 @@ export function DiscountsPage() {
  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-4 w-full animate-fade-in pb-20">
+    <div className="space-y-4 w-full animate-fade-in pb-36 sm:pb-32">
       {canWrite && (
         <HeaderActions>
           <div className="flex items-center gap-2">
@@ -1011,10 +1011,13 @@ export function DiscountsPage() {
 
  {/* Actions */}
  {canWrite && (
- <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 justify-end sm:justify-start pt-2 sm:pt-0 mt-1 sm:mt-0 border-t sm:border-0 border-border">
+ <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 justify-end sm:justify-start pt-2 sm:pt-0 mt-1 sm:mt-0 border-t sm:border-0 border-border relative z-10">
  <button
  type="button"
- onClick={() => handleToggleActive(d)}
+ onClick={(e) => {
+   e.stopPropagation();
+   handleToggleActive(d);
+ }}
  className={`flex items-center justify-center p-1.5 rounded-md transition-all cursor-pointer ${
  d.is_active
  ? 'text-emerald-600 bg-emerald-500/10 hover:bg-emerald-500/20'
@@ -1037,7 +1040,10 @@ export function DiscountsPage() {
  </button>
  <button
  type="button"
- onClick={() => setDiscountToDelete(d.id)}
+ onClick={(e) => {
+   e.stopPropagation();
+   setDiscountToDelete(d.id);
+ }}
  className="p-1.5 rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-all cursor-pointer"
  title="Delete"
  >
@@ -2571,13 +2577,13 @@ export function DiscountsPage() {
 
       {/* Square Floating Action Button (FAB) Menu */}
       {!isModalOpen && createPortal(
-        <div className="fixed bottom-20 lg:bottom-8 right-4 lg:right-8 z-50 flex flex-col items-end gap-3">
+        <div className="fixed bottom-20 lg:bottom-8 right-4 lg:right-8 z-50 flex flex-col items-end gap-3 pointer-events-none">
           {/* Action options */}
           <div
             className={`flex flex-col items-end gap-2.5 transition-all duration-300 ${
               isFabOpen
                 ? 'opacity-100 translate-y-0 pointer-events-auto'
-                : 'opacity-0 translate-y-4 pointer-events-none'
+                : 'opacity-0 translate-y-4 pointer-events-none invisible'
             }`}
           >
             {/* Free Item Action */}
@@ -2586,7 +2592,7 @@ export function DiscountsPage() {
                 setIsFabOpen(false);
                 openModal('free_item');
               }}
-              className="flex items-center gap-2 pr-2 hover:scale-105 active:scale-95 transition-transform cursor-pointer"
+              className="pointer-events-auto flex items-center gap-2 pr-2 hover:scale-105 active:scale-95 transition-transform cursor-pointer"
             >
               <span className="bg-background text-foreground text-sm font-medium px-3 py-1.5 rounded-lg shadow-sm border border-border">Free Item</span>
               <div className="w-10 h-10 rounded-xl bg-background text-amber-500 shadow-[0_4px_20px_rgb(0,0,0,0.1)] flex items-center justify-center border border-amber-100 dark:border-amber-900/40">
@@ -2599,7 +2605,7 @@ export function DiscountsPage() {
                 setIsFabOpen(false);
                 openModal('bogo');
               }}
-              className="flex items-center gap-2 pr-2 hover:scale-105 active:scale-95 transition-transform cursor-pointer"
+              className="pointer-events-auto flex items-center gap-2 pr-2 hover:scale-105 active:scale-95 transition-transform cursor-pointer"
             >
               <span className="bg-background text-foreground text-sm font-medium px-3 py-1.5 rounded-lg shadow-sm border border-border">Combos & Bogos</span>
               <div className="w-10 h-10 rounded-xl bg-background text-indigo-600 shadow-[0_4px_20px_rgb(0,0,0,0.1)] flex items-center justify-center border border-indigo-50">
@@ -2612,7 +2618,7 @@ export function DiscountsPage() {
                 setIsFabOpen(false);
                 openModal('percentage');
               }}
-              className="flex items-center gap-2 pr-2 hover:scale-105 active:scale-95 transition-transform cursor-pointer"
+              className="pointer-events-auto flex items-center gap-2 pr-2 hover:scale-105 active:scale-95 transition-transform cursor-pointer"
             >
               <span className="bg-background text-foreground text-sm font-medium px-3 py-1.5 rounded-lg shadow-sm border border-border">Discount & Offer</span>
               <div className="w-10 h-10 rounded-xl bg-background text-primary shadow-[0_4px_20px_rgb(0,0,0,0.1)] flex items-center justify-center border border-primary/10">
@@ -2624,7 +2630,7 @@ export function DiscountsPage() {
           {/* Main FAB Toggle */}
           <button
             onClick={() => setIsFabOpen(!isFabOpen)}
-            className={`w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-primary shadow-xl flex items-center justify-center text-white transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer border border-white/20 ${
+            className={`pointer-events-auto w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-primary shadow-xl flex items-center justify-center text-white transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer border border-white/20 ${
               isFabOpen ? 'bg-slate-800 rotate-45' : 'bg-primary hover:bg-primary-600'
             }`}
             title="New Offer"

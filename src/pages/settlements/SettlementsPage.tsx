@@ -183,9 +183,9 @@ export function SettlementsPage() {
   return (
     <div className="space-y-4 w-full animate-fade-in pb-20 lg:pb-12">
       {/* KPI METRIC CARDS */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 sm:gap-3">
         {/* Total Pending Settlement */}
-        <div className="bg-card border border-border/80 rounded-lg p-3 shadow-2xs space-y-1">
+        <div className="bg-card border border-border/80 rounded-lg p-2.5 sm:p-3 shadow-2xs space-y-1">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Pending Payout</span>
             <div className="w-7 h-7 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center border border-amber-500/20 shadow-2xs">
@@ -196,10 +196,10 @@ export function SettlementsPage() {
             <Skeleton className="h-6 w-20 rounded-md" />
           ) : (
             <div>
-              <h3 className="text-xl font-black text-foreground font-heading">
+              <h3 className="text-lg sm:text-xl font-black text-foreground font-heading">
                 {currency}{summary?.total_pending_settlement.toFixed(2) || '0.00'}
               </h3>
-              <p className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold">
+              <p className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold truncate">
                 {summary?.pending_count || 0} order(s) pending
               </p>
             </div>
@@ -207,7 +207,7 @@ export function SettlementsPage() {
         </div>
 
         {/* Total Amount Settled */}
-        <div className="bg-card border border-border/80 rounded-lg p-3 shadow-2xs space-y-1">
+        <div className="bg-card border border-border/80 rounded-lg p-2.5 sm:p-3 shadow-2xs space-y-1">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Total Settled</span>
             <div className="w-7 h-7 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-500/20 shadow-2xs">
@@ -218,10 +218,10 @@ export function SettlementsPage() {
             <Skeleton className="h-6 w-20 rounded-md" />
           ) : (
             <div>
-              <h3 className="text-xl font-black text-foreground font-heading">
+              <h3 className="text-lg sm:text-xl font-black text-foreground font-heading">
                 {currency}{summary?.total_settled_amount.toFixed(2) || '0.00'}
               </h3>
-              <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">
+              <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold truncate">
                 {summary?.settled_count || 0} payout(s) completed
               </p>
             </div>
@@ -229,7 +229,7 @@ export function SettlementsPage() {
         </div>
 
         {/* Gross Online Sales */}
-        <div className="bg-card border border-border/80 rounded-lg p-3 shadow-2xs space-y-1">
+        <div className="bg-card border border-border/80 rounded-lg p-2.5 sm:p-3 shadow-2xs space-y-1">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Gross Online Sales</span>
             <div className="w-7 h-7 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center border border-blue-500/20 shadow-2xs">
@@ -240,10 +240,10 @@ export function SettlementsPage() {
             <Skeleton className="h-6 w-20 rounded-md" />
           ) : (
             <div>
-              <h3 className="text-xl font-black text-foreground font-heading">
+              <h3 className="text-lg sm:text-xl font-black text-foreground font-heading">
                 {currency}{summary?.total_online_sales.toFixed(2) || '0.00'}
               </h3>
-              <p className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold">
+              <p className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold truncate">
                 {summary?.total_transactions_count || 0} online payments
               </p>
             </div>
@@ -251,7 +251,7 @@ export function SettlementsPage() {
         </div>
 
         {/* Contest Settlements */}
-        <div className="bg-card border border-border/80 rounded-lg p-3 shadow-2xs space-y-1">
+        <div className="bg-card border border-border/80 rounded-lg p-2.5 sm:p-3 shadow-2xs space-y-1">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Contest Bonus</span>
             <div className="w-7 h-7 rounded-md bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400 flex items-center justify-center border border-fuchsia-500/20 shadow-2xs">
@@ -262,10 +262,10 @@ export function SettlementsPage() {
             <Skeleton className="h-6 w-20 rounded-md" />
           ) : (
             <div>
-              <h3 className="text-xl font-black text-foreground font-heading">
+              <h3 className="text-lg sm:text-xl font-black text-foreground font-heading">
                 {currency}{(summary?.contest_settlement_amount || 0).toFixed(2)}
               </h3>
-              <p className="text-[10px] text-fuchsia-600 dark:text-fuchsia-400 font-semibold">
+              <p className="text-[10px] text-fuchsia-600 dark:text-fuchsia-400 font-semibold truncate">
                 {summary?.contest_participants_count || 0} participant(s)
               </p>
             </div>
@@ -273,7 +273,7 @@ export function SettlementsPage() {
         </div>
 
         {/* Payout Target */}
-        <div className="bg-card border border-border/80 rounded-lg p-3 shadow-2xs space-y-1">
+        <div className="bg-card border border-border/80 rounded-lg p-2.5 sm:p-3 shadow-2xs space-y-1 col-span-2 sm:col-span-1">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Payout Target</span>
             <div className="w-7 h-7 rounded-md bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center border border-purple-500/20 shadow-2xs">
@@ -302,74 +302,74 @@ export function SettlementsPage() {
       <div className="bg-card border border-border/80 rounded-lg shadow-2xs overflow-hidden">
         {/* Sticky Header Bar on Scroll */}
         <div className="sticky -top-4 sm:-top-6 lg:-top-8 z-30 bg-card border-b border-border/80 p-3 sm:p-3.5 space-y-2.5">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5">
-            <div>
-              <h3 className="text-sm font-bold text-foreground flex items-center gap-1.5">
-                <CreditCard size={15} className="text-primary shrink-0" />
-                Settlement Transactions
-              </h3>
-            </div>
+          {/* Row 1: Title and Refresh Button */}
+          <div className="flex items-center justify-between gap-2.5">
+            <h3 className="text-sm font-bold text-foreground flex items-center gap-1.5 min-w-0">
+              <CreditCard size={15} className="text-primary shrink-0" />
+              <span className="truncate">Settlement Transactions</span>
+            </h3>
 
-            <div className="flex flex-wrap items-center gap-2">
-              {/* Date Filter Buttons */}
-              <div className="flex items-center gap-0.5 bg-muted p-0.5 rounded-md text-xs font-bold shrink-0">
-                {[
-                  { label: '7D', val: '7' },
-                  { label: '30D', val: '30' },
-                  { label: '90D', val: '90' },
-                ].map(item => (
-                  <button
-                    key={item.val}
-                    onClick={() => setDateFilter(item.val as any)}
-                    className={cn(
-                      "px-2.5 h-7 rounded-md text-xs font-bold transition-all cursor-pointer",
-                      dateFilter === item.val
-                        ? "bg-card text-foreground shadow-2xs"
-                        : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    {item.label}
-                  </button>
-                ))}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => loadSettlementsData(0, true)}
+              className="rounded-md h-8 px-2.5 shrink-0 border-border shadow-2xs cursor-pointer hover:bg-muted"
+              title="Refresh Settlements"
+            >
+              <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} />
+            </Button>
+          </div>
+
+          {/* Row 2: Date Filters & Status Dropdown (Structured without orphan button) */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+            {/* Date Filter Buttons */}
+            <div className="flex items-center gap-0.5 bg-muted p-0.5 rounded-md text-xs font-bold overflow-x-auto header-scrollbar-x shrink-0">
+              {[
+                { label: '7D', val: '7' },
+                { label: '30D', val: '30' },
+                { label: '90D', val: '90' },
+              ].map(item => (
                 <button
-                  onClick={() => setDateFilter('custom')}
+                  key={item.val}
+                  onClick={() => setDateFilter(item.val as any)}
                   className={cn(
-                    "flex items-center gap-1 px-2.5 h-7 rounded-md text-xs font-bold transition-all cursor-pointer",
-                    dateFilter === 'custom'
+                    "px-2.5 sm:px-3 h-7 rounded-md text-xs font-bold transition-all cursor-pointer flex-1 sm:flex-none text-center",
+                    dateFilter === item.val
                       ? "bg-card text-foreground shadow-2xs"
                       : "text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  <Calendar size={11} />
-                  <span>Custom</span>
+                  {item.label}
                 </button>
-              </div>
-
-              {/* Status Select Dropdown */}
-              <div className="w-36 sm:w-42 shrink-0">
-                <SearchableSelect
-                  options={[
-                    { id: 'all', name: 'All Status' },
-                    { id: 'pending', name: 'Pending' },
-                    { id: 'settled', name: 'Settled' }
-                  ]}
-                  value={statusFilter}
-                  onChange={(val) => setStatusFilter(val)}
-                  showSearch={false}
-                  placeholder="Filter Status"
-                  className="h-8 rounded-md font-semibold text-xs"
-                />
-              </div>
-
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => loadSettlementsData(0, true)}
-                className="rounded-md h-8 px-2.5 shrink-0 border-border shadow-2xs cursor-pointer"
-                title="Refresh Settlements"
+              ))}
+              <button
+                onClick={() => setDateFilter('custom')}
+                className={cn(
+                  "flex items-center justify-center gap-1 px-2.5 sm:px-3 h-7 rounded-md text-xs font-bold transition-all cursor-pointer flex-1 sm:flex-none",
+                  dateFilter === 'custom'
+                    ? "bg-card text-foreground shadow-2xs"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
               >
-                <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} />
-              </Button>
+                <Calendar size={11} />
+                <span>Custom</span>
+              </button>
+            </div>
+
+            {/* Status Select Dropdown */}
+            <div className="w-full sm:w-44 shrink-0">
+              <SearchableSelect
+                options={[
+                  { id: 'all', name: 'All Status' },
+                  { id: 'pending', name: 'Pending' },
+                  { id: 'settled', name: 'Settled' }
+                ]}
+                value={statusFilter}
+                onChange={(val) => setStatusFilter(val)}
+                showSearch={false}
+                placeholder="Filter Status"
+                className="h-8 rounded-md font-semibold text-xs w-full"
+              />
             </div>
           </div>
 
@@ -442,19 +442,19 @@ export function SettlementsPage() {
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto no-scrollbar">
-              <table className="w-full text-left text-xs border-collapse">
+            <div className="overflow-x-auto header-scrollbar-x w-full">
+              <table className="w-full min-w-[900px] text-left text-xs border-collapse">
                 <thead>
-                  <tr className="bg-muted/50 text-[10px] font-bold uppercase tracking-wider text-muted-foreground border-b border-border/80">
-                    <th className="py-2.5 px-3.5">Date & Time</th>
-                    <th className="py-2.5 px-3.5">Invoice / Ref ID</th>
-                    <th className="py-2.5 px-3.5">Customer</th>
-                    <th className="py-2.5 px-3.5">Method</th>
-                    <th className="py-2.5 px-3.5 text-right">Gross Amount</th>
-                    <th className="py-2.5 px-3.5 text-right">Gateway Fee</th>
-                    <th className="py-2.5 px-3.5 text-right">Net Settlement</th>
-                    <th className="py-2.5 px-3.5">Settlement Status</th>
-                    <th className="py-2.5 px-3.5 text-center">Payout Date</th>
+                  <tr className="bg-muted/50 text-[10px] font-bold uppercase tracking-wider text-muted-foreground border-b border-border/80 whitespace-nowrap">
+                    <th className="py-3 px-3.5">Date & Time</th>
+                    <th className="py-3 px-3.5">Invoice / Ref ID</th>
+                    <th className="py-3 px-3.5">Customer</th>
+                    <th className="py-3 px-3.5">Method</th>
+                    <th className="py-3 px-3.5 text-right">Gross Amount</th>
+                    <th className="py-3 px-3.5 text-right">Gateway Fee</th>
+                    <th className="py-3 px-3.5 text-right">Net Settlement</th>
+                    <th className="py-3 px-3.5 text-center">Settlement Status</th>
+                    <th className="py-3 px-3.5 text-center">Payout Date</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60 font-medium">
@@ -462,36 +462,36 @@ export function SettlementsPage() {
                     const dt = formatSettlementDateTime(item.created_at);
                     return (
                       <tr key={`${item.order_id}-${index}`} className="hover:bg-muted/30 transition-colors">
-                        <td className="py-2.5 px-3.5 text-foreground font-mono text-[11px]">
+                        <td className="py-3 px-3.5 text-foreground font-mono text-[11px] whitespace-nowrap">
                           <div className="font-semibold">{dt.date}</div>
                           {dt.time && <div className="text-[10px] text-muted-foreground">{dt.time}</div>}
                         </td>
-                        <td className="py-2.5 px-3.5">
-                          <span className="font-mono font-bold text-foreground">{item.invoice_no}</span>
+                        <td className="py-3 px-3.5 whitespace-nowrap">
+                          <span className="font-mono font-bold text-foreground block">{item.invoice_no}</span>
                           <span className="text-[10px] text-muted-foreground block font-mono">Ref: {item.payment_reference}</span>
                         </td>
-                        <td className="py-2.5 px-3.5">
-                          <span className="font-bold text-foreground">{item.customer_name}</span>
+                        <td className="py-3 px-3.5 whitespace-nowrap">
+                          <span className="font-bold text-foreground block">{item.customer_name}</span>
                           {item.customer_phone && (
                             <span className="text-[10px] text-muted-foreground block font-mono">{item.customer_phone}</span>
                           )}
                         </td>
-                        <td className="py-2.5 px-3.5">
+                        <td className="py-3 px-3.5 whitespace-nowrap">
                           <span className="capitalize px-2 py-0.5 rounded-md bg-muted font-bold text-[9.5px] text-foreground border border-border/60">
                             {item.payment_method}
                           </span>
                         </td>
-                        <td className="py-2.5 px-3.5 text-right font-mono font-bold text-foreground">
+                        <td className="py-3 px-3.5 text-right font-mono font-bold text-foreground whitespace-nowrap">
                           {currency}{item.gross_amount.toFixed(2)}
                         </td>
-                        <td className="py-2.5 px-3.5 text-right font-mono text-muted-foreground">
+                        <td className="py-3 px-3.5 text-right font-mono text-muted-foreground whitespace-nowrap">
                           {item.platform_fee > 0 ? `-${currency}${item.platform_fee.toFixed(2)}` : `${currency}0.00`}
                         </td>
-                        <td className="py-2.5 px-3.5 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                        <td className="py-3 px-3.5 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
                           {currency}{item.net_settlement_amount.toFixed(2)}
                         </td>
 
-                        <td className="py-2.5 px-3.5">
+                        <td className="py-3 px-3.5 text-center whitespace-nowrap">
                           {item.settlement_status === 'settled' ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9.5px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                               <CheckCircle2 size={11} /> Settled
@@ -502,7 +502,7 @@ export function SettlementsPage() {
                             </span>
                           )}
                         </td>
-                        <td className="py-2.5 px-3.5 text-center">
+                        <td className="py-3 px-3.5 text-center whitespace-nowrap">
                           {item.settlement_status === 'settled' && item.actual_settled_date ? (
                             <span className="font-mono text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
                               {formatSettlementDate(item.actual_settled_date)}

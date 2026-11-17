@@ -122,6 +122,7 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
   const [resendCount, setResendCount] = useState(0);
   const [isResending, setIsResending] = useState(false);
   const [tabWarningVisible, setTabWarningVisible] = useState(false);
+  const [isShaking, setIsShaking] = useState(false);
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -449,16 +450,20 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
     <div 
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
       onClick={(e) => {
-        if (e.target === e.currentTarget && step !== 'otp') {
-          handleClose();
+        // Prevent closing when clicking outside the card
+        if (e.target === e.currentTarget) {
+          e.stopPropagation();
+          setIsShaking(true);
+          setTimeout(() => setIsShaking(false), 400);
         }
       }}
     >
       <motion.div 
         initial={{ opacity: 0, scale: 0.9, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
+        animate={isShaking ? { x: [-6, 6, -4, 4, -2, 2, 0], opacity: 1, scale: 1, y: 0 } : { opacity: 1, scale: 1, y: 0 }}
+        transition={isShaking ? { duration: 0.35 } : undefined}
         exit={{ opacity: 0, scale: 0.9, y: 20 }}
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-md relative overflow-hidden"
+        className="bg-white text-gray-900 rounded-2xl shadow-2xl w-full max-w-md relative overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top-right Cancel / Close Button */}
@@ -671,7 +676,7 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
                       type="tel"
                       value={mobileNumber}
                       onChange={(e) => setMobileNumber(e.target.value.replace(/[^0-9]/g, ''))}
-                      className="block w-full pl-[105px] pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent transition-all outline-none text-base"
+                      className="block w-full pl-[105px] pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent transition-all outline-none text-base text-gray-900 placeholder:text-gray-400 font-medium"
                       placeholder="Enter mobile number"
                       maxLength={15}
                       autoFocus
@@ -735,7 +740,7 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
                     type="text"
                     value={otpCode}
                     onChange={(e) => setOtpCode(e.target.value.trim())}
-                    className="block w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent transition-all outline-none text-center text-2xl tracking-widest font-mono"
+                    className="block w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent transition-all outline-none text-center text-2xl tracking-widest font-mono text-gray-900 placeholder:text-gray-400 font-bold"
                     placeholder="Enter OTP"
                     autoFocus
                     required
@@ -803,7 +808,7 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
                       type="text"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      className="block w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent transition-all outline-none text-base"
+                      className="block w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent transition-all outline-none text-base text-gray-900 placeholder:text-gray-400 font-medium"
                       placeholder="Your Full Name"
                       autoFocus
                       required
@@ -818,7 +823,7 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
                       type="text"
                       value={mobileNumber}
                       disabled
-                      className="block w-full pl-[95px] pr-4 py-3 bg-gray-100 border border-gray-200 rounded-xl text-gray-500 outline-none text-base cursor-not-allowed"
+                      className="block w-full pl-[95px] pr-4 py-3 bg-gray-100 border border-gray-200 rounded-xl text-gray-700 outline-none text-base cursor-not-allowed font-medium"
                     />
                   </div>
                   {error && <p className="text-red-500 text-sm mt-1">{typeof error === 'string' ? error : formatApiError(error, 'An error occurred')}</p>}

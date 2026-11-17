@@ -6,11 +6,13 @@ import { cn } from '@/utils/cn';
 interface WsConnectionTrackerProps {
   className?: string;
   showTextOnMobile?: boolean;
+  showLatencyOnMobile?: boolean;
 }
 
 export const WsConnectionTracker: React.FC<WsConnectionTrackerProps> = ({
   className,
-  showTextOnMobile = false,
+  showTextOnMobile = true,
+  showLatencyOnMobile = true,
 }) => {
   const { status, latencyMs, requestReconnect, reconnectCount } = useWsStore();
 
@@ -38,7 +40,7 @@ export const WsConnectionTracker: React.FC<WsConnectionTrackerProps> = ({
           Live
         </span>
         {latencyMs !== null && (
-          <span className="hidden md:inline text-[9.5px] font-mono text-emerald-600/80 dark:text-emerald-400/80">
+          <span className={cn("text-[9.5px] font-mono text-emerald-600/80 dark:text-emerald-400/80", !showLatencyOnMobile && "hidden md:inline")}>
             {latencyMs}ms
           </span>
         )}

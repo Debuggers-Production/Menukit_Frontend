@@ -1,9 +1,27 @@
+import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { Toaster } from 'react-hot-toast'
+import { Toaster as DynauraToaster } from 'dynaura'
+import 'dynaura/styles-no-font.css'
+import { toast as hotToast } from 'react-hot-toast'
 import './index.css'
 import App from './App.tsx'
+import { ErrorBoundary } from './components/ui/ErrorBoundary'
+import { toast as dynauraToast, formatToastMessage } from './utils/toast'
+
+// Bridge react-hot-toast to Dynaura so every existing toast call routes to dynamic island toasts
+const origToast = hotToast as any;
+if (origToast) {
+  origToast.success = (message: any, opts?: any) => dynauraToast.success(message, opts);
+  origToast.error = (message: any, opts?: any) => dynauraToast.error(message, opts);
+  origToast.warning = (message: any, opts?: any) => dynauraToast.warning(message, opts);
+  origToast.info = (message: any, opts?: any) => dynauraToast.info(message, opts);
+  origToast.loading = (message: any, opts?: any) => dynauraToast.loading(message, opts);
+  origToast.dismiss = (id?: string) => dynauraToast.dismiss(id);
+  origToast.promise = (promise: any, msgs: any, opts?: any) => dynauraToast.promise(promise, msgs, opts);
+  origToast.custom = (jsxOrFn: any, opts?: any) => dynauraToast.custom(jsxOrFn, opts);
+}
 
 
 // Prevent mouse wheel from scrolling and altering number inputs globally
@@ -50,12 +68,14 @@ const queryClient = new QueryClient({
 })
 
 createRoot(document.getElementById('root')!).render(
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+  <QueryClientProvider client={queryClient}>
+    <BrowserRouter>
+      <ErrorBoundary>
         <App />
-        <Toaster position="top-center" />
-      </BrowserRouter>
-    </QueryClientProvider>
+        <DynauraToaster position="top-center" timer={true} swipe="both" />
+      </ErrorBoundary>
+    </BrowserRouter>
+  </QueryClientProvider>
 );
 
 // Register PWA Service Worker for Desktop Web App installability

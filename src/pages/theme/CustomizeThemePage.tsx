@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useHeaderStore } from '@/store/useHeaderStore';
 import { HeaderActions } from '@/components/HeaderActions';
 import { api } from '@/services/api';
+import { publicCache } from '@/utils/publicCache';
 
 export function CustomizeThemePage() {
   const navigate = useNavigate();
@@ -143,6 +144,7 @@ export function CustomizeThemePage() {
         font_family: fontFamily,
         border_radius: borderRadius,
       });
+      publicCache.notifySettingsUpdated(shop?.id);
       toast.success('Theme updated successfully!');
     } catch {
       toast.error('Failed to save theme settings');

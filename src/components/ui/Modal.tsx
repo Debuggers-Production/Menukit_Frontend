@@ -15,9 +15,10 @@ interface ModalProps {
   containerClassName?: string;
   closeOnBackdropClick?: boolean;
   hideCloseButton?: boolean;
+  size?: 'sm' | 'md' | 'lg' | 'xl';
 }
 
-export function Modal({ isOpen, onClose, title, description, children, footer, className, containerClassName, closeOnBackdropClick = false, hideCloseButton = false }: ModalProps) {
+export function Modal({ isOpen, onClose, title, description, children, footer, className, containerClassName, closeOnBackdropClick = false, hideCloseButton = false, size = 'md' }: ModalProps) {
   const [mounted, setMounted] = React.useState(false);
 
   React.useEffect(() => {
@@ -57,20 +58,24 @@ export function Modal({ isOpen, onClose, title, description, children, footer, c
             exit={{ opacity: 0, y: 16 }}
             transition={{ type: "spring", damping: 25, stiffness: 260 }}
             className={cn(
-              "bg-background relative w-full max-w-lg rounded-t-2xl sm:rounded-2xl shadow-2xl z-10 max-h-[90vh] sm:max-h-[85vh] overflow-hidden flex flex-col border border-border",
+              "bg-white text-slate-900 relative w-full rounded-t-xl sm:rounded-xl shadow-2xl z-10 max-h-[90vh] sm:max-h-[85vh] overflow-hidden flex flex-col border border-slate-200",
+              size === 'sm' && 'max-w-sm',
+              size === 'md' && 'max-w-lg',
+              size === 'lg' && 'max-w-2xl',
+              size === 'xl' && 'max-w-4xl',
               className
             )}
           >
             {hasHeader ? (
-              <div className="flex items-center justify-between p-4 sm:p-4.5 border-b border-border shrink-0 bg-muted/20">
+              <div className="flex items-center justify-between p-4 sm:p-4.5 border-b border-slate-100 shrink-0 bg-slate-50/80">
                 <div>
-                  {title && <h2 className="text-base font-semibold text-foreground tracking-tight">{title}</h2>}
-                  {description && <p className="text-xs text-muted-foreground mt-0.5">{description}</p>}
+                  {title && <h2 className="text-base font-semibold text-slate-900 tracking-tight">{title}</h2>}
+                  {description && <p className="text-xs text-slate-500 mt-0.5">{description}</p>}
                 </div>
                 {!hideCloseButton && (
                   <button
                     onClick={onClose}
-                    className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors cursor-pointer"
+                    className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
                     aria-label="Close"
                   >
                     <X size={18} />
@@ -80,7 +85,7 @@ export function Modal({ isOpen, onClose, title, description, children, footer, c
             ) : !hideCloseButton ? (
               <button
                 onClick={onClose}
-                className="absolute top-3.5 right-3.5 z-50 p-1.5 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer"
+                className="absolute top-3.5 right-3.5 z-50 p-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
                 aria-label="Close"
               >
                 <X size={18} />
@@ -92,7 +97,7 @@ export function Modal({ isOpen, onClose, title, description, children, footer, c
             </div>
 
             {footer && (
-              <div className="p-3.5 sm:p-4 border-t border-border bg-muted/20 shrink-0 flex items-center justify-end gap-2.5">
+              <div className="p-3.5 sm:p-4 border-t border-slate-100 bg-slate-50/80 shrink-0 flex items-center justify-end gap-2.5">
                 {footer}
               </div>
             )}

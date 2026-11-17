@@ -30,19 +30,24 @@ export function Lightbox({ isOpen, onClose, imageUrl, altText = 'Image' }: Light
   if (!isOpen || !imageUrl) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm animate-in fade-in duration-200">
+    <div 
+      onClick={onClose}
+      className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/90 backdrop-blur-sm animate-in fade-in duration-200 cursor-pointer"
+    >
       <button 
+        type="button"
         onClick={onClose}
-        className="absolute top-4 right-4 z-[101] p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors"
+        className="absolute top-4 right-4 z-[100000] p-2 bg-black/60 text-white rounded-full hover:bg-black/80 transition-colors cursor-pointer"
+        title="Close (Esc)"
       >
         <X size={24} />
       </button>
       
-      <div className="relative w-full h-full p-4 md:p-10 flex items-center justify-center">
+      <div className="relative w-full h-full p-4 md:p-10 flex items-center justify-center pointer-events-none">
         <img 
           src={imageUrl} 
           alt={altText} 
-          className="max-w-full max-h-full object-contain animate-in zoom-in-95 duration-200"
+          className="max-w-full max-h-full object-contain animate-in zoom-in-95 duration-200 pointer-events-auto cursor-default shadow-2xl"
           onClick={(e) => e.stopPropagation()}
         />
       </div>

@@ -967,8 +967,7 @@ export function SettingsPage() {
       };
       
       const res = await api.put('/shops/me/settings', payload);
-      publicCache.clear();
-      window.dispatchEvent(new CustomEvent('menukit-shop-settings-updated', { detail: res.data }));
+      publicCache.notifySettingsUpdated(shop?.id, res.data);
       if (shop) {
         setShop({ ...shop, settings: res.data });
       } else {

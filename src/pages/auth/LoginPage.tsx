@@ -15,18 +15,32 @@ export function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isLoading) return;
-    if (!email) {
+
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail) {
       toast.error('Please enter your email address');
+      return;
+    }
+
+    // Client-side email validation (must contain @ and valid domain with dot)
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmedEmail)) {
+      toast.error('Please enter a valid email address (e.g. name@domain.com)');
       return;
     }
     
     setIsLoading(true);
     try {
-      await api.post('/auth/request-otp', { email });
+      await api.post('/auth/request-otp', { email: trimmedEmail });
       toast.success('OTP sent to your email!');
-      navigate('/verify-otp', { state: { email } });
+      navigate('/verify-otp', { state: { email: trimmedEmail } });
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Failed to send OTP. Please try again.');
+      const errorMsg =
+        (typeof error?.response?.data?.detail === 'string' && error.response.data.detail) ||
+        (typeof error?.response?.data?.message === 'string' && error.response.data.message) ||
+        error?.message ||
+        'Failed to send OTP. Please try again.';
+      toast.error(errorMsg);
     } finally {
       setIsLoading(false);
     }

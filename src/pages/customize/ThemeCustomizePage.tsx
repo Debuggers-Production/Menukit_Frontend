@@ -6,6 +6,7 @@ import { useShopStore } from '@/store/shopStore';
 import { loadGoogleFont } from '@/utils/fontLoader';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { publicCache } from '@/utils/publicCache';
 
 export function ThemeCustomizePage() {
   const { shop, setShop } = useShopStore();
@@ -61,6 +62,7 @@ export function ThemeCustomizePage() {
     setIsLoading(true);
     try {
       const res = await api.put('/shops/me/theme', formData);
+      publicCache.notifySettingsUpdated(shop?.id);
       toast.success('Theme settings updated!');
       // Update store
       if (shop) {

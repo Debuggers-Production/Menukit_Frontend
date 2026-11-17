@@ -232,13 +232,8 @@ export function useWebSocket() {
               playChimeNotificationSound();
 
               // Show toast popup
-              toast(notif.title + '\n' + notif.message, {
+              toast.info(`${notif.title}: ${notif.message}`, {
                 icon: notif.type === 'NEW_ORDER' ? '🛍️' : notif.type === 'ORDER_STATUS' ? '🍳' : notif.type === 'NEW_CUSTOMER' ? '👋' : notif.type === 'NEW_SCHEME_ENROLLMENT' ? '🪙' : '⭐',
-                style: {
-                  borderRadius: '10px',
-                  background: '#333',
-                  color: '#fff',
-                },
               });
             } else if (
               message.type === 'NEW_ORDER' ||

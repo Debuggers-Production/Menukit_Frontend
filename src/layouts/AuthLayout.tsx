@@ -5,10 +5,19 @@ import { GoogleTranslate } from '@/components/GoogleTranslate';
 import { LanguageSelectorModal } from '@/components/LanguageSelectorModal';
 import logo from "../assets/menukit-logo.svg";
 import { useAuthStore } from '@/store/authStore';
+import { LogoLoader } from '@/components/ui/LogoLoader';
 
 export function AuthLayout() {
   const [isLanguageModalOpen, setIsLanguageModalOpen] = useState(false);
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, isLoading } = useAuthStore();
+
+  if (isLoading && typeof window !== 'undefined' && localStorage.getItem('access_token')) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
+        <LogoLoader size={56} text="AUTHENTICATING..." />
+      </div>
+    );
+  }
 
   if (isAuthenticated) {
     return <Navigate to="/dashboard" replace />;

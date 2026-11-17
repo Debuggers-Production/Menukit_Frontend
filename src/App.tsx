@@ -122,16 +122,12 @@ function App() {
     }
   }, [shop?.settings?.language]);
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-      </div>
-    );
-  }
-
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div></div>}>
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="w-8 h-8 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
+      </div>
+    }>
       <ScrollToTop />
       <Routes>
       {/* Auth Routes */}
@@ -194,7 +190,17 @@ function App() {
       <Route path="/shop/:id/contest" element={<PublicContestPage />} />
       <Route path="/shop/:id/contest/:contestId" element={<PublicContestPage />} />
       <Route path="/shop/:id/schemes" element={<PublicSchemesPage />} />
+      <Route path="/shop/:id/schemes/my-scheme" element={<PublicSchemesPage />} />
+      <Route path="/shop/:id/schemes/my-pass" element={<PublicSchemesPage />} />
+      <Route path="/shop/:id/schemes/history" element={<PublicSchemesPage />} />
+      <Route path="/shop/:id/schemes/my-history" element={<PublicSchemesPage />} />
+      <Route path="/shop/:id/schemes/:schemeId" element={<PublicSchemesPage />} />
       <Route path="/shop/:id/fund" element={<PublicSchemesPage />} />
+      <Route path="/shop/:id/fund/my-scheme" element={<PublicSchemesPage />} />
+      <Route path="/shop/:id/fund/my-pass" element={<PublicSchemesPage />} />
+      <Route path="/shop/:id/fund/history" element={<PublicSchemesPage />} />
+      <Route path="/shop/:id/fund/my-history" element={<PublicSchemesPage />} />
+      <Route path="/shop/:id/fund/:schemeId" element={<PublicSchemesPage />} />
 
       <Route path="/shop/:id/orders" element={<PublicOrdersPage />} />
       <Route path="/shop/:id/order/:orderId" element={<OrderStatusPage />} />

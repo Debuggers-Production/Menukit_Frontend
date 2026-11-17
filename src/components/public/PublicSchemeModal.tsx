@@ -1,23 +1,24 @@
-import React, { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useSearchParams, useNavigate, useLocation, useParams } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, Coins, Gift, CheckCircle2, Clock, Calendar, 
   ArrowRight, Phone, User, MapPin, ShieldCheck, 
   ChevronRight, Award, Trophy, Info, Building2,
   QrCode, CreditCard, ExternalLink, Lock, ChevronLeft,
-  Tag, Store, Flame, Wallet, FileText, AlertTriangle
+  Tag, Store, Flame, Wallet, FileText, AlertTriangle, Maximize2, History
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { toast } from 'react-hot-toast';
 import { 
-  schemeService, Scheme, CustomerSchemePass, SchemeMemberCreatePayload 
+  schemeService, Scheme, CustomerSchemePass, SchemeMemberCreatePayload, SchemeActivityLog
 } from '@/services/schemeService';
 import { customerService } from '@/services/customers';
 import { DiscountUnlockPopup } from './DiscountUnlockPopup';
 import { triggerHaptic, HAPTIC_PATTERNS } from '@/utils/haptic';
 import { SearchableSelect } from '@/components/ui/SearchableSelect';
 import { BottomSheet } from '@/components/ui/BottomSheet';
+import { Lightbox } from '@/components/ui/Lightbox';
 
 const loadRazorpaySDK = (): Promise<boolean> => {
   return new Promise((resolve) => {
@@ -218,6 +219,7 @@ interface SchemeCardProps {
   isTargetScheme?: boolean;
   onEnroll: (scheme: Scheme) => void;
   onViewRewards: (scheme: Scheme) => void;
+  onOpenImage?: (imageUrl: string, title?: string) => void;
 }
 
 const SchemeCard: React.FC<SchemeCardProps> = ({
@@ -228,8 +230,9 @@ const SchemeCard: React.FC<SchemeCardProps> = ({
   isTargetScheme = false,
   onEnroll,
   onViewRewards,
+  onOpenImage,
 }) => {
-  const primaryImage = scheme.items?.find(it => it.image_url)?.image_url;
+  const primaryImage = scheme.image_url || scheme.items?.find(it => it.image_url)?.image_url;
   const maturityVal = (scheme.price || 0) * (scheme.term_duration || 0);
   const highlightLines = (scheme.highlight_text || '')
     .split('\n')
@@ -247,18 +250,40 @@ const SchemeCard: React.FC<SchemeCardProps> = ({
         isTargetScheme
           ? 'border-amber-500 ring-2 ring-amber-500/80 shadow-xl shadow-amber-500/15'
           : 'border-border/80 hover:border-amber-500/60'
-      } rounded-2xl sm:rounded-3xl overflow-hidden shadow-xs hover:shadow-xl hover:shadow-amber-500/10 transition-all duration-300 flex flex-col justify-between`}
+      } rounded-xl overflow-hidden shadow-xs hover:shadow-xl hover:shadow-amber-500/10 transition-all duration-300 flex flex-col justify-between`}
     >
       {/* Top Media / Banner Section (Authentic Menu Card Cover Style) */}
-      <div className="relative w-full h-44 sm:h-52 overflow-hidden bg-gradient-to-br from-amber-500/15 via-orange-500/10 to-amber-600/20 dark:from-amber-950/40 dark:via-orange-950/30 dark:to-slate-900 border-b border-border/60">
+      <div 
+        onClick={(e) => {
+          if (primaryImage) {
+            e.stopPropagation();
+            onOpenImage?.(primaryImage, scheme.title);
+          }
+        }}
+        className={`relative w-full h-44 sm:h-52 overflow-hidden bg-gradient-to-br from-amber-500/15 via-orange-500/10 to-amber-600/20 dark:from-amber-950/40 dark:via-orange-950/30 dark:to-slate-900 border-b border-border/60 ${primaryImage ? 'cursor-zoom-in' : ''}`}
+        title={primaryImage ? "Click to view full image" : undefined}
+      >
         {primaryImage ? (
-          <img
-            src={primaryImage}
-            alt={scheme.title}
-            loading="lazy"
-            decoding="async"
-            className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-108"
-          />
+          <div
+            className="relative w-full h-full group/cardimg cursor-zoom-in"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenImage?.(primaryImage, scheme.title);
+            }}
+            title="Click to view full image"
+          >
+            <img
+              src={primaryImage}
+              alt={scheme.title}
+              loading="lazy"
+              decoding="async"
+              className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-108"
+            />
+            <div className="absolute top-2.5 right-2.5 z-20 opacity-0 group-hover/cardimg:opacity-100 transition-opacity bg-black/60 hover:bg-black/80 backdrop-blur-md text-white px-2 py-0.5 rounded-lg text-[10px] font-bold flex items-center gap-1 shadow-sm border border-white/20">
+              <Maximize2 size={11} className="text-amber-400" />
+              <span>Full View</span>
+            </div>
+          </div>
         ) : (
           <div className="w-full h-full relative flex items-center justify-center overflow-hidden">
             {/* Ambient decorative lighting */}
@@ -272,7 +297,7 @@ const SchemeCard: React.FC<SchemeCardProps> = ({
               size={80}
               className="absolute -left-6 -top-6 text-orange-500/10 dark:text-orange-400/5 -rotate-12 transition-transform duration-700 group-hover:scale-110 group-hover:-rotate-6"
             />
-            <div className="relative z-10 w-16 h-16 rounded-2xl bg-white/85 dark:bg-slate-900/85 backdrop-blur-md shadow-md border border-amber-300/40 dark:border-amber-700/40 flex items-center justify-center text-amber-500 dark:text-amber-400 group-hover:scale-110 transition-transform duration-300">
+            <div className="relative z-10 w-16 h-16 rounded-xl bg-white/85 dark:bg-slate-900/85 backdrop-blur-md shadow-md border border-amber-300/40 dark:border-amber-700/40 flex items-center justify-center text-amber-500 dark:text-amber-400 group-hover:scale-110 transition-transform duration-300">
               <Coins size={32} />
             </div>
           </div>
@@ -337,7 +362,7 @@ const SchemeCard: React.FC<SchemeCardProps> = ({
           {renderHighlightBenefits(scheme.highlight_text)}
 
           {/* Pricing & Maturity Specs Grid */}
-          <div className="grid grid-cols-2 gap-2 p-3 rounded-xl sm:rounded-2xl bg-muted/40 dark:bg-slate-800/40 border border-border/60">
+          <div className="grid grid-cols-2 gap-2 p-3 rounded-xl bg-muted/40 dark:bg-slate-800/40 border border-border/60">
             <div>
               <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
                 Installment
@@ -457,7 +482,7 @@ const SchemeCard: React.FC<SchemeCardProps> = ({
           whileHover={{ scale: 1.01 }}
           whileTap={{ scale: 0.98 }}
           onClick={() => onEnroll(scheme)}
-          className="group/btn relative overflow-hidden w-full mt-2 py-3 px-4 text-white font-extrabold text-xs sm:text-sm rounded-xl sm:rounded-2xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer hover:brightness-110 active:scale-98"
+          className="group/btn relative overflow-hidden w-full mt-2 py-3 px-4 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer hover:brightness-110 active:scale-98"
           style={{ backgroundColor: primaryColor }}
         >
           {/* Shimmer sweep effect on hover */}
@@ -480,6 +505,7 @@ interface PublicSchemeModalProps {
   primaryColor?: string;
   shop?: any;
   isFullPage?: boolean;
+  routeSchemeId?: string;
 }
 
 export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
@@ -489,15 +515,49 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
   primaryColor = '#f97316',
   shop,
   isFullPage = false,
+  routeSchemeId: propRouteSchemeId,
 }) => {
-  const [searchParams] = useSearchParams();
-  const targetSchemeId = searchParams.get('scheme') || searchParams.get('id');
-  const effectiveShopId = shop?.id || shopId;
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { id: paramShopId, schemeId: paramSchemeId } = useParams<{ id?: string; schemeId?: string }>();
+
+  const activeSchemeIdParam = propRouteSchemeId || paramSchemeId;
+  const isHistoryRoute = Boolean(
+    activeSchemeIdParam === 'history' ||
+    activeSchemeIdParam === 'my-history' ||
+    location.pathname.endsWith('/history') ||
+    location.pathname.endsWith('/my-history') ||
+    searchParams.get('tab') === 'history' ||
+    searchParams.get('tab') === 'my_history' ||
+    searchParams.get('tab') === 'my-history'
+  );
+
+  const isMyPassRoute = !isHistoryRoute && Boolean(
+    activeSchemeIdParam === 'my-pass' ||
+    activeSchemeIdParam === 'my-scheme' ||
+    location.pathname.endsWith('/my-pass') ||
+    location.pathname.endsWith('/my-scheme') ||
+    searchParams.get('tab') === 'my_pass' ||
+    searchParams.get('tab') === 'my-pass' ||
+    searchParams.get('tab') === 'my_scheme'
+  );
+
+  const effectiveShopId = shop?.id || shopId || paramShopId;
+  const shopSlug = shop?.slug || paramShopId || shopId;
 
   const currency = shop?.settings?.currency || '₹';
-  const [activeTab, setActiveTab] = useState<'schemes' | 'my_pass'>('schemes');
+  const [activeTab, setActiveTab] = useState<'schemes' | 'my_pass' | 'history'>(() => {
+    if (isHistoryRoute) return 'history';
+    if (isMyPassRoute) return 'my_pass';
+    return 'schemes';
+  });
   const [schemes, setSchemes] = useState<Scheme[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Lightbox for Scheme Banner Full View
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  const [lightboxTitle, setLightboxTitle] = useState<string>('Scheme Banner');
 
   // Joining state
   const [selectedSchemeForJoin, setSelectedSchemeForJoin] = useState<Scheme | null>(null);
@@ -514,6 +574,102 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
   const [joinPincode, setJoinPincode] = useState(() => localStorage.getItem('customer_pincode') || '');
   const [isJoining, setIsJoining] = useState(false);
 
+  const effectiveTargetSchemeId = useMemo(() => {
+    if (
+      activeSchemeIdParam &&
+      activeSchemeIdParam !== 'my-pass' &&
+      activeSchemeIdParam !== 'my-scheme' &&
+      activeSchemeIdParam !== 'history' &&
+      activeSchemeIdParam !== 'my-history'
+    ) {
+      return activeSchemeIdParam;
+    }
+    return searchParams.get('scheme') || searchParams.get('id') || null;
+  }, [activeSchemeIdParam, searchParams]);
+
+  const navigateToTab = (tab: 'schemes' | 'my_pass' | 'history') => {
+    setActiveTab(tab);
+    const isFundRoute = location.pathname.includes('/fund');
+    const baseRoute = isFundRoute ? `/shop/${shopSlug}/fund` : `/shop/${shopSlug}/schemes`;
+
+    if (tab === 'schemes') {
+      setSelectedSchemeForJoin(null);
+      if (isFullPage && shopSlug) {
+        navigate(baseRoute, { replace: false });
+      } else {
+        setSearchParams({});
+      }
+    } else if (tab === 'my_pass') {
+      if (isFullPage && shopSlug) {
+        navigate(`${baseRoute}/my-scheme`, { replace: false });
+      } else {
+        setSearchParams({ tab: 'my_pass' });
+      }
+    } else if (tab === 'history') {
+      if (isFullPage && shopSlug) {
+        navigate(`${baseRoute}/history`, { replace: false });
+      } else {
+        setSearchParams({ tab: 'history' });
+      }
+    }
+  };
+
+  const navigateToSchemeJoin = (scheme: Scheme) => {
+    setSelectedSchemeForJoin(scheme);
+    setActiveTab('schemes');
+    const isFundRoute = location.pathname.includes('/fund');
+    const baseRoute = isFundRoute ? `/shop/${shopSlug}/fund` : `/shop/${shopSlug}/schemes`;
+    if (isFullPage && shopSlug) {
+      navigate(`${baseRoute}/${scheme.id}`, { replace: false });
+    } else {
+      setSearchParams({ scheme: scheme.id });
+    }
+  };
+
+  const navigateBackToSchemesList = () => {
+    setSelectedSchemeForJoin(null);
+    setActiveTab('schemes');
+    const isFundRoute = location.pathname.includes('/fund');
+    const baseRoute = isFundRoute ? `/shop/${shopSlug}/fund` : `/shop/${shopSlug}/schemes`;
+    if (isFullPage && shopSlug) {
+      navigate(baseRoute, { replace: false });
+    } else {
+      setSearchParams({});
+    }
+  };
+
+  // Keep activeTab in sync with route / search params
+  useEffect(() => {
+    if (isHistoryRoute) {
+      setActiveTab('history');
+      setSelectedSchemeForJoin(null);
+    } else if (isMyPassRoute) {
+      setActiveTab('my_pass');
+      setSelectedSchemeForJoin(null);
+    } else if (
+      location.pathname.endsWith('/schemes') ||
+      location.pathname.endsWith('/fund') ||
+      searchParams.get('tab') === 'schemes'
+    ) {
+      setActiveTab('schemes');
+      if (!effectiveTargetSchemeId) {
+        setSelectedSchemeForJoin(null);
+      }
+    }
+  }, [isHistoryRoute, isMyPassRoute, location.pathname, searchParams, effectiveTargetSchemeId]);
+
+  // Restore particular scheme on page load / refresh
+  useEffect(() => {
+    if (effectiveTargetSchemeId && schemes.length > 0) {
+      const match = schemes.find(s => s.id === effectiveTargetSchemeId || (s as any).slug === effectiveTargetSchemeId);
+      if (match) {
+        setSelectedSchemeForJoin(match);
+        setActiveTab('schemes');
+      }
+    }
+  }, [effectiveTargetSchemeId, schemes]);
+
+
   // My Passes State
   const [passCountryCode, setPassCountryCode] = useState(() => localStorage.getItem('customer_country_code') || '+91');
   const [customerPhone, setCustomerPhone] = useState(() => {
@@ -522,7 +678,13 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
   });
   const [customerName, setCustomerName] = useState(() => localStorage.getItem('customer_name') || '');
   const [customerPasses, setCustomerPasses] = useState<CustomerSchemePass[]>([]);
+  const [customerHistory, setCustomerHistory] = useState<SchemeActivityLog[]>([]);
+  const [lookupPhoneInput, setLookupPhoneInput] = useState(() => {
+    const raw = localStorage.getItem('customer_mobile') || localStorage.getItem('customer_phone') || '';
+    return raw.replace(/\D/g, '').slice(-10);
+  });
   const [isLoadingPasses, setIsLoadingPasses] = useState(false);
+
   const [hasQueriedPasses, setHasQueriedPasses] = useState(false);
   const [showOtpModal, setShowOtpModal] = useState(false);
   const [otpModalStep, setOtpModalStep] = useState<'intro' | 'mobile' | 'otp'>('mobile');
@@ -555,7 +717,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
     setJoinCountryCode(storedCountryCode);
     const storedName = localStorage.getItem('customer_name') || '';
     if (storedName) setJoinName(storedName);
-    setSelectedSchemeForJoin(scheme);
+    navigateToSchemeJoin(scheme);
   };
 
   const handleChangeAccount = () => {
@@ -599,7 +761,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
   }, [isOpen, effectiveShopId]);
 
   useEffect(() => {
-    if (activeTab === 'my_pass' && customerPhone && customerPhone.length >= 7 && !hasQueriedPasses) {
+    if ((activeTab === 'my_pass' || activeTab === 'history') && customerPhone && customerPhone.length >= 7 && !hasQueriedPasses) {
       const fullPhone = passCountryCode === '+91' ? customerPhone : `${passCountryCode}${customerPhone}`;
       fetchCustomerPasses(fullPhone);
     }
@@ -625,26 +787,16 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
     }
   };
 
-  useEffect(() => {
-    if (targetSchemeId && schemes.length > 0) {
-      const match = schemes.find(s => s.id === targetSchemeId);
-      if (match) {
-        setTimeout(() => {
-          const el = document.getElementById(`scheme-card-${match.id}`);
-          if (el) {
-            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }
-        }, 250);
-      }
-    }
-  }, [targetSchemeId, schemes]);
-
   const fetchCustomerPasses = async (phone: string) => {
     if (!phone || phone.trim().length < 7) return;
     setIsLoadingPasses(true);
     try {
-      const passes = await schemeService.getMySchemeStatus(effectiveShopId, phone.trim());
+      const [passes, history] = await Promise.all([
+        schemeService.getMySchemeStatus(effectiveShopId, phone.trim()),
+        schemeService.getMySchemeHistory(effectiveShopId, phone.trim()).catch(() => []),
+      ]);
       setCustomerPasses(passes);
+      setCustomerHistory(history || []);
       if (passes.length > 0 && passes[0].customer_name && !customerName) {
         setCustomerName(passes[0].customer_name);
         if (!localStorage.getItem('customer_name')) {
@@ -653,11 +805,12 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
       }
       setHasQueriedPasses(true);
     } catch (err) {
-      console.error('Failed to fetch scheme passes', err);
+      console.error('Failed to fetch scheme passes & history', err);
     } finally {
       setIsLoadingPasses(false);
     }
   };
+
 
   const handleLookupPasses = async () => {
     const clean = customerPhone.replace(/\D/g, '');
@@ -694,6 +847,47 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
         countryCode: passCountryCode,
         timestamp: Date.now()
       }));
+      setShowOtpModal(true);
+    } finally {
+      setIsLoadingPasses(false);
+    }
+  };
+
+  const handleLookupHistory = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const clean = (lookupPhoneInput || customerPhone).replace(/\D/g, '');
+    if (clean.length < 7) {
+      toast.error('Please enter a valid mobile number');
+      return;
+    }
+    const fullPhone = passCountryCode === '+91' ? clean : `${passCountryCode}${clean}`;
+
+    setIsLoadingPasses(true);
+    try {
+      const res = await customerService.verifyMobile(fullPhone, effectiveShopId);
+
+      if (res.otp_required === false) {
+        setCustomerPhone(clean.slice(-10));
+        await fetchCustomerPasses(fullPhone);
+      } else {
+        localStorage.setItem('pending_otp_verification', JSON.stringify({
+          shopId: effectiveShopId,
+          mobileNumber: clean.slice(-10),
+          countryCode: passCountryCode,
+          timestamp: Date.now()
+        }));
+        setOtpModalStep('otp');
+        setShowOtpModal(true);
+      }
+    } catch (err: any) {
+      console.error('Failed to verify mobile for scheme history', err);
+      localStorage.setItem('pending_otp_verification', JSON.stringify({
+        shopId: effectiveShopId,
+        mobileNumber: clean.slice(-10),
+        countryCode: passCountryCode,
+        timestamp: Date.now()
+      }));
+      setOtpModalStep('mobile');
       setShowOtpModal(true);
     } finally {
       setIsLoadingPasses(false);
@@ -925,8 +1119,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
       });
 
       toast.success(`Payment verified! Congratulations on joining ${selectedSchemeForJoin.title}!`);
-      setSelectedSchemeForJoin(null);
-      setActiveTab('my_pass');
+      navigateToTab('my_pass');
       fetchCustomerPasses(phone);
     };
 
@@ -1234,10 +1427,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
         {/* Navigation Tabs */}
         <div className="flex border-b border-border bg-muted/40 p-1.5 gap-1.5 shrink-0">
           <button
-            onClick={() => {
-              setActiveTab('schemes');
-              setSelectedSchemeForJoin(null);
-            }}
+            onClick={() => navigateToTab('schemes')}
             className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
               activeTab === 'schemes'
                 ? 'bg-card text-foreground shadow-xs'
@@ -1245,11 +1435,11 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
             }`}
           >
             <Gift size={14} style={{ color: activeTab === 'schemes' ? primaryColor : undefined }} />
-            <span>Available Schemes</span>
+            <span className="truncate">Schemes</span>
           </button>
 
           <button
-            onClick={() => setActiveTab('my_pass')}
+            onClick={() => navigateToTab('my_pass')}
             className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 relative ${
               activeTab === 'my_pass'
                 ? 'bg-card text-foreground shadow-xs'
@@ -1257,9 +1447,28 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
             }`}
           >
             <Coins size={14} style={{ color: activeTab === 'my_pass' ? primaryColor : undefined }} />
-            <span>My Scheme Pass</span>
+            <span className="truncate">My Pass</span>
             {customerPasses.length > 0 && (
-              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+              <span className="min-w-4 h-4 px-1 rounded-full text-[9.5px] font-black bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-2xs leading-none">
+                {customerPasses.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => navigateToTab('history')}
+            className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 relative ${
+              activeTab === 'history'
+                ? 'bg-card text-foreground shadow-xs'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <History size={14} style={{ color: activeTab === 'history' ? primaryColor : undefined }} />
+            <span className="truncate">History</span>
+            {customerHistory.length > 0 && (
+              <span className="min-w-4 h-4 px-1 rounded-full text-[9.5px] font-black bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-2xs leading-none">
+                {customerHistory.length}
+              </span>
             )}
           </button>
         </div>
@@ -1274,7 +1483,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                 <form noValidate onSubmit={(e) => { e.preventDefault(); handleJoinSubmit(e); }} className="space-y-4">
                   <button
                     type="button"
-                    onClick={() => setSelectedSchemeForJoin(null)}
+                    onClick={navigateBackToSchemesList}
                     className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground hover:text-foreground cursor-pointer"
                   >
                     <span>← Back to schemes</span>
@@ -1569,9 +1778,13 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                         idx={idx}
                         currency={currency}
                         primaryColor={primaryColor}
-                        isTargetScheme={scheme.id === targetSchemeId}
+                        isTargetScheme={scheme.id === effectiveTargetSchemeId}
                         onEnroll={handleEnrollClick}
                         onViewRewards={(s) => setPreviewRewardsScheme({ title: s.title, items: s.items })}
+                        onOpenImage={(url, title) => {
+                          setLightboxImage(url);
+                          setLightboxTitle(title || 'Scheme Banner');
+                        }}
                       />
                     ))
                   )}
@@ -1823,6 +2036,194 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
               )}
             </div>
           )}
+
+          {/* TAB 3: SCHEME PASSBOOK & HISTORY (Modal View) */}
+          {activeTab === 'history' && (
+            <div className="space-y-4">
+              {/* If no phone is verified yet, show clean compact lookup form */}
+              {(!hasQueriedPasses || !customerPhone) ? (
+                <div className="bg-card border border-border rounded-xl p-5 shadow-xs text-center space-y-4">
+                  <div className="w-12 h-12 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto border border-amber-500/20">
+                    <History size={24} />
+                  </div>
+                  <div className="space-y-1">
+                    <h3 className="font-black text-sm sm:text-base text-foreground">Passbook & Activity History</h3>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      Enter your mobile number to view all your scheme enrollments, payments, transfers and refunds.
+                    </p>
+                  </div>
+                  <form onSubmit={handleLookupHistory} className="space-y-3 pt-1">
+                    <div className="flex gap-2 text-left">
+                      <div className="w-28 shrink-0">
+                        <SearchableSelect
+                          options={COUNTRY_CODES.map(c => ({
+                            id: c.code,
+                            name: `${c.flag} ${c.code}`,
+                            subtext: c.country
+                          }))}
+                          value={passCountryCode}
+                          onChange={(val) => setPassCountryCode(val)}
+                          placeholder="+91"
+                          showSearch={false}
+                          className="h-10 rounded-xl bg-muted/50 border-border text-xs font-semibold"
+                        />
+                      </div>
+                      <div className="relative flex-1">
+                        <Phone size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                        <input
+                          type="tel"
+                          value={lookupPhoneInput}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/\D/g, '').slice(0, 10);
+                            setLookupPhoneInput(val);
+                          }}
+                          placeholder="10-digit mobile number"
+                          className="w-full text-xs font-mono font-bold bg-muted/50 border border-border rounded-xl py-2.5 pl-8 pr-3 text-foreground placeholder:text-muted-foreground/60 focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={isLoadingPasses || (lookupPhoneInput.length < 7)}
+                      className="w-full py-2.5 px-4 rounded-xl text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer hover:brightness-110 active:scale-98 disabled:opacity-50"
+                      style={{ backgroundColor: primaryColor }}
+                    >
+                      {isLoadingPasses ? (
+                        <>
+                          <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          <span>Searching Records...</span>
+                        </>
+                      ) : (
+                        <>
+                          <ShieldCheck size={14} />
+                          <span>View Scheme History</span>
+                        </>
+                      )}
+                    </button>
+                  </form>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Top Member Banner */}
+                  <div className="bg-muted/40 border border-border/80 rounded-xl p-3 sm:p-3.5 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/20 font-bold text-xs">
+                        {displayName ? displayName.charAt(0).toUpperCase() : <User size={16} />}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <h4 className="font-black text-foreground text-xs sm:text-sm truncate">
+                            {displayName || `+91 ${customerPhone}`}
+                          </h4>
+                          <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 shrink-0 flex items-center gap-0.5">
+                            <CheckCircle2 size={9} /> Verified
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground truncate font-mono">
+                          {passCountryCode} {customerPhone} • {customerHistory.length} event{customerHistory.length === 1 ? '' : 's'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleChangeAccount}
+                      className="text-xs font-extrabold text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 hover:underline px-2.5 py-1 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-950/40 transition-colors cursor-pointer shrink-0"
+                    >
+                      Change
+                    </button>
+                  </div>
+
+                  {isLoadingPasses ? (
+                    <div className="p-8 text-center text-xs text-muted-foreground">Fetching passbook history...</div>
+                  ) : customerHistory.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground space-y-2 bg-card border border-dashed border-border rounded-xl p-5">
+                      <History size={28} className="mx-auto text-muted-foreground/40" />
+                      <h5 className="font-bold text-xs text-foreground">No Passbook Activity Recorded</h5>
+                      <p className="text-xs text-muted-foreground max-w-xs mx-auto">
+                        There are no enrollment, installment payment or transfer records for this number yet.
+                      </p>
+                      <button
+                        onClick={() => navigateToTab('schemes')}
+                        className="text-xs font-bold underline cursor-pointer"
+                        style={{ color: primaryColor }}
+                      >
+                        Browse available schemes
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {customerHistory.map(log => {
+                        const isDelete = log.action_type === 'DELETED';
+                        const isTransfer = log.action_type === 'TRANSFERRED';
+                        const isPayment = log.action_type === 'PAYMENT_RECORDED';
+
+                        return (
+                          <div
+                            key={log.id}
+                            className={`p-3 rounded-xl border text-xs space-y-1 ${
+                              isDelete
+                                ? 'border-rose-500/30 bg-rose-500/5'
+                                : isTransfer
+                                  ? 'border-amber-500/30 bg-amber-500/5'
+                                  : isPayment
+                                    ? 'border-emerald-500/30 bg-emerald-500/5'
+                                    : 'border-border/60 bg-muted/20'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between text-[10px]">
+                              <span className={`font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wider text-[8.5px] ${
+                                isDelete
+                                  ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                                  : isTransfer
+                                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                                    : isPayment
+                                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                                      : 'bg-muted text-foreground'
+                              }`}>
+                                {isDelete ? 'Cancelled' : isTransfer ? 'Scheme Changed' : isPayment ? 'Installment Paid' : 'Joined Scheme'}
+                              </span>
+                              <span className="text-muted-foreground font-mono">
+                                {formatPaidDateTime(log.created_at) || new Date(log.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
+                              </span>
+                            </div>
+
+                            <div className="flex items-baseline justify-between pt-0.5">
+                              <span className="font-bold text-foreground text-xs">
+                                {isTransfer ? `${log.from_scheme_title} ➔ ${log.to_scheme_title}` : log.scheme_title}
+                              </span>
+                              {log.amount !== null && log.amount !== undefined && (
+                                <span className={`font-mono font-bold text-xs ${isDelete ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                  {isDelete ? `Refund: ${currency}${log.amount.toLocaleString()}` : `${currency}${log.amount.toLocaleString()}`}
+                                </span>
+                              )}
+                            </div>
+
+                            {log.notes && (
+                              <p className="text-[10.5px] text-muted-foreground italic">
+                                "{log.notes}"
+                              </p>
+                            )}
+
+                            <div className="flex items-center justify-between pt-1 border-t border-border/30 text-[10px] text-muted-foreground">
+                              {log.member_number ? (
+                                <span>Pass: <strong className="font-mono text-foreground">{log.member_number}</strong></span>
+                              ) : <span />}
+                              {log.otp_verified && (
+                                <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                                  <ShieldCheck size={11} /> Verified via Customer SMS OTP
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* INSTALLMENT PAYMENT MODAL */}
@@ -1833,11 +2234,11 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                 initial={{ opacity: 0, scale: 0.95, y: 10 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 10 }}
-                className="bg-card w-full max-w-md rounded-2xl shadow-2xl border border-border p-5 space-y-4"
+                className="bg-card w-full max-w-md rounded-xl shadow-2xl border border-border p-5 space-y-4"
               >
                 <div className="flex items-center justify-between pb-3 border-b border-border">
                   <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center">
+                    <div className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-500 flex items-center justify-center">
                       <CreditCard size={18} />
                     </div>
                     <div>
@@ -1855,7 +2256,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                 </div>
 
                 {/* Member and Target Due Info */}
-                <div className="bg-muted/40 p-3 rounded-xl space-y-1.5 text-xs">
+                <div className="bg-muted/40 p-3 rounded-lg space-y-1.5 text-xs">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Member:</span>
                     <span className="font-bold text-foreground">{payingPass.pass.customer_name}</span>
@@ -1874,7 +2275,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
 
                 {/* Sequential allocation reminder if they selected a future due */}
                 {payingPass.targetClickedNum > payingPass.pass.paid_installments + 1 && (
-                  <div className="bg-blue-500/10 border border-blue-500/20 p-2.5 rounded-xl text-[11px] text-blue-700 dark:text-blue-300 flex items-start gap-2">
+                  <div className="bg-blue-500/10 border border-blue-500/20 p-2.5 rounded-lg text-[11px] text-blue-700 dark:text-blue-300 flex items-start gap-2">
                     <Info size={14} className="text-blue-500 shrink-0 mt-0.5" />
                     <span>
                       You tapped <strong>Due #{payingPass.targetClickedNum}</strong>. Installments must be cleared sequentially, so this payment is automatically allocated to your next pending installment: <strong>Due #{payingPass.pass.paid_installments + 1}</strong>.
@@ -1883,7 +2284,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                 )}
 
                 {/* Fee Breakdown */}
-                <div className="bg-background border border-border p-3.5 rounded-xl space-y-2 text-xs">
+                <div className="bg-background border border-border p-3.5 rounded-lg space-y-2 text-xs">
                   <div className="flex justify-between text-muted-foreground">
                     <span>Installment Amount ({payingPass.pass.frequency})</span>
                     <span className="font-mono font-semibold text-foreground">{currency}{installmentBasePrice.toFixed(2)}</span>
@@ -1909,7 +2310,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setPayingPass(null)}
-                    className="flex-1 py-2.5 rounded-xl border border-border text-xs font-semibold hover:bg-muted cursor-pointer"
+                    className="flex-1 py-2.5 rounded-lg border border-border text-xs font-semibold hover:bg-muted cursor-pointer"
                   >
                     Cancel
                   </button>
@@ -1917,7 +2318,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                     type="button"
                     onClick={handlePayInstallmentSubmit}
                     disabled={isPayingInstallment}
-                    className="flex-2 py-2.5 rounded-xl text-white font-bold text-xs shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-98 transition-all disabled:opacity-50 hover:brightness-110"
+                    className="flex-2 py-2.5 rounded-lg text-white font-bold text-xs shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-98 transition-all disabled:opacity-50 hover:brightness-110"
                     style={{ backgroundColor: primaryColor }}
                   >
                     <Lock size={14} />
@@ -1988,10 +2389,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
               {/* Desktop Navigation Tabs (Hidden on mobile) */}
               <div className="hidden md:flex items-center gap-1 bg-muted/60 p-1 rounded-xl border border-border/60 shrink-0">
                 <button
-                  onClick={() => {
-                    setActiveTab('schemes');
-                    setSelectedSchemeForJoin(null);
-                  }}
+                  onClick={() => navigateToTab('schemes')}
                   className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
                     activeTab === 'schemes'
                       ? 'bg-card text-foreground shadow-2xs'
@@ -2003,7 +2401,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                 </button>
 
                 <button
-                  onClick={() => setActiveTab('my_pass')}
+                  onClick={() => navigateToTab('my_pass')}
                   className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1.5 relative ${
                     activeTab === 'my_pass'
                       ? 'bg-card text-foreground shadow-2xs'
@@ -2013,7 +2411,26 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                   <Coins size={13} style={{ color: activeTab === 'my_pass' ? primaryColor : undefined }} />
                   <span>My Scheme Pass</span>
                   {customerPasses.length > 0 && (
-                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                    <span className="min-w-4.5 h-4.5 px-1.5 rounded-full text-[10px] font-black bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-2xs leading-none">
+                      {customerPasses.length}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => navigateToTab('history')}
+                  className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1.5 relative ${
+                    activeTab === 'history'
+                      ? 'bg-card text-foreground shadow-2xs'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <History size={13} style={{ color: activeTab === 'history' ? primaryColor : undefined }} />
+                  <span>Passbook History</span>
+                  {customerHistory.length > 0 && (
+                    <span className="min-w-4.5 h-4.5 px-1.5 rounded-full text-[10px] font-black bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-2xs leading-none">
+                      {customerHistory.length}
+                    </span>
                   )}
                 </button>
               </div>
@@ -2021,12 +2438,9 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
 
             {/* Mobile Navigation Tabs Bar (Visible only on < md, full-width segmented control) */}
             <div className="pb-2.5 pt-0.5 md:hidden">
-              <div className="grid grid-cols-2 gap-1 bg-muted/60 p-1 rounded-xl border border-border/60 w-full">
+              <div className="grid grid-cols-3 gap-1 bg-muted/60 p-1 rounded-xl border border-border/60 w-full">
                 <button
-                  onClick={() => {
-                    setActiveTab('schemes');
-                    setSelectedSchemeForJoin(null);
-                  }}
+                  onClick={() => navigateToTab('schemes')}
                   className={`py-2 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                     activeTab === 'schemes'
                       ? 'bg-card text-foreground shadow-2xs'
@@ -2034,11 +2448,11 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                   }`}
                 >
                   <Gift size={13} style={{ color: activeTab === 'schemes' ? primaryColor : undefined }} />
-                  <span>Available Schemes</span>
+                  <span className="truncate">Schemes</span>
                 </button>
 
                 <button
-                  onClick={() => setActiveTab('my_pass')}
+                  onClick={() => navigateToTab('my_pass')}
                   className={`py-2 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 relative ${
                     activeTab === 'my_pass'
                       ? 'bg-card text-foreground shadow-2xs'
@@ -2046,9 +2460,28 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                   }`}
                 >
                   <Coins size={13} style={{ color: activeTab === 'my_pass' ? primaryColor : undefined }} />
-                  <span>My Scheme Pass</span>
+                  <span className="truncate">My Pass</span>
                   {customerPasses.length > 0 && (
-                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                    <span className="min-w-4 h-4 px-1 rounded-full text-[9.5px] font-black bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-2xs leading-none">
+                      {customerPasses.length}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => navigateToTab('history')}
+                  className={`py-2 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 relative ${
+                    activeTab === 'history'
+                      ? 'bg-card text-foreground shadow-2xs'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <History size={13} style={{ color: activeTab === 'history' ? primaryColor : undefined }} />
+                  <span className="truncate">History</span>
+                  {customerHistory.length > 0 && (
+                    <span className="min-w-4 h-4 px-1 rounded-full text-[9.5px] font-black bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-2xs leading-none">
+                      {customerHistory.length}
+                    </span>
                   )}
                 </button>
               </div>
@@ -2075,17 +2508,17 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
 
               {/* 3 Value Pillars */}
               <div className="grid grid-cols-3 gap-2 sm:gap-3 w-full md:w-auto shrink-0">
-                <div className="bg-card/90 backdrop-blur-xs p-2.5 sm:p-3 rounded-2xl border border-border shadow-2xs text-center flex-1">
+                <div className="bg-card/90 backdrop-blur-xs p-2.5 sm:p-3 rounded-xl border border-border shadow-2xs text-center flex-1">
                   <ShieldCheck size={18} className="mx-auto text-emerald-500 mb-1" />
                   <span className="text-[10px] sm:text-[11px] font-bold block text-foreground leading-tight">Verified Pass</span>
                   <span className="text-[9px] text-muted-foreground hidden sm:block mt-0.5">Digital tracking</span>
                 </div>
-                <div className="bg-card/90 backdrop-blur-xs p-2.5 sm:p-3 rounded-2xl border border-border shadow-2xs text-center flex-1">
+                <div className="bg-card/90 backdrop-blur-xs p-2.5 sm:p-3 rounded-xl border border-border shadow-2xs text-center flex-1">
                   <Gift size={18} className="mx-auto text-amber-500 mb-1" />
                   <span className="text-[10px] sm:text-[11px] font-bold block text-foreground leading-tight">Bonus Gifts</span>
                   <span className="text-[9px] text-muted-foreground hidden sm:block mt-0.5">Guaranteed items</span>
                 </div>
-                <div className="bg-card/90 backdrop-blur-xs p-2.5 sm:p-3 rounded-2xl border border-border shadow-2xs text-center flex-1">
+                <div className="bg-card/90 backdrop-blur-xs p-2.5 sm:p-3 rounded-xl border border-border shadow-2xs text-center flex-1">
                   <CreditCard size={18} className="mx-auto text-blue-500 mb-1" />
                   <span className="text-[10px] sm:text-[11px] font-bold block text-foreground leading-tight">Easy UPI</span>
                   <span className="text-[9px] text-muted-foreground hidden sm:block mt-0.5">Instant activation</span>
@@ -2105,7 +2538,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                 <div className="max-w-5xl mx-auto">
                   <button
                     type="button"
-                    onClick={() => setSelectedSchemeForJoin(null)}
+                    onClick={navigateBackToSchemesList}
                     className="inline-flex items-center gap-1.5 text-xs font-bold text-muted-foreground hover:text-foreground cursor-pointer mb-6 px-3 py-1.5 rounded-xl border border-border bg-card hover:bg-muted shadow-2xs transition-colors"
                   >
                     <ChevronLeft size={14} />
@@ -2114,22 +2547,38 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
 
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
                     {/* Left Column: Scheme Summary Card (Menu-Style Structured Card) */}
-                    <div className="lg:col-span-5 bg-card border border-border rounded-3xl overflow-hidden shadow-sm relative lg:sticky lg:top-24">
+                    <div className="lg:col-span-5 bg-card border border-border rounded-xl overflow-hidden shadow-sm relative lg:sticky lg:top-24">
                       {/* Top Media / Hero Banner */}
                       <div className="relative w-full h-44 sm:h-52 overflow-hidden bg-gradient-to-br from-amber-500/15 via-orange-500/10 to-amber-600/20 dark:from-amber-950/40 dark:via-orange-950/30 dark:to-slate-900 border-b border-border/60">
-                        {selectedSchemeForJoin.items?.find(it => it.image_url)?.image_url ? (
-                          <img
-                            src={selectedSchemeForJoin.items.find(it => it.image_url)!.image_url!}
-                            alt={selectedSchemeForJoin.title}
-                            className="w-full h-full object-cover"
-                          />
+                        {(selectedSchemeForJoin.image_url || selectedSchemeForJoin.items?.find(it => it.image_url)?.image_url) ? (
+                          <div
+                            className="relative w-full h-full group/joinhero cursor-zoom-in"
+                            onClick={() => {
+                              const heroImg = selectedSchemeForJoin.image_url || selectedSchemeForJoin.items?.find(it => it.image_url)?.image_url;
+                              if (heroImg) {
+                                setLightboxImage(heroImg);
+                                setLightboxTitle(selectedSchemeForJoin.title);
+                              }
+                            }}
+                            title="Click to view full image"
+                          >
+                            <img
+                              src={selectedSchemeForJoin.image_url || selectedSchemeForJoin.items.find(it => it.image_url)!.image_url!}
+                              alt={selectedSchemeForJoin.title}
+                              className="w-full h-full object-cover transition-transform duration-300 group-hover/joinhero:scale-105"
+                            />
+                            <div className="absolute top-2.5 right-2.5 z-20 opacity-90 sm:opacity-0 sm:group-hover/joinhero:opacity-100 transition-opacity bg-black/60 hover:bg-black/80 backdrop-blur-md text-white px-2 py-0.5 rounded-lg text-[10px] font-bold flex items-center gap-1 shadow-sm border border-white/20">
+                              <Maximize2 size={11} className="text-amber-400" />
+                              <span>Full View</span>
+                            </div>
+                          </div>
                         ) : (
                           <div className="w-full h-full relative flex items-center justify-center overflow-hidden">
                             <div className="absolute -top-10 -right-10 w-36 h-36 rounded-full bg-amber-400/25 blur-2xl" />
                             <div className="absolute -bottom-10 -left-10 w-36 h-36 rounded-full bg-orange-500/20 blur-2xl" />
                             <Coins size={96} className="absolute -right-6 -bottom-6 text-amber-500/10 dark:text-amber-400/5 rotate-12" />
                             <Gift size={80} className="absolute -left-6 -top-6 text-orange-500/10 dark:text-orange-400/5 -rotate-12" />
-                            <div className="relative z-10 w-16 h-16 rounded-2xl bg-white/85 dark:bg-slate-900/85 backdrop-blur-md shadow-md border border-amber-300/40 dark:border-amber-700/40 flex items-center justify-center text-amber-500 dark:text-amber-400">
+                            <div className="relative z-10 w-16 h-16 rounded-xl bg-white/85 dark:bg-slate-900/85 backdrop-blur-md shadow-md border border-amber-300/40 dark:border-amber-700/40 flex items-center justify-center text-amber-500 dark:text-amber-400">
                               <Coins size={32} />
                             </div>
                           </div>
@@ -2202,7 +2651,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                         {renderHighlightBenefits(selectedSchemeForJoin.highlight_text, true, 2)}
 
                         {/* Specs Grid */}
-                        <div className="grid grid-cols-2 gap-2 p-3.5 rounded-2xl bg-muted/40 dark:bg-slate-800/40 border border-border/60">
+                        <div className="grid grid-cols-2 gap-2 p-3.5 rounded-xl bg-muted/40 dark:bg-slate-800/40 border border-border/60">
                           <div>
                             <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
                               Installment
@@ -2239,7 +2688,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
 
                         {/* Reward Mode Terms */}
                         {selectedSchemeForJoin.reward_type === 'all_items' ? (
-                          <div className="flex items-center justify-between p-3 rounded-2xl bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-amber-500/10 border border-amber-500/25">
+                          <div className="flex items-center justify-between p-3 rounded-xl bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-amber-500/10 border border-amber-500/25">
                             <div className="flex items-center gap-2.5 min-w-0">
                               <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/30">
                                 <Store size={15} />
@@ -2258,7 +2707,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                             </span>
                           </div>
                         ) : selectedSchemeForJoin.reward_type === 'category' ? (
-                          <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/25 space-y-2">
+                          <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/25 space-y-2">
                             <div className="flex items-center justify-between gap-2">
                               <div className="flex items-center gap-2.5 min-w-0">
                                 <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/30">
@@ -2289,7 +2738,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                           </div>
                         ) : (
                           selectedSchemeForJoin.items && selectedSchemeForJoin.items.length > 0 && (
-                            <div className="flex items-center justify-between p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/25">
+                            <div className="flex items-center justify-between p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/25">
                               <div className="flex items-center gap-2.5 min-w-0">
                                 <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/30">
                                   <Gift size={15} />
@@ -2320,7 +2769,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                     </div>
 
                     {/* Right Column: Enrollment Form */}
-                    <div className="lg:col-span-7 bg-card border border-border rounded-3xl p-6 shadow-sm">
+                    <div className="lg:col-span-7 bg-card border border-border rounded-xl p-6 shadow-sm">
                       <form noValidate onSubmit={(e) => { e.preventDefault(); handleJoinSubmit(e); }} className="space-y-5">
                         <div>
                           <h4 className="text-lg font-black text-foreground">Enrollment & Delivery Details</h4>
@@ -2400,7 +2849,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                           </div>
 
                           {/* Full Delivery Address */}
-                          <div className="p-4 rounded-2xl bg-muted/20 border border-border/80 space-y-3.5 text-left">
+                          <div className="p-4 rounded-xl bg-muted/20 border border-border/80 space-y-3.5 text-left">
                             <div className="flex items-center gap-1.5 text-xs font-bold text-foreground">
                               <MapPin size={15} className="text-amber-500" />
                               <span>Delivery & Dispatch Address (For Scheme Rewards)</span>
@@ -2481,7 +2930,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                           </div>
 
                           {/* Fee Breakdown */}
-                          <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-500/5 via-primary/5 to-muted/30 border border-border space-y-3">
+                          <div className="p-4 rounded-xl bg-gradient-to-br from-slate-500/5 via-primary/5 to-muted/30 border border-border space-y-3">
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2">
                                 <div className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
@@ -2527,7 +2976,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                             type="button"
                             disabled={isJoining}
                             onClick={handleJoinSubmit}
-                            className="w-full py-3.5 text-white font-bold rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98 disabled:opacity-50 text-sm hover:brightness-110"
+                            className="w-full py-3.5 text-white font-bold rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98 disabled:opacity-50 text-sm hover:brightness-110"
                             style={{ backgroundColor: primaryColor }}
                           >
                             <Lock size={15} />
@@ -2566,11 +3015,11 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                   {isLoading ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                       {[1, 2, 3].map(i => (
-                        <div key={i} className="h-64 bg-muted animate-pulse rounded-2xl sm:rounded-3xl" />
+                        <div key={i} className="h-64 bg-muted animate-pulse rounded-xl" />
                       ))}
                     </div>
                   ) : schemes.length === 0 ? (
-                    <div className="text-center py-16 sm:py-20 bg-card border border-dashed border-border rounded-2xl sm:rounded-3xl p-6 sm:p-8 space-y-3">
+                    <div className="text-center py-16 sm:py-20 bg-card border border-dashed border-border rounded-xl p-6 sm:p-8 space-y-3">
                       <Coins size={40} className="mx-auto text-muted-foreground/40" />
                       <h4 className="text-base font-bold text-foreground">No Active Schemes Available</h4>
                       <p className="text-xs text-muted-foreground max-w-sm mx-auto">
@@ -2586,9 +3035,13 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                           idx={idx}
                           currency={currency}
                           primaryColor={primaryColor}
-                          isTargetScheme={scheme.id === targetSchemeId}
+                          isTargetScheme={scheme.id === effectiveTargetSchemeId}
                           onEnroll={handleEnrollClick}
                           onViewRewards={(s) => setPreviewRewardsScheme({ title: s.title, items: s.items })}
+                          onOpenImage={(url, title) => {
+                            setLightboxImage(url);
+                            setLightboxTitle(title || 'Scheme Banner');
+                          }}
                         />
                       ))}
                     </div>
@@ -2602,7 +3055,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
           {activeTab === 'my_pass' && (
             <div className="space-y-8">
               {/* Little Top Banner */}
-              <div className="bg-card border border-border rounded-2xl p-3.5 sm:p-4 flex items-center justify-between gap-3 shadow-xs">
+              <div className="bg-card border border-border rounded-xl p-3.5 sm:p-4 flex items-center justify-between gap-3 shadow-xs">
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-orange-500 text-white flex items-center justify-center shrink-0 shadow-xs font-bold text-sm">
                     {displayName ? displayName.charAt(0).toUpperCase() : <User size={18} />}
@@ -2643,11 +3096,11 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
               {isLoadingPasses ? (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   {[1, 2].map(i => (
-                    <div key={i} className="h-64 bg-muted animate-pulse rounded-3xl" />
+                    <div key={i} className="h-64 bg-muted animate-pulse rounded-xl" />
                   ))}
                 </div>
               ) : hasQueriedPasses && customerPasses.length === 0 ? (
-                <div className="text-center py-16 bg-card border border-dashed border-border rounded-3xl p-8 space-y-3 max-w-lg mx-auto">
+                <div className="text-center py-16 bg-card border border-dashed border-border rounded-xl p-8 space-y-3 max-w-lg mx-auto">
                   <ShieldCheck size={36} className="mx-auto text-muted-foreground/40" />
                   <h4 className="text-base font-bold text-foreground">No Schemes Found</h4>
                   <p className="text-xs text-muted-foreground">
@@ -2670,7 +3123,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                     return (
                       <div
                         key={pass.member_id}
-                        className="bg-card border border-border rounded-3xl p-6 shadow-sm space-y-4 hover:border-amber-500/40 transition-all flex flex-col justify-between"
+                        className="bg-card border border-border rounded-xl p-6 shadow-sm space-y-4 hover:border-amber-500/40 transition-all flex flex-col justify-between"
                       >
                         <div className="space-y-4">
                           <div className="flex items-start justify-between gap-3">
@@ -2696,7 +3149,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                           </div>
 
                           {/* Progress Summary Card */}
-                          <div className="bg-muted/40 p-4 rounded-2xl space-y-2 border border-border/60">
+                          <div className="bg-muted/40 p-4 rounded-xl space-y-2 border border-border/60">
                             <div className="flex items-center justify-between text-xs">
                               <span className="font-bold text-foreground">
                                 {pass.paid_installments} of {pass.total_installments} Installments Paid
@@ -2819,7 +3272,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                             <button
                               type="button"
                               onClick={() => setPayingPass({ pass, targetClickedNum: pass.paid_installments + 1 })}
-                              className="w-full py-3 text-white font-bold rounded-2xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98 text-xs hover:brightness-110"
+                              className="w-full py-3 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98 text-xs hover:brightness-110"
                               style={{ backgroundColor: primaryColor }}
                             >
                               <CreditCard size={15} />
@@ -2835,6 +3288,217 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
               )}
             </div>
           )}
+
+          {/* TAB 3: SCHEME PASSBOOK & HISTORY (Desktop / Full-Page View) */}
+          {activeTab === 'history' && (
+            <div className="space-y-6">
+              {/* If no phone is verified yet, show clean compact lookup card */}
+              {(!hasQueriedPasses || !customerPhone) ? (
+                <div className="bg-card border border-border rounded-xl p-8 sm:p-10 shadow-xs text-center space-y-5 max-w-lg mx-auto">
+                  <div className="w-14 h-14 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto border border-amber-500/20">
+                    <History size={28} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <h3 className="font-black text-lg text-foreground">Passbook & Activity History</h3>
+                    <p className="text-xs text-muted-foreground max-w-sm mx-auto leading-relaxed">
+                      Enter your registered phone number to verify and view all your savings scheme enrollments, monthly installment receipts, scheme transfers and cancellations.
+                    </p>
+                  </div>
+                  <form onSubmit={handleLookupHistory} className="space-y-3.5 pt-2 max-w-md mx-auto">
+                    <div className="flex gap-2 text-left">
+                      <div className="w-32 shrink-0">
+                        <SearchableSelect
+                          options={COUNTRY_CODES.map(c => ({
+                            id: c.code,
+                            name: `${c.flag} ${c.code}`,
+                            subtext: c.country
+                          }))}
+                          value={passCountryCode}
+                          onChange={(val) => setPassCountryCode(val)}
+                          placeholder="+91"
+                          showSearch={false}
+                          className="h-11 rounded-xl bg-muted/50 border-border text-xs font-semibold"
+                        />
+                      </div>
+                      <div className="relative flex-1">
+                        <Phone size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                        <input
+                          type="tel"
+                          value={lookupPhoneInput}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/\D/g, '').slice(0, 10);
+                            setLookupPhoneInput(val);
+                          }}
+                          placeholder="10-digit mobile number"
+                          className="w-full text-xs font-mono font-bold bg-muted/50 border border-border rounded-xl py-3 pl-9 pr-3.5 text-foreground placeholder:text-muted-foreground/60 focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={isLoadingPasses || (lookupPhoneInput.length < 7)}
+                      className="w-full py-3 px-5 rounded-xl text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer hover:brightness-110 active:scale-98 disabled:opacity-50"
+                      style={{ backgroundColor: primaryColor }}
+                    >
+                      {isLoadingPasses ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          <span>Searching Records...</span>
+                        </>
+                      ) : (
+                        <>
+                          <ShieldCheck size={15} />
+                          <span>View Scheme History</span>
+                        </>
+                      )}
+                    </button>
+                  </form>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Top Member Banner */}
+                  <div className="w-full bg-card border border-border rounded-xl p-4 sm:p-5 flex items-center justify-between gap-3 shadow-xs">
+                    <div className="flex items-center gap-3.5 min-w-0">
+                      <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-amber-500 to-orange-500 text-white flex items-center justify-center shrink-0 shadow-xs font-bold text-sm">
+                        {displayName ? displayName.charAt(0).toUpperCase() : <User size={20} />}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-black text-foreground text-base sm:text-lg truncate">
+                            {displayName || `+91 ${customerPhone}`}
+                          </h4>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 shrink-0 flex items-center gap-1">
+                            <CheckCircle2 size={11} /> Verified
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground truncate mt-0.5 font-mono">
+                          {passCountryCode} {customerPhone} • {customerHistory.length} passbook record{customerHistory.length === 1 ? '' : 's'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleChangeAccount}
+                      className="text-xs font-extrabold text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 hover:underline px-3.5 py-1.5 rounded-xl hover:bg-amber-50 dark:hover:bg-amber-950/40 transition-colors cursor-pointer shrink-0"
+                    >
+                      Change Number
+                    </button>
+                  </div>
+
+                  {isLoadingPasses ? (
+                    <div className="p-12 text-center text-xs text-muted-foreground">Fetching passbook history...</div>
+                  ) : customerHistory.length === 0 ? (
+                    <div className="text-center py-16 bg-card border border-dashed border-border rounded-xl p-8 space-y-3.5 max-w-lg mx-auto">
+                      <div className="w-14 h-14 rounded-xl bg-muted/60 text-muted-foreground flex items-center justify-center mx-auto">
+                        <History size={28} />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-base text-foreground">No Passbook Activity Recorded</h4>
+                        <p className="text-xs text-muted-foreground max-w-xs mx-auto mt-1">
+                          No enrollments, monthly installment receipts or transfer activities were found for {customerPhone}.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => navigateToTab('schemes')}
+                        className="px-5 py-2.5 rounded-xl text-white font-bold text-xs shadow-md hover:brightness-110 active:scale-98 transition-all cursor-pointer inline-flex items-center gap-2"
+                        style={{ backgroundColor: primaryColor }}
+                      >
+                        <Gift size={15} />
+                        <span>Browse Available Schemes</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4 w-full">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-border/80 w-full">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0">
+                            <History size={18} />
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-sm sm:text-base text-foreground">Complete Passbook History</h4>
+                            <span className="text-[11px] sm:text-xs text-muted-foreground">Chronological record of enrollments, payments, transfers & cancellations</span>
+                          </div>
+                        </div>
+                        <span className="text-xs text-muted-foreground font-mono bg-muted px-2.5 py-1 rounded-full self-start sm:self-auto shrink-0">
+                          {customerHistory.length} event{customerHistory.length > 1 ? 's' : ''}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4 w-full">
+                        {customerHistory.map(log => {
+                          const isDelete = log.action_type === 'DELETED';
+                          const isTransfer = log.action_type === 'TRANSFERRED';
+                          const isPayment = log.action_type === 'PAYMENT_RECORDED';
+
+                          return (
+                            <div
+                              key={log.id}
+                              className={`p-4 rounded-xl border text-xs space-y-2 flex flex-col justify-between ${
+                                isDelete
+                                  ? 'border-rose-500/30 bg-rose-500/5'
+                                  : isTransfer
+                                    ? 'border-amber-500/30 bg-amber-500/5'
+                                    : isPayment
+                                      ? 'border-emerald-500/30 bg-emerald-500/5'
+                                      : 'border-border/70 bg-card shadow-2xs'
+                              }`}
+                            >
+                              <div>
+                                <div className="flex items-center justify-between text-[11px] mb-1">
+                                  <span className={`font-bold px-2 py-0.5 rounded-md uppercase tracking-wider text-[9px] ${
+                                    isDelete
+                                      ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                                      : isTransfer
+                                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                                        : isPayment
+                                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                                          : 'bg-muted text-foreground'
+                                  }`}>
+                                    {isDelete ? 'Cancelled' : isTransfer ? 'Scheme Changed' : isPayment ? 'Installment Paid' : 'Joined Scheme'}
+                                  </span>
+                                  <span className="text-muted-foreground font-mono text-[10.5px]">
+                                    {formatPaidDateTime(log.created_at) || new Date(log.created_at).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-baseline justify-between pt-1">
+                                  <h5 className="font-bold text-foreground text-sm">
+                                    {isTransfer ? `${log.from_scheme_title} ➔ ${log.to_scheme_title}` : log.scheme_title}
+                                  </h5>
+                                  {log.amount !== null && log.amount !== undefined && (
+                                    <span className={`font-mono font-bold text-sm ${isDelete ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                      {isDelete ? `Refund: ${currency}${log.amount.toLocaleString()}` : `${currency}${log.amount.toLocaleString()}`}
+                                    </span>
+                                  )}
+                                </div>
+
+                                {log.notes && (
+                                  <p className="text-[11px] text-muted-foreground italic mt-1">
+                                    "{log.notes}"
+                                  </p>
+                                )}
+                              </div>
+
+                              <div className="flex items-center justify-between pt-2 border-t border-border/40 text-[10.5px] text-muted-foreground">
+                                {log.member_number && <span>Pass: <strong className="font-mono text-foreground">{log.member_number}</strong></span>}
+                                {log.otp_verified && (
+                                  <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                                    <ShieldCheck size={12} /> Verified via Customer SMS OTP
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </main>
 
         {/* INSTALLMENT PAYMENT MODAL */}
@@ -2845,11 +3509,11 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                 initial={{ opacity: 0, scale: 0.95, y: 10 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 10 }}
-                className="bg-card w-full max-w-md rounded-2xl shadow-2xl border border-border p-5 space-y-4"
+                className="bg-card w-full max-w-md rounded-xl shadow-2xl border border-border p-5 space-y-4"
               >
                 <div className="flex items-center justify-between pb-3 border-b border-border">
                   <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center">
+                    <div className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-500 flex items-center justify-center">
                       <CreditCard size={18} />
                     </div>
                     <div>
@@ -2867,7 +3531,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                 </div>
 
                 {/* Member and Target Due Info */}
-                <div className="bg-muted/40 p-3 rounded-xl space-y-1.5 text-xs">
+                <div className="bg-muted/40 p-3 rounded-lg space-y-1.5 text-xs">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Member:</span>
                     <span className="font-bold text-foreground">{payingPass.pass.customer_name}</span>
@@ -2886,7 +3550,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
 
                 {/* Sequential allocation reminder if they selected a future due */}
                 {payingPass.targetClickedNum > payingPass.pass.paid_installments + 1 && (
-                  <div className="bg-blue-500/10 border border-blue-500/20 p-2.5 rounded-xl text-[11px] text-blue-700 dark:text-blue-300 flex items-start gap-2">
+                  <div className="bg-blue-500/10 border border-blue-500/20 p-2.5 rounded-lg text-[11px] text-blue-700 dark:text-blue-300 flex items-start gap-2">
                     <Info size={14} className="text-blue-500 shrink-0 mt-0.5" />
                     <span>
                       You tapped <strong>Due #{payingPass.targetClickedNum}</strong>. Installments must be cleared sequentially, so this payment is automatically allocated to your next pending installment: <strong>Due #{payingPass.pass.paid_installments + 1}</strong>.
@@ -2895,7 +3559,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                 )}
 
                 {/* Fee Breakdown */}
-                <div className="bg-background border border-border p-3.5 rounded-xl space-y-2 text-xs">
+                <div className="bg-background border border-border p-3.5 rounded-lg space-y-2 text-xs">
                   <div className="flex justify-between text-muted-foreground">
                     <span>Installment Amount ({payingPass.pass.frequency})</span>
                     <span className="font-mono font-semibold text-foreground">{currency}{installmentBasePrice.toFixed(2)}</span>
@@ -2921,7 +3585,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setPayingPass(null)}
-                    className="flex-1 py-2.5 rounded-xl border border-border text-xs font-semibold hover:bg-muted cursor-pointer"
+                    className="flex-1 py-2.5 rounded-lg border border-border text-xs font-semibold hover:bg-muted cursor-pointer"
                   >
                     Cancel
                   </button>
@@ -2929,7 +3593,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                     type="button"
                     onClick={handlePayInstallmentSubmit}
                     disabled={isPayingInstallment}
-                    className="flex-2 py-2.5 rounded-xl text-white font-bold text-xs shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-98 transition-all disabled:opacity-50 hover:brightness-110"
+                    className="flex-2 py-2.5 rounded-lg text-white font-bold text-xs shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-98 transition-all disabled:opacity-50 hover:brightness-110"
                     style={{ backgroundColor: primaryColor }}
                   >
                     <Lock size={14} />
@@ -2967,6 +3631,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
               const savedName = localStorage.getItem('customer_name') || '';
 
               setCustomerPhone(digits);
+              setLookupPhoneInput(digits);
               setPassCountryCode(savedCountryCode);
               if (savedName) setCustomerName(savedName);
 
@@ -2980,7 +3645,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
               if (pendingEnrollScheme) {
                 const targetScheme = pendingEnrollScheme;
                 setPendingEnrollScheme(null);
-                setSelectedSchemeForJoin(targetScheme);
+                navigateToSchemeJoin(targetScheme);
                 toast.success(`Verified! Ready to enroll in ${targetScheme.title}`);
               } else {
                 toast.success('Mobile verified! Your scheme pass is unlocked.');
@@ -3131,6 +3796,14 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
             </div>
           )}
         </BottomSheet>
+
+        {/* Lightbox for Scheme Banner Full View in Full Page mode */}
+        <Lightbox
+          isOpen={Boolean(lightboxImage)}
+          onClose={() => setLightboxImage(null)}
+          imageUrl={lightboxImage || ''}
+          altText={lightboxTitle}
+        />
       </div>
     );
   }
@@ -3169,6 +3842,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
             const savedName = localStorage.getItem('customer_name') || '';
 
             setCustomerPhone(digits);
+            setLookupPhoneInput(digits);
             setPassCountryCode(savedCountryCode);
             if (savedName) setCustomerName(savedName);
 
@@ -3182,7 +3856,7 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
             if (pendingEnrollScheme) {
               const targetScheme = pendingEnrollScheme;
               setPendingEnrollScheme(null);
-              setSelectedSchemeForJoin(targetScheme);
+              navigateToSchemeJoin(targetScheme);
               toast.success(`Verified! Ready to enroll in ${targetScheme.title}`);
             } else {
               toast.success('Mobile verified! Your scheme pass is unlocked.');
@@ -3335,6 +4009,14 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
       </BottomSheet>
 
       {renderTrustConfirmationModal()}
+
+      {/* Lightbox for Scheme Banner Full View */}
+      <Lightbox
+        isOpen={Boolean(lightboxImage)}
+        onClose={() => setLightboxImage(null)}
+        imageUrl={lightboxImage || ''}
+        altText={lightboxTitle}
+      />
     </div>
   );
 };

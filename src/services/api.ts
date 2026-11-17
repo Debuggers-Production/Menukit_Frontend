@@ -26,7 +26,7 @@ api.get = function <T = any, R = AxiosResponse<T>, D = any>(url: string, config?
     return existing as unknown as Promise<R>;
   }
 
-  const promise = originalGet<T, R, D>(url, config)
+  const promise = (originalGet as (<T = any, R = AxiosResponse<T>, D = any>(url: string, config?: AxiosRequestConfig<D>) => Promise<R>))<T, R, D>(url, config)
     .finally(() => {
       // Clear once completed
       setTimeout(() => {
@@ -99,11 +99,69 @@ const processQueue = (error: any, token: string | null = null) => {
   failedQueue = [];
 };
 
-// Response interceptor for token refresh
+/**
+ * Safely format FastAPI validation error arrays/objects or arbitrary nested error details
+ * into human-readable strings so they never crash React when rendered as children.
+ */
+export function formatErrorDetail(val: any): string {
+  if (val == null) return '';
+  if (typeof val === 'string') return val;
+  if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+
+  if (Array.isArray(val)) {
+    return (
+      val
+        .map((item) => {
+          if (typeof item === 'string') return item;
+          if (item && typeof item === 'object') {
+            // FastAPI validation error item: { loc: ['body', 'email'], msg: '...', type: '...' }
+            const field =
+              Array.isArray(item.loc) && item.loc.length > 0
+                ? item.loc[item.loc.length - 1]
+                : '';
+            const msg = item.msg || item.message || JSON.stringify(item);
+            if (field && typeof field === 'string' && field !== 'body') {
+              return `${field}: ${msg}`;
+            }
+            return msg;
+          }
+          return String(item ?? '');
+        })
+        .filter(Boolean)
+        .join(', ') || 'Validation error'
+    );
+  }
+
+  if (typeof val === 'object') {
+    return val.msg || val.message || val.detail || JSON.stringify(val);
+  }
+
+  return String(val);
+}
+
+export function normalizeErrorResponse(error: any): void {
+  if (!error || !error.response || !error.response.data) return;
+  const data = error.response.data;
+
+  // Normalize detail if it's an array or object
+  if (data.detail !== undefined && typeof data.detail !== 'string') {
+    data.detail = formatErrorDetail(data.detail);
+  }
+
+  // Normalize message if it's an array or object
+  if (data.message !== undefined && typeof data.message !== 'string') {
+    data.message = formatErrorDetail(data.message);
+  }
+}
+
+// Response interceptor for token refresh & global error normalization
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const originalRequest = error.config;
+    // Normalize FastAPI 422 error detail/message arrays/objects into readable strings globally
+    normalizeErrorResponse(error);
+
+    const originalRequest = error?.config;
     
     // If no config or not a 401 Unauthorized, reject immediately
     if (!originalRequest || error.response?.status !== 401) {
@@ -185,6 +243,7 @@ api.interceptors.response.use(
       setRequestAuthHeader(originalRequest, access_token);
       return api(originalRequest);
     } catch (refreshError) {
+      normalizeErrorResponse(refreshError);
       // Reject all queued requests with the refresh error
       processQueue(refreshError, null);
 

@@ -65,7 +65,7 @@ export function BottomSheet({ isOpen, onClose, title, children, footer, classNam
             exit={{ y: "100%" }}
             transition={{ type: "spring", damping: 25, stiffness: 220 }}
             className={cn(
-              "relative w-full max-w-xl bg-white dark:bg-slate-900 rounded-t-3xl shadow-[0_-8px_30px_rgba(0,0,0,0.12)] z-10 flex flex-col max-h-[85vh] sm:max-h-[600px] overflow-hidden select-none pb-safe",
+              "relative w-full max-w-xl bg-white text-slate-900 rounded-t-3xl shadow-[0_-8px_30px_rgba(0,0,0,0.12)] z-10 flex flex-col max-h-[85vh] sm:max-h-[600px] overflow-hidden select-none pb-safe",
               className
             )}
           >
@@ -73,19 +73,19 @@ export function BottomSheet({ isOpen, onClose, title, children, footer, classNam
             <div 
               className="w-full py-4 flex items-center justify-center shrink-0"
             >
-              <div className="w-12 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full" />
+              <div className="w-12 h-1.5 bg-slate-200 rounded-full" />
             </div>
 
             {/* Header */}
-            <div className="flex items-center justify-between px-4 sm:px-6 pb-3 border-b border-slate-100 dark:border-slate-800 shrink-0">
+            <div className="flex items-center justify-between px-4 sm:px-6 pb-3 border-b border-slate-100 shrink-0">
               {title ? (
-                <h2 className="text-base font-extrabold text-slate-800 dark:text-white font-heading">{title}</h2>
+                <h2 className="text-base font-extrabold text-slate-800 font-heading">{title}</h2>
               ) : (
                 <div />
               )}
               <button
                 onClick={onClose}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-full hover:bg-slate-100 transition-colors"
               >
                 <X size={18} />
                 <span className="sr-only">Close</span>

@@ -27,6 +27,7 @@ export interface Scheme {
   shop_id: string;
   title: string;
   description?: string | null;
+  image_url?: string | null;
   price: number;
   frequency: 'monthly' | 'weekly';
   term_duration: number;
@@ -91,6 +92,7 @@ export interface SchemeMember {
 export interface SchemeCreatePayload {
   title: string;
   description?: string;
+  image_url?: string | null;
   price: number;
   frequency: 'monthly' | 'weekly';
   term_duration: number;
@@ -128,6 +130,7 @@ export interface CustomerSchemePass {
   member_id: string;
   scheme_id: string;
   scheme_title: string;
+  image_url?: string | null;
   price: number;
   frequency: string;
   term_duration: number;
@@ -169,6 +172,49 @@ export interface SchemePaymentVerifyPayload {
   razorpay_payment_id: string;
   razorpay_signature: string;
 }
+
+export interface SchemeMemberDeleteOtpResponse {
+  success: boolean;
+  verification_id?: string | null;
+  customer_phone_masked: string;
+  paid_installments: number;
+  total_paid_amount: number;
+  message: string;
+}
+
+export interface SchemeMemberDeletePayload {
+  otp?: string;
+  verification_id?: string;
+  reason: string;
+}
+
+export interface SchemeMemberTransferPayload {
+  target_scheme_id: string;
+  notes: string;
+}
+
+export interface SchemeActivityLog {
+  id: string;
+  shop_id: string;
+  scheme_id?: string | null;
+  member_id?: string | null;
+  customer_name: string;
+  customer_phone: string;
+  member_number?: string | null;
+  action_type: 'ENROLLED' | 'PAYMENT_RECORDED' | 'TRANSFERRED' | 'DELETED';
+  scheme_title: string;
+  from_scheme_title?: string | null;
+  to_scheme_title?: string | null;
+  amount?: number | null;
+  installment_number?: number | null;
+  paid_installments?: number | null;
+  total_installments?: number | null;
+  otp_verified: boolean;
+  notes?: string | null;
+  created_at: string;
+}
+
+
 
 export const schemeService = {
   // Merchant API
@@ -212,6 +258,43 @@ export const schemeService = {
     return res.data;
   },
 
+  sendMemberDeleteOtp: async (schemeId: string, memberId: string): Promise<SchemeMemberDeleteOtpResponse> => {
+    const res = await api.post(`/schemes/${schemeId}/members/${memberId}/send-delete-otp`);
+    return res.data;
+  },
+
+  deleteMember: async (schemeId: string, memberId: string, data?: SchemeMemberDeletePayload): Promise<void> => {
+    await api.post(`/schemes/${schemeId}/members/${memberId}/delete`, data || {});
+  },
+
+  transferMember: async (schemeId: string, memberId: string, data: SchemeMemberTransferPayload): Promise<SchemeMember> => {
+    const res = await api.post(`/schemes/${schemeId}/members/${memberId}/transfer`, data);
+    return res.data;
+  },
+
+  getCustomerHistory: async (phone: string): Promise<SchemeActivityLog[]> => {
+    const res = await api.get('/schemes/members/history', { params: { phone } });
+    return res.data;
+  },
+
+  lookupCustomer: async (phone: string, schemeId?: string): Promise<{
+    found: boolean;
+    id?: string | null;
+    name?: string | null;
+    address?: string | null;
+    is_already_enrolled?: boolean;
+    enrolled_member_number?: string | null;
+    enrolled_member_name?: string | null;
+    enrolled_member_id?: string | null;
+  }> => {
+    const res = await api.get('/schemes/customers/lookup', {
+      params: { phone, ...(schemeId ? { scheme_id: schemeId } : {}) }
+    });
+    return res.data;
+  },
+
+
+
   // Public Menu API
   getPublicSchemes: async (shopId: string): Promise<Scheme[]> => {
     const res = await api.get(`/public/shop/${shopId}/schemes`);
@@ -245,6 +328,12 @@ export const schemeService = {
     const res = await api.get(`/public/shop/${shopId}/schemes/my-status`, { params: { phone } });
     return res.data;
   },
+
+  getMySchemeHistory: async (shopId: string, phone: string): Promise<SchemeActivityLog[]> => {
+    const res = await api.get(`/public/shop/${shopId}/schemes/my-history`, { params: { phone } });
+    return res.data;
+  },
+
 
   initiateMemberInstallmentPayment: async (
     shopId: string,

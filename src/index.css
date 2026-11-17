@@ -407,6 +407,41 @@ input[type='number'] {
   scrollbar-width: none !important;
 }
 
+/* Always visible sleek horizontal scrollbar for top bars and headers on small screens */
+.header-scrollbar-x {
+  overflow-x: auto !important;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin !important;
+  scrollbar-color: rgba(245, 158, 11, 0.75) rgba(0, 0, 0, 0.05) !important;
+}
+.header-scrollbar-x::-webkit-scrollbar {
+  display: block !important;
+  height: 5px !important;
+  width: auto !important;
+  opacity: 1 !important;
+}
+.header-scrollbar-x::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.06) !important;
+  border-radius: 9999px;
+}
+.header-scrollbar-x::-webkit-scrollbar-thumb {
+  background-color: rgba(245, 158, 11, 0.75) !important;
+  border-radius: 9999px;
+}
+.header-scrollbar-x::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(217, 119, 6, 0.95) !important;
+}
+.dark .header-scrollbar-x {
+  scrollbar-color: rgba(245, 158, 11, 0.75) rgba(255, 255, 255, 0.06) !important;
+}
+.dark .header-scrollbar-x::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+.dark .header-scrollbar-x::-webkit-scrollbar-thumb {
+  background-color: rgba(245, 158, 11, 0.75) !important;
+}
+
 /* ==========================================================================
    Visual Geometry System (Sharp / Smooth / Pill)
    ========================================================================== */
@@ -430,5 +465,254 @@ input[type='number'] {
 [data-radius="sharp"] textarea:not([data-keep-rounded]),
 [data-radius="sharp"] .card {
   border-radius: 0px !important;
+}
+
+/* ==========================================================================
+   Dynaura Dynamic Island Toasts - Mild Semantic Background Theme
+   ========================================================================== */
+
+.dynaura-root {
+  z-index: 2147483647 !important;
+  --dynaura-font: inherit !important;
+}
+
+.dynaura-island {
+  font-family: inherit !important;
+  border-radius: 9999px !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  transition: width var(--dynaura-duration) var(--dynaura-spring),
+              height var(--dynaura-duration) var(--dynaura-spring),
+              border-radius var(--dynaura-duration) var(--dynaura-spring),
+              background 250ms ease,
+              border-color 250ms ease,
+              box-shadow 300ms ease !important;
+}
+
+.dynaura-row {
+  max-width: min(500px, 92vw) !important;
+  width: auto !important;
+  padding: 10px 18px 10px 12px !important;
+  min-height: 44px !important;
+  box-sizing: border-box !important;
+}
+
+.dynaura-title {
+  white-space: normal !important;
+  word-break: break-word !important;
+  line-height: 1.4 !important;
+  font-size: 13.5px !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.01em !important;
+}
+
+.dynaura-badge {
+  width: 28px !important;
+  height: 28px !important;
+  border-radius: 9999px !important;
+  flex-shrink: 0 !important;
+}
+
+/* 1. Success Toast - Mild Green Background */
+.dynaura-island[data-type="success"] {
+  background: rgba(240, 253, 244, 0.96) !important;
+  color: #14532d !important;
+  border: 1px solid rgba(134, 239, 172, 0.9) !important;
+  box-shadow: 0 10px 25px -5px rgba(22, 163, 74, 0.2), 0 4px 10px -2px rgba(22, 163, 74, 0.1) !important;
+}
+.dynaura-island[data-type="success"] .dynaura-title {
+  color: #14532d !important;
+}
+.dynaura-island[data-type="success"] .dynaura-badge {
+  background: rgba(220, 252, 231, 0.9) !important;
+  color: #16a34a !important;
+}
+.dynaura-island[data-type="success"] .dynaura-bar {
+  background: #22c55e !important;
+  opacity: 0.95 !important;
+}
+
+/* 2. Error Toast - Mild Red Background */
+.dynaura-island[data-type="error"] {
+  background: rgba(254, 242, 242, 0.96) !important;
+  color: #991b1b !important;
+  border: 1px solid rgba(252, 165, 165, 0.9) !important;
+  box-shadow: 0 10px 25px -5px rgba(220, 38, 38, 0.2), 0 4px 10px -2px rgba(220, 38, 38, 0.1) !important;
+}
+.dynaura-island[data-type="error"] .dynaura-title {
+  color: #991b1b !important;
+}
+.dynaura-island[data-type="error"] .dynaura-badge {
+  background: rgba(254, 226, 226, 0.9) !important;
+  color: #dc2626 !important;
+}
+.dynaura-island[data-type="error"] .dynaura-bar {
+  background: #ef4444 !important;
+  opacity: 0.95 !important;
+}
+
+/* 3. Warning Toast - Mild Amber Background */
+.dynaura-island[data-type="warning"] {
+  background: rgba(255, 251, 235, 0.96) !important;
+  color: #92400e !important;
+  border: 1px solid rgba(252, 211, 77, 0.9) !important;
+  box-shadow: 0 10px 25px -5px rgba(217, 119, 6, 0.2), 0 4px 10px -2px rgba(217, 119, 6, 0.1) !important;
+}
+.dynaura-island[data-type="warning"] .dynaura-title {
+  color: #92400e !important;
+}
+.dynaura-island[data-type="warning"] .dynaura-badge {
+  background: rgba(254, 243, 199, 0.9) !important;
+  color: #d97706 !important;
+}
+.dynaura-island[data-type="warning"] .dynaura-bar {
+  background: #f59e0b !important;
+  opacity: 0.95 !important;
+}
+
+/* 4. Info Toast - Mild Blue Background */
+.dynaura-island[data-type="info"] {
+  background: rgba(239, 246, 255, 0.96) !important;
+  color: #1e40af !important;
+  border: 1px solid rgba(147, 197, 253, 0.9) !important;
+  box-shadow: 0 10px 25px -5px rgba(37, 99, 235, 0.2), 0 4px 10px -2px rgba(37, 99, 235, 0.1) !important;
+}
+.dynaura-island[data-type="info"] .dynaura-title {
+  color: #1e40af !important;
+}
+.dynaura-island[data-type="info"] .dynaura-badge {
+  background: rgba(219, 234, 254, 0.9) !important;
+  color: #2563eb !important;
+}
+.dynaura-island[data-type="info"] .dynaura-bar {
+  background: #3b82f6 !important;
+  opacity: 0.95 !important;
+}
+
+/* 5. Loading Toast - Mild Slate Background */
+.dynaura-island[data-type="loading"] {
+  background: rgba(248, 250, 252, 0.96) !important;
+  color: #334155 !important;
+  border: 1px solid rgba(203, 213, 225, 0.9) !important;
+  box-shadow: 0 10px 25px -5px rgba(100, 116, 139, 0.18), 0 4px 10px -2px rgba(100, 116, 139, 0.08) !important;
+}
+.dynaura-island[data-type="loading"] .dynaura-title {
+  color: #334155 !important;
+}
+.dynaura-island[data-type="loading"] .dynaura-badge {
+  background: rgba(226, 232, 240, 0.9) !important;
+  color: #64748b !important;
+}
+.dynaura-island[data-type="loading"] .dynaura-bar {
+  background: #64748b !important;
+  opacity: 0.95 !important;
+}
+
+/* ==========================================================================
+   Dark Mode Overrides for Dynaura Mild Colors
+   ========================================================================== */
+.dark .dynaura-island[data-type="success"],
+.force-dark .dynaura-island[data-type="success"] {
+  background: rgba(5, 46, 22, 0.95) !important;
+  color: #bbf7d0 !important;
+  border-color: rgba(22, 101, 52, 0.8) !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 0 15px rgba(34, 197, 94, 0.25) !important;
+}
+.dark .dynaura-island[data-type="success"] .dynaura-title,
+.force-dark .dynaura-island[data-type="success"] .dynaura-title {
+  color: #bbf7d0 !important;
+}
+.dark .dynaura-island[data-type="success"] .dynaura-badge,
+.force-dark .dynaura-island[data-type="success"] .dynaura-badge {
+  background: rgba(34, 197, 94, 0.2) !important;
+  color: #4ade80 !important;
+}
+.dark .dynaura-island[data-type="success"] .dynaura-bar,
+.force-dark .dynaura-island[data-type="success"] .dynaura-bar {
+  background: #4ade80 !important;
+}
+
+.dark .dynaura-island[data-type="error"],
+.force-dark .dynaura-island[data-type="error"] {
+  background: rgba(69, 10, 10, 0.95) !important;
+  color: #fecaca !important;
+  border-color: rgba(153, 27, 27, 0.8) !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 0 15px rgba(239, 68, 68, 0.25) !important;
+}
+.dark .dynaura-island[data-type="error"] .dynaura-title,
+.force-dark .dynaura-island[data-type="error"] .dynaura-title {
+  color: #fecaca !important;
+}
+.dark .dynaura-island[data-type="error"] .dynaura-badge,
+.force-dark .dynaura-island[data-type="error"] .dynaura-badge {
+  background: rgba(239, 68, 68, 0.2) !important;
+  color: #f87171 !important;
+}
+.dark .dynaura-island[data-type="error"] .dynaura-bar,
+.force-dark .dynaura-island[data-type="error"] .dynaura-bar {
+  background: #f87171 !important;
+}
+
+.dark .dynaura-island[data-type="warning"],
+.force-dark .dynaura-island[data-type="warning"] {
+  background: rgba(69, 26, 3, 0.95) !important;
+  color: #fde68a !important;
+  border-color: rgba(146, 64, 14, 0.8) !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 0 15px rgba(245, 158, 11, 0.25) !important;
+}
+.dark .dynaura-island[data-type="warning"] .dynaura-title,
+.force-dark .dynaura-island[data-type="warning"] .dynaura-title {
+  color: #fde68a !important;
+}
+.dark .dynaura-island[data-type="warning"] .dynaura-badge,
+.force-dark .dynaura-island[data-type="warning"] .dynaura-badge {
+  background: rgba(245, 158, 11, 0.2) !important;
+  color: #fbbf24 !important;
+}
+.dark .dynaura-island[data-type="warning"] .dynaura-bar,
+.force-dark .dynaura-island[data-type="warning"] .dynaura-bar {
+  background: #fbbf24 !important;
+}
+
+.dark .dynaura-island[data-type="info"],
+.force-dark .dynaura-island[data-type="info"] {
+  background: rgba(23, 37, 84, 0.95) !important;
+  color: #bfdbfe !important;
+  border-color: rgba(30, 64, 175, 0.8) !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 0 15px rgba(59, 130, 246, 0.25) !important;
+}
+.dark .dynaura-island[data-type="info"] .dynaura-title,
+.force-dark .dynaura-island[data-type="info"] .dynaura-title {
+  color: #bfdbfe !important;
+}
+.dark .dynaura-island[data-type="info"] .dynaura-badge,
+.force-dark .dynaura-island[data-type="info"] .dynaura-badge {
+  background: rgba(59, 130, 246, 0.2) !important;
+  color: #60a5fa !important;
+}
+.dark .dynaura-island[data-type="info"] .dynaura-bar,
+.force-dark .dynaura-island[data-type="info"] .dynaura-bar {
+  background: #60a5fa !important;
+}
+
+.dark .dynaura-island[data-type="loading"],
+.force-dark .dynaura-island[data-type="loading"] {
+  background: rgba(15, 23, 42, 0.95) !important;
+  color: #e2e8f0 !important;
+  border-color: rgba(51, 65, 85, 0.8) !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 0 15px rgba(100, 116, 139, 0.2) !important;
+}
+.dark .dynaura-island[data-type="loading"] .dynaura-title,
+.force-dark .dynaura-island[data-type="loading"] .dynaura-title {
+  color: #e2e8f0 !important;
+}
+.dark .dynaura-island[data-type="loading"] .dynaura-badge,
+.force-dark .dynaura-island[data-type="loading"] .dynaura-badge {
+  background: rgba(148, 163, 184, 0.2) !important;
+  color: #94a3b8 !important;
+}
+.dark .dynaura-island[data-type="loading"] .dynaura-bar,
+.force-dark .dynaura-island[data-type="loading"] .dynaura-bar {
+  background: #94a3b8 !important;
 }
 

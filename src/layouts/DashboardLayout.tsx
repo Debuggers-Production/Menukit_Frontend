@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, Suspense } from 'react';
+import { useState, useEffect, useRef, useMemo, Suspense } from 'react';
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router';
 import Lenis from 'lenis';
 import { DashboardRouteLoading } from '@/components/DashboardRouteLoading';
@@ -90,6 +90,29 @@ export function DashboardLayout() {
   const location = useLocation();
   const mainRef = useRef<HTMLElement>(null);
 
+  const isSubscriptionExpired = useMemo(() => {
+    if (!subStatus) return false;
+    if (subStatus.is_expired) return true;
+    const validExpired = (subStatus.expired_modules || []).filter(
+      (m: string) => m !== 'new-member' && m !== 'analytics-advanced-filters' && m !== 'analytics-customer-insights'
+    );
+    if (subStatus.has_expired_modules && validExpired.length > 0) {
+      return true;
+    }
+    if (subStatus.days_left === 0 && !subStatus.is_active) {
+      return true;
+    }
+    return false;
+  }, [subStatus]);
+
+  const genuineExpiredCount = useMemo(() => {
+    if (!subStatus) return 0;
+    const validExpired = (subStatus.expired_modules || []).filter(
+      (m: string) => m !== 'new-member' && m !== 'analytics-advanced-filters' && m !== 'analytics-customer-insights'
+    );
+    return validExpired.length || subStatus.expired_modules_count || 1;
+  }, [subStatus]);
+
   const toggleSidebar = () => {
     setIsSidebarCollapsed(prev => {
       const next = !prev;
@@ -108,7 +131,7 @@ export function DashboardLayout() {
     '/orders': { title: 'Orders', subtitle: '' },
     '/categories': { title: 'Categories', subtitle: '' },
     '/menu-items': { title: 'Menus', subtitle: '' },
-    '/schemes': { title: 'Savings Schemes', subtitle: '' },
+    '/schemes': { title: '', subtitle: '' },
     '/discounts': { title: 'Discounts', subtitle: '' },
     '/members': { title: 'Members', subtitle: '' },
     '/qr-code': { title: 'QR Code', subtitle: '' },
@@ -830,34 +853,49 @@ export function DashboardLayout() {
       {/* Main Container Area */}
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
         {/* DESKTOP Top Bar Header */}
-        <div className="hidden lg:flex h-13 border-b border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 px-5 items-center justify-between shrink-0 z-40 relative">
-          <div className="flex items-center gap-2.5 min-w-0 max-w-[35%] xl:max-w-[45%]">
-            {/* Page Module Icon Badge matching Title */}
-            {(() => {
-              const page = getPageDetails();
-              const PageIcon = page.icon;
-              return (
-                <div className={cn(
-                  "w-8 h-8 rounded-md flex items-center justify-center border shrink-0 shadow-2xs transition-all",
-                  page.bg
-                )}>
-                  <PageIcon size={16} className={page.iconColor} />
-                </div>
-              );
-            })()}
+        <div className="hidden lg:flex h-13 border-b border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 sm:px-5 items-center justify-between gap-3 shrink-0 z-40 relative">
+          {headerTitle && !location.pathname.startsWith('/schemes') ? (
+            <div className="flex items-center gap-2.5 min-w-0 shrink-0 max-w-[200px] xl:max-w-[280px]">
+              {/* Page Module Icon Badge matching Title */}
+              {(() => {
+                const page = getPageDetails();
+                const PageIcon = page.icon;
+                return (
+                  <div className={cn(
+                    "w-8 h-8 rounded-md flex items-center justify-center border shrink-0 shadow-2xs transition-all",
+                    page.bg
+                  )}>
+                    <PageIcon size={16} className={page.iconColor} />
+                  </div>
+                );
+              })()}
 
-            <div className="flex items-center min-w-0">
-              <h1 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white leading-tight font-heading truncate" title={headerTitle}>{headerTitle}</h1>
+              <div className="flex items-center min-w-0">
+                <h1 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white leading-tight font-heading truncate" title={headerTitle}>{headerTitle}</h1>
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0 ml-auto">
-            <div id="header-actions-portal" className="flex items-center gap-2 shrink-0"></div>
-            <div className="h-5 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
-            <div className="flex items-center gap-1.5">
+          ) : null}
+          <div className={cn(
+            "flex items-center gap-2 sm:gap-3",
+            location.pathname.startsWith('/schemes')
+              ? "min-w-0 flex-1 justify-start"
+              : "min-w-0 ml-auto justify-end"
+          )}>
+            <div
+              id="header-actions-portal"
+              className={cn(
+                "flex items-center gap-1.5 sm:gap-2 header-scrollbar-x py-1",
+                location.pathname.startsWith('/schemes')
+                  ? "min-w-0 flex-1 justify-start"
+                  : "justify-end shrink-0"
+              )}
+            ></div>
+            <div className="h-5 w-px bg-slate-200 dark:bg-slate-700 mx-1 shrink-0"></div>
+            <div className="flex items-center gap-1.5 shrink-0">
               {!isInstalled && (
                 <button
                   onClick={promptInstall}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-primary/10 hover:bg-primary/20 text-primary font-medium text-xs border border-primary/25 transition-all shadow-2xs hover:scale-105 active:scale-95 cursor-pointer shrink-0 mr-1"
+                  className="hidden 2xl:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-primary/10 hover:bg-primary/20 text-primary font-medium text-xs border border-primary/25 transition-all shadow-2xs hover:scale-105 active:scale-95 cursor-pointer shrink-0 mr-1"
                   title="Install Menukit as Desktop App"
                 >
                   <Laptop size={12} />
@@ -872,7 +910,7 @@ export function DashboardLayout() {
               {/* Top Bar Sign Out */}
               <button
                 onClick={() => setIsSignOutModalOpen(true)}
-                className="w-7 h-7 ml-0.5 rounded-md bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center hover:bg-rose-100 dark:hover:bg-rose-900/80 transition-colors"
+                className="w-7 h-7 ml-0.5 rounded-md bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center hover:bg-rose-100 dark:hover:bg-rose-900/80 transition-colors shrink-0 cursor-pointer"
                 title="Sign Out"
               >
                 <LogOut size={14} />
@@ -915,7 +953,7 @@ export function DashboardLayout() {
         <NotificationTopBanner />
 
         {/* TOP APP BAR SUBSCRIPTION ALERT BANNER */}
-        {subStatus && (subStatus.is_expired || subStatus.has_expired_modules || subStatus.days_left === 0) && (
+        {subStatus && isSubscriptionExpired && (
           <div
             onClick={() => navigate('/subscription')}
             className="bg-gradient-to-r from-red-600 via-rose-600 to-red-700 text-white px-4 py-2 text-xs font-black flex items-center justify-between cursor-pointer shadow-md hover:brightness-110 transition-all z-30 shrink-0"
@@ -926,7 +964,7 @@ export function DashboardLayout() {
               <span>
                 {subStatus.is_expired 
                   ? "Your subscription has ended. Features locked. Please renew to continue."
-                  : `${subStatus.expired_modules_count || 'Some'} add-on feature(s) have expired (0 days left). Features are locked. Please renew to restore full operations.`}
+                  : `${genuineExpiredCount} add-on feature(s) have expired (0 days left). Features are locked. Please renew to restore full operations.`}
               </span>
             </div>
             <div className="flex items-center gap-1 bg-white/20 px-2.5 py-1 rounded-lg hover:bg-white/30 transition-colors uppercase tracking-wider text-[10px] font-black shrink-0">
@@ -936,7 +974,7 @@ export function DashboardLayout() {
           </div>
         )}
 
-        {subStatus && !subStatus.is_expired && !subStatus.has_expired_modules && subStatus.days_left > 0 && subStatus.is_grace_period && (
+        {subStatus && !isSubscriptionExpired && subStatus.days_left > 0 && subStatus.is_grace_period && (
           <div
             onClick={() => navigate('/subscription')}
             className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white px-4 py-2 text-xs font-black flex items-center justify-between cursor-pointer shadow-md hover:brightness-110 transition-all z-30 shrink-0"
@@ -955,7 +993,7 @@ export function DashboardLayout() {
           </div>
         )}
 
-        {subStatus && !subStatus.is_expired && !subStatus.has_expired_modules && !subStatus.is_grace_period && (subStatus.days_left > 0 && subStatus.days_left <= 5) && (
+        {subStatus && !isSubscriptionExpired && !subStatus.is_grace_period && (subStatus.days_left > 0 && subStatus.days_left <= 5) && (
           <div
             onClick={() => navigate('/subscription')}
             className="bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white px-4 py-2 text-xs font-bold flex items-center justify-between cursor-pointer shadow-md hover:brightness-110 transition-all z-30 shrink-0"

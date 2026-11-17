@@ -120,7 +120,7 @@ export const InternalBulkPage = () => {
             <div className="mb-6">
               <label className="block text-sm font-medium mb-2">Entity Type</label>
               <select 
-                className="w-full sm:w-64 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                className="w-full sm:w-64 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-3 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                 value={uploadType}
                 onChange={(e) => {
                   setUploadType(e.target.value as UploadType);

@@ -7,7 +7,7 @@ import { isSchemeEnabledShop } from '@/config/businessCategories';
 import { PublicSchemeModal } from '@/components/public/PublicSchemeModal';
 
 export function PublicSchemesPage() {
-  const { id } = useParams<{ id: string }>();
+  const { id, schemeId } = useParams<{ id: string; schemeId?: string }>();
   const navigate = useNavigate();
   const [shop, setShop] = useState<Shop | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -65,6 +65,7 @@ export function PublicSchemesPage() {
       shopId={shop?.id || id!}
       shop={shop || undefined}
       primaryColor={shop?.brand_color || '#f97316'}
+      routeSchemeId={schemeId}
     />
   );
 }

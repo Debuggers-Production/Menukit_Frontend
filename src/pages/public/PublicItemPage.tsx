@@ -402,7 +402,7 @@ export function PublicItemPage() {
 
           fetchShopIdx = promises.length;
 
-          promises.push(api.get(`/public/shop/${id}`));
+          promises.push(api.get(`/public/shop/${id}?_t=${Date.now()}`));
 
         }
 
@@ -518,7 +518,24 @@ export function PublicItemPage() {
 
   }, [isLoading]);
 
+  useEffect(() => {
+    const handleSettingsUpdated = (event?: any) => {
+      if (id) {
+        publicCache.clear();
+        api.get(`/public/shop/${id}?_t=${Date.now()}`)
+          .then(res => setShop(res.data))
+          .catch(() => {});
+        if (event && event.settings) {
+          setShop(prev => prev ? ({ ...prev, settings: event.settings }) : null);
+        }
+      }
+    };
 
+    const unsubscribe = publicCache.subscribe(handleSettingsUpdated);
+    return () => {
+      unsubscribe();
+    };
+  }, [id]);
 
   useEffect(() => {
 

@@ -162,15 +162,16 @@ export const OrderTypeModal: React.FC<OrderTypeModalProps> = ({
       title=""
       hideCloseButton={!allowClose}
       containerClassName="z-[160]"
+      className="bg-white border border-slate-200 text-slate-900 shadow-2xl"
     >
       <div className="text-center pb-2 pt-1">
         <div className="w-12 h-12 rounded-2xl bg-orange-500/10 text-orange-600 flex items-center justify-center mx-auto mb-3">
           <Store size={26} />
         </div>
-        <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+        <h3 className="text-lg font-bold text-slate-900">
           {hasAnyAvailable ? 'How would you like your order?' : 'Digital Menu View'}
         </h3>
-        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-xs mx-auto">
+        <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto">
           {hasAnyAvailable 
             ? 'Select your preferred fulfillment method to continue.' 
             : 'Online ordering is currently disabled for this restaurant. You can browse the menu catalog.'}
@@ -178,19 +179,19 @@ export const OrderTypeModal: React.FC<OrderTypeModalProps> = ({
 
         {/* Location alert if delivery error exists */}
         {locationError && (
-          <div className="mt-3 p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-left flex items-start gap-2">
-            <AlertCircle size={16} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+          <div className="mt-3 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-left flex items-start gap-2">
+            <AlertCircle size={16} className="text-amber-600 shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">
+              <p className="text-xs font-semibold text-amber-800">
                 Location Required for Delivery
               </p>
-              <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-0.5 leading-snug">
+              <p className="text-[11px] text-amber-700 mt-0.5 leading-snug">
                 {locationError}
               </p>
               <button
                 type="button"
                 onClick={() => requestUserLocation()}
-                className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-bold text-amber-900 dark:text-amber-200 underline"
+                className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-bold text-amber-900 underline"
               >
                 <Navigation size={11} /> Turn On GPS / Retry
               </button>
@@ -206,24 +207,24 @@ export const OrderTypeModal: React.FC<OrderTypeModalProps> = ({
             onClick={() => availableTypes.dine_in && onSelectType('dine_in')}
             className={`p-3.5 sm:p-4 rounded-2xl border-2 text-left transition-all flex items-center justify-between group ${
               !availableTypes.dine_in 
-                ? 'opacity-50 cursor-not-allowed border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/50'
+                ? 'opacity-50 cursor-not-allowed border-slate-200 bg-slate-50'
                 : selectedType === 'dine_in'
-                ? 'border-emerald-600 bg-emerald-50/50 dark:bg-emerald-950/20 shadow-sm'
-                : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-900'
+                ? 'border-emerald-600 bg-emerald-50 text-slate-900 shadow-sm'
+                : 'border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 text-slate-900'
             }`}
           >
             <div className="flex items-center gap-3.5">
               <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
                 !availableTypes.dine_in 
-                  ? 'bg-slate-200 text-slate-400 dark:bg-slate-800 dark:text-slate-600'
+                  ? 'bg-slate-200 text-slate-400'
                   : selectedType === 'dine_in'
                   ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
-                  : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 group-hover:bg-emerald-100'
+                  : 'bg-emerald-50 text-emerald-600 group-hover:bg-emerald-100'
               }`}>
                 {businessCategory.isFood ? <UtensilsCrossed size={22} /> : <Store size={22} />}
               </div>
               <div>
-                <div className="font-semibold text-sm text-slate-900 dark:text-white flex items-center gap-2">
+                <div className="font-semibold text-sm text-slate-900 flex items-center gap-2">
                   {businessCategory.orderTypeDineInTitle}
                   {!availableTypes.dine_in && (
                     <span className="text-[9px] font-bold uppercase tracking-widest bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-sm">
@@ -231,7 +232,7 @@ export const OrderTypeModal: React.FC<OrderTypeModalProps> = ({
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                <p className="text-xs text-slate-500 mt-0.5">
                   {businessCategory.orderTypeDineInSubtitle}
                 </p>
               </div>
@@ -251,24 +252,24 @@ export const OrderTypeModal: React.FC<OrderTypeModalProps> = ({
             onClick={() => availableTypes.takeaway && onSelectType('takeaway')}
             className={`p-3.5 sm:p-4 rounded-2xl border-2 text-left transition-all flex items-center justify-between group ${
               !availableTypes.takeaway
-                ? 'opacity-50 cursor-not-allowed border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/50'
+                ? 'opacity-50 cursor-not-allowed border-slate-200 bg-slate-50'
                 : selectedType === 'takeaway'
-                ? 'border-orange-500 bg-orange-50/50 dark:bg-orange-950/20 shadow-sm'
-                : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-900'
+                ? 'border-orange-500 bg-orange-50 text-slate-900 shadow-sm'
+                : 'border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 text-slate-900'
             }`}
           >
             <div className="flex items-center gap-3.5">
               <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
                 !availableTypes.takeaway
-                  ? 'bg-slate-200 text-slate-400 dark:bg-slate-800 dark:text-slate-600'
+                  ? 'bg-slate-200 text-slate-400'
                   : selectedType === 'takeaway'
                   ? 'bg-orange-500 text-white shadow-md shadow-orange-500/30'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 group-hover:bg-slate-200'
+                  : 'bg-slate-100 text-slate-600 group-hover:bg-slate-200'
               }`}>
                 <ShoppingBag size={22} />
               </div>
               <div>
-                <div className="font-semibold text-sm text-slate-900 dark:text-white flex items-center gap-2">
+                <div className="font-semibold text-sm text-slate-900 flex items-center gap-2">
                   {businessCategory.orderTypeTakeawayTitle}
                   {!availableTypes.takeaway && (
                     <span className="text-[9px] font-bold uppercase tracking-widest bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-sm">
@@ -276,7 +277,7 @@ export const OrderTypeModal: React.FC<OrderTypeModalProps> = ({
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                <p className="text-xs text-slate-500 mt-0.5">
                   {businessCategory.orderTypeTakeawaySubtitle}
                 </p>
               </div>
@@ -296,19 +297,19 @@ export const OrderTypeModal: React.FC<OrderTypeModalProps> = ({
             onClick={handleDeliverySelect}
             className={`p-3.5 sm:p-4 rounded-2xl border-2 text-left transition-all flex items-center justify-between group ${
               isDeliveryDisabledByShop
-                ? 'opacity-50 cursor-not-allowed border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/50'
+                ? 'opacity-50 cursor-not-allowed border-slate-200 bg-slate-50'
                 : selectedType === 'delivery'
-                ? 'border-blue-600 bg-blue-50/50 dark:bg-blue-950/20 shadow-sm'
-                : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-900'
+                ? 'border-blue-600 bg-blue-50 text-slate-900 shadow-sm'
+                : 'border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 text-slate-900'
             }`}
           >
             <div className="flex items-center gap-3.5 flex-1 min-w-0 pr-2">
               <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
                 isDeliveryDisabledByShop
-                  ? 'bg-slate-200 text-slate-400 dark:bg-slate-800 dark:text-slate-600'
+                  ? 'bg-slate-200 text-slate-400'
                   : selectedType === 'delivery'
                   ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-                  : 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 group-hover:bg-blue-100'
+                  : 'bg-blue-50 text-blue-600 group-hover:bg-blue-100'
               }`}>
                 {isLocating ? (
                   <Loader2 size={22} className="animate-spin text-blue-600" />
@@ -317,7 +318,7 @@ export const OrderTypeModal: React.FC<OrderTypeModalProps> = ({
                 )}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="font-semibold text-sm text-slate-900 dark:text-white flex items-center gap-2 flex-wrap">
+                <div className="font-semibold text-sm text-slate-900 flex items-center gap-2 flex-wrap">
                   {businessCategory.orderTypeDeliveryTitle}
                   {isDeliveryDisabledByShop ? (
                     <span className="text-[9px] font-bold uppercase tracking-widest bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-sm">
@@ -331,25 +332,25 @@ export const OrderTypeModal: React.FC<OrderTypeModalProps> = ({
                 </div>
                 
                 {isDeliveryDisabledByShop ? (
-                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                  <p className="text-xs text-slate-400 mt-0.5">
                     Delivery not enabled for this shop.
                   </p>
                 ) : isLocating ? (
-                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5 flex items-center gap-1 font-medium">
+                  <p className="text-xs text-blue-600 mt-0.5 flex items-center gap-1 font-medium">
                     <Loader2 size={11} className="animate-spin" /> Fetching your location to verify delivery...
                   </p>
                 ) : userCoords && distanceKm !== null ? (
-                  <p className="text-xs text-blue-700 dark:text-blue-300 mt-0.5 font-medium flex items-center gap-1">
+                  <p className="text-xs text-blue-700 mt-0.5 font-medium flex items-center gap-1">
                     <MapPin size={11} className="text-blue-500 shrink-0" />
                     <span>~{distanceKm < 1 ? `${Math.round(distanceKm * 1000)}m` : `${distanceKm.toFixed(1)} km`} away</span>
                     {deliveryFee !== null && (
-                      <span className="font-bold ml-1 text-slate-800 dark:text-slate-200">
+                      <span className="font-bold ml-1 text-slate-800">
                         • ₹{deliveryFee} fee
                       </span>
                     )}
                   </p>
                 ) : (
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  <p className="text-xs text-slate-500 mt-0.5">
                     {businessCategory.orderTypeDeliverySubtitle}
                   </p>
                 )}
@@ -370,7 +371,7 @@ export const OrderTypeModal: React.FC<OrderTypeModalProps> = ({
               variant="outline"
               size="sm"
               onClick={onClose}
-              className="w-full text-slate-600 dark:text-slate-400"
+              className="w-full text-slate-700 border-slate-200 hover:bg-slate-50 bg-white"
             >
               Continue Browsing
             </Button>
