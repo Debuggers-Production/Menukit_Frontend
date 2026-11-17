@@ -27,8 +27,8 @@ export function PermissionGuard({ module, children, requireWrite = false }: Perm
     }
   }, [subscriptionStatus, isSubLoading, fetchSubscription]);
 
-  // Always allow creating a new shop
-  if (isCreateNew && location.pathname === '/shop-setup') {
+  // Always allow creating a new shop or accessing subscription billing
+  if (module === 'subscription' || (isCreateNew && location.pathname === '/shop-setup')) {
     return <>{children}</>;
   }
 

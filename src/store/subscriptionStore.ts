@@ -61,7 +61,16 @@ export function isModuleActive(
   moduleKey: 'orders' | 'members' | 'analytics' | 'theme' | 'schemes' | string
 ): boolean {
   if (!status) return true; // loading or unknown, fail open or wait
-  if (status.is_expired) return false;
+
+  // 1. Subscription & billing management is ALWAYS accessible so merchants can pay and renew!
+  if (moduleKey === 'subscription' || moduleKey === 'billing' || moduleKey === 'plans') {
+    return true;
+  }
+
+  // 2. Core administrative and business settings/settlements are never blocked
+  if (moduleKey === 'settings' || moduleKey === 'settlements' || moduleKey === 'team' || moduleKey === 'staff') {
+    return true;
+  }
 
   // Mapping from frontend module identifier to marketplace module ID(s)
   const moduleMap: Record<string, string[]> = {
@@ -75,9 +84,12 @@ export function isModuleActive(
 
   const targetAddons = moduleMap[moduleKey];
   if (!targetAddons) {
-    // Core free module (categories, menu_items, settings, etc.)
+    // Core free module (categories, menu_items, etc.)
     return true;
   }
+
+  // If core subscription is expired, all paid add-ons are locked
+  if (status.is_expired) return false;
 
   const activeModules: string[] = status.active_modules || [];
   const expirations = status.module_expirations || {};

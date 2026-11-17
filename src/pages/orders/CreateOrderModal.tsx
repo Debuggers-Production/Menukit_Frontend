@@ -16,6 +16,7 @@ import { SearchableSelect } from '@/components/ui/SearchableSelect';
 import { CountryCodeSelect } from '@/components/ui/CountryCodeSelect';
 import { useGeoCountryCode } from '@/hooks/useGeoCountryCode';
 import { calculateOrderPricing, calculateReplacement } from '@/utils/pricing';
+import { cleanAddressDisplay } from '@/utils/address';
 import toast from 'react-hot-toast';
 
 interface CreateOrderModalProps {
@@ -251,7 +252,7 @@ export function CreateOrderModal({
             setCustomerName(res.data.name);
           }
           if (res.data.delivery_address && !deliveryAddress) {
-            setDeliveryAddress(res.data.delivery_address);
+            setDeliveryAddress(cleanAddressDisplay(res.data.delivery_address));
           }
         } else {
           setCustomerLookupState({ loading: false, found: false });
@@ -332,7 +333,7 @@ export function CreateOrderModal({
         setCustomerName(rawName === 'Walk-in' || rawName === 'Walk-in Customer' ? '' : rawName);
         setOrderType(sourceOrder.order_type || (isCrackers ? 'takeaway' : 'dine_in'));
         setTableNumber(sourceOrder.table_number || '');
-        setDeliveryAddress(sourceOrder.delivery_address || '');
+        setDeliveryAddress(cleanAddressDisplay(sourceOrder.delivery_address || ''));
         setPaymentMethod(sourceOrder.payment_method || 'cash');
         setPaymentStatus(sourceOrder.payment_status || 'pending');
         setPriceTier(sourceOrder.price_tier || 'retail');

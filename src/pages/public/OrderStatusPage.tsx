@@ -11,6 +11,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { QRCodeCanvas } from 'qrcode.react';
 import { calculateOrderPricing, calculateOrderReplacementCredit } from '@/utils/pricing';
+import { cleanAddressDisplay } from '@/utils/address';
 
 export const playChimeNotificationSound = () => {
   try {
@@ -205,7 +206,7 @@ export function OrderStatusPage() {
         nextY += 5;
       }
       if (order.delivery_address) {
-        doc.text(`Address: ${order.delivery_address.slice(0, 40)}`, 12, nextY);
+        doc.text(`Address: ${cleanAddressDisplay(order.delivery_address).slice(0, 40)}`, 12, nextY);
         nextY += 5;
       }
 
@@ -922,7 +923,7 @@ export function OrderStatusPage() {
               <div className="col-span-2">
                 <span className="text-[9px] text-slate-450 block uppercase tracking-wider">Delivery Address</span>
                 <span className="font-semibold text-slate-800 dark:text-slate-350 block leading-tight">
-                  {order.delivery_address.replace(/\s*\[loc=.*?\]/, '')}
+                  {cleanAddressDisplay(order.delivery_address)}
                 </span>
               </div>
             )}

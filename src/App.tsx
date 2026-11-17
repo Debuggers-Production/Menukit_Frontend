@@ -172,7 +172,7 @@ function App() {
           <Route path="/settings" element={<PermissionGuard module="settings"><SettingsPage /></PermissionGuard>} />
           <Route path="/settings/team" element={<PermissionGuard module="team"><TeamPage /></PermissionGuard>} />
           <Route path="/settlements" element={<PermissionGuard module="settlements"><SettlementsPage /></PermissionGuard>} />
-          <Route path="/subscription" element={<PermissionGuard module="subscription"><SubscriptionMarketplacePage /></PermissionGuard>} />
+          <Route path="/subscription" element={<SubscriptionMarketplacePage />} />
           <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/internal-bulk" element={<InternalBulkPage />} />
         </Route>

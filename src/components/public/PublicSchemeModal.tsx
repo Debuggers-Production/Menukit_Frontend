@@ -19,6 +19,7 @@ import { triggerHaptic, HAPTIC_PATTERNS } from '@/utils/haptic';
 import { SearchableSelect } from '@/components/ui/SearchableSelect';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Lightbox } from '@/components/ui/Lightbox';
+import { cleanAddressDisplay } from '@/utils/address';
 
 const loadRazorpaySDK = (): Promise<boolean> => {
   return new Promise((resolve) => {
@@ -57,6 +58,27 @@ export const COUNTRY_CODES = [
   { code: '+968', country: 'Oman', flag: '🇴🇲' },
   { code: '+965', country: 'Kuwait', flag: '🇰🇼' },
   { code: '+61', country: 'Australia', flag: '🇦🇺' },
+];
+
+export const COUNTRY_OPTIONS = [
+  { id: 'India', name: 'India', flag: '🇮🇳', code: '+91' },
+  { id: 'United Arab Emirates', name: 'United Arab Emirates', flag: '🇦🇪', code: '+971' },
+  { id: 'United States', name: 'United States', flag: '🇺🇸', code: '+1' },
+  { id: 'United Kingdom', name: 'United Kingdom', flag: '🇬🇧', code: '+44' },
+  { id: 'Singapore', name: 'Singapore', flag: '🇸🇬', code: '+65' },
+  { id: 'Malaysia', name: 'Malaysia', flag: '🇲🇾', code: '+60' },
+  { id: 'Saudi Arabia', name: 'Saudi Arabia', flag: '🇸🇦', code: '+966' },
+  { id: 'Qatar', name: 'Qatar', flag: '🇶🇦', code: '+974' },
+  { id: 'Oman', name: 'Oman', flag: '🇴🇲', code: '+968' },
+  { id: 'Kuwait', name: 'Kuwait', flag: '🇰🇼', code: '+965' },
+  { id: 'Bahrain', name: 'Bahrain', flag: '🇧🇭', code: '+973' },
+  { id: 'Sri Lanka', name: 'Sri Lanka', flag: '🇱🇰', code: '+94' },
+  { id: 'Australia', name: 'Australia', flag: '🇦🇺', code: '+61' },
+  { id: 'Canada', name: 'Canada', flag: '🇨🇦', code: '+1' },
+  { id: 'Germany', name: 'Germany', flag: '🇩🇪', code: '+49' },
+  { id: 'France', name: 'France', flag: '🇫🇷', code: '+33' },
+  { id: 'New Zealand', name: 'New Zealand', flag: '🇳🇿', code: '+64' },
+  { id: 'Other', name: 'Other Country', flag: '🌐', code: '' },
 ];
 
 export const INDIAN_STATES = [
@@ -567,7 +589,19 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
     const raw = localStorage.getItem('customer_mobile') || localStorage.getItem('customer_phone') || '';
     return raw.replace(/\D/g, '').slice(-10);
   });
-  const [joinStreet, setJoinStreet] = useState(() => localStorage.getItem('customer_street') || localStorage.getItem('customer_address') || '');
+  const [joinStreet, setJoinStreet] = useState(() => cleanAddressDisplay(localStorage.getItem('customer_street') || localStorage.getItem('customer_address') || ''));
+  const [joinCountry, setJoinCountry] = useState(() => {
+    const saved = localStorage.getItem('customer_country');
+    if (!saved) return 'India';
+    if (COUNTRY_OPTIONS.some(c => c.id === saved)) return saved;
+    return 'Other';
+  });
+  const [customJoinCountry, setCustomJoinCountry] = useState(() => {
+    const saved = localStorage.getItem('customer_country');
+    if (!saved) return '';
+    if (COUNTRY_OPTIONS.some(c => c.id === saved)) return '';
+    return saved;
+  });
   const [joinState, setJoinState] = useState(() => localStorage.getItem('customer_state') || 'Tamil Nadu');
   const [joinDistrict, setJoinDistrict] = useState(() => localStorage.getItem('customer_district') || 'Virudhunagar (Sivakasi)');
   const [customDistrict, setCustomDistrict] = useState('');
@@ -717,6 +751,23 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
     setJoinCountryCode(storedCountryCode);
     const storedName = localStorage.getItem('customer_name') || '';
     if (storedName) setJoinName(storedName);
+    const storedStreet = cleanAddressDisplay(localStorage.getItem('customer_street') || localStorage.getItem('customer_address') || '');
+    if (storedStreet) setJoinStreet(storedStreet);
+    const storedDistrict = localStorage.getItem('customer_district');
+    if (storedDistrict) setJoinDistrict(storedDistrict);
+    const storedState = localStorage.getItem('customer_state');
+    if (storedState) setJoinState(storedState);
+    const storedPincode = localStorage.getItem('customer_pincode');
+    if (storedPincode) setJoinPincode(storedPincode);
+    const storedCountry = localStorage.getItem('customer_country');
+    if (storedCountry) {
+      if (COUNTRY_OPTIONS.some(c => c.id === storedCountry)) {
+        setJoinCountry(storedCountry);
+      } else {
+        setJoinCountry('Other');
+        setCustomJoinCountry(storedCountry);
+      }
+    }
     navigateToSchemeJoin(scheme);
   };
 
@@ -754,6 +805,17 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
         customerService.verifyMobile(fullPhone, effectiveShopId).then(res => {
           if (res.otp_required === false) {
             fetchCustomerPasses(fullPhone);
+            if (res.customer_name) {
+              setCustomerName(res.customer_name);
+              setJoinName(res.customer_name);
+            }
+            if (res.delivery_address) {
+              const cleaned = cleanAddressDisplay(res.delivery_address);
+              if (cleaned) {
+                setJoinStreet(cleaned);
+                localStorage.setItem('customer_address', cleaned);
+              }
+            }
           }
         }).catch(() => {});
       }
@@ -767,13 +829,15 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
     }
   }, [activeTab, customerPhone, passCountryCode, hasQueriedPasses]);
 
-  // Sync default district when state changes
+  // Sync default district when state changes (for India)
   useEffect(() => {
-    const validDists = DISTRICTS_BY_STATE[joinState] || ['Other / Custom District'];
-    if (!joinDistrict || !validDists.includes(joinDistrict)) {
-      setJoinDistrict(validDists[0]);
+    if (joinCountry === 'India') {
+      const validDists = DISTRICTS_BY_STATE[joinState] || ['Other / Custom District'];
+      if (!joinDistrict || !validDists.includes(joinDistrict)) {
+        setJoinDistrict(validDists[0]);
+      }
     }
-  }, [joinState]);
+  }, [joinState, joinCountry]);
 
   const fetchPublicSchemes = async () => {
     setIsLoading(true);
@@ -1047,10 +1111,38 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
     }
 
     const finalPhone = joinCountryCode === '+91' ? cleanPhone : `${joinCountryCode}${cleanPhone}`;
-    const effectiveDistrict = joinDistrict === 'Other / Custom District' ? customDistrict.trim() : joinDistrict.trim();
+
+    // Validate Country
+    const effectiveCountry = joinCountry === 'Other' ? customJoinCountry.trim() : joinCountry.trim();
+    if (!effectiveCountry) {
+      toast.error('Please specify your country');
+      const el = document.getElementById('enroll-custom-country-full') || document.getElementById('enroll-custom-country-modal');
+      if (el) {
+        (el as HTMLElement).focus();
+        (el as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      return;
+    }
+
+    // Validate State (for international addresses)
+    if (joinCountry !== 'India' && !joinState.trim()) {
+      toast.error('Please enter your state / province / region');
+      const el = document.getElementById('enroll-state-full') || document.getElementById('enroll-state-modal');
+      if (el) {
+        (el as HTMLElement).focus();
+        (el as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      return;
+    }
+
+    // Validate District / City
+    const effectiveDistrict = joinCountry === 'India'
+      ? (joinDistrict === 'Other / Custom District' ? customDistrict.trim() : joinDistrict.trim())
+      : joinDistrict.trim();
+
     if (!effectiveDistrict) {
-      toast.error('Please specify your district or city');
-      const el = document.getElementById('enroll-custom-district-full') || document.getElementById('enroll-custom-district-modal');
+      toast.error(joinCountry === 'India' ? 'Please specify your district or city' : 'Please enter your city / town');
+      const el = document.getElementById('enroll-custom-district-full') || document.getElementById('enroll-custom-district-modal') || document.getElementById('enroll-city-full') || document.getElementById('enroll-city-modal');
       if (el) {
         (el as HTMLElement).focus();
         (el as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1068,20 +1160,23 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
       return;
     }
 
-    if (!joinPincode.trim() || joinPincode.trim().length < 6) {
-      toast.error('Please enter a valid 6-digit delivery pincode');
-      const el = document.getElementById('enroll-pincode-full') || document.getElementById('enroll-pincode-modal');
-      if (el) {
-        (el as HTMLElement).focus();
-        (el as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (joinCountry === 'India') {
+      if (!joinPincode.trim() || joinPincode.trim().length < 6) {
+        toast.error('Please enter a valid 6-digit delivery pincode');
+        const el = document.getElementById('enroll-pincode-full') || document.getElementById('enroll-pincode-modal');
+        if (el) {
+          (el as HTMLElement).focus();
+          (el as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        return;
       }
-      return;
     }
 
     const addressParts = [
       joinStreet.trim(),
       effectiveDistrict,
-      joinState.trim() ? (joinPincode.trim() ? `${joinState.trim()} - ${joinPincode.trim()}` : joinState.trim()) : joinPincode.trim()
+      joinState.trim() ? (joinPincode.trim() ? `${joinState.trim()} - ${joinPincode.trim()}` : joinState.trim()) : joinPincode.trim(),
+      effectiveCountry && effectiveCountry !== 'India' ? effectiveCountry : ''
     ].filter(Boolean);
     const fullAddress = addressParts.join(', ');
 
@@ -1100,11 +1195,12 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
       localStorage.setItem('customer_country_code', joinCountryCode);
       localStorage.setItem('customer_mobile', cleanPhone);
       localStorage.setItem('customer_phone', cleanPhone);
-      if (joinStreet.trim()) localStorage.setItem('customer_street', joinStreet.trim());
+      localStorage.setItem('customer_country', effectiveCountry);
+      if (joinStreet.trim()) localStorage.setItem('customer_street', cleanAddressDisplay(joinStreet.trim()));
       if (effectiveDistrict) localStorage.setItem('customer_district', effectiveDistrict);
       if (joinState.trim()) localStorage.setItem('customer_state', joinState.trim());
       if (joinPincode.trim()) localStorage.setItem('customer_pincode', joinPincode.trim());
-      if (fullAddress) localStorage.setItem('customer_address', fullAddress);
+      if (fullAddress) localStorage.setItem('customer_address', cleanAddressDisplay(fullAddress));
 
       setCustomerPhone(phone);
 
@@ -1584,45 +1680,127 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                     <div className="p-3.5 rounded-2xl bg-muted/20 border border-border/80 space-y-3 text-left">
                       <div className="flex items-center gap-1.5 text-xs font-bold text-foreground">
                         <MapPin size={14} className="text-amber-500" />
-                        <span>Delivery & Dispatch Address</span>
+                        <span>Delivery & Dispatch Address (For Scheme Rewards)</span>
                       </div>
 
-                      {/* State and District */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                        <div>
-                          <label className="font-bold text-slate-700 dark:text-slate-200 block mb-1 text-[11px]">
-                            State *
-                          </label>
-                          <SearchableSelect
-                            options={INDIAN_STATES.map(s => ({ id: s, name: s }))}
-                            value={joinState}
-                            onChange={(val) => {
-                              setJoinState(val);
-                              const dists = DISTRICTS_BY_STATE[val] || ['Other / Custom District'];
-                              setJoinDistrict(dists[0]);
-                            }}
-                            placeholder="Select State"
-                            showSearch={true}
-                            className="w-full text-xs"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="font-bold text-slate-700 dark:text-slate-200 block mb-1 text-[11px]">
-                            District / City *
-                          </label>
-                          <SearchableSelect
-                            options={(DISTRICTS_BY_STATE[joinState] || ['Other / Custom District']).map(d => ({ id: d, name: d }))}
-                            value={joinDistrict}
-                            onChange={(val) => setJoinDistrict(val)}
-                            placeholder="Select District"
-                            showSearch={true}
-                            className="w-full text-xs"
-                          />
-                        </div>
+                      {/* Country Selector */}
+                      <div>
+                        <label className="font-bold text-slate-700 dark:text-slate-200 block mb-1 text-[11px]">
+                          Country *
+                        </label>
+                        <SearchableSelect
+                          options={COUNTRY_OPTIONS.map(c => ({
+                            id: c.id,
+                            name: `${c.flag} ${c.name}`
+                          }))}
+                          value={joinCountry}
+                          onChange={(val) => {
+                            setJoinCountry(val);
+                            if (val === 'India') {
+                              if (!INDIAN_STATES.includes(joinState)) {
+                                setJoinState('Tamil Nadu');
+                                setJoinDistrict('Virudhunagar (Sivakasi)');
+                              }
+                            } else {
+                              if (INDIAN_STATES.includes(joinState)) {
+                                setJoinState('');
+                                setJoinDistrict('');
+                              }
+                            }
+                          }}
+                          placeholder="Select Country"
+                          showSearch={true}
+                          className="w-full text-xs"
+                        />
                       </div>
 
-                      {joinDistrict === 'Other / Custom District' && (
+                      {/* Custom Country if 'Other' */}
+                      {joinCountry === 'Other' && (
+                        <div>
+                          <label className="font-bold text-slate-700 dark:text-slate-200 block mb-1 text-[11px]">
+                            Specify Country Name *
+                          </label>
+                          <input
+                            id="enroll-custom-country-modal"
+                            type="text"
+                            required
+                            placeholder="Enter country name"
+                            value={customJoinCountry}
+                            onChange={(e) => setCustomJoinCountry(e.target.value)}
+                            className="w-full px-3 py-2 bg-background border border-border rounded-xl text-foreground focus:outline-hidden text-xs"
+                          />
+                        </div>
+                      )}
+
+                      {/* State and District / City */}
+                      {joinCountry === 'India' ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          <div>
+                            <label className="font-bold text-slate-700 dark:text-slate-200 block mb-1 text-[11px]">
+                              State *
+                            </label>
+                            <SearchableSelect
+                              options={INDIAN_STATES.map(s => ({ id: s, name: s }))}
+                              value={joinState}
+                              onChange={(val) => {
+                                setJoinState(val);
+                                const dists = DISTRICTS_BY_STATE[val] || ['Other / Custom District'];
+                                setJoinDistrict(dists[0]);
+                              }}
+                              placeholder="Select State"
+                              showSearch={true}
+                              className="w-full text-xs"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="font-bold text-slate-700 dark:text-slate-200 block mb-1 text-[11px]">
+                              District / City *
+                            </label>
+                            <SearchableSelect
+                              options={(DISTRICTS_BY_STATE[joinState] || ['Other / Custom District']).map(d => ({ id: d, name: d }))}
+                              value={joinDistrict}
+                              onChange={(val) => setJoinDistrict(val)}
+                              placeholder="Select District"
+                              showSearch={true}
+                              className="w-full text-xs"
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          <div>
+                            <label className="font-bold text-slate-700 dark:text-slate-200 block mb-1 text-[11px]">
+                              State / Province / Region *
+                            </label>
+                            <input
+                              id="enroll-state-modal"
+                              type="text"
+                              required
+                              placeholder="e.g. Dubai, California, Selangor"
+                              value={joinState}
+                              onChange={(e) => setJoinState(e.target.value)}
+                              className="w-full px-3 py-2 bg-background border border-border rounded-xl text-foreground focus:outline-hidden text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-bold text-slate-700 dark:text-slate-200 block mb-1 text-[11px]">
+                              City / Town *
+                            </label>
+                            <input
+                              id="enroll-city-modal"
+                              type="text"
+                              required
+                              placeholder="e.g. Downtown, City Area"
+                              value={joinDistrict}
+                              onChange={(e) => setJoinDistrict(e.target.value)}
+                              className="w-full px-3 py-2 bg-background border border-border rounded-xl text-foreground focus:outline-hidden text-xs"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {joinCountry === 'India' && joinDistrict === 'Other / Custom District' && (
                         <div>
                           <label className="font-bold text-slate-700 dark:text-slate-200 block mb-1 text-[11px]">
                             Specify District / City Name *
@@ -1661,15 +1839,22 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                       {/* Pincode */}
                       <div>
                         <label className="font-bold text-slate-700 dark:text-slate-200 block mb-1 text-[11px]">
-                          Pincode / Postal Code *
+                          {joinCountry === 'India' ? 'Pincode *' : 'Postal / ZIP Code (Optional)'}
                         </label>
                         <input
                           id="enroll-pincode-modal"
                           type="text"
-                          maxLength={6}
-                          placeholder="e.g. 626123"
+                          required={joinCountry === 'India'}
+                          maxLength={joinCountry === 'India' ? 6 : 12}
+                          placeholder={joinCountry === 'India' ? '6-digit pincode' : 'e.g. 90210'}
                           value={joinPincode}
-                          onChange={(e) => setJoinPincode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                          onChange={(e) => {
+                            if (joinCountry === 'India') {
+                              setJoinPincode(e.target.value.replace(/\D/g, '').slice(0, 6));
+                            } else {
+                              setJoinPincode(e.target.value.slice(0, 12));
+                            }
+                          }}
                           className="w-full px-3 py-2 bg-background border border-border rounded-xl text-foreground font-mono focus:outline-hidden text-xs"
                         />
                       </div>
@@ -2855,37 +3040,118 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                               <span>Delivery & Dispatch Address (For Scheme Rewards)</span>
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                              <div>
-                                <label className="font-bold text-foreground block mb-1 text-[11px]">State *</label>
-                                <SearchableSelect
-                                  options={INDIAN_STATES.map(s => ({ id: s, name: s }))}
-                                  value={joinState}
-                                  onChange={(val) => {
-                                    setJoinState(val);
-                                    const dists = DISTRICTS_BY_STATE[val] || [];
-                                    setJoinDistrict(dists[0] || 'Other / Custom District');
-                                  }}
-                                  placeholder="Select State"
-                                  showSearch={true}
-                                  className="w-full text-xs"
-                                />
-                              </div>
-
-                              <div>
-                                <label className="font-bold text-foreground block mb-1 text-[11px]">District / City *</label>
-                                <SearchableSelect
-                                  options={(DISTRICTS_BY_STATE[joinState] || ['Other / Custom District']).map(d => ({ id: d, name: d }))}
-                                  value={joinDistrict}
-                                  onChange={(val) => setJoinDistrict(val)}
-                                  placeholder="Select District"
-                                  showSearch={true}
-                                  className="w-full text-xs"
-                                />
-                              </div>
+                            {/* Country Selector */}
+                            <div>
+                              <label className="font-bold text-foreground block mb-1 text-[11px]">Country *</label>
+                              <SearchableSelect
+                                options={COUNTRY_OPTIONS.map(c => ({
+                                  id: c.id,
+                                  name: `${c.flag} ${c.name}`
+                                }))}
+                                value={joinCountry}
+                                onChange={(val) => {
+                                  setJoinCountry(val);
+                                  if (val === 'India') {
+                                    if (!INDIAN_STATES.includes(joinState)) {
+                                      setJoinState('Tamil Nadu');
+                                      setJoinDistrict('Virudhunagar (Sivakasi)');
+                                    }
+                                  } else {
+                                    if (INDIAN_STATES.includes(joinState)) {
+                                      setJoinState('');
+                                      setJoinDistrict('');
+                                    }
+                                  }
+                                }}
+                                placeholder="Select Country"
+                                showSearch={true}
+                                className="w-full text-xs"
+                              />
                             </div>
 
-                            {joinDistrict === 'Other / Custom District' && (
+                            {/* Custom Country if 'Other' */}
+                            {joinCountry === 'Other' && (
+                              <div>
+                                <label className="font-bold text-foreground block mb-1 text-[11px]">
+                                  Specify Country Name *
+                                </label>
+                                <input
+                                  id="enroll-custom-country-full"
+                                  type="text"
+                                  required
+                                  placeholder="Enter country name"
+                                  value={customJoinCountry}
+                                  onChange={(e) => setCustomJoinCountry(e.target.value)}
+                                  className="w-full px-3 py-2 bg-background border border-border rounded-xl text-foreground text-xs focus:outline-hidden focus:border-amber-500"
+                                />
+                              </div>
+                            )}
+
+                            {/* State and District / City */}
+                            {joinCountry === 'India' ? (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                  <label className="font-bold text-foreground block mb-1 text-[11px]">State *</label>
+                                  <SearchableSelect
+                                    options={INDIAN_STATES.map(s => ({ id: s, name: s }))}
+                                    value={joinState}
+                                    onChange={(val) => {
+                                      setJoinState(val);
+                                      const dists = DISTRICTS_BY_STATE[val] || [];
+                                      setJoinDistrict(dists[0] || 'Other / Custom District');
+                                    }}
+                                    placeholder="Select State"
+                                    showSearch={true}
+                                    className="w-full text-xs"
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="font-bold text-foreground block mb-1 text-[11px]">District / City *</label>
+                                  <SearchableSelect
+                                    options={(DISTRICTS_BY_STATE[joinState] || ['Other / Custom District']).map(d => ({ id: d, name: d }))}
+                                    value={joinDistrict}
+                                    onChange={(val) => setJoinDistrict(val)}
+                                    placeholder="Select District"
+                                    showSearch={true}
+                                    className="w-full text-xs"
+                                  />
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                  <label className="font-bold text-foreground block mb-1 text-[11px]">
+                                    State / Province / Region *
+                                  </label>
+                                  <input
+                                    id="enroll-state-full"
+                                    type="text"
+                                    required
+                                    placeholder="e.g. Dubai, California, Selangor"
+                                    value={joinState}
+                                    onChange={(e) => setJoinState(e.target.value)}
+                                    className="w-full px-3 py-2 bg-background border border-border rounded-xl text-foreground text-xs focus:outline-hidden focus:border-amber-500"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="font-bold text-foreground block mb-1 text-[11px]">
+                                    City / Town *
+                                  </label>
+                                  <input
+                                    id="enroll-city-full"
+                                    type="text"
+                                    required
+                                    placeholder="e.g. Downtown, City Area"
+                                    value={joinDistrict}
+                                    onChange={(e) => setJoinDistrict(e.target.value)}
+                                    className="w-full px-3 py-2 bg-background border border-border rounded-xl text-foreground text-xs focus:outline-hidden focus:border-amber-500"
+                                  />
+                                </div>
+                              </div>
+                            )}
+
+                            {joinCountry === 'India' && joinDistrict === 'Other / Custom District' && (
                               <div>
                                 <label className="font-bold text-foreground block mb-1 text-[11px]">Enter City / District Name *</label>
                                 <input
@@ -2914,15 +3180,23 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
                                 />
                               </div>
                               <div>
-                                <label className="font-bold text-foreground block mb-1 text-[11px]">Pincode *</label>
+                                <label className="font-bold text-foreground block mb-1 text-[11px]">
+                                  {joinCountry === 'India' ? 'Pincode *' : 'Postal / ZIP Code (Optional)'}
+                                </label>
                                 <input
                                   id="enroll-pincode-full"
                                   type="text"
-                                  required
-                                  maxLength={6}
-                                  placeholder="6-digit pincode"
+                                  required={joinCountry === 'India'}
+                                  maxLength={joinCountry === 'India' ? 6 : 12}
+                                  placeholder={joinCountry === 'India' ? '6-digit pincode' : 'e.g. 90210'}
                                   value={joinPincode}
-                                  onChange={(e) => setJoinPincode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                  onChange={(e) => {
+                                    if (joinCountry === 'India') {
+                                      setJoinPincode(e.target.value.replace(/\D/g, '').slice(0, 6));
+                                    } else {
+                                      setJoinPincode(e.target.value.slice(0, 12));
+                                    }
+                                  }}
                                   className="w-full px-3 py-2 bg-background border border-border rounded-xl text-foreground font-mono text-xs focus:outline-hidden focus:border-amber-500"
                                 />
                               </div>
@@ -3638,6 +3912,23 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
               setJoinPhone(digits);
               setJoinCountryCode(savedCountryCode);
               if (savedName) setJoinName(savedName);
+              const savedStreet = cleanAddressDisplay(localStorage.getItem('customer_street') || localStorage.getItem('customer_address') || '');
+              if (savedStreet) setJoinStreet(savedStreet);
+              const savedDistrict = localStorage.getItem('customer_district');
+              if (savedDistrict) setJoinDistrict(savedDistrict);
+              const savedState = localStorage.getItem('customer_state');
+              if (savedState) setJoinState(savedState);
+              const savedPincode = localStorage.getItem('customer_pincode');
+              if (savedPincode) setJoinPincode(savedPincode);
+              const savedCountry = localStorage.getItem('customer_country');
+              if (savedCountry) {
+                if (COUNTRY_OPTIONS.some(c => c.id === savedCountry)) {
+                  setJoinCountry(savedCountry);
+                } else {
+                  setJoinCountry('Other');
+                  setCustomJoinCountry(savedCountry);
+                }
+              }
 
               const fullPhone = savedCountryCode === '+91' ? digits : `${savedCountryCode}${digits}`;
               fetchCustomerPasses(fullPhone);
@@ -3849,6 +4140,23 @@ export const PublicSchemeModal: React.FC<PublicSchemeModalProps> = ({
             setJoinPhone(digits);
             setJoinCountryCode(savedCountryCode);
             if (savedName) setJoinName(savedName);
+            const savedStreet = cleanAddressDisplay(localStorage.getItem('customer_street') || localStorage.getItem('customer_address') || '');
+            if (savedStreet) setJoinStreet(savedStreet);
+            const savedDistrict = localStorage.getItem('customer_district');
+            if (savedDistrict) setJoinDistrict(savedDistrict);
+            const savedState = localStorage.getItem('customer_state');
+            if (savedState) setJoinState(savedState);
+            const savedPincode = localStorage.getItem('customer_pincode');
+            if (savedPincode) setJoinPincode(savedPincode);
+            const savedCountry = localStorage.getItem('customer_country');
+            if (savedCountry) {
+              if (COUNTRY_OPTIONS.some(c => c.id === savedCountry)) {
+                setJoinCountry(savedCountry);
+              } else {
+                setJoinCountry('Other');
+                setCustomJoinCountry(savedCountry);
+              }
+            }
 
             const fullPhone = savedCountryCode === '+91' ? digits : `${savedCountryCode}${digits}`;
             fetchCustomerPasses(fullPhone);

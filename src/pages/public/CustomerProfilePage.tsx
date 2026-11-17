@@ -17,6 +17,7 @@ import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import { DiscountUnlockPopup } from '@/components/public/DiscountUnlockPopup';
 import { getUniqueCustomerDiscountCode } from '@/utils/discountCodeHelper';
+import { cleanAddressDisplay } from '@/utils/address';
 
 export function CustomerProfilePage() {
   const { id } = useParams();
@@ -67,6 +68,9 @@ export function CustomerProfilePage() {
             if (data.customer) {
               setCustomerName(data.customer.name || localStorage.getItem('customer_name') || 'Customer');
               setCustomerPhone(data.customer.mobile_number || localStorage.getItem('customer_phone') || '');
+              if (data.customer.delivery_address) {
+                localStorage.setItem('customer_address', cleanAddressDisplay(data.customer.delivery_address));
+              }
               setCustomerCredits({
                 creditLimit: data.customer.credit_limit || 0,
                 availableCredit: data.customer.available_credit || 0,

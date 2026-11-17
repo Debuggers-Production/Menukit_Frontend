@@ -29,6 +29,7 @@ import { applyThemeToElement } from '@/utils/themeApplier';
 import { calculateOrderPricing } from '@/utils/pricing';
 import { getItemMultiplier } from '@/utils/itemMultiplier';
 import { getUniqueCustomerDiscountCode } from '@/utils/discountCodeHelper';
+import { cleanAddressDisplay } from '@/utils/address';
 
 const formatDays = (days: string[]) => {
   if (!days || days.length === 0) return '';
@@ -507,7 +508,7 @@ export function PublicCartPage() {
 
       const storedAddress = localStorage.getItem('customer_address');
       if (storedAddress) {
-        setDeliveryAddress(storedAddress);
+        setDeliveryAddress(cleanAddressDisplay(storedAddress));
       }
     } catch (e){}
   }, [token, isCheckoutOpen]);
@@ -532,7 +533,7 @@ export function PublicCartPage() {
         const savedPhone = localStorage.getItem('customer_phone') || '';
         const custPhoneParam = (customerPhone.trim() || savedPhone) ? `?customer_id=${encodeURIComponent(customerPhone.trim() || savedPhone)}` : '';
         const [shopRes, discountRes, itemsRes] = await Promise.all([
-          api.get(`/public/shop/${id}`),
+          api.get(`/public/shop/${id}?_t=${Date.now()}`),
           api.get(`/public/shop/${id}/discounts${custPhoneParam}`),
           api.get(`/public/shop/${id}/items?limit=200`)
         ]);
@@ -669,7 +670,7 @@ export function PublicCartPage() {
         toast.error("Please enter your delivery address");
         return;
       }
-      localStorage.setItem('customer_address', deliveryAddress);
+      localStorage.setItem('customer_address', cleanAddressDisplay(deliveryAddress));
     }
 
     const savedLat = localStorage.getItem('customer_lat');
@@ -695,11 +696,10 @@ export function PublicCartPage() {
 
     setIsPlacingOrder(true);
     try {
-      let finalAddress = deliveryAddress;
-      if (orderType === 'delivery' && deliveryAddress && savedLat && savedLng) {
-        if (!deliveryAddress.includes('Lat:') && !deliveryAddress.includes('loc=')) {
-          finalAddress = `${deliveryAddress} [loc=${savedLat},${savedLng}]`;
-        }
+      const cleanBaseAddress = cleanAddressDisplay(deliveryAddress);
+      let finalAddress = cleanBaseAddress;
+      if (orderType === 'delivery' && cleanBaseAddress && savedLat && savedLng) {
+        finalAddress = `${cleanBaseAddress} [loc=${savedLat},${savedLng}]`;
       }
 
       const payload = {
@@ -3264,7 +3264,7 @@ export function PublicCartPage() {
         }}
         availableTypes={{
           dine_in: (shop?.settings as any)?.dinein_enabled !== false,
-          takeaway: (shop?.settings as any)?.takeaway_enabled !== false,
+          takeaway: Boolean((shop?.settings as any)?.takeaway_enabled),
           delivery: Boolean((shop?.settings as any)?.delivery_enabled)
         }}
         shop={shop}

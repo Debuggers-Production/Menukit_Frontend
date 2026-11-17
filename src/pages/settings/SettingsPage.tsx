@@ -893,14 +893,46 @@ export function SettingsPage() {
   const discoveryDaysLeft = discoveryModInfo?.days_left ?? subscriptionStatus?.days_left ?? 0;
   const discoveryExpiresAt = discoveryModInfo?.expires_at
     ? new Date(discoveryModInfo.expires_at).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })
+    : subscriptionStatus?.current_period_end
+    ? new Date(subscriptionStatus.current_period_end).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })
     : null;
 
   const isPaidDiscoveryActive = Boolean(
-    !subscriptionStatus?.is_all_access &&
-    subscriptionStatus?.active_modules?.includes('hide-discovery-badge') &&
+    (subscriptionStatus?.is_all_access || subscriptionStatus?.active_modules?.includes('hide-discovery-badge')) &&
     discoveryDaysLeft > 0 &&
     !subscriptionStatus?.is_expired
   );
+
+  // Auto-activate Paid Discovery settings when merchant has an active Paid Discovery subscription (or All-Access)
+  const hasAutoActivatedPaidDiscovery = useRef(false);
+  useEffect(() => {
+    if (!subscriptionStatus || !shop?.id || hasAutoActivatedPaidDiscovery.current) return;
+
+    if (isPaidDiscoveryActive && (!settingsData.is_discoverable || !settingsData.hide_discovery_badge)) {
+      hasAutoActivatedPaidDiscovery.current = true;
+      const updated = {
+        ...settingsData,
+        is_discoverable: true,
+        hide_discovery_badge: true,
+        show_prices: true,
+        show_offers: true,
+        show_menus_in_discovery: true,
+      };
+      setSettingsData(updated);
+      if (shop) {
+        setShop({ ...shop, settings: { ...shop.settings, ...updated } });
+      }
+      initialSettingsRef.current = JSON.stringify(updated);
+      api.put('/shops/me/settings', updated)
+        .then((res) => {
+          publicCache.clear();
+          window.dispatchEvent(new CustomEvent('menukit-shop-settings-updated', { detail: res.data }));
+        })
+        .catch((err) => {
+          console.error("Failed to auto-activate paid discovery settings", err);
+        });
+    }
+  }, [subscriptionStatus, isPaidDiscoveryActive, settingsData.is_discoverable, settingsData.hide_discovery_badge, shop?.id]);
 
   // Fetch shop settings on mount
   useEffect(() => {
@@ -957,13 +989,13 @@ export function SettingsPage() {
         extra_delivery_charge_per_step: parseFloat(String(settingsData.extra_delivery_charge_per_step)) || 0,
         max_delivery_distance: Math.max(0, parseFloat(String((settingsData as any).max_delivery_distance)) || 0),
         payment_timeout_minutes: Math.max(1, parseInt(String((settingsData as any).payment_timeout_minutes)) || 15),
-        // Forcefully disable if not verified to prevent backend 400 errors if it was previously enabled
+        // Only online_payments_enabled requires payment gateway verification
         online_payments_enabled: isVerified ? settingsData.online_payments_enabled : false,
-        dinein_enabled: isVerified ? settingsData.dinein_enabled : false,
-        takeaway_enabled: isVerified ? settingsData.takeaway_enabled : false,
-        delivery_enabled: isVerified ? settingsData.delivery_enabled : false,
-        auto_accept_orders: isVerified ? settingsData.auto_accept_orders : false,
-        accept_after_payment: isVerified ? Boolean(settingsData.accept_after_payment) : false,
+        dinein_enabled: Boolean(settingsData.dinein_enabled),
+        takeaway_enabled: Boolean(settingsData.takeaway_enabled),
+        delivery_enabled: Boolean(settingsData.delivery_enabled),
+        auto_accept_orders: Boolean(settingsData.auto_accept_orders),
+        accept_after_payment: Boolean(settingsData.accept_after_payment),
       };
       
       const res = await api.put('/shops/me/settings', payload);
@@ -2621,7 +2653,12 @@ export function SettingsPage() {
             <Button
               type="button"
               variant="outline"
-              className="w-full cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 font-bold"
+              disabled={isPaidDiscoveryActive}
+              className={`w-full font-bold ${
+                isPaidDiscoveryActive 
+                  ? 'opacity-50 cursor-not-allowed bg-slate-100 dark:bg-slate-800' 
+                  : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
               onClick={handleSelectFreeDiscoveryOption}
             >
               Select Free Option (Turn Off Discovery & Hide Menu Label)

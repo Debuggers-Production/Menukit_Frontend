@@ -30,6 +30,7 @@ import { printOrderA4Invoice } from '@/utils/orderInvoice';
 import { useIsMobile } from '@/hooks/useMediaQuery';
 import { getBusinessCategory } from '@/config/businessCategories';
 import { calculateOrderReplacementCredit } from '@/utils/pricing';
+import { cleanAddressDisplay } from '@/utils/address';
 
 const getTodayDateStr = () => {
   const now = new Date();
@@ -238,7 +239,7 @@ function generateOrderBillText(order: any) {
   bill += `📞 Phone: ${order.customer_phone}\n`;
   if (order.table_number) bill += `🪑 Table: T-${order.table_number}\n`;
   if (order.delivery_address) {
-    bill += `📍 Address: ${order.delivery_address}\n`;
+    bill += `📍 Address: ${cleanAddressDisplay(order.delivery_address)}\n`;
     bill += `🗺️ Google Maps: ${generateGoogleMapsUrl(order.delivery_address)}\n`;
   }
   bill += `------------------------------\n`;
@@ -2294,7 +2295,7 @@ export function OrdersPage() {
                   </a>
                 </div>
                 <p className="text-slate-700 dark:text-slate-200 font-medium leading-relaxed bg-white dark:bg-slate-950 p-2.5 rounded-lg border border-slate-150 dark:border-slate-800">
-                  {customerModalOrder.delivery_address.replace(/\s*\[loc=.*?\]/, '')}
+                  {cleanAddressDisplay(customerModalOrder.delivery_address)}
                 </p>
               </div>
             )}
@@ -2437,7 +2438,7 @@ export function OrdersPage() {
                   </a>
                 </div>
                 <p className="text-slate-700 dark:text-slate-200 font-medium leading-relaxed bg-white dark:bg-slate-950 p-2.5 rounded-lg border border-slate-150 dark:border-slate-800">
-                  {customerModalOrder.delivery_address.replace(/\s*\[loc=.*?\]/, '')}
+                  {cleanAddressDisplay(customerModalOrder.delivery_address)}
                 </p>
               </div>
             )}

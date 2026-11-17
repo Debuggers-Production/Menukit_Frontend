@@ -504,7 +504,7 @@ export function DashboardLayout() {
         { name: 'Shop', path: '/shop-setup', icon: Store, iconColor: 'text-orange-500', permissionModule: 'settings' },
         { name: 'Staff', path: '/settings/team', icon: Shield, iconColor: 'text-blue-600', permissionModule: 'team' },
         { name: 'Customize Theme', path: '/customize', icon: Palette, iconColor: 'text-pink-500', permissionModule: 'theme' },
-        { name: 'Subscription', path: '/subscription', icon: Zap, iconColor: 'text-orange-500', permissionModule: 'subscription' },
+        { name: 'Subscription', path: '/subscription', icon: Zap, iconColor: 'text-orange-500' },
         { name: 'Settlements', path: '/settlements', icon: Wallet, iconColor: 'text-green-600', permissionModule: 'settlements' },
         { name: 'Settings', path: '/settings', icon: SettingsIcon, iconColor: 'text-slate-500', permissionModule: 'settings' },
       ]
@@ -659,7 +659,7 @@ export function DashboardLayout() {
                       : location.pathname.startsWith(item.path);
                     const Icon = item.icon;
                     const theme = getItemTheme(item.path);
-                    const isLocked = subStatus && item.permissionModule ? !isModuleActive(subStatus, item.permissionModule) : false;
+                    const isLocked = item.path === '/subscription' ? false : (subStatus && item.permissionModule ? !isModuleActive(subStatus, item.permissionModule) : false);
 
                     return (
                       <NavLink
@@ -735,7 +735,7 @@ export function DashboardLayout() {
                         : location.pathname.startsWith(item.path);
                       const Icon = item.icon;
                       const theme = getItemTheme(item.path);
-                      const isLocked = subStatus && item.permissionModule ? !isModuleActive(subStatus, item.permissionModule) : false;
+                      const isLocked = item.path === '/subscription' ? false : (subStatus && item.permissionModule ? !isModuleActive(subStatus, item.permissionModule) : false);
 
                       return (
                         <div key={item.path} className="relative flex items-center">
@@ -1032,7 +1032,7 @@ export function DashboardLayout() {
           const isActive = location.pathname.startsWith(item.path);
           const Icon = item.icon;
           const theme = getItemTheme(item.path, item.iconColor);
-          const isLocked = subStatus && item.permissionModule ? !isModuleActive(subStatus, item.permissionModule) : false;
+          const isLocked = item.path === '/subscription' ? false : (subStatus && item.permissionModule ? !isModuleActive(subStatus, item.permissionModule) : false);
 
           return (
             <NavLink
@@ -1091,7 +1091,7 @@ export function DashboardLayout() {
                   const Icon = item.icon;
                   const isActive = location.pathname.startsWith(item.path);
                   const theme = getItemTheme(item.path);
-                  const isLocked = subStatus && item.permissionModule ? !isModuleActive(subStatus, item.permissionModule) : false;
+                  const isLocked = item.path === '/subscription' ? false : (subStatus && item.permissionModule ? !isModuleActive(subStatus, item.permissionModule) : false);
 
                   return (
                     <NavLink

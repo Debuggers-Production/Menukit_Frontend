@@ -81,6 +81,10 @@ export const DiscoverySettingsTab: React.FC<DiscoverySettingsTabProps> = ({
                   checked={settingsData.is_discoverable}
                   onChange={(checked) => {
                     if (!checked) {
+                      if (isPaidDiscoveryActive) {
+                        toast(`Paid Discovery is active (${discoveryDaysLeft} days left). Your store remains discoverable on the map.`, { icon: '🔒' });
+                        return;
+                      }
                       // Smoothly turn OFF store discovery without any error
                       onSelectFreeDiscoveryOption();
                     } else {

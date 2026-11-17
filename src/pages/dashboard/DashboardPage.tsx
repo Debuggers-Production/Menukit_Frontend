@@ -266,7 +266,7 @@ export function DashboardPage() {
               <div className="space-y-0.5">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-[9.5px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/20">
-                    v2.1.0 MAJOR RELEASE
+                    v2.1.2 MAJOR RELEASE
                   </span>
                   <span className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1">
                     <span>Customer Savings Schemes (Pandu) Live!</span>

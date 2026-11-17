@@ -7,6 +7,7 @@ import confetti from 'canvas-confetti';
 import { triggerHaptic, HAPTIC_PATTERNS } from '@/utils/haptic';
 import { customerService } from '../../services/customers';
 import { recordPopupDismissal, clearPopupTiming } from '@/utils/discountPopupTiming';
+import { cleanAddressDisplay } from '@/utils/address';
 
 function formatApiError(err: any, fallback: string): string {
   const detail = err?.response?.data?.detail || err?.detail;
@@ -278,7 +279,7 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
           localStorage.setItem('customer_name', res.customer_name);
         }
         if (res.delivery_address) {
-          localStorage.setItem('customer_address', res.delivery_address);
+          localStorage.setItem('customer_address', cleanAddressDisplay(res.delivery_address));
         }
         localStorage.setItem('customer_mobile', `${countryCode}${mobileNumber}`);
         localStorage.setItem('customer_phone', `${countryCode}${mobileNumber}`);
@@ -360,7 +361,7 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
         localStorage.setItem('customer_name', res.customer_name);
       }
       if (res.delivery_address) {
-        localStorage.setItem('customer_address', res.delivery_address);
+        localStorage.setItem('customer_address', cleanAddressDisplay(res.delivery_address));
       }
       sessionStorage.setItem(`member_status_${shopId}`, res.is_strict_member ? 'verified-member' : 'unlocked');
       window.dispatchEvent(new CustomEvent('menukit-customer-changed', { detail: { token: res.access_token, mobile: `${countryCode}${mobileNumber}` } }));
@@ -397,7 +398,7 @@ export const DiscountUnlockPopup: React.FC<DiscountUnlockPopupProps> = ({ shopId
       localStorage.setItem('customer_phone', `${countryCode}${mobileNumber}`);
       localStorage.setItem('customer_name', name);
       if (res.delivery_address) {
-        localStorage.setItem('customer_address', res.delivery_address);
+        localStorage.setItem('customer_address', cleanAddressDisplay(res.delivery_address));
       }
       if (res.access_token) {
         localStorage.setItem('customer_token', res.access_token);

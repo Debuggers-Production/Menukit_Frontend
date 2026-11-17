@@ -52,7 +52,7 @@ Store Name: ${shopName}
 Shop ID: ${shopId}
 Merchant Email: ${merchantEmail}
 Merchant Phone: ${merchantPhone}
-App Version: v${APP_VERSION || '2.1.0'}
+App Version: v${APP_VERSION || '2.1.2'}
 Browser UserAgent: ${navigator.userAgent}
 Screen Resolution: ${window.innerWidth}x${window.innerHeight}
 Timestamp: ${new Date().toISOString()}
@@ -256,7 +256,7 @@ Timestamp: ${new Date().toISOString()}
             </div>
             <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
               <span className="text-[10px] font-bold uppercase text-slate-400">Platform Version</span>
-              <p className="text-slate-800 dark:text-slate-200 mt-0.5">v{APP_VERSION || '2.1.0'}</p>
+              <p className="text-slate-800 dark:text-slate-200 mt-0.5">v{APP_VERSION || '2.1.2'}</p>
             </div>
           </div>
         </CardContent>

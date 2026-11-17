@@ -152,7 +152,7 @@ export function WhatsNewModal({ isOpen: controlledIsOpen, onClose: controlledOnC
                 <Zap size={18} className="text-amber-500 shrink-0" />
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                Welcome to Menukit v2.1.0! Experience our biggest evolution yet: multi-industry catalogs, savings schemes, driver-free thermal POS, and streamlined multi-station routing.
+                Welcome to Menukit v2.1.2! Experience our biggest evolution yet: multi-industry catalogs, savings schemes, driver-free thermal POS, and streamlined multi-station routing.
               </p>
             </div>
 
@@ -199,7 +199,7 @@ export function WhatsNewModal({ isOpen: controlledIsOpen, onClose: controlledOnC
                   </span>
                   <span className="text-[11px] font-semibold text-orange-600 dark:text-orange-400 flex items-center gap-1">
                     <CheckCircle2 size={12} />
-                    <span>Live in v2.1.0</span>
+                    <span>Live in v2.1.2</span>
                   </span>
                 </div>
                 <div className="flex items-start gap-3 pt-1">

@@ -1,6 +1,6 @@
 import { createPortal } from 'react-dom';
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { useSearchParams } from 'react-router';
+import { useSearchParams, Link } from 'react-router';
 import { useHeaderStore } from '@/store/useHeaderStore';
 import { HeaderActions } from '@/components/HeaderActions';
 import { 
@@ -1305,9 +1305,15 @@ export function SubscriptionMarketplacePage() {
                       <span className="text-[9.5px] font-bold text-muted-foreground block uppercase tracking-wider">Plan Price</span>
                       <span className="text-2xl font-black text-teal-600 dark:text-teal-400 font-heading">{countryConfig.symbol}0</span>
                     </div>
-                    <span className="text-[10px] text-muted-foreground font-medium tracking-tight text-right">
+                    <Link
+                      to="/terms"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[10px] text-muted-foreground hover:text-primary font-medium tracking-tight text-right hover:underline cursor-pointer transition-colors"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       * T&C apply
-                    </span>
+                    </Link>
                   </div>
                 </div>
 

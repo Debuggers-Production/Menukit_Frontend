@@ -6,7 +6,7 @@ import fs from 'fs'
 
 const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf-8'));
 const buildTime = Date.now();
-const packageVersion = pkg.version || '2.1.0';
+const packageVersion = pkg.version || '2.1.2';
 
 // Plugin to auto-generate public/version.json on build / dev start
 function versionGeneratorPlugin() {

@@ -47,16 +47,16 @@ export const OrderingSettingsTab: React.FC<OrderingSettingsTabProps> = ({
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
                           <h4 className="text-sm font-bold text-amber-900 dark:text-amber-200">
-                            Bank Account & Verification Required
+                            Bank Verification & Online Payments Notice
                           </h4>
                           <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-amber-200/70 dark:bg-amber-900/70 text-amber-800 dark:text-amber-300">
-                            Action Needed
+                            Notice
                           </span>
                         </div>
                         <p className="text-xs text-amber-700 dark:text-amber-300/90 font-medium leading-relaxed max-w-2xl">
                           {!shop?.settings?.bank_account_last4
-                            ? `To enable ordering channels (${businessCategory.orderTypeDineInTitle}, ${businessCategory.orderTypeTakeawayTitle}, ${businessCategory.orderTypeDeliveryTitle}) and receive customer payouts, you must add and link your settlement bank account.`
-                            : "Your settlement bank account details have been submitted and are currently under verification. Ordering channels will unlock automatically once active."}
+                            ? "You can enable ordering channels now! Customers can place orders and pay via Pay at Counter, Cash on Delivery, or UPI. To accept online card & gateway payments directly to your bank account, please link your settlement bank account."
+                            : "Your settlement bank account details are under verification. In the meantime, ordering channels remain active with Pay at Counter, Cash on Delivery, and UPI payments. Online card payments will activate once verification is complete."}
                         </p>
                       </div>
                     </div>
@@ -81,9 +81,9 @@ export const OrderingSettingsTab: React.FC<OrderingSettingsTabProps> = ({
                         <CardDescription className="text-xs">Enable the fulfillment channels available to your customers on the digital menu.</CardDescription>
                       </div>
                       {!isBankVerified && (
-                        <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/60 px-2.5 py-1 rounded-lg flex items-center gap-1">
-                          <Lock size={12} />
-                          Locked
+                        <span className="text-[11px] font-medium text-amber-700 dark:text-amber-300 bg-amber-100/70 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/60 px-2.5 py-1 rounded-lg flex items-center gap-1">
+                          <Info size={12} />
+                          Counter & Cash / UPI Active
                         </span>
                       )}
                     </div>
@@ -93,18 +93,13 @@ export const OrderingSettingsTab: React.FC<OrderingSettingsTabProps> = ({
                       icon={QrCode}
                       title={businessCategory.dineInChannelLabel}
                       description={businessCategory.dineInChannelDesc}
-                      checked={isBankVerified && settingsData.dinein_enabled}
+                      checked={Boolean(settingsData.dinein_enabled)}
                       onChange={(c) => {
-                        if (isBankVerified) {
-                          setSettingsData(prev => ({ ...prev, dinein_enabled: c }));
-                        } else {
-                          toast.error(`Please add and verify your settlement bank account to enable ${businessCategory.orderTypeDineInTitle} ordering.`);
-                        }
+                        setSettingsData(prev => ({ ...prev, dinein_enabled: c }));
                       }}
-                      disabled={!isBankVerified}
                     />
 
-                    {isBankVerified && settingsData.dinein_enabled && businessCategory.isFood && (
+                    {Boolean(settingsData.dinein_enabled) && businessCategory.isFood && (
                       <div className="ml-2 sm:ml-4 pl-3.5 border-l-2 border-amber-200 dark:border-amber-800/60 my-2 space-y-2.5 transition-all">
                         <SettingRow
                           icon={UtensilsCrossed}
@@ -148,33 +143,30 @@ export const OrderingSettingsTab: React.FC<OrderingSettingsTabProps> = ({
                       icon={ShoppingBag}
                       title={businessCategory.takeawayChannelLabel}
                       description={businessCategory.takeawayChannelDesc}
-                      checked={isBankVerified && settingsData.takeaway_enabled}
+                      checked={Boolean(settingsData.takeaway_enabled)}
                       onChange={(c) => {
-                        if (isBankVerified) {
-                          setSettingsData(prev => ({ ...prev, takeaway_enabled: c }));
-                        } else {
-                          toast.error(`Please add and verify your settlement bank account to enable ${businessCategory.orderTypeTakeawayTitle} ordering.`);
-                        }
+                        setSettingsData(prev => ({ ...prev, takeaway_enabled: c }));
                       }}
-                      disabled={!isBankVerified}
                     />
 
                     <SettingRow
                       icon={Truck}
                       title={businessCategory.deliveryChannelLabel}
                       description={businessCategory.deliveryChannelDesc}
-                      checked={isBankVerified && settingsData.delivery_enabled}
+                      checked={Boolean(settingsData.delivery_enabled)}
                       onChange={(c) => {
-                        if (isBankVerified) {
-                          setSettingsData(prev => ({ ...prev, delivery_enabled: c }));
-                        } else {
-                          toast.error(`Please add and verify your settlement bank account to enable ${businessCategory.orderTypeDeliveryTitle} ordering.`);
-                        }
+                        setSettingsData(prev => ({ ...prev, delivery_enabled: c }));
                       }}
-                      disabled={!isBankVerified}
                     />
 
-                    {isBankVerified && settingsData.delivery_enabled && (
+                    {!isBankVerified && (
+                      <div className="p-3 bg-amber-50/70 dark:bg-amber-950/20 rounded-xl border border-amber-200/60 dark:border-amber-900/30 flex items-center gap-2.5 text-xs text-amber-800 dark:text-amber-300">
+                        <Info className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                        <span>Settlement bank account verification is pending. Online card payments are currently disabled; customers will pay using Pay at Counter, Cash on Delivery, or direct UPI.</span>
+                      </div>
+                    )}
+
+                    {Boolean(settingsData.delivery_enabled) && (
                       <div className="ml-2 sm:ml-4 pl-3.5 border-l-2 border-amber-200 dark:border-amber-800/60 my-2 space-y-4 transition-all">
                         <div className="p-4 bg-amber-50/50 dark:bg-amber-950/20 rounded-2xl border border-amber-200/80 dark:border-amber-900/40 space-y-4">
                           <div className="flex items-center gap-2">
@@ -315,12 +307,6 @@ export const OrderingSettingsTab: React.FC<OrderingSettingsTabProps> = ({
                         <CardTitle className="text-base font-bold">Order Acceptance & Payment Rules</CardTitle>
                         <CardDescription className="text-xs">Configure how incoming orders are accepted and whether upfront customer payment is required.</CardDescription>
                       </div>
-                      {!isBankVerified && (
-                        <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/60 px-2.5 py-1 rounded-lg flex items-center gap-1">
-                          <Lock size={12} />
-                          Locked
-                        </span>
-                      )}
                     </div>
                   </CardHeader>
                   <CardContent className="p-4 sm:p-6 divide-y divide-slate-100 dark:divide-slate-800">
@@ -328,30 +314,20 @@ export const OrderingSettingsTab: React.FC<OrderingSettingsTabProps> = ({
                       icon={ShieldCheck}
                       title="Accept Orders Only After Payment"
                       description="When enabled, online orders placed via the public menu must be paid upfront before the order is placed/confirmed. When disabled (default), the order is submitted first for merchant review and acceptance, and then payment is made."
-                      checked={isBankVerified && settingsData.accept_after_payment}
+                      checked={Boolean(settingsData.accept_after_payment)}
                       onChange={(c) => {
-                        if (isBankVerified) {
-                          setSettingsData(prev => ({ ...prev, accept_after_payment: c }));
-                        } else {
-                          toast.error("Please add and verify your settlement bank account first.");
-                        }
+                        setSettingsData(prev => ({ ...prev, accept_after_payment: c }));
                       }}
-                      disabled={!isBankVerified}
                     />
 
                     <SettingRow
                       icon={Zap}
                       title="Auto Accept Incoming Orders"
                       description="Automatically accept and confirm incoming orders immediately without requiring manual merchant approval."
-                      checked={isBankVerified && settingsData.auto_accept_orders}
+                      checked={Boolean(settingsData.auto_accept_orders)}
                       onChange={(c) => {
-                        if (isBankVerified) {
-                          setSettingsData(prev => ({ ...prev, auto_accept_orders: c }));
-                        } else {
-                          toast.error("Please add and verify your settlement bank account first.");
-                        }
+                        setSettingsData(prev => ({ ...prev, auto_accept_orders: c }));
                       }}
-                      disabled={!isBankVerified}
                     />
                   </CardContent>
                 </Card>

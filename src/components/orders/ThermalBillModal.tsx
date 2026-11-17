@@ -13,6 +13,7 @@ import {
 import { printOrderA4Invoice } from '@/utils/orderInvoice';
 import { usePrinterStore } from '@/store/usePrinterStore';
 import { BILL_LANGUAGES, getBillTranslation, getTranslatedShopInfo, formatPaymentMethod } from '@/utils/billTranslations';
+import { cleanAddressDisplay } from '@/utils/address';
 
 interface ThermalBillModalProps {
   isOpen: boolean;
@@ -522,7 +523,7 @@ export function ThermalBillModal({ isOpen, onClose, order, shop, initialMode }: 
               {order.delivery_address && (
                 <div className="pt-0.5 text-[10px]">
                   <span>Delivery Address:</span>
-                  <p className="font-bold break-words">{order.delivery_address.replace(/\s*\[loc=.*?\]/, '')}</p>
+                  <p className="font-bold break-words">{cleanAddressDisplay(order.delivery_address)}</p>
                 </div>
               )}
             </div>

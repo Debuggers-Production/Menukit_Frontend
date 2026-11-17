@@ -887,7 +887,7 @@ export function PublicMenuPage() {
       
       const shopData = shopRes.data as Shop;
       const anyOrdering = Boolean(
-        shopData.settings?.dinein_enabled ||
+        shopData.settings?.dinein_enabled !== false ||
         shopData.settings?.takeaway_enabled ||
         shopData.settings?.delivery_enabled
       );
@@ -3909,7 +3909,7 @@ export function PublicMenuPage() {
           setIsOrderTypeModalOpen(false);
         }}
         availableTypes={{
-          dine_in: Boolean(shop?.settings?.dinein_enabled),
+          dine_in: shop?.settings?.dinein_enabled !== false,
           takeaway: Boolean(shop?.settings?.takeaway_enabled),
           delivery: Boolean(shop?.settings?.delivery_enabled)
         }}

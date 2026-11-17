@@ -29,32 +29,12 @@ import { SearchableSelect, Option } from '@/components/ui/SearchableSelect';
 import { Lightbox } from '@/components/ui/Lightbox';
 import { isBakeryBusiness, isFireworksBusiness, isFoodBusiness, isSchemeEnabledShop } from '@/config/businessCategories';
 import { 
-  COUNTRY_CODES, DISTRICTS_BY_STATE, INDIAN_STATES, formatPaidDateTime,
+  COUNTRY_CODES, COUNTRY_OPTIONS, DISTRICTS_BY_STATE, INDIAN_STATES, formatPaidDateTime,
   renderHighlightBenefits
 } from '@/components/public/PublicSchemeModal';
 
-const COUNTRY_OPTIONS = [
-  { id: 'India', name: 'India', flag: '🇮🇳', code: '+91' },
-  { id: 'United Arab Emirates', name: 'United Arab Emirates', flag: '🇦🇪', code: '+971' },
-  { id: 'United States', name: 'United States', flag: '🇺🇸', code: '+1' },
-  { id: 'United Kingdom', name: 'United Kingdom', flag: '🇬🇧', code: '+44' },
-  { id: 'Singapore', name: 'Singapore', flag: '🇸🇬', code: '+65' },
-  { id: 'Malaysia', name: 'Malaysia', flag: '🇲🇾', code: '+60' },
-  { id: 'Saudi Arabia', name: 'Saudi Arabia', flag: '🇸🇦', code: '+966' },
-  { id: 'Qatar', name: 'Qatar', flag: '🇶🇦', code: '+974' },
-  { id: 'Oman', name: 'Oman', flag: '🇴🇲', code: '+968' },
-  { id: 'Kuwait', name: 'Kuwait', flag: '🇰🇼', code: '+965' },
-  { id: 'Bahrain', name: 'Bahrain', flag: '🇧🇭', code: '+973' },
-  { id: 'Sri Lanka', name: 'Sri Lanka', flag: '🇱🇰', code: '+94' },
-  { id: 'Australia', name: 'Australia', flag: '🇦🇺', code: '+61' },
-  { id: 'Canada', name: 'Canada', flag: '🇨🇦', code: '+1' },
-  { id: 'Germany', name: 'Germany', flag: '🇩🇪', code: '+49' },
-  { id: 'France', name: 'France', flag: '🇫🇷', code: '+33' },
-  { id: 'New Zealand', name: 'New Zealand', flag: '🇳🇿', code: '+64' },
-  { id: 'Other', name: 'Other Country', flag: '🌐', code: '' },
-];
-
 import { formatPhoneWithCountryCode } from '@/utils/phone';
+import { cleanAddressDisplay } from '@/utils/address';
 export { formatPhoneWithCountryCode };
 
 export default function SchemesPage() {
@@ -896,6 +876,9 @@ export default function SchemesPage() {
               customer_name: res.name || prev.customer_name,
             }));
             setCustomerAutoFilled(true);
+          }
+          if (res.address && !memberStreet) {
+            setMemberStreet(cleanAddressDisplay(res.address));
           }
           if (res.is_already_enrolled) {
             setAlreadyEnrolledMember({
@@ -2165,7 +2148,7 @@ export default function SchemesPage() {
                             {member.customer_address && (
                               <>
                                 <span>•</span>
-                                <span className="truncate max-w-sm" title={member.customer_address}>{member.customer_address}</span>
+                                <span className="truncate max-w-sm" title={cleanAddressDisplay(member.customer_address)}>{cleanAddressDisplay(member.customer_address)}</span>
                               </>
                             )}
                           </div>

@@ -1,4 +1,5 @@
 import { Order, OrderItem, OrderStatus, PaymentStatus, PaymentMethod } from '@/types';
+import { cleanAddressDisplay } from '@/utils/address';
 
 /**
  * OrderEntity
@@ -124,8 +125,7 @@ export class OrderEntity {
   }
 
   public getCleanDeliveryAddress(): string {
-    if (!this.delivery_address) return '';
-    return this.delivery_address.replace(/\s*\[loc=.*?\]/, '').trim();
+    return cleanAddressDisplay(this.delivery_address);
   }
 
   public getStatusTheme(): { color: string; label: string; bg: string } {

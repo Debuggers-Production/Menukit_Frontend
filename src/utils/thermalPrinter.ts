@@ -13,6 +13,7 @@ import type { BillingPrinterConfig } from '@/store/usePrinterStore';
 import { parseDateSafe } from './dateTime';
 import { getBusinessCategory } from '@/config/businessCategories';
 import { getBillTranslation, formatPaymentMethod } from './billTranslations';
+import { cleanAddressDisplay } from './address';
 
 /**
  * Checks the status of the local Menukit Print Bridge (running on the user's laptop/PC at port 9101).
@@ -574,7 +575,7 @@ export function generateThermalReceiptHtml(
     ${order?.delivery_address ? `
     <div style="margin: 2px 0; font-size: 10px;">
       <span style="display: block;">Delivery Address:</span>
-      <span class="bold" style="word-break: break-word;">${order.delivery_address.replace(/\s*\[loc=.*?\]/, '')}</span>
+      <span class="bold" style="word-break: break-word;">${cleanAddressDisplay(order.delivery_address)}</span>
     </div>
     ` : ''}
 
